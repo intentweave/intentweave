@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Neo4jRunner adapter — bridges the Fastify neo4j driver to the CLI's Neo4jRunner interface.
  */

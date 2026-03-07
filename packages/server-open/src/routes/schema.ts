@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 import type { FastifyInstance } from 'fastify';
 import { CANONICAL_PREDICATES } from '@intentweave/core/predicates';
 import { ENTITY_TYPES } from '@intentweave/core/types';

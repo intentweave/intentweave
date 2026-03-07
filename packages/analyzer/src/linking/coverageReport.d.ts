@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * @file Coverage Report Generation
  * @description Generates detailed coverage reports for cross-artifact linking

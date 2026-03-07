@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * watch command — Continuously monitor files and re-run the open-track
  * pipeline when they change.

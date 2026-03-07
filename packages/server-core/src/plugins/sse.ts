@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 import fp from 'fastify-plugin';
 import { EventEmitter } from 'node:events';
 import type { FastifyInstance, FastifyReply } from 'fastify';

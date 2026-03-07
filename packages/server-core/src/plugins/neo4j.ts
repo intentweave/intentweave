@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 import fp from 'fastify-plugin';
 import neo4j, { type Driver } from 'neo4j-driver';
 import type { FastifyInstance } from 'fastify';

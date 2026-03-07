@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 import type { FastifyInstance } from 'fastify';
 import type { Driver } from 'neo4j-driver';
 import { analyzeImpact, formatImpactMarkdown } from '@intentweave/cli/impact';

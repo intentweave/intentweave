@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifySwagger from '@fastify/swagger';

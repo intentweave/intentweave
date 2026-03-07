@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * IntentWeave CLI
  * 

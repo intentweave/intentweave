@@ -1,3 +1,6 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Workspace - Types and utilities for IntentWeave workspace management
  * 
