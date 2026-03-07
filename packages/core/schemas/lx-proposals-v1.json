@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intentweave://schemas/lx-proposals/v1",
+  "title": "IntentWeave LX Proposals",
+  "description": "Cross-artifact link proposals from the LX aggregation stage. Matches TypeScript LinkProposal interface in @intentweave/core.",
+  "type": "object",
+  "required": ["$schema", "schemaVersion", "runId", "proposals"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "intentweave://schemas/lx-proposals/v1",
+      "description": "JSON Schema URI"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Schema version"
+    },
+    "stage": {
+      "type": "string",
+      "const": "LX",
+      "description": "Stage identifier"
+    },
+    "runId": {
+      "type": "string",
+      "description": "Run identifier"
+    },
+    "workspaceKey": {
+      "type": "string",
+      "description": "Workspace key (optional, server-only)"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Generation timestamp"
+    },
+    "proposals": {
+      "type": "array",
+      "description": "Link proposals",
+      "items": {
+        "$ref": "#/$defs/LinkProposal"
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Processing metadata (optional)",
+      "properties": {
+        "entitiesAnalyzed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total entities analyzed"
+        },
+        "proposalsGenerated": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of proposals generated"
+        },
+        "processingTimeMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Processing time in milliseconds"
+        },
+        "matchersUsed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Matchers used to generate proposals"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "LinkProposal": {
+      "type": "object",
+      "description": "Cross-artifact link proposal. Matches TypeScript LinkProposal interface.",
+      "required": ["sourceArtifact", "sourceCgId", "targetArtifact", "targetCgId", "predicate", "confidence", "matchMethod", "evidence"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique proposal ID (optional)"
+        },
+        "sourceArtifact": {
+          "type": "string",
+          "description": "Source artifact ID"
+        },
+        "sourceCgId": {
+          "type": "string",
+          "description": "Source entity cgId (canonical identifier)"
+        },
+        "targetArtifact": {
+          "type": "string",
+          "description": "Target artifact ID"
+        },
+        "targetCgId": {
+          "type": "string",
+          "description": "Target entity cgId (canonical identifier)"
+        },
+        "predicate": {
+          "type": "string",
+          "enum": ["REFINES", "DERIVED_FROM", "IMPLEMENTS", "DESCRIBES", "MAPS_TO"],
+          "description": "Link predicate type for cross-artifact relationships"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence score (0-1)"
+        },
+        "matchMethod": {
+          "type": "string",
+          "enum": ["name", "alias", "structural", "profile", "semantic"],
+          "description": "Method used to match entities for linking"
+        },
+        "evidence": {
+          "type": "array",
+          "description": "Supporting evidence for the link",
+          "items": {
+            "$ref": "#/$defs/LinkEvidence"
+          }
+        },
+        "accepted": {
+          "type": "boolean",
+          "description": "Whether proposal has been accepted"
+        },
+        "rejectionReason": {
+          "type": "string",
+          "description": "Rejection reason if rejected"
+        }
+      }
+    },
+    "LinkEvidence": {
+      "type": "object",
+      "description": "Evidence supporting a link proposal",
+      "required": ["text", "artifactId"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Text snippet supporting the link"
+        },
+        "artifactId": {
+          "type": "string",
+          "description": "Source artifact ID"
+        },
+        "sourceCgId": {
+          "type": "string",
+          "description": "Source entity cgId"
+        },
+        "targetCgId": {
+          "type": "string",
+          "description": "Target entity cgId"
+        }
+      }
+    }
+  }
+}

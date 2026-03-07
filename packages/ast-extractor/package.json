@@ -11,7 +11,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "src", "queries"],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

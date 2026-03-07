@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intentweave://schemas/coverage/v1",
+  "title": "IntentWeave Coverage Report",
+  "description": "Coverage analysis results from the aggregation stage",
+  "type": "object",
+  "required": ["$schema", "schemaVersion", "stage", "runId", "workspaceKey", "coverage"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "intentweave://schemas/coverage/v1",
+      "description": "JSON Schema URI"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Schema version"
+    },
+    "processedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Processing timestamp"
+    },
+    "stage": {
+      "type": "string",
+      "const": "COVERAGE",
+      "description": "Stage identifier"
+    },
+    "runId": {
+      "type": "string",
+      "description": "Run identifier"
+    },
+    "workspaceKey": {
+      "type": "string",
+      "description": "Workspace key"
+    },
+    "coverage": {
+      "type": "object",
+      "description": "Coverage by artifact role pair",
+      "additionalProperties": {
+        "$ref": "#/$defs/CoverageMetrics"
+      }
+    },
+    "inconsistencies": {
+      "type": "array",
+      "description": "Detected inconsistencies",
+      "items": {
+        "type": "object",
+        "required": ["type", "description", "instances"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["semantic-drift", "naming-mismatch", "kind-mismatch"],
+            "description": "Inconsistency type"
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description"
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "description": "Specific instances"
+          }
+        }
+      }
+    },
+    "incompletenesses": {
+      "type": "array",
+      "description": "Detected incompletenesses",
+      "items": {
+        "type": "object",
+        "required": ["type", "description", "count", "items"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["missing-impl", "missing-spec", "orphan-entity"],
+            "description": "Incompleteness type"
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of instances"
+          },
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Affected entity/artifact IDs"
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Processing metadata",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "description": "Coverage strategy used"
+        },
+        "processingTimeMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Processing time in milliseconds"
+        }
+      },
+      "required": ["strategy", "processingTimeMs"]
+    }
+  },
+  "$defs": {
+    "CoverageMetrics": {
+      "type": "object",
+      "required": ["total", "linked", "coverage"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total entities in source role"
+        },
+        "linked": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of linked entities"
+        },
+        "coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Coverage ratio (0-1)"
+        },
+        "unlinked": {
+          "type": "array",
+          "description": "Unlinked entity details",
+          "items": {
+            "type": "object",
+            "required": ["cgId", "kind", "name"],
+            "properties": {
+              "cgId": { "type": "string" },
+              "kind": { "type": "string" },
+              "name": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -9,9 +9,40 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./mx": {
+      "types": "./dist/mx/index.d.ts",
+      "import": "./dist/mx/index.js"
+    },
+    "./linking": {
+      "types": "./dist/linking/index.d.ts",
+      "import": "./dist/linking/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation/index.d.ts",
+      "import": "./dist/validation/index.js"
+    },
+    "./transitions": {
+      "types": "./dist/transitions/index.d.ts",
+      "import": "./dist/transitions/index.js"
+    },
+    "./extractors": {
+      "types": "./dist/extractors/index.d.ts",
+      "import": "./dist/extractors/index.js"
+    },
+    "./llm": {
+      "types": "./dist/providers/llm/index.d.ts",
+      "import": "./dist/providers/llm/index.js"
+    },
+    "./viz": {
+      "types": "./dist/viz/index.d.ts",
+      "import": "./dist/viz/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -21,15 +52,17 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@intentweave/ast-extractor": "workspace:*",
     "@intentweave/core": "workspace:*",
     "@intentweave/profiles": "workspace:*",
-    "@intentweave/ast-extractor": "workspace:*",
+    "beautiful-mermaid": "^1.1.3",
     "glob": "^10.3.0"
   },
   "peerDependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/glob": "^8.1.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
     "zod": "^3.23.8"

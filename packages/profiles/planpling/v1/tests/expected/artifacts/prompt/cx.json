@@ -1,0 +1,1379 @@
+{
+  "$schema": "intentweave://schemas/cx-graph/v1",
+  "schemaVersion": "0.1",
+  "stage": "CX",
+  "artifactId": "prompt",
+  "entities": [
+    {
+      "cgId": "ws_0000|model|kg|action/admin",
+      "name": "Admin",
+      "type": "action",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+          "chunk_id": "prompt-chunk-6",
+          "chunk_index": 0,
+          "confidence": 0.85,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.85,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "admin action"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|action/assign",
+      "name": "Assign",
+      "type": "action",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+          "chunk_id": "prompt-chunk-14",
+          "chunk_index": 0,
+          "confidence": 0.85,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.85,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "assign action"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|action/delete",
+      "name": "Delete",
+      "type": "action",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+          "chunk_id": "prompt-chunk-6",
+          "chunk_index": 0,
+          "confidence": 0.85,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.85,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "delete action"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|action/manage",
+      "name": "Manage",
+      "type": "action",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.85,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.85,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "manage action"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|action/read",
+      "name": "Read",
+      "type": "action",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+          "chunk_id": "prompt-chunk-6",
+          "chunk_index": 0,
+          "confidence": 0.85,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.85,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "read action"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|action/view",
+      "name": "View",
+      "type": "action",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+          "chunk_id": "prompt-chunk-14",
+          "chunk_index": 0,
+          "confidence": 0.85,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.85,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "view action"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|action/write",
+      "name": "Write",
+      "type": "action",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+          "chunk_id": "prompt-chunk-6",
+          "chunk_index": 0,
+          "confidence": 0.85,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.85,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "write action"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/assignment",
+      "name": "Assignment",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+          "chunk_id": "prompt-chunk-10",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "assignment resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/document",
+      "name": "Document",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+          "chunk_id": "prompt-chunk-1",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "document resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/member",
+      "name": "Member",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "member resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/permission",
+      "name": "Permission",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+          "chunk_id": "prompt-chunk-4",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "permission resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/project",
+      "name": "Project",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+          "chunk_id": "prompt-chunk-4",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "project resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/resource",
+      "name": "Resource",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+          "chunk_id": "prompt-chunk-1",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "resource resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/role",
+      "name": "Role",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+          "chunk_id": "prompt-chunk-1",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "role resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/user",
+      "name": "User",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+          "chunk_id": "prompt-chunk-1",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "user resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|resource/workspace",
+      "name": "Workspace",
+      "type": "resource",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+          "chunk_id": "prompt-chunk-1",
+          "chunk_index": 0,
+          "confidence": 0.8,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.8,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "workspace resource"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|role/projectcontributor",
+      "name": "Project:contributor",
+      "type": "role",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.9,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "contributor at project level"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|role/projectmaintainer",
+      "name": "Project:maintainer",
+      "type": "role",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.9,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "maintainer at project level"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|role/projectviewer",
+      "name": "Project:viewer",
+      "type": "role",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.9,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "viewer at project level"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|role/workspaceadmin",
+      "name": "Workspace:admin",
+      "type": "role",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.9,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "admin at workspace level"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|role/workspacemember",
+      "name": "Workspace:member",
+      "type": "role",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.9,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "member at workspace level"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|role/workspaceowner",
+      "name": "Workspace:owner",
+      "type": "role",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+          "chunk_id": "prompt-chunk-8",
+          "chunk_index": 0,
+          "confidence": 0.9,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.9,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "owner at workspace level"
+      }
+    },
+    {
+      "cgId": "ws_0000|model|kg|rule/req-1",
+      "name": "Req-1",
+      "type": "rule",
+      "labels": [
+        "Staging"
+      ],
+      "evidence": [
+        {
+          "turnIndex": 0,
+          "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+          "chunk_id": "prompt-chunk-4",
+          "chunk_index": 0,
+          "confidence": 0.7,
+          "source_stage": "RX"
+        }
+      ],
+      "confidence": 0.7,
+      "source": "llm",
+      "origin": "llm",
+      "state": "new",
+      "props": {
+        "description": "should inherit permissions from parent scopes\n- Prevent circular inheritance\n\n\n(Source: /Users/benjaminbecker/Workspace/codegraphchat-v2/packages/profiles/planpling/v1/tests/prompt"
+      }
+    }
+  ],
+  "statements": [],
+  "evidence": [
+    {
+      "turnIndex": 0,
+      "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+      "chunk_id": "prompt-chunk-1",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+      "chunk_id": "prompt-chunk-1",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+      "chunk_id": "prompt-chunk-1",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+      "chunk_id": "prompt-chunk-1",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Context\n\nWe need an authorization system that implements the **planpling model** for fine-grained access control across our multi-tenant SaaS platform.\n",
+      "chunk_id": "prompt-chunk-1",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Support workspace-level, project-level, and resource-level roles\n- Roles should inherit permissions from parent scopes\n- Prevent circular inheritance\n",
+      "chunk_id": "prompt-chunk-4",
+      "chunk_index": 0,
+      "confidence": 0.7,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Permissions defined as `(action, resource)` pairs\n- Actions: `read`, `write`, `delete`, `admin`\n- Resources: hierarchical paths (e.g., `/workspace/{id}/project/{id}`)\n",
+      "chunk_id": "prompt-chunk-6",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "### 3. Key Roles to Implement\n\n**Workspace Level:**",
+      "chunk_id": "prompt-chunk-7",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "### 3. Key Roles to Implement\n\n**Workspace Level:**",
+      "chunk_id": "prompt-chunk-7",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "### 3. Key Roles to Implement\n\n**Workspace Level:**",
+      "chunk_id": "prompt-chunk-7",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "### 3. Key Roles to Implement\n\n**Workspace Level:**",
+      "chunk_id": "prompt-chunk-7",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "### 3. Key Roles to Implement\n\n**Workspace Level:**",
+      "chunk_id": "prompt-chunk-7",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.9,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.9,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.9,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.9,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.9,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.9,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- `workspace:owner` - Full control over workspace and all projects\n- `workspace:admin` - Manage members and settings\n- `workspace:member` - Read access to workspace resources\n\n**Project Level:**\n- `pr",
+      "chunk_id": "prompt-chunk-8",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Workspace owners can delegate admin privileges\n- Project maintainers can grant contributor/viewer roles\n- Audit log for all role assignments\n",
+      "chunk_id": "prompt-chunk-10",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "1. Clear role hierarchy with inheritance\n2. Granular permissions per resource type\n3. No permission escalation vulnerabilities\n4. Auditability of all access decisions\n",
+      "chunk_id": "prompt-chunk-12",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "1. Clear role hierarchy with inheritance\n2. Granular permissions per resource type\n3. No permission escalation vulnerabilities\n4. Auditability of all access decisions\n",
+      "chunk_id": "prompt-chunk-12",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "1. Clear role hierarchy with inheritance\n2. Granular permissions per resource type\n3. No permission escalation vulnerabilities\n4. Auditability of all access decisions\n",
+      "chunk_id": "prompt-chunk-12",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "1. Clear role hierarchy with inheritance\n2. Granular permissions per resource type\n3. No permission escalation vulnerabilities\n4. Auditability of all access decisions\n",
+      "chunk_id": "prompt-chunk-12",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "1. Clear role hierarchy with inheritance\n2. Granular permissions per resource type\n3. No permission escalation vulnerabilities\n4. Auditability of all access decisions\n",
+      "chunk_id": "prompt-chunk-12",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "1. Clear role hierarchy with inheritance\n2. Granular permissions per resource type\n3. No permission escalation vulnerabilities\n4. Auditability of all access decisions\n",
+      "chunk_id": "prompt-chunk-12",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Example Scenarios\n\n**Scenario 1**: Alice is a workspace owner",
+      "chunk_id": "prompt-chunk-13",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Example Scenarios\n\n**Scenario 1**: Alice is a workspace owner",
+      "chunk_id": "prompt-chunk-13",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Example Scenarios\n\n**Scenario 1**: Alice is a workspace owner",
+      "chunk_id": "prompt-chunk-13",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Example Scenarios\n\n**Scenario 1**: Alice is a workspace owner",
+      "chunk_id": "prompt-chunk-13",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "## Example Scenarios\n\n**Scenario 1**: Alice is a workspace owner",
+      "chunk_id": "prompt-chunk-13",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.85,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    },
+    {
+      "turnIndex": 0,
+      "text": "- Can manage all projects in workspace\n- Can assign project maintainers\n- Cannot be removed by project maintainers\n\n**Scenario 2**: Bob is a project contributor\n- Can write to project resources\n- Cann",
+      "chunk_id": "prompt-chunk-14",
+      "chunk_index": 0,
+      "confidence": 0.8,
+      "source_stage": "RX"
+    }
+  ],
+  "aliases": [],
+  "meta": {
+    "entityCount": 23,
+    "mergedCount": 0,
+    "statementCount": 0,
+    "normalizations": [
+      {
+        "cgId": "ws_0000|model|kg|resource/document",
+        "type": "name",
+        "from": "document",
+        "to": "Document",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/workspace",
+        "type": "name",
+        "from": "workspace",
+        "to": "Workspace",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/user",
+        "type": "name",
+        "from": "user",
+        "to": "User",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/resource",
+        "type": "name",
+        "from": "resource",
+        "to": "Resource",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/role",
+        "type": "name",
+        "from": "role",
+        "to": "Role",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/project",
+        "type": "name",
+        "from": "project",
+        "to": "Project",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/permission",
+        "type": "name",
+        "from": "permission",
+        "to": "Permission",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|rule/req-1",
+        "type": "name",
+        "from": "req-1",
+        "to": "Req-1",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|action/read",
+        "type": "name",
+        "from": "read",
+        "to": "Read",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|action/write",
+        "type": "name",
+        "from": "write",
+        "to": "Write",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|action/delete",
+        "type": "name",
+        "from": "delete",
+        "to": "Delete",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|action/admin",
+        "type": "name",
+        "from": "admin",
+        "to": "Admin",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|role/workspaceowner",
+        "type": "name",
+        "from": "workspace:owner",
+        "to": "Workspace:owner",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|role/workspaceadmin",
+        "type": "name",
+        "from": "workspace:admin",
+        "to": "Workspace:admin",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|role/workspacemember",
+        "type": "name",
+        "from": "workspace:member",
+        "to": "Workspace:member",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|role/projectmaintainer",
+        "type": "name",
+        "from": "project:maintainer",
+        "to": "Project:maintainer",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|role/projectcontributor",
+        "type": "name",
+        "from": "project:contributor",
+        "to": "Project:contributor",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|role/projectviewer",
+        "type": "name",
+        "from": "project:viewer",
+        "to": "Project:viewer",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|action/manage",
+        "type": "name",
+        "from": "manage",
+        "to": "Manage",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/member",
+        "type": "name",
+        "from": "member",
+        "to": "Member",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|resource/assignment",
+        "type": "name",
+        "from": "assignment",
+        "to": "Assignment",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|action/view",
+        "type": "name",
+        "from": "view",
+        "to": "View",
+        "reason": "Name canonicalization"
+      },
+      {
+        "cgId": "ws_0000|model|kg|action/assign",
+        "type": "name",
+        "from": "assign",
+        "to": "Assign",
+        "reason": "Name canonicalization"
+      }
+    ]
+  }
+}

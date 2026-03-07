@@ -1,0 +1,46 @@
+{
+  "$schema": "intentweave://schemas/validation-rules/v1",
+  "schemaVersion": "0.1",
+  "rules": [
+    {
+      "id": "planpling:role-has-scope",
+      "name": "Role Must Have Scope",
+      "description": "Every planpling role must define a scope (workspace, project, resource)",
+      "severity": "error",
+      "query": {
+        "type": "entity",
+        "filter": {
+          "kind": "planpling:Role",
+          "missingProperty": "scope"
+        }
+      },
+      "message": "Role '{{entity.name}}' is missing required 'scope' property"
+    },
+    {
+      "id": "planpling:no-circular-inheritance",
+      "name": "No Circular Role Inheritance",
+      "description": "Roles must not inherit from themselves transitively",
+      "severity": "error",
+      "query": {
+        "type": "graph",
+        "pattern": "(role:planpling:Role)-[:inherits*]->(role)"
+      },
+      "message": "Circular inheritance detected for role '{{entity.name}}'"
+    },
+    {
+      "id": "planpling:permission-specificity",
+      "name": "Permission Actions Should Be Specific",
+      "description": "Permissions should use specific actions (read, write, delete) not wildcards",
+      "severity": "warning",
+      "query": {
+        "type": "entity",
+        "filter": {
+          "kind": "planpling:Permission",
+          "property": "action",
+          "matches": "\\*|.*all.*"
+        }
+      },
+      "message": "Permission '{{entity.name}}' uses overly broad action: {{entity.action}}"
+    }
+  ]
+}

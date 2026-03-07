@@ -1,0 +1,364 @@
+{
+  "$schema": "intentweave://schemas/lx-proposals/v1",
+  "schemaVersion": "0.1",
+  "runId": "golden-mock",
+  "proposals": [
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|action/admin",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|action/admin",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Admin\" ↔ \"Admin\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|action/admin",
+          "targetCgId": "ws_0000|model|kg|action/admin"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|action/assign",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|action/assign",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Assign\" ↔ \"Assign\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|action/assign",
+          "targetCgId": "ws_0000|model|kg|action/assign"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|action/delete",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|action/delete",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Delete\" ↔ \"Delete\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|action/delete",
+          "targetCgId": "ws_0000|model|kg|action/delete"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|action/read",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|action/read",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Read\" ↔ \"Read\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|action/read",
+          "targetCgId": "ws_0000|model|kg|action/read"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|action/write",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|action/write",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Write\" ↔ \"Write\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|action/write",
+          "targetCgId": "ws_0000|model|kg|action/write"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/assignment",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/assignment",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Assignment\" ↔ \"Assignment\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/assignment",
+          "targetCgId": "ws_0000|model|kg|resource/assignment"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/document",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/document",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Document\" ↔ \"Document\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/document",
+          "targetCgId": "ws_0000|model|kg|resource/document"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/member",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/member",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Member\" ↔ \"Member\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/member",
+          "targetCgId": "ws_0000|model|kg|resource/member"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/permission",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/permission",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Permission\" ↔ \"Permission\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/permission",
+          "targetCgId": "ws_0000|model|kg|resource/permission"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/project",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/project",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Project\" ↔ \"Project\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/project",
+          "targetCgId": "ws_0000|model|kg|resource/project"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/resource",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/resource",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Resource\" ↔ \"Resource\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/resource",
+          "targetCgId": "ws_0000|model|kg|resource/resource"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/role",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/role",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Role\" ↔ \"Role\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/role",
+          "targetCgId": "ws_0000|model|kg|resource/role"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/user",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/user",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"User\" ↔ \"User\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/user",
+          "targetCgId": "ws_0000|model|kg|resource/user"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|resource/workspace",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|resource/workspace",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Workspace\" ↔ \"Workspace\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|resource/workspace",
+          "targetCgId": "ws_0000|model|kg|resource/workspace"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|role/projectcontributor",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|role/projectcontributor",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Project:contributor\" ↔ \"Project:contributor\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|role/projectcontributor",
+          "targetCgId": "ws_0000|model|kg|role/projectcontributor"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|role/projectmaintainer",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|role/projectmaintainer",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Project:maintainer\" ↔ \"Project:maintainer\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|role/projectmaintainer",
+          "targetCgId": "ws_0000|model|kg|role/projectmaintainer"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|role/projectviewer",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|role/projectviewer",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Project:viewer\" ↔ \"Project:viewer\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|role/projectviewer",
+          "targetCgId": "ws_0000|model|kg|role/projectviewer"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|role/workspaceadmin",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|role/workspaceadmin",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Workspace:admin\" ↔ \"Workspace:admin\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|role/workspaceadmin",
+          "targetCgId": "ws_0000|model|kg|role/workspaceadmin"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|role/workspacemember",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|role/workspacemember",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Workspace:member\" ↔ \"Workspace:member\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|role/workspacemember",
+          "targetCgId": "ws_0000|model|kg|role/workspacemember"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|role/workspaceowner",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|role/workspaceowner",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Workspace:owner\" ↔ \"Workspace:owner\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|role/workspaceowner",
+          "targetCgId": "ws_0000|model|kg|role/workspaceowner"
+        }
+      ]
+    },
+    {
+      "sourceArtifact": "prompt",
+      "sourceCgId": "ws_0000|model|kg|rule/req-1",
+      "targetArtifact": "spec",
+      "targetCgId": "ws_0000|model|kg|rule/req-1",
+      "predicate": "MAPS_TO",
+      "confidence": 0.95,
+      "matchMethod": "name",
+      "evidence": [
+        {
+          "text": "Exact name match: \"Req-1\" ↔ \"Req-1\"",
+          "artifactId": "prompt",
+          "sourceCgId": "ws_0000|model|kg|rule/req-1",
+          "targetCgId": "ws_0000|model|kg|rule/req-1"
+        }
+      ]
+    }
+  ]
+}

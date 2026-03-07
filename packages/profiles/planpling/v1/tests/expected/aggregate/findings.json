@@ -1,0 +1,45 @@
+{
+  "$schema": "intentweave://schemas/findings/v1",
+  "schemaVersion": "0.1",
+  "stage": "Validation",
+  "findings": [
+    {
+      "id": "validation-004",
+      "severity": "info",
+      "category": "deduplication",
+      "message": "21 possible duplicate entities across artifacts",
+      "entities": [
+        "ws_0000|model|kg|action/admin <-> ws_0000|model|kg|action/admin",
+        "ws_0000|model|kg|action/assign <-> ws_0000|model|kg|action/assign",
+        "ws_0000|model|kg|action/delete <-> ws_0000|model|kg|action/delete",
+        "ws_0000|model|kg|action/read <-> ws_0000|model|kg|action/read",
+        "ws_0000|model|kg|action/write <-> ws_0000|model|kg|action/write",
+        "ws_0000|model|kg|resource/assignment <-> ws_0000|model|kg|resource/assignment",
+        "ws_0000|model|kg|resource/document <-> ws_0000|model|kg|resource/document",
+        "ws_0000|model|kg|resource/member <-> ws_0000|model|kg|resource/member",
+        "ws_0000|model|kg|resource/permission <-> ws_0000|model|kg|resource/permission",
+        "ws_0000|model|kg|resource/project <-> ws_0000|model|kg|resource/project",
+        "ws_0000|model|kg|resource/resource <-> ws_0000|model|kg|resource/resource",
+        "ws_0000|model|kg|resource/role <-> ws_0000|model|kg|resource/role",
+        "ws_0000|model|kg|resource/user <-> ws_0000|model|kg|resource/user",
+        "ws_0000|model|kg|resource/workspace <-> ws_0000|model|kg|resource/workspace",
+        "ws_0000|model|kg|role/projectcontributor <-> ws_0000|model|kg|role/projectcontributor",
+        "ws_0000|model|kg|role/projectmaintainer <-> ws_0000|model|kg|role/projectmaintainer",
+        "ws_0000|model|kg|role/projectviewer <-> ws_0000|model|kg|role/projectviewer",
+        "ws_0000|model|kg|role/workspaceadmin <-> ws_0000|model|kg|role/workspaceadmin",
+        "ws_0000|model|kg|role/workspacemember <-> ws_0000|model|kg|role/workspacemember",
+        "ws_0000|model|kg|role/workspaceowner <-> ws_0000|model|kg|role/workspaceowner",
+        "ws_0000|model|kg|rule/req-1 <-> ws_0000|model|kg|rule/req-1"
+      ]
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "byCategory": {
+      "deduplication": 1
+    },
+    "bySeverity": {
+      "info": 1
+    }
+  }
+}

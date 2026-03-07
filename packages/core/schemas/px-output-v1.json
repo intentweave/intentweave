@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intentweave://schemas/px-graph/v1",
+  "title": "IntentWeave PX Stage Output",
+  "description": "Presentation stage output - filtered entities and statements ready for UI/export",
+  "type": "object",
+  "required": ["$schema", "schemaVersion", "stage", "artifactId", "entities", "statements"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "intentweave://schemas/px-graph/v1",
+      "description": "JSON Schema URI"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Schema version"
+    },
+    "processedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Processing timestamp"
+    },
+    "stage": {
+      "type": "string",
+      "const": "PX",
+      "description": "Stage identifier"
+    },
+    "artifactId": {
+      "type": "string",
+      "description": "Artifact identifier"
+    },
+    "parentStage": {
+      "type": "string",
+      "const": "MX",
+      "description": "Parent stage"
+    },
+    "filePath": {
+      "type": "string",
+      "description": "Source file path"
+    },
+    "workspaceKey": {
+      "type": "string",
+      "description": "Workspace key"
+    },
+    "artifactRole": {
+      "type": "string",
+      "description": "Artifact role from profile mapping"
+    },
+    "entities": {
+      "type": "array",
+      "description": "Filtered entities (presentation-ready)",
+      "items": {
+        "$ref": "#/$defs/Entity"
+      }
+    },
+    "statements": {
+      "type": "array",
+      "description": "Filtered statements",
+      "items": {
+        "$ref": "#/$defs/Statement"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Evidence linking to source",
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      }
+    },
+    "filterDecisions": {
+      "type": "array",
+      "description": "Filtering decisions for debugging",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cgId": { "type": "string" },
+          "kept": { "type": "boolean" },
+          "reason": {
+            "type": "string",
+            "enum": ["profile-match", "confidence-threshold", "kind-filter", "explicit-include", "explicit-exclude"]
+          },
+          "originalConfidence": { "type": "number" }
+        },
+        "required": ["cgId", "kept", "reason"]
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Presentation metadata",
+      "properties": {
+        "profile": { "type": "string" },
+        "entitiesBeforeFilter": { "type": "integer" },
+        "entitiesAfterFilter": { "type": "integer" },
+        "statementsBeforeFilter": { "type": "integer" },
+        "statementsAfterFilter": { "type": "integer" },
+        "confidenceThreshold": { "type": "number" },
+        "processingTimeMs": { "type": "integer" }
+      }
+    }
+  },
+  "$defs": {
+    "Entity": {
+      "type": "object",
+      "required": ["cgId", "name", "type"],
+      "properties": {
+        "cgId": {
+          "type": "string",
+          "description": "CodeGraph identifier (format: root|kind|lang|signature)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Entity name"
+        },
+        "type": {
+          "type": "string",
+          "description": "Entity type (resource, state, action, etc.)"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Inferred kind from shape rules"
+        },
+        "description": {
+          "type": "string",
+          "description": "Entity description"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence score"
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Alternative names"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "chunkId": { "type": "string" },
+              "confidence": { "type": "number" }
+            }
+          },
+          "description": "Source provenance"
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Additional attributes"
+        }
+      }
+    },
+    "Statement": {
+      "type": "object",
+      "required": ["subject", "predicate", "object"],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "description": "Subject entity cgId"
+        },
+        "predicate": {
+          "type": "string",
+          "description": "Relationship predicate"
+        },
+        "object": {
+          "type": ["string", "null"],
+          "description": "Object entity cgId or literal value"
+        },
+        "objectValue": {
+          "type": ["string", "null"],
+          "description": "Object literal value (if not cgId)"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence score"
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Evidence" },
+          "description": "Supporting evidence"
+        }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["turnIndex", "text"],
+      "properties": {
+        "turnIndex": {
+          "type": "integer",
+          "description": "Turn/chunk index"
+        },
+        "text": {
+          "type": "string",
+          "description": "Evidence text"
+        },
+        "start": {
+          "type": "integer",
+          "description": "Start character offset"
+        },
+        "end": {
+          "type": "integer",
+          "description": "End character offset"
+        },
+        "chunk_id": {
+          "type": "string",
+          "description": "Source chunk ID"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Evidence confidence"
+        }
+      }
+    }
+  }
+}

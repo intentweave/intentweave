@@ -1,4 +1,60 @@
-// @intentweave/core — placeholder
-// This file will be replaced when copying from codegraphchat-v2/packages/core/src/
+/**
+ * @intentweave/core
+ * 
+ * Core types, utilities, and interfaces for IntentWeave.
+ * This package contains the foundational types shared across all IntentWeave packages.
+ */
 
-export const VERSION = '0.1.0';
+// Types (includes EntityType, ENTITY_TYPES - the single source of truth)
+export * from './types/index.js';
+
+// cgId utilities
+export * from './cgId/index.js';
+
+// Predicates (includes Predicate, PREDICATES - the single source of truth)
+export * from './predicates/index.js';
+
+// Shapes - explicit exports to avoid conflicts with extractionSchema
+export { 
+  SHAPE_RULES,
+  shapeCheck,
+  isKnownPredicate,
+  getPredicatesForSubjectType,
+  getPredicatesForObjectType,
+  getAllowedSubjectTypes,
+  getAllowedObjectTypes,
+  type ShapeCheckResult,
+} from './shapes/index.js';
+
+// Workspace
+export * from './workspace/index.js';
+
+// Canonical Output (JSON writer, schema headers)
+export * from './output/index.js';
+
+// JSON Schemas (includes extractionSchema with UNIFIED_EXTRACTION_SCHEMA)
+export * from './schemas/index.js';
+
+// Interfaces
+export * from './interfaces.js';
+
+// Token usage & cost tracking
+export * from './tokenUsage.js';
+
+// Error hierarchy
+export * from './errors.js';
+
+// Retry utility
+export * from './retry.js';
+
+// Transcripts (chat/conversation as first-class artifacts)
+export * from './transcripts/index.js';
+
+// Reports (actionable reports for humans + AI assistants)
+export * from './reports/index.js';
+
+// Bundle (consolidated graph output)
+export * from './bundle/index.js';
+
+// Weave (WX canonicalization stage)
+export * from './weave/index.js';

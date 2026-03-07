@@ -11,7 +11,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "src", "planpling"],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

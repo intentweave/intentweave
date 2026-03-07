@@ -9,11 +9,42 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    },
+    "./cgId": {
+      "types": "./dist/cgId/index.d.ts",
+      "import": "./dist/cgId/index.js"
+    },
+    "./predicates": {
+      "types": "./dist/predicates/index.d.ts",
+      "import": "./dist/predicates/index.js"
+    },
+    "./shapes": {
+      "types": "./dist/shapes/index.d.ts",
+      "import": "./dist/shapes/index.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace/index.d.ts",
+      "import": "./dist/workspace/index.js"
+    },
+    "./interfaces": {
+      "types": "./dist/interfaces.d.ts",
+      "import": "./dist/interfaces.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "import": "./dist/schemas/index.js"
+    },
+    "./schemas/*.json": {
+      "import": "./schemas/*.json"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "src", "schemas"],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r schemas dist/",
     "test": "vitest run",
     "test:unit": "vitest run",
     "typecheck": "tsc --noEmit",

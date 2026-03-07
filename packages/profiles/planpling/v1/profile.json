@@ -1,0 +1,31 @@
+{
+  "$schema": "intentweave://schemas/profile/v1",
+  "schemaVersion": "0.1",
+  "meta": {
+    "name": "planpling",
+    "version": "1.0.0",
+    "description": "Profile pack for planpling IAM role modeling",
+    "author": "IntentWeave Team",
+    "tags": ["iam", "security", "planpling", "access-control"]
+  },
+  "shapes": {
+    "directories": ["./shapes"]
+  },
+  "rules": {
+    "directories": ["./rules"]
+  },
+  "extractionHints": {
+    "domainConcepts": [
+      "planpling role",
+      "IAM permission",
+      "access control",
+      "resource hierarchy",
+      "delegation pattern"
+    ],
+    "keyPatterns": [
+      "role assignment",
+      "permission inheritance",
+      "scope boundaries"
+    ]
+  }
+}

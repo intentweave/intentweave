@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intentweave://schemas/run-meta/v1",
+  "title": "IntentWeave Run Metadata",
+  "description": "Metadata for an IntentWeave extraction run, stored in run.meta.json",
+  "type": "object",
+  "required": ["runId", "workspaceId", "startedAt", "status"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "intentweave://schemas/run-meta/v1",
+      "description": "JSON Schema URI for validation"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Schema version for forward compatibility"
+    },
+    "processedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Processing timestamp (ISO 8601)"
+    },
+    "runId": {
+      "type": "string",
+      "description": "Unique run identifier"
+    },
+    "workspaceId": {
+      "type": "string",
+      "pattern": "^ws_[a-f0-9]{4,8}$",
+      "description": "Stable workspace ID (used in cgIds)"
+    },
+    "workspaceKey": {
+      "type": "string",
+      "description": "Human-readable workspace key"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Run start timestamp"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Run completion timestamp"
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Run duration in milliseconds"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running", "completed", "failed"],
+      "description": "Current run status"
+    },
+    "profile": {
+      "type": "string",
+      "description": "Profile used for this run"
+    },
+    "stages": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Stages completed in this run"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Artifacts processed in this run"
+    },
+    "summary": {
+      "type": "object",
+      "description": "Summary statistics",
+      "properties": {
+        "entityCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total entity count"
+        },
+        "statementCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total statement count"
+        },
+        "artifactCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Artifact count"
+        }
+      },
+      "required": ["entityCount", "statementCount", "artifactCount"]
+    },
+    "extractionConfig": {
+      "type": "object",
+      "description": "Extraction configuration for parity evaluation",
+      "properties": {
+        "requested": {
+          "type": "object",
+          "description": "Requested settings (what was asked for)",
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "LLM model name (snapshot preferred)"
+            },
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "description": "Temperature setting"
+            },
+            "maxOutputTokens": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Max output tokens per request"
+            },
+            "extractionMode": {
+              "type": "string",
+              "enum": ["single-pass", "two-pass", "multi-pass"],
+              "description": "Extraction mode"
+            },
+            "provider": {
+              "type": "string",
+              "description": "Provider name (openai, mock, smart-mock)"
+            }
+          },
+          "required": ["model", "temperature", "maxOutputTokens", "extractionMode", "provider"]
+        },
+        "effective": {
+          "type": "object",
+          "description": "Effective settings (what the provider actually used)",
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "Model actually used by provider"
+            },
+            "temperature": {
+              "type": "number",
+              "description": "Temperature actually used"
+            },
+            "maxOutputTokens": {
+              "type": "integer",
+              "description": "Max tokens actually used (may be clamped)"
+            }
+          },
+          "required": ["model", "temperature", "maxOutputTokens"]
+        },
+        "promptVersionHash": {
+          "type": "string",
+          "description": "Hash of prompt templates (for reproducibility)"
+        }
+      },
+      "required": ["requested"]
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message if failed"
+    }
+  }
+}

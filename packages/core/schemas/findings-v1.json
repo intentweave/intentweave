@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intentweave://schemas/findings/v1",
+  "title": "IntentWeave Findings Report",
+  "description": "Aggregated findings from the analysis pipeline",
+  "type": "object",
+  "required": ["$schema", "schemaVersion", "stage", "runId", "workspaceKey", "summary", "findings"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "intentweave://schemas/findings/v1",
+      "description": "JSON Schema URI"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Schema version"
+    },
+    "processedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Processing timestamp"
+    },
+    "stage": {
+      "type": "string",
+      "const": "FINDINGS",
+      "description": "Stage identifier"
+    },
+    "runId": {
+      "type": "string",
+      "description": "Run identifier"
+    },
+    "workspaceKey": {
+      "type": "string",
+      "description": "Workspace key"
+    },
+    "summary": {
+      "type": "object",
+      "required": ["totalFindings", "criticalCount", "warningCount", "infoCount"],
+      "properties": {
+        "totalFindings": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of findings"
+        },
+        "criticalCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of critical findings"
+        },
+        "warningCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of warning findings"
+        },
+        "infoCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of informational findings"
+        },
+        "byCategory": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" },
+          "description": "Findings count by category"
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "All findings",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Processing metadata",
+      "properties": {
+        "analyzers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Analyzers that contributed findings"
+        },
+        "processingTimeMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Processing time in milliseconds"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Finding": {
+      "type": "object",
+      "required": ["id", "severity", "category", "message"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique finding identifier"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "warning", "info"],
+          "description": "Finding severity"
+        },
+        "category": {
+          "type": "string",
+          "description": "Finding category (e.g., 'consistency', 'coverage', 'quality')"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable finding message"
+        },
+        "details": {
+          "type": "string",
+          "description": "Additional details or context"
+        },
+        "source": {
+          "type": "object",
+          "description": "Source location",
+          "properties": {
+            "artifactId": { "type": "string" },
+            "entityId": { "type": "string" },
+            "line": { "type": "integer", "minimum": 1 },
+            "column": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "relatedEntities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Related entity IDs"
+        },
+        "suggestedFix": {
+          "type": "string",
+          "description": "Suggested remediation"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Finding tags for filtering"
+        }
+      }
+    }
+  }
+}
