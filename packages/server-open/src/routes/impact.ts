@@ -26,7 +26,7 @@ export async function registerImpactRoutes(fastify: FastifyInstance): Promise<vo
           properties: {
             files: { type: 'array', items: { type: 'string' }, description: 'File paths to analyze' },
             session: { type: 'string', description: 'Session ID' },
-            hops: { type: 'number', default: 2, description: 'Ripple analysis depth' },
+            hops: { type: 'integer', default: 2, description: 'Ripple analysis depth' },
             format: { type: 'string', enum: ['markdown', 'json'], default: 'json' },
           },
         },

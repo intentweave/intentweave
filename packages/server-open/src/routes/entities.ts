@@ -20,7 +20,7 @@ export async function registerEntitiesRoutes(fastify: FastifyInstance): Promise<
             type: { type: 'string', description: 'Filter by entity type (e.g., component, decision, technology)' },
             search: { type: 'string', description: 'Search by name (case-insensitive contains)' },
             session: { type: 'string', description: 'Session ID' },
-            limit: { type: 'number', default: 50 },
+            limit: { type: 'integer', default: 50 },
           },
         },
         response: {
@@ -57,7 +57,7 @@ export async function registerEntitiesRoutes(fastify: FastifyInstance): Promise<
 
       // Build Cypher dynamically
       const conditions: string[] = [];
-      const params: Record<string, unknown> = { limit };
+      const params: Record<string, unknown> = { limit: Math.round(limit) };
       if (sessionId) {
         conditions.push('n.session_id = $sid');
         params.sid = sessionId;

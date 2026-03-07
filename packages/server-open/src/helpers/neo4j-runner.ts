@@ -2,6 +2,7 @@
  * Neo4jRunner adapter — bridges the Fastify neo4j driver to the CLI's Neo4jRunner interface.
  */
 import type { Driver } from 'neo4j-driver';
+import neo4j from 'neo4j-driver';
 
 /**
  * Minimal runner interface matching the CLI's Neo4jRunner.
@@ -9,6 +10,23 @@ import type { Driver } from 'neo4j-driver';
  */
 export interface Neo4jRunner {
   run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]>;
+}
+
+/**
+ * Convert JS numbers that look like integers to neo4j.int() so the driver
+ * sends them as Neo4j Integer rather than Float.
+ */
+function coerceParams(params?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!params) return params;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v === 'number' && Number.isInteger(v)) {
+      out[k] = neo4j.int(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 /**
@@ -22,7 +40,7 @@ export function createRunnerFromDriver(driver: Driver, database?: string): Neo4j
     async run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> {
       const session = driver.session({ database: database ?? 'neo4j' });
       try {
-        const result = await session.run(cypher, params);
+        const result = await session.run(cypher, coerceParams(params));
         return result.records.map((record) => {
           const obj: Record<string, unknown> = {};
           for (const key of record.keys) {

@@ -23,7 +23,7 @@ export async function registerQueryRoutes(fastify: FastifyInstance): Promise<voi
             question: { type: 'string', description: 'Natural language question (LLM translates to Cypher)' },
             cypher: { type: 'string', description: 'Raw Cypher query (bypasses LLM)' },
             session: { type: 'string', description: 'Session ID to scope the query' },
-            limit: { type: 'number', default: 25, description: 'Maximum results to return' },
+            limit: { type: 'integer', default: 25, description: 'Maximum results to return' },
             format: { type: 'string', enum: ['table', 'json'], default: 'json' },
           },
         },
@@ -31,7 +31,7 @@ export async function registerQueryRoutes(fastify: FastifyInstance): Promise<voi
           200: {
             type: 'object',
             properties: {
-              results: { type: 'array', items: { type: 'object' } },
+              results: { type: 'array', items: { type: 'object', additionalProperties: true } },
               cypher: { type: 'string', description: 'The Cypher query that was executed' },
               summary: { type: 'string', description: 'LLM-generated summary (NL mode only)' },
               count: { type: 'number' },
