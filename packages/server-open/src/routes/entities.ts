@@ -45,7 +45,7 @@ export async function registerEntitiesRoutes(fastify: FastifyInstance): Promise<
       },
     },
     async (_request, reply) => {
-      return reply.status(501).send({ error: 'Not yet implemented — wiring to entity query logic' });
+      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to entity query logic' });
     },
   );
 }

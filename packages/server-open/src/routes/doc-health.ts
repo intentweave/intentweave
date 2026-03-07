@@ -49,7 +49,7 @@ export async function registerDocHealthRoutes(fastify: FastifyInstance): Promise
       },
     },
     async (_request, reply) => {
-      return reply.status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli doc-health module' });
+      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli doc-health module' });
     },
   );
 }

@@ -36,7 +36,7 @@ export async function registerPersistRoutes(fastify: FastifyInstance): Promise<v
       },
     },
     async (_request, reply) => {
-      return reply.status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli persist module' });
+      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli persist module' });
     },
   );
 }

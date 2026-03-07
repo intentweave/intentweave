@@ -38,11 +38,11 @@ export async function registerQueryRoutes(fastify: FastifyInstance): Promise<voi
         },
       },
     },
-    async (request, reply) => {
+    async (_request, reply) => {
       // TODO: Wire to @intentweave/cli query module
       // const { question, cypher, session, limit, format } = request.body as any;
       // const ctx = (request as any).ctx;
-      return reply.status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli query module' });
+      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli query module' });
     },
   );
 }

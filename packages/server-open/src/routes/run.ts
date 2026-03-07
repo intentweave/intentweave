@@ -50,7 +50,7 @@ export async function registerRunRoutes(fastify: FastifyInstance): Promise<void>
       },
     },
     async (_request, reply) => {
-      return reply.status(501).send({ error: 'Not yet implemented — wiring to @intentweave/analyzer pipeline' });
+      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/analyzer pipeline' });
     },
   );
 
@@ -70,7 +70,7 @@ export async function registerRunRoutes(fastify: FastifyInstance): Promise<void>
       },
     },
     async (_request, reply) => {
-      return reply.status(501).send({ error: 'Not yet implemented' });
+      return (reply as any).status(501).send({ error: 'Not yet implemented' });
     },
   );
 }

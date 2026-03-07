@@ -26,7 +26,7 @@ export async function registerSchemaRoutes(fastify: FastifyInstance): Promise<vo
       },
     },
     async (_request, reply) => {
-      return reply.status(501).send({ error: 'Not yet implemented — wiring to kg_schema logic' });
+      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to kg_schema logic' });
     },
   );
 }
