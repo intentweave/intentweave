@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify';
+import type { Driver } from 'neo4j-driver';
+import { createRunnerFromDriver } from '../helpers/index.js';
 
 /**
  * POST /api/query — Natural language or Cypher query against the knowledge graph.
@@ -38,11 +40,43 @@ export async function registerQueryRoutes(fastify: FastifyInstance): Promise<voi
         },
       },
     },
-    async (_request, reply) => {
-      // TODO: Wire to @intentweave/cli query module
-      // const { question, cypher, session, limit, format } = request.body as any;
-      // const ctx = (request as any).ctx;
-      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli query module' });
+    async (request, reply) => {
+      const body = request.body as {
+        question?: string; cypher?: string; session?: string; limit?: number; format?: string;
+      };
+      const driver: Driver = (fastify as any).neo4j;
+      const runner = createRunnerFromDriver(driver, (fastify as any).neo4jDatabase);
+
+      if (body.cypher) {
+        // Direct Cypher mode
+        const cypherQuery = body.limit
+          ? ensureLimit(body.cypher, body.limit)
+          : body.cypher;
+
+        const results = await runner.run(cypherQuery);
+        return {
+          results,
+          cypher: cypherQuery,
+          count: results.length,
+        };
+      }
+
+      if (body.question) {
+        // NL mode — requires LLM provider (not yet integrated in server)
+        return (reply as any).status(501).send({
+          error: 'Natural language query requires LLM integration. Use cypher mode or the iw CLI.',
+        });
+      }
+
+      return (reply as any).status(400).send({
+        error: 'Provide either question (NL) or cypher (raw Cypher query)',
+      });
     },
   );
+}
+
+/** Append LIMIT if not already present */
+function ensureLimit(cypher: string, limit: number): string {
+  if (/\bLIMIT\b/i.test(cypher)) return cypher;
+  return `${cypher.trimEnd()}\nLIMIT ${limit}`;
 }

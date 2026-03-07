@@ -1,4 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import type { Driver } from 'neo4j-driver';
+import { analyzeDocHealth, formatDocHealthMarkdown } from '@intentweave/cli/doc-health';
+import { createRunnerFromDriver } from '../helpers/index.js';
 
 /**
  * POST /api/doc-health — Documentation freshness analysis.
@@ -48,8 +51,31 @@ export async function registerDocHealthRoutes(fastify: FastifyInstance): Promise
         },
       },
     },
-    async (_request, reply) => {
-      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli doc-health module' });
+    async (request) => {
+      const { files, session } = request.body as {
+        files?: string[]; session?: string; format?: string;
+      };
+      const ctx = (request as any).ctx as { sessionId: string };
+      const sessionId = session ?? ctx.sessionId;
+      const driver: Driver = (fastify as any).neo4j;
+      const runner = createRunnerFromDriver(driver, (fastify as any).neo4jDatabase);
+
+      const result = await analyzeDocHealth({
+        runner,
+        sessionId,
+        files,
+        log: (msg: string) => fastify.log.debug(msg),
+      });
+
+      return {
+        reports: result.reports.map((r: any) => ({
+          file: r.filePath,
+          status: r.status,
+          score: r.freshnessPercent,
+          issues: r.issues,
+        })),
+        summary: formatDocHealthMarkdown(result),
+      };
     },
   );
 }

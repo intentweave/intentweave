@@ -36,7 +36,12 @@ export async function registerPersistRoutes(fastify: FastifyInstance): Promise<v
       },
     },
     async (_request, reply) => {
-      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli persist module' });
+      // Persist requires reading KX results from disk (.iw/runs/<runId>/).
+      // Server-side integration needs a workspace root path and run locator.
+      // This will be wired once the iw run server-side workflow is implemented.
+      return (reply as any).status(501).send({
+        error: 'Persist endpoint requires server-side run storage. Use `iw persist` CLI for now.',
+      });
     },
   );
 }

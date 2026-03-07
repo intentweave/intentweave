@@ -50,7 +50,12 @@ export async function registerRunRoutes(fastify: FastifyInstance): Promise<void>
       },
     },
     async (_request, reply) => {
-      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/analyzer pipeline' });
+      // Pipeline execution requires LLM provider config, file system access,
+      // and async run management (SSE progress, run storage).
+      // This will be wired once server-side LLM and workspace integration is ready.
+      return (reply as any).status(501).send({
+        error: 'Pipeline execution endpoint requires LLM + workspace configuration. Use `iw run` CLI for now.',
+      });
     },
   );
 

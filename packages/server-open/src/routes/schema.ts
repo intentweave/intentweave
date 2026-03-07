@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify';
+import { CANONICAL_PREDICATES } from '@intentweave/core/predicates';
+import { ENTITY_TYPES } from '@intentweave/core/types';
 
 /**
  * GET /api/schema — Describe the knowledge graph schema.
@@ -25,8 +27,13 @@ export async function registerSchemaRoutes(fastify: FastifyInstance): Promise<vo
         },
       },
     },
-    async (_request, reply) => {
-      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to kg_schema logic' });
+    async () => {
+      return {
+        nodeLabels: ['Canon', 'Entity', 'RawTriple', 'Session', 'CodeRef'],
+        relationshipTypes: ['CANON_REL', 'CANONICALIZED_FROM', 'CONTAINS', 'REALIZED_BY'],
+        canonicalPredicates: Object.values(CANONICAL_PREDICATES),
+        entityTypes: [...ENTITY_TYPES],
+      };
     },
   );
 }

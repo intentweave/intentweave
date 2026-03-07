@@ -1,4 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import type { Driver } from 'neo4j-driver';
+import { runCrossLayerLinker, persistCrossLinks, formatXLinkReport } from '@intentweave/cli/linker';
+import { createRunnerFromDriver } from '../helpers/index.js';
 
 /**
  * POST /api/xlink — Cross-layer code linking.
@@ -43,13 +46,44 @@ export async function registerXlinkRoutes(fastify: FastifyInstance): Promise<voi
               codeRefs: { type: 'number' },
               realizedBy: { type: 'number' },
               byStrategy: { type: 'object' },
+              summary: { type: 'string' },
             },
           },
         },
       },
     },
-    async (_request, reply) => {
-      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli xlink module' });
+    async (request) => {
+      const body = request.body as {
+        directory: string; session?: string;
+        strategies?: ('dep' | 'import' | 'name' | 'path')[];
+        persist?: boolean;
+      };
+      const ctx = (request as any).ctx as { sessionId: string };
+      const sessionId = body.session ?? ctx.sessionId;
+      const driver: Driver = (fastify as any).neo4j;
+      const runner = createRunnerFromDriver(driver, (fastify as any).neo4jDatabase);
+
+      const result = await runCrossLayerLinker({
+        runner,
+        sessionId,
+        codebaseDir: body.directory,
+        strategies: body.strategies as any,
+        log: (msg: string) => fastify.log.debug(msg),
+      });
+
+      // Persist if requested
+      if (body.persist) {
+        await persistCrossLinks(runner, sessionId, result.links, (msg: string) => fastify.log.debug(msg));
+      }
+
+      return {
+        matched: result.stats.linkedEntities,
+        total: result.stats.totalCanonEntities,
+        codeRefs: result.stats.totalCodeRefs,
+        realizedBy: result.links.length,
+        byStrategy: result.stats.byStrategy,
+        summary: formatXLinkReport(result),
+      };
     },
   );
 }

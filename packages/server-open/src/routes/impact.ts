@@ -1,4 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import type { Driver } from 'neo4j-driver';
+import { analyzeImpact, formatImpactMarkdown } from '@intentweave/cli/impact';
+import { createRunnerFromDriver } from '../helpers/index.js';
 
 /**
  * POST /api/impact — Semantic impact analysis.
@@ -40,8 +43,28 @@ export async function registerImpactRoutes(fastify: FastifyInstance): Promise<vo
         },
       },
     },
-    async (_request, reply) => {
-      return (reply as any).status(501).send({ error: 'Not yet implemented — wiring to @intentweave/cli impact module' });
+    async (request) => {
+      const { files, session, hops = 2 } = request.body as {
+        files: string[]; session?: string; hops?: number; format?: string;
+      };
+      const ctx = (request as any).ctx as { sessionId: string };
+      const sessionId = session ?? ctx.sessionId;
+      const driver: Driver = (fastify as any).neo4j;
+      const runner = createRunnerFromDriver(driver, (fastify as any).neo4jDatabase);
+
+      const result = await analyzeImpact(files, {
+        runner,
+        sessionId,
+        hops,
+        log: (msg: string) => fastify.log.debug(msg),
+      });
+
+      return {
+        directImpact: result.directEntities,
+        rippleImpact: result.rippleEntities,
+        risks: result.risks,
+        summary: formatImpactMarkdown(result),
+      };
     },
   );
 }
