@@ -1,0 +1,35 @@
+{
+  "name": "intentweave",
+  "private": true,
+  "description": "Semantic knowledge extraction platform — build queryable knowledge graphs from documents and code",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intentweave/intentweave.git"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "turbo run build",
+    "build:packages": "turbo run build --filter='./packages/*'",
+    "dev": "turbo run dev --parallel",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write '**/*.{ts,tsx,json,md}'",
+    "format:check": "prettier --check '**/*.{ts,tsx,json,md}'"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

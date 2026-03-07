@@ -1,0 +1,54 @@
+{
+  "name": "@intentweave/cli",
+  "version": "0.1.0",
+  "description": "Command-line interface for IntentWeave — iw commands + MCP server",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "intentweave": "./dist/cli.js",
+    "iw": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'TODO: eslint'",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@intentweave/analyzer": "workspace:*",
+    "@intentweave/core": "workspace:*",
+    "@intentweave/profiles": "workspace:*",
+    "chalk": "^5.3.0",
+    "chokidar": "^5.0.0",
+    "commander": "^12.1.0",
+    "glob": "^11.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "intentweave": {
+    "tier": "oss",
+    "description": "CLI and MCP server — open-source entry point for users"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intentweave/intentweave.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,43 @@
+# Docker Compose for IntentWeave development
+# Starts Neo4j + IntentWeave server
+
+services:
+  neo4j:
+    image: neo4j:5-enterprise
+    container_name: iw-neo4j
+    ports:
+      - "7474:7474"   # Browser
+      - "7687:7687"   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/intentweave
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: iw-server
+    ports:
+      - "3000:3000"
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: intentweave
+      NEO4J_DATABASE: neo4j
+      IW_SESSION: default
+      PORT: 3000
+      LOG_LEVEL: info
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+volumes:
+  neo4j-data:

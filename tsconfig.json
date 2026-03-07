@@ -1,0 +1,13 @@
+{
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/analyzer" },
+    { "path": "packages/cli" },
+    { "path": "packages/server-core" },
+    { "path": "packages/server-open" },
+    { "path": "packages/profiles" },
+    { "path": "packages/ast-extractor" },
+    { "path": "apps/server" }
+  ],
+  "files": []
+}

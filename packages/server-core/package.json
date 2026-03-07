@@ -1,0 +1,52 @@
+{
+  "name": "@intentweave/server-core",
+  "version": "0.1.0",
+  "description": "IntentWeave server foundation — Fastify, Neo4j pool, session/workspace middleware, plugin system",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'TODO: eslint'",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@intentweave/core": "workspace:*",
+    "fastify": "^5.2.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/swagger": "^9.4.0",
+    "@fastify/swagger-ui": "^5.2.0",
+    "@fastify/type-provider-zod": "^4.0.0",
+    "fastify-plugin": "^5.0.0",
+    "neo4j-driver": "^5.27.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "intentweave": {
+    "tier": "oss",
+    "description": "Server foundation — Fastify, Neo4j pool, middleware. Always open-source."
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intentweave/intentweave.git",
+    "directory": "packages/server-core"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "@intentweave/analyzer",
+  "version": "0.1.0",
+  "description": "Analysis engine for IntentWeave knowledge extraction — pipeline stages IN, FX, KX, GX",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'TODO: eslint'",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@intentweave/core": "workspace:*",
+    "@intentweave/profiles": "workspace:*",
+    "@intentweave/ast-extractor": "workspace:*",
+    "glob": "^10.3.0"
+  },
+  "peerDependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "zod": "^3.23.8"
+  },
+  "intentweave": {
+    "tier": "oss",
+    "description": "Pipeline engine (IN→FX→KX→GX) — core extraction, must stay open-source"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intentweave/intentweave.git",
+    "directory": "packages/analyzer"
+  }
+}
