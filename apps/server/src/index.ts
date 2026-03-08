@@ -14,6 +14,8 @@
  *   NEO4J_DATABASE  — Neo4j database           (default: neo4j)
  *   IW_SESSION      — Default session ID       (default: default)
  *   IW_WORKSPACE_ROOT — Workspace root directory (enables run/persist endpoints)
+ *   OPENAI_API_KEY  — OpenAI API key          (enables NL query + topic context)
+ *   IW_LLM_MODEL    — LLM model name          (default: gpt-4o-mini)
  *   PORT            — Server port              (default: 3000)
  *   HOST            — Server host              (default: 0.0.0.0)
  *   LOG_LEVEL       — Log level                (default: info)
@@ -37,6 +39,13 @@ async function main(): Promise<void> {
     },
     defaultSession: process.env.IW_SESSION ?? "default",
     workspaceRoot: process.env.IW_WORKSPACE_ROOT,
+    llm: process.env.OPENAI_API_KEY
+      ? {
+          provider: "openai" as const,
+          apiKey: process.env.OPENAI_API_KEY,
+          model: process.env.IW_LLM_MODEL ?? "gpt-4o-mini",
+        }
+      : undefined,
     host,
     port,
     logLevel: (process.env.LOG_LEVEL as any) ?? "info",

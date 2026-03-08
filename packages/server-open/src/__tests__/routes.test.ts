@@ -241,7 +241,7 @@ describe("POST /api/context", () => {
     expect(body).toHaveProperty("context");
   });
 
-  it("returns 400 for topic query (requires LLM)", async () => {
+  it("returns 501 for topic query without LLM config", async () => {
     const res = await server.inject({
       method: "POST",
       url: "/api/context",
@@ -250,7 +250,79 @@ describe("POST /api/context", () => {
         session: "test-session",
       },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(501);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Query routes with LLM config (mock LLM → validates route logic)
+// ═══════════════════════════════════════════════════════════════
+
+describe("POST /api/query (with LLM config)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    server = await buildTestServer({
+      config: {
+        llm: {
+          provider: "smart-mock",
+        },
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it("NL query with smart-mock provider attempts execution", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/query",
+      payload: {
+        question: "What components exist?",
+        session: "test-session",
+      },
+    });
+    // smart-mock may generate invalid Cypher → 422 after retry,
+    // or succeed if the mock output happens to be valid Cypher.
+    // Either way, it should NOT return 501 anymore.
+    expect(res.statusCode).not.toBe(501);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Context routes with LLM config
+// ═══════════════════════════════════════════════════════════════
+
+describe("POST /api/context (with LLM config)", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    server = await buildTestServer({
+      config: {
+        llm: {
+          provider: "smart-mock",
+        },
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it("topic query with smart-mock attempts context building", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/context",
+      payload: {
+        topic: "authentication",
+        session: "test-session",
+      },
+    });
+    // With LLM configured, should NOT return 501
+    expect(res.statusCode).not.toBe(501);
   });
 });
 

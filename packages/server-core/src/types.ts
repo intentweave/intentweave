@@ -24,6 +24,20 @@ export interface ServerConfig {
    */
   workspaceRoot?: string;
 
+  /**
+   * LLM provider configuration.
+   * Required for natural-language query and topic-based context.
+   * If not set, NL query returns 501 and topic context returns 400.
+   */
+  llm?: {
+    /** Provider: 'openai' or 'smart-mock' */
+    provider: "openai" | "smart-mock";
+    /** API key (required for openai provider) */
+    apiKey?: string;
+    /** Model name (default: gpt-4o-mini) */
+    model?: string;
+  };
+
   /** Server host. Default: '0.0.0.0' */
   host?: string;
 

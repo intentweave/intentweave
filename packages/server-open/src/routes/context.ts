@@ -3,6 +3,7 @@
 
 import type { FastifyInstance } from "fastify";
 import type { Driver } from "neo4j-driver";
+import type { ServerConfig } from "@intentweave/server-core";
 import {
   buildTopicContext,
   buildEntityContext,
@@ -12,7 +13,7 @@ import {
   formatContextMarkdown,
   formatContextJson,
 } from "@intentweave/cli/context";
-import { createRunnerFromDriver } from "../helpers/index.js";
+import { createRunnerFromDriver, createLlmComplete } from "../helpers/index.js";
 
 /**
  * POST /api/context — Build RAG context from the knowledge graph.
@@ -27,6 +28,9 @@ import { createRunnerFromDriver } from "../helpers/index.js";
 export async function registerContextRoutes(
   fastify: FastifyInstance,
 ): Promise<void> {
+  const config: ServerConfig = (fastify as any).config;
+  const llmComplete = createLlmComplete(config);
+
   fastify.post(
     "/api/context",
     {
@@ -121,12 +125,24 @@ export async function registerContextRoutes(
       } else if (body.all) {
         bundle = await buildFullContext(opts);
       } else if (body.topic) {
-        // Topic mode requires an LLM — return 400 if not available
-        // For now, return an error. Server-side LLM integration will be added later.
-        return (reply as any).status(400).send({
-          error:
-            "Topic-based context requires an LLM provider. Use entity or all mode, or add LLM config.",
-        });
+        // Topic mode requires LLM to pick relevant seed entities
+        if (!llmComplete) {
+          return (reply as any).status(501).send({
+            error:
+              "Topic-based context requires LLM configuration. " +
+              "Set OPENAI_API_KEY or use entity/all mode.",
+          });
+        }
+
+        // Create LLMCompleter (the function shape buildTopicContext expects)
+        const llm = async (llmOpts: {
+          system: string;
+          userMessage: string;
+        }): Promise<string> => {
+          return llmComplete(llmOpts);
+        };
+
+        bundle = await buildTopicContext(body.topic, { ...opts, llm });
       } else {
         return (reply as any).status(400).send({
           error: "Provide one of: topic, entity, or all=true",
