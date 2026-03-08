@@ -6,14 +6,16 @@ import { QueryBar } from "./components/QueryBar.js";
 import { DecisionTree } from "./components/DecisionTree.js";
 import { Legend } from "./components/Legend.js";
 import { MetaBar } from "./components/MetaBar.js";
+import { NodeDetail } from "./components/NodeDetail.js";
 import { fetchInsight, checkHealth } from "./api/insight.js";
-import type { InsightResponse, NodeKind } from "./types.js";
+import type { InsightResponse, InsightNode, NodeKind } from "./types.js";
 
 export function App() {
   const [insight, setInsight] = useState<InsightResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
+  const [selectedNode, setSelectedNode] = useState<InsightNode | null>(null);
 
   // Check backend health on mount
   useEffect(() => {
@@ -23,6 +25,7 @@ export function App() {
   const handleQuery = useCallback(async (question: string) => {
     setLoading(true);
     setError(null);
+    setSelectedNode(null);
 
     try {
       const result = await fetchInsight({
@@ -42,6 +45,16 @@ export function App() {
   const activeKinds = insight
     ? (new Set(insight.data.nodes.map((n) => n.kind)) as Set<NodeKind>)
     : undefined;
+
+  /** Navigate to a node by ID (from connection links in the detail panel). */
+  const handleNavigate = useCallback(
+    (nodeId: string) => {
+      if (!insight) return;
+      const target = insight.data.nodes.find((n) => n.id === nodeId);
+      if (target) setSelectedNode(target);
+    },
+    [insight],
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -145,7 +158,20 @@ export function App() {
 
         {/* Visualization */}
         {insight && insight.data.nodes.length > 1 && (
-          <DecisionTree data={insight.data} />
+          <DecisionTree
+            data={insight.data}
+            selectedNodeId={selectedNode?.id}
+            onNodeClick={setSelectedNode}
+          />
+        )}
+
+        {/* Node detail side panel */}
+        {selectedNode && (
+          <NodeDetail
+            node={selectedNode}
+            onClose={() => setSelectedNode(null)}
+            onNavigate={handleNavigate}
+          />
         )}
 
         {/* Empty result state */}

@@ -28,6 +28,19 @@ export interface InsightNode {
   kind: NodeKind;
   description?: string;
   confidence?: number;
+  aliases?: string[];
+  sourceDoc?: string;
+  runId?: string;
+  /** 1-based temporal sequence among decisions (1 = earliest run). */
+  temporalOrder?: number;
+  connections?: InsightConnection[];
+}
+
+export interface InsightConnection {
+  targetId: string;
+  targetLabel: string;
+  predicate: string;
+  direction: "outgoing" | "incoming";
 }
 
 export interface InsightEdge {

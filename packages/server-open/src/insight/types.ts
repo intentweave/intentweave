@@ -40,6 +40,23 @@ export interface InsightNode {
   kind: NodeKind;
   description?: string;
   confidence?: number;
+  /** Alternate surface forms from the KG. */
+  aliases?: string[];
+  /** Source document / artifact this entity was extracted from. */
+  sourceDoc?: string;
+  /** Run ID — used for temporal ordering (later runs = more recent thinking). */
+  runId?: string;
+  /** 1-based temporal sequence among decisions (1 = earliest run). */
+  temporalOrder?: number;
+  /** Connections to other nodes (populated for detail panel). */
+  connections?: InsightConnection[];
+}
+
+export interface InsightConnection {
+  targetId: string;
+  targetLabel: string;
+  predicate: string;
+  direction: "outgoing" | "incoming";
 }
 
 export interface InsightEdge {

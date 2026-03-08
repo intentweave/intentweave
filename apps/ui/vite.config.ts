@@ -11,11 +11,11 @@ export default defineConfig({
     port: 5174,
     proxy: {
       "/api": {
-        target: "http://localhost:3000",
+        target: `http://localhost:${process.env.IW_SERVER_PORT ?? "3100"}`,
         changeOrigin: true,
       },
       "/health": {
-        target: "http://localhost:3000",
+        target: `http://localhost:${process.env.IW_SERVER_PORT ?? "3100"}`,
         changeOrigin: true,
       },
     },

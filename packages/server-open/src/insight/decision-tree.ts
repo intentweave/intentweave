@@ -19,6 +19,7 @@ import type {
   InsightResponse,
   InsightNode,
   InsightEdge,
+  InsightConnection,
   NodeKind,
 } from "./types.js";
 
@@ -98,6 +99,28 @@ const STOP_WORDS = new Set([
   "decision",
 ]);
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Safely coerce a Neo4j value to string[] or undefined. */
+function asStringArray(val: unknown): string[] | undefined {
+  if (Array.isArray(val) && val.length > 0) return val.map(String);
+  return undefined;
+}
+
+/** Append a connection entry to the map. */
+function addConnection(
+  map: Map<string, InsightConnection[]>,
+  nodeId: string,
+  conn: InsightConnection,
+): void {
+  let list = map.get(nodeId);
+  if (!list) {
+    list = [];
+    map.set(nodeId, list);
+  }
+  list.push(conn);
+}
+
 // ── Runner interface ─────────────────────────────────────────────────────────
 
 interface CypherRunner {
@@ -147,7 +170,8 @@ export async function buildDecisionTree(
     MATCH (d:Canon:Entity {session_id: "${sid}"})
     WHERE d.type = 'decision'
     ${topicFilter}
-    RETURN d.canonId AS id, d.name AS name, d.type AS type, d.confidence AS confidence
+    RETURN d.canonId AS id, d.name AS name, d.type AS type, d.confidence AS confidence,
+           d.aliases AS aliases, d.run_id AS runId, d.artifactId AS artifactId
     LIMIT ${maxDecisions}
   `);
 
@@ -157,7 +181,8 @@ export async function buildDecisionTree(
     decisionsToUse = await runner.run(`
       MATCH (d:Canon:Entity {session_id: "${sid}"})
       WHERE d.type = 'decision'
-      RETURN d.canonId AS id, d.name AS name, d.type AS type, d.confidence AS confidence
+      RETURN d.canonId AS id, d.name AS name, d.type AS type, d.confidence AS confidence,
+             d.aliases AS aliases, d.run_id AS runId, d.artifactId AS artifactId
       LIMIT ${maxDecisions}
     `);
   }
@@ -194,13 +219,16 @@ export async function buildDecisionTree(
     WHERE (a.canonId IN [${idList}] OR b.canonId IN [${idList}])
     AND r.predicate IN [${predList}]
     RETURN a.canonId  AS sourceId,   a.name  AS sourceName, a.type  AS sourceType, a.confidence AS sourceConf,
+           a.aliases AS sourceAliases, a.run_id AS sourceRunId, a.artifactId AS sourceArtifactId,
            r.predicate AS predicate,
-           b.canonId  AS targetId,   b.name  AS targetName, b.type  AS targetType, b.confidence AS targetConf
+           b.canonId  AS targetId,   b.name  AS targetName, b.type  AS targetType, b.confidence AS targetConf,
+           b.aliases AS targetAliases, b.run_id AS targetRunId, b.artifactId AS targetArtifactId
     LIMIT ${maxEdges}
   `);
 
   // ── Step 3: Assemble nodes + edges ───────────────────────────────────────
   const nodeMap = new Map<string, InsightNode>();
+  const connectionMap = new Map<string, InsightConnection[]>();
   const edges: InsightEdge[] = [];
 
   // Root node
@@ -219,6 +247,9 @@ export async function buildDecisionTree(
         label: d.name as string,
         kind: "decision",
         confidence: d.confidence as number | undefined,
+        aliases: asStringArray(d.aliases),
+        sourceDoc: d.artifactId as string | undefined,
+        runId: d.runId as string | undefined,
       });
     }
     edges.push({ source: rootId, target: id, label: "" });
@@ -242,6 +273,9 @@ export async function buildDecisionTree(
           false,
         ),
         confidence: row.sourceConf as number | undefined,
+        aliases: asStringArray(row.sourceAliases),
+        sourceDoc: row.sourceArtifactId as string | undefined,
+        runId: row.sourceRunId as string | undefined,
       });
     }
 
@@ -257,10 +291,48 @@ export async function buildDecisionTree(
           true,
         ),
         confidence: row.targetConf as number | undefined,
+        aliases: asStringArray(row.targetAliases),
+        sourceDoc: row.targetArtifactId as string | undefined,
+        runId: row.targetRunId as string | undefined,
       });
     }
 
     edges.push({ source: sId, target: tId, label: pred });
+
+    // Build connection lists for detail panel
+    addConnection(connectionMap, sId, {
+      targetId: tId,
+      targetLabel: row.targetName as string,
+      predicate: pred,
+      direction: "outgoing",
+    });
+    addConnection(connectionMap, tId, {
+      targetId: sId,
+      targetLabel: row.sourceName as string,
+      predicate: pred,
+      direction: "incoming",
+    });
+  }
+
+  // Attach connections to nodes
+  for (const [nodeId, connections] of connectionMap) {
+    const node = nodeMap.get(nodeId);
+    if (node) node.connections = connections;
+  }
+
+  // ── Step 4: Temporal ordering ──────────────────────────────────────────
+  // Assign temporalOrder to decision nodes based on runId sort order.
+  // Lexicographic sort of runIds gives chronological order (they are typically
+  // timestamps or monotonic IDs).
+  const decisionNodes = Array.from(nodeMap.values()).filter(
+    (n) => n.kind === "decision" && n.runId,
+  );
+  if (decisionNodes.length > 0) {
+    const uniqueRunIds = [...new Set(decisionNodes.map((n) => n.runId!))].sort();
+    const runIdRank = new Map(uniqueRunIds.map((id, i) => [id, i + 1]));
+    for (const node of decisionNodes) {
+      node.temporalOrder = runIdRank.get(node.runId!);
+    }
   }
 
   const dedupedEdges = deduplicateEdges(edges);

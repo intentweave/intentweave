@@ -44,6 +44,7 @@ interface SimNode extends d3.SimulationNodeDatum {
   label: string;
   kind: NodeKind;
   confidence?: number;
+  temporalOrder?: number;
   w: number; // computed rect width
 }
 
@@ -55,9 +56,15 @@ interface SimLink extends d3.SimulationLinkDatum<SimNode> {
 
 interface DecisionTreeProps {
   data: DecisionTreeData;
+  selectedNodeId?: string;
+  onNodeClick?: (node: InsightNode) => void;
 }
 
-export function DecisionTree({ data }: DecisionTreeProps) {
+export function DecisionTree({
+  data,
+  selectedNodeId,
+  onNodeClick,
+}: DecisionTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -84,6 +91,7 @@ export function DecisionTree({ data }: DecisionTreeProps) {
         label: truncated,
         kind: n.kind,
         confidence: n.confidence,
+        temporalOrder: n.temporalOrder,
         w,
         x: width / 2 + (Math.random() - 0.5) * 200,
         y: (DEPTH[n.kind] ?? 2) * BAND_HEIGHT + 80 + (Math.random() - 0.5) * 40,
@@ -202,6 +210,13 @@ export function DecisionTree({ data }: DecisionTreeProps) {
           }),
       );
 
+    // Click handler for node selection
+    nodeGroup.on("click", (_event, d) => {
+      const orig = data.nodes.find((n) => n.id === d.id);
+      if (orig && onNodeClick) onNodeClick(orig);
+    });
+    nodeGroup.style("cursor", "pointer");
+
     // Rect background
     nodeGroup
       .append("rect")
@@ -213,7 +228,15 @@ export function DecisionTree({ data }: DecisionTreeProps) {
       .attr("y", -NODE_HEIGHT / 2)
       .attr("fill", (d) => NODE_COLORS[d.kind] + "1A") // ~10% opacity
       .attr("stroke", (d) => NODE_COLORS[d.kind])
-      .attr("stroke-width", 2);
+      .attr("stroke-width", (d) => (d.id === selectedNodeId ? 3.5 : 2));
+
+    // Selection glow filter
+    if (selectedNodeId) {
+      const selNode = nodeGroup.filter((d) => d.id === selectedNodeId);
+      selNode
+        .select("rect")
+        .attr("filter", "drop-shadow(0 0 6px rgba(99,102,241,0.6))");
+    }
 
     // Kind indicator dot
     nodeGroup
@@ -233,6 +256,29 @@ export function DecisionTree({ data }: DecisionTreeProps) {
       .attr("fill", (d) => NODE_COLORS[d.kind])
       .attr("font-size", FONT_SIZE)
       .attr("font-weight", 500);
+
+    // Temporal order badge (top-right corner on decision nodes)
+    const temporalNodes = nodeGroup.filter(
+      (d) => d.temporalOrder != null && d.kind === "decision",
+    );
+    temporalNodes
+      .append("circle")
+      .attr("cx", (d) => d.w / 2 - 2)
+      .attr("cy", -NODE_HEIGHT / 2 + 2)
+      .attr("r", 9)
+      .attr("fill", "#6366f1")
+      .attr("stroke", "#1e1b4b")
+      .attr("stroke-width", 1.5);
+    temporalNodes
+      .append("text")
+      .text((d) => `#${d.temporalOrder}`)
+      .attr("x", (d) => d.w / 2 - 2)
+      .attr("y", -NODE_HEIGHT / 2 + 2)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "central")
+      .attr("fill", "#e0e7ff")
+      .attr("font-size", 9)
+      .attr("font-weight", 700);
 
     // Tooltip on hover
     nodeGroup.append("title").text((d) => {
@@ -292,7 +338,7 @@ export function DecisionTree({ data }: DecisionTreeProps) {
     return () => {
       simulation.stop();
     };
-  }, [data]);
+  }, [data, selectedNodeId, onNodeClick]);
 
   return (
     <div ref={containerRef} className="insight-canvas w-full h-full">

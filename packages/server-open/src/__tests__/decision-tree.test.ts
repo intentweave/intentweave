@@ -163,4 +163,74 @@ describe("buildDecisionTree", () => {
     // Should deduplicate: root→d1 + d1→opt1 = 2 (not 3)
     expect(result.data.edges).toHaveLength(2);
   });
+
+  it("populates enrichment fields (aliases, connections, temporalOrder)", async () => {
+    const decisions = [
+      {
+        id: "d1",
+        name: "Auth Method",
+        type: "decision",
+        confidence: 0.9,
+        aliases: ["authentication", "login"],
+        runId: "run-002",
+        artifactId: "docs/auth.md",
+      },
+      {
+        id: "d2",
+        name: "DB Choice",
+        type: "decision",
+        confidence: 0.85,
+        aliases: null,
+        runId: "run-001",
+        artifactId: "docs/db.md",
+      },
+    ];
+
+    const edges = [
+      {
+        sourceId: "d1",
+        sourceName: "Auth Method",
+        sourceType: "decision",
+        sourceConf: 0.9,
+        sourceAliases: ["authentication", "login"],
+        sourceRunId: "run-002",
+        sourceArtifactId: "docs/auth.md",
+        predicate: "DECIDED_FOR",
+        targetId: "jwt",
+        targetName: "JWT Tokens",
+        targetType: "option",
+        targetConf: 0.8,
+        targetAliases: ["JSON Web Tokens"],
+        targetRunId: "run-002",
+        targetArtifactId: "docs/auth.md",
+      },
+    ];
+
+    const runner = mockRunner([decisions, edges]);
+    const result = await buildDecisionTree({ runner, sessionId: "test" });
+
+    // Check aliases populated
+    const d1 = result.data.nodes.find((n) => n.id === "d1");
+    expect(d1?.aliases).toEqual(["authentication", "login"]);
+    expect(d1?.sourceDoc).toBe("docs/auth.md");
+    expect(d1?.runId).toBe("run-002");
+
+    // Check temporalOrder: run-001 < run-002, so d2=1, d1=2
+    expect(d1?.temporalOrder).toBe(2);
+    const d2 = result.data.nodes.find((n) => n.id === "d2");
+    expect(d2?.temporalOrder).toBe(1);
+
+    // Check connections populated
+    expect(d1?.connections).toBeDefined();
+    expect(d1!.connections!.length).toBeGreaterThanOrEqual(1);
+    const outgoing = d1!.connections!.find((c) => c.direction === "outgoing");
+    expect(outgoing?.targetLabel).toBe("JWT Tokens");
+    expect(outgoing?.predicate).toBe("DECIDED_FOR");
+
+    // JWT node should have incoming connection
+    const jwt = result.data.nodes.find((n) => n.id === "jwt");
+    expect(jwt?.aliases).toEqual(["JSON Web Tokens"]);
+    const incoming = jwt?.connections?.find((c) => c.direction === "incoming");
+    expect(incoming?.targetLabel).toBe("Auth Method");
+  });
 });
