@@ -16,3 +16,5 @@ export { neo4jPlugin } from "./plugins/neo4j.js";
 export { contextPlugin } from "./plugins/context.js";
 export { healthPlugin } from "./plugins/health.js";
 export { ssePlugin, type SseHub } from "./plugins/sse.js";
+export { rateLimitPlugin } from "./plugins/rate-limit.js";
+export { authPlugin } from "./plugins/auth.js";

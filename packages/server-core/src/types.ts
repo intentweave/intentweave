@@ -55,6 +55,20 @@ export interface ServerConfig {
 
   /** Log level. Default: 'info' */
   logLevel?: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
+
+  /**
+   * Rate limit: max requests per minute per IP.
+   * 0 or undefined = disabled. Default: 0 (disabled).
+   */
+  rateLimit?: number;
+
+  /**
+   * API key(s) for bearer-token auth on /api/* routes.
+   * When set, all /api/* requests must include: `Authorization: Bearer <key>`.
+   * Multiple keys are supported (e.g. for key rotation).
+   * When undefined or empty, auth is disabled.
+   */
+  apiKeys?: string[];
 }
 
 /** Request context extracted from headers or defaults. */

@@ -9,6 +9,8 @@ import { neo4jPlugin } from "./plugins/neo4j.js";
 import { contextPlugin } from "./plugins/context.js";
 import { healthPlugin } from "./plugins/health.js";
 import { ssePlugin } from "./plugins/sse.js";
+import { rateLimitPlugin } from "./plugins/rate-limit.js";
+import { authPlugin } from "./plugins/auth.js";
 import type { ServerConfig, IwServer } from "./types.js";
 
 const VERSION = "0.1.0";
@@ -101,6 +103,16 @@ export async function createServer(config: ServerConfig): Promise<IwServer> {
 
   await server.register(healthPlugin);
   await server.register(ssePlugin);
+
+  // -- Rate limiting --
+  await server.register(rateLimitPlugin, {
+    max: config.rateLimit,
+  });
+
+  // -- API key auth --
+  await server.register(authPlugin, {
+    apiKeys: config.apiKeys,
+  });
 
   return server;
 }

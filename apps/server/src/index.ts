@@ -20,6 +20,8 @@
  *   HOST            — Server host              (default: 0.0.0.0)
  *   LOG_LEVEL       — Log level                (default: info)
  *   CORS_ORIGIN     — CORS origin(s), comma-separated (default: *)
+ *   IW_RATE_LIMIT   — Max requests/min per IP    (default: 0 = disabled)
+ *   IW_API_KEYS     — Bearer token API keys, comma-separated (default: none)
  */
 
 import "dotenv/config";
@@ -50,6 +52,10 @@ async function main(): Promise<void> {
     port,
     logLevel: (process.env.LOG_LEVEL as any) ?? "info",
     corsOrigin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*",
+    rateLimit: parseInt(process.env.IW_RATE_LIMIT ?? "0", 10) || undefined,
+    apiKeys: process.env.IW_API_KEYS
+      ? process.env.IW_API_KEYS.split(",").map((s) => s.trim())
+      : undefined,
   });
 
   // Register open track routes (OSS)

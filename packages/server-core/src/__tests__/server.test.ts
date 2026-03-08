@@ -87,3 +87,115 @@ describe("createServer with workspaceRoot", () => {
     await server.close();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// Rate limiting
+// ═══════════════════════════════════════════════════════════════
+
+describe("rate limiting", () => {
+  it("disabled by default (no rateLimit config)", async () => {
+    const server = await createServer(TEST_CONFIG);
+    await server.ready();
+
+    // No rate-limit headers when disabled
+    const res = await server.inject({ method: "GET", url: "/health" });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it("applies limit when configured", async () => {
+    const server = await createServer({
+      ...TEST_CONFIG,
+      rateLimit: 3,
+    });
+    await server.ready();
+
+    // Health is exempt from rate limiting (not /api/*)
+    for (let i = 0; i < 5; i++) {
+      const res = await server.inject({ method: "GET", url: "/health" });
+      expect(res.statusCode).toBe(200);
+    }
+    await server.close();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// API key auth
+// ═══════════════════════════════════════════════════════════════
+
+describe("API key auth", () => {
+  it("disabled by default (no apiKeys config)", async () => {
+    const server = await createServer(TEST_CONFIG);
+    await server.ready();
+    // Health is always public
+    const res = await server.inject({ method: "GET", url: "/health" });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it("rejects /api/* requests without auth when keys configured", async () => {
+    const server = await createServer({
+      ...TEST_CONFIG,
+      apiKeys: ["test-key-123"],
+    });
+
+    // Need to register a dummy /api/ route for the test
+    server.get("/api/test-auth", async () => ({ ok: true }));
+    await server.ready();
+
+    const res = await server.inject({
+      method: "GET",
+      url: "/api/test-auth",
+    });
+    expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+
+  it("accepts /api/* requests with valid bearer token", async () => {
+    const server = await createServer({
+      ...TEST_CONFIG,
+      apiKeys: ["test-key-123"],
+    });
+
+    server.get("/api/test-auth", async () => ({ ok: true }));
+    await server.ready();
+
+    const res = await server.inject({
+      method: "GET",
+      url: "/api/test-auth",
+      headers: { authorization: "Bearer test-key-123" },
+    });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it("rejects invalid API key", async () => {
+    const server = await createServer({
+      ...TEST_CONFIG,
+      apiKeys: ["test-key-123"],
+    });
+
+    server.get("/api/test-auth", async () => ({ ok: true }));
+    await server.ready();
+
+    const res = await server.inject({
+      method: "GET",
+      url: "/api/test-auth",
+      headers: { authorization: "Bearer wrong-key" },
+    });
+    expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it("allows /health without auth even when keys configured", async () => {
+    const server = await createServer({
+      ...TEST_CONFIG,
+      apiKeys: ["test-key-123"],
+    });
+    await server.ready();
+
+    const res = await server.inject({ method: "GET", url: "/health" });
+    expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+});

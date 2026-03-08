@@ -24,13 +24,14 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@intentweave/core": "workspace:*",
-    "fastify": "^5.2.0",
     "@fastify/cors": "^10.0.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.4.0",
     "@fastify/swagger-ui": "^5.2.0",
-    "fastify-type-provider-zod": "^6.1.0",
+    "@intentweave/core": "workspace:*",
+    "fastify": "^5.2.0",
     "fastify-plugin": "^5.0.0",
+    "fastify-type-provider-zod": "^5.1.0",
     "neo4j-driver": "^5.27.0",
     "zod": "^3.23.8"
   },
