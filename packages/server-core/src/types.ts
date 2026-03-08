@@ -1,8 +1,8 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import type { FastifyInstance } from 'fastify';
-import type { Driver } from 'neo4j-driver';
+import type { FastifyInstance } from "fastify";
+import type { Driver } from "neo4j-driver";
 
 /** Configuration for creating an IntentWeave server. */
 export interface ServerConfig {
@@ -16,6 +16,13 @@ export interface ServerConfig {
 
   /** Default session for queries (can be overridden per-request). */
   defaultSession?: string;
+
+  /**
+   * Workspace root directory (absolute path).
+   * Used by pipeline and persist endpoints to access files and .iw/ data.
+   * If not set, pipeline and persist endpoints return 400.
+   */
+  workspaceRoot?: string;
 
   /** Server host. Default: '0.0.0.0' */
   host?: string;
@@ -33,7 +40,7 @@ export interface ServerConfig {
   corsOrigin?: string | string[];
 
   /** Log level. Default: 'info' */
-  logLevel?: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
+  logLevel?: "fatal" | "error" | "warn" | "info" | "debug" | "trace";
 }
 
 /** Request context extracted from headers or defaults. */

@@ -1,0 +1,223 @@
+# IntentWeave Starter Profile - Entity Shapes
+#
+# Shapes define valid relationships between entity kinds.
+# Each shape specifies which predicates a subject kind can use.
+
+shapes:
+  # ==========================================================================
+  # Role Shapes (ROLE_CAN pattern)
+  # ==========================================================================
+  - subject: role
+    predicates:
+      - name: CAN
+        targets: [action]
+        description: "A role can perform certain actions"
+        required: false
+        
+      - name: OWNS
+        targets: [resource]
+        description: "A role owns or is responsible for resources"
+        required: false
+        
+      - name: ASSUMES
+        targets: [role]
+        description: "A role can assume another role"
+        required: false
+
+  # ==========================================================================
+  # Resource Shapes (HAS_STATE pattern)
+  # ==========================================================================
+  - subject: resource
+    predicates:
+      - name: HAS_STATE
+        targets: [state]
+        description: "A resource can be in various states"
+        required: false
+        
+      - name: TRIGGERS
+        targets: [event]
+        description: "A resource change can trigger events"
+        required: false
+        
+      - name: CONTAINS
+        targets: [resource]
+        description: "A resource can contain other resources"
+        required: false
+        
+      - name: REFERENCES
+        targets: [resource]
+        description: "A resource can reference other resources"
+        required: false
+
+  # ==========================================================================
+  # Action Shapes
+  # ==========================================================================
+  - subject: action
+    predicates:
+      - name: AFFECTS
+        targets: [resource, state]
+        description: "An action affects resources or changes states"
+        required: false
+        
+      - name: TRIGGERS
+        targets: [event]
+        description: "An action triggers events"
+        required: false
+        
+      - name: REQUIRES
+        targets: [condition]
+        description: "An action requires conditions to be met"
+        required: false
+        
+      - name: CALLS
+        targets: [action, service]
+        description: "An action can invoke other actions or services"
+        required: false
+
+  # ==========================================================================
+  # Transition Shapes (state machine)
+  # ==========================================================================
+  - subject: transition
+    predicates:
+      - name: FROM_STATE
+        targets: [state]
+        description: "The source state of a transition"
+        required: true
+        minCard: 1
+        maxCard: 1
+        
+      - name: TO_STATE
+        targets: [state]
+        description: "The target state of a transition"
+        required: true
+        minCard: 1
+        maxCard: 1
+        
+      - name: WHEN
+        targets: [event]
+        description: "The triggering event for a transition"
+        required: false
+        
+      - name: GUARDS
+        targets: [condition]
+        description: "Guard conditions for the transition"
+        required: false
+        
+      - name: EXECUTES
+        targets: [action]
+        description: "Actions executed during the transition"
+        required: false
+
+  # ==========================================================================
+  # Service Shapes
+  # ==========================================================================
+  - subject: service
+    predicates:
+      - name: PROVIDES
+        targets: [endpoint, action]
+        description: "What the service provides"
+        required: false
+        
+      - name: CONSUMES
+        targets: [service, endpoint]
+        description: "Other services this service depends on"
+        required: false
+        
+      - name: USES
+        targets: [store]
+        description: "Data stores the service uses"
+        required: false
+        
+      - name: PUBLISHES
+        targets: [event]
+        description: "Events the service publishes"
+        required: false
+        
+      - name: SUBSCRIBES
+        targets: [event]
+        description: "Events the service subscribes to"
+        required: false
+
+  # ==========================================================================
+  # Endpoint Shapes
+  # ==========================================================================
+  - subject: endpoint
+    predicates:
+      - name: ACCEPTS
+        targets: [resource]
+        description: "Input resource types"
+        required: false
+        
+      - name: RETURNS
+        targets: [resource]
+        description: "Output resource types"
+        required: false
+        
+      - name: REQUIRES_AUTH
+        targets: [role]
+        description: "Required roles for access"
+        required: false
+        
+      - name: VALIDATES
+        targets: [constraint]
+        description: "Validation constraints"
+        required: false
+
+  # ==========================================================================
+  # Goal/Requirement Shapes
+  # ==========================================================================
+  - subject: goal
+    predicates:
+      - name: DECOMPOSES_INTO
+        targets: [goal, requirement]
+        description: "Sub-goals or requirements"
+        required: false
+        
+      - name: SATISFIED_BY
+        targets: [action, service]
+        description: "What satisfies this goal"
+        required: false
+
+  - subject: requirement
+    predicates:
+      - name: IMPLEMENTS
+        targets: [goal]
+        description: "Goals this requirement addresses"
+        required: false
+        
+      - name: CONSTRAINS
+        targets: [resource, action, service]
+        description: "What this requirement constrains"
+        required: false
+        
+      - name: VERIFIED_BY
+        targets: [test-case]
+        description: "Test cases that verify this requirement"
+        required: false
+
+  # ==========================================================================
+  # Test Shapes
+  # ==========================================================================
+  - subject: test-case
+    predicates:
+      - name: TESTS
+        targets: [action, service, endpoint]
+        description: "What is being tested"
+        required: true
+        
+      - name: VERIFIES
+        targets: [requirement]
+        description: "Requirements verified by this test"
+        required: false
+        
+      - name: ASSERTS
+        targets: [assertion]
+        description: "Assertions made by this test"
+        required: false
+
+  - subject: assertion
+    predicates:
+      - name: EXPECTS
+        targets: [state, resource]
+        description: "Expected state or resource"
+        required: true

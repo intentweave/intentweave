@@ -11,7 +11,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -25,6 +28,7 @@
     "@intentweave/server-core": "workspace:*",
     "@intentweave/analyzer": "workspace:*",
     "@intentweave/cli": "workspace:*",
+    "@intentweave/profiles": "workspace:*",
     "fastify": "^5.2.0",
     "fastify-plugin": "^5.0.0",
     "neo4j-driver": "^5.27.0",

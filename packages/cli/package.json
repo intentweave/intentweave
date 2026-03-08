@@ -29,6 +29,14 @@
     "./linker": {
       "types": "./dist/linker/index.d.ts",
       "import": "./dist/linker/index.js"
+    },
+    "./run-shared": {
+      "types": "./dist/commands/run-shared.d.ts",
+      "import": "./dist/commands/run-shared.js"
+    },
+    "./persist-neo4j": {
+      "types": "./dist/commands/persist-neo4j.d.ts",
+      "import": "./dist/commands/persist-neo4j.js"
     }
   },
   "files": [

@@ -1,0 +1,177 @@
+# IntentWeave Starter Profile - Consistency Rules
+#
+# These rules check for inconsistencies and conflicts between artifacts.
+
+rules:
+  # ==========================================================================
+  # Cross-Artifact Consistency
+  # ==========================================================================
+  
+  - id: consistency-001
+    name: Spec-impl name mismatch
+    description: "Linked spec and implementation entities should have similar names"
+    type: shape-violation
+    severity: warning
+    condition:
+      predicate: IMPLEMENTS
+      checkNameSimilarity: true
+      minSimilarity: 0.7
+    message: "Implementation '{{target.name}}' name differs significantly from spec '{{source.name}}'"
+    
+  - id: consistency-002
+    name: Spec-impl type mismatch
+    description: "Linked entities should have compatible types"
+    type: shape-violation
+    severity: info
+    condition:
+      predicate: IMPLEMENTS
+      checkTypeCompatibility: true
+    message: "Type mismatch: spec '{{source.name}}' ({{source.kind}}) linked to impl '{{target.name}}' ({{target.kind}})"
+    
+  - id: consistency-003
+    name: Stale implementation link
+    description: "Implementation links with low confidence may be stale"
+    type: shape-violation
+    severity: warning
+    condition:
+      predicate: IMPLEMENTS
+      maxConfidence: 0.6
+    message: "Link from '{{source.name}}' to '{{target.name}}' has low confidence ({{confidence}}%) - may be stale"
+
+  # ==========================================================================
+  # State Machine Consistency
+  # ==========================================================================
+  
+  - id: consistency-010
+    name: Unreachable state
+    description: "States should be reachable from an initial state"
+    type: custom
+    severity: warning
+    condition:
+      check: reachability
+      subject: state
+      fromInitial: true
+    message: "State '{{entity.name}}' is not reachable from any initial state"
+    
+  - id: consistency-011
+    name: Duplicate transition
+    description: "Multiple transitions from same state on same event"
+    type: custom
+    severity: warning
+    condition:
+      check: duplicateTransition
+    message: "Duplicate transitions from state '{{fromState}}' on event '{{event}}'"
+    
+  - id: consistency-012
+    name: Conflicting guard conditions
+    description: "Guard conditions on transitions from same state may conflict"
+    type: custom
+    severity: info
+    condition:
+      check: guardConflict
+    message: "Potentially conflicting guards on transitions from '{{fromState}}'"
+
+  # ==========================================================================
+  # Naming Consistency
+  # ==========================================================================
+  
+  - id: consistency-020
+    name: Duplicate entity name in artifact
+    description: "Entity names should be unique within an artifact"
+    type: custom
+    severity: error
+    condition:
+      check: duplicateName
+      scope: artifact
+    message: "Duplicate entity name '{{entity.name}}' in artifact '{{artifact}}'"
+    
+  - id: consistency-021
+    name: Similar entity names across artifacts
+    description: "Very similar entity names may indicate unlinked duplicates"
+    type: custom
+    severity: info
+    condition:
+      check: similarNames
+      minSimilarity: 0.95
+      scope: workspace
+    message: "Entity '{{entity.name}}' is very similar to '{{other.name}}' in '{{other.artifact}}'"
+
+  # ==========================================================================
+  # Reference Consistency
+  # ==========================================================================
+  
+  - id: consistency-030
+    name: Orphan resource reference
+    description: "Resource references should point to defined resources"
+    type: shape-violation
+    severity: warning
+    condition:
+      predicate: REFERENCES
+      targetExists: true
+    message: "Resource '{{source.name}}' references undefined resource '{{target.name}}'"
+    
+  - id: consistency-031
+    name: Circular dependency
+    description: "Detect circular dependencies between services"
+    type: custom
+    severity: warning
+    condition:
+      check: circularDependency
+      subject: service
+      predicate: CONSUMES
+    message: "Circular dependency detected: {{cycle}}"
+    
+  - id: consistency-032
+    name: Missing service dependency
+    description: "Service calls undefined service"
+    type: shape-violation
+    severity: error
+    condition:
+      subject: service
+      predicate: CONSUMES
+      targetExists: true
+    message: "Service '{{source.name}}' depends on undefined service '{{target.name}}'"
+
+  # ==========================================================================
+  # Role/Permission Consistency
+  # ==========================================================================
+  
+  - id: consistency-040
+    name: Action without authorized role
+    description: "Actions should be performable by at least one role (only checked when roles are defined)"
+    type: missing-edge
+    severity: warning
+    condition:
+      subject: action
+      predicate: CAN
+      inverse: true
+      minCard: 1
+      # Only run this rule if at least one role entity exists
+      requiresEntityKind: role
+    message: "Action '{{entity.name}}' is not authorized for any role"
+    
+  - id: consistency-041
+    name: Endpoint without access control
+    description: "Endpoints should specify required roles or be explicitly public"
+    type: missing-edge
+    severity: info
+    condition:
+      subject: endpoint
+      predicate: REQUIRES_AUTH
+      orPublic: true
+    message: "Endpoint '{{entity.name}}' has no access control specification"
+
+  # ==========================================================================
+  # Version/Evolution Consistency
+  # ==========================================================================
+  
+  - id: consistency-050
+    name: Spec changed without impl update
+    description: "Modified spec entities should have corresponding impl updates"
+    type: custom
+    severity: warning
+    condition:
+      check: specImplSync
+      maxAgeDays: 30
+    message: "Spec '{{entity.name}}' was modified but implementation may be stale"
+    enabled: false  # Requires git integration

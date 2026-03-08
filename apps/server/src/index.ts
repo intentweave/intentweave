@@ -13,32 +13,34 @@
  *   NEO4J_PASSWORD  — Neo4j password           (required)
  *   NEO4J_DATABASE  — Neo4j database           (default: neo4j)
  *   IW_SESSION      — Default session ID       (default: default)
+ *   IW_WORKSPACE_ROOT — Workspace root directory (enables run/persist endpoints)
  *   PORT            — Server port              (default: 3000)
  *   HOST            — Server host              (default: 0.0.0.0)
  *   LOG_LEVEL       — Log level                (default: info)
  *   CORS_ORIGIN     — CORS origin(s), comma-separated (default: *)
  */
 
-import 'dotenv/config';
-import { createServer } from '@intentweave/server-core';
-import { openPlugin } from '@intentweave/server-open';
+import "dotenv/config";
+import { createServer } from "@intentweave/server-core";
+import { openPlugin } from "@intentweave/server-open";
 
 async function main(): Promise<void> {
-  const port = parseInt(process.env.PORT ?? '3000', 10);
-  const host = process.env.HOST ?? '0.0.0.0';
+  const port = parseInt(process.env.PORT ?? "3000", 10);
+  const host = process.env.HOST ?? "0.0.0.0";
 
   const server = await createServer({
     neo4j: {
-      uri: process.env.NEO4J_URI ?? 'bolt://localhost:7687',
-      username: process.env.NEO4J_USERNAME ?? 'neo4j',
-      password: process.env.NEO4J_PASSWORD ?? '',
-      database: process.env.NEO4J_DATABASE ?? 'neo4j',
+      uri: process.env.NEO4J_URI ?? "bolt://localhost:7687",
+      username: process.env.NEO4J_USERNAME ?? "neo4j",
+      password: process.env.NEO4J_PASSWORD ?? "",
+      database: process.env.NEO4J_DATABASE ?? "neo4j",
     },
-    defaultSession: process.env.IW_SESSION ?? 'default',
+    defaultSession: process.env.IW_SESSION ?? "default",
+    workspaceRoot: process.env.IW_WORKSPACE_ROOT,
     host,
     port,
-    logLevel: (process.env.LOG_LEVEL as any) ?? 'info',
-    corsOrigin: process.env.CORS_ORIGIN?.split(',').map(s => s.trim()) ?? '*',
+    logLevel: (process.env.LOG_LEVEL as any) ?? "info",
+    corsOrigin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*",
   });
 
   // Register open track routes (OSS)
@@ -47,7 +49,9 @@ async function main(): Promise<void> {
   // Start listening
   try {
     await server.listen({ port, host });
-    console.log(`\n  🧠 IntentWeave server listening on http://${host}:${port}`);
+    console.log(
+      `\n  🧠 IntentWeave server listening on http://${host}:${port}`,
+    );
     console.log(`  📖 API docs:   http://localhost:${port}/docs`);
     console.log(`  ❤️  Health:     http://localhost:${port}/health`);
     console.log(`  📡 SSE stream: http://localhost:${port}/stream\n`);

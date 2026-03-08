@@ -1,0 +1,171 @@
+# IntentWeave Starter Profile - Semantic Analysis Rules
+#
+# These rules detect semantic issues like contradictions, ambiguities,
+# policy tensions, and missing coverage in specifications.
+
+rules:
+  # ==========================================================================
+  # Contradiction Detection
+  # ==========================================================================
+  
+  - id: semantic-001
+    name: Deletion policy contradiction
+    description: "Detects conflicting statements about data deletion/retention"
+    type: semantic-contradiction
+    severity: error
+    condition:
+      # Match entities/requirements involving deletion
+      patterns:
+        - "MUST NOT.*delete|cannot.*delete|prohibited.*delet"
+        - "MAY.*delete|can.*delete|may.*request.*erasure"
+      sameSubject: true
+      requireBothPatterns: true
+    message: "Potential contradiction: deletion is both prohibited and allowed"
+    
+  - id: semantic-002
+    name: Permission level conflict
+    description: "Detects when different roles have conflicting permissions on same resource"
+    type: semantic-contradiction
+    severity: warning
+    condition:
+      check: permissionConflict
+      predicates: [ROLE_CAN, ROLE_CANNOT]
+    message: "Conflicting permissions on '{{resource}}' between roles"
+    
+  - id: semantic-003
+    name: Timing constraint conflict
+    description: "Detects conflicting time-based requirements"
+    type: semantic-contradiction
+    severity: error
+    condition:
+      # Look for conflicting timing (e.g., "after 30 days" vs "within 30 days")
+      patterns:
+        - "after.*\\d+.*days?|≥.*\\d+.*days?"
+        - "within.*\\d+.*days?|before.*\\d+.*days?"
+      sameSubject: true
+    message: "Timing constraint conflict detected - requirements may be mutually exclusive"
+
+  # ==========================================================================
+  # Ambiguity Detection  
+  # ==========================================================================
+  
+  - id: semantic-010
+    name: Hedging language detected
+    description: "Detects vague or uncertain language in requirements"
+    type: semantic-ambiguity
+    severity: warning
+    condition:
+      patterns:
+        - "\\bmaybe\\b|\\bpossibly\\b|\\bmight\\b|\\bcould be\\b"
+        - "may or may not|see spec|TBD|to be determined"
+        - "as needed|if applicable|when appropriate"
+        - "\\(except.*maybe.*\\)"
+    message: "Ambiguous language detected: '{{match}}' - needs clarification"
+    
+  - id: semantic-011
+    name: Undefined reference
+    description: "References to undefined specifications or documents"
+    type: semantic-ambiguity
+    severity: warning
+    condition:
+      patterns:
+        - "see spec|see documentation|as per spec|refer to"
+        - "defined elsewhere|specified later|to be specified"
+    message: "Reference to undefined specification - needs explicit definition"
+    
+  - id: semantic-012
+    name: Inconsistent terminology
+    description: "Same concept referred to by different names"
+    type: semantic-ambiguity
+    severity: info
+    condition:
+      check: synonymDetection
+      minSimilarity: 0.85
+    message: "Possible synonym: '{{term1}}' and '{{term2}}' may refer to same concept"
+
+  # ==========================================================================
+  # Tension Detection
+  # ==========================================================================
+  
+  - id: semantic-020
+    name: Actor permission overlap
+    description: "Different actors with partially overlapping permissions"
+    type: semantic-tension
+    severity: info
+    condition:
+      check: permissionOverlap
+      actors: [user, admin]
+    message: "Permission overlap between actors on '{{resource}}' - clarify boundaries"
+    
+  - id: semantic-021
+    name: Idempotency scope unclear
+    description: "Idempotency mentioned but scope not fully defined"
+    type: semantic-tension
+    severity: warning
+    condition:
+      patterns:
+        - "idempotent"
+      requiresAdditionalContext:
+        - "behavior when"
+        - "repeated.*returns"
+        - "subsequent"
+    message: "Idempotency mentioned but edge case behavior not fully specified"
+    
+  - id: semantic-022
+    name: State immutability conflict
+    description: "Entity is immutable but modifications are mentioned"
+    type: semantic-tension
+    severity: warning
+    condition:
+      patterns:
+        - "immutable|read-?only|cannot.*edit|not.*editable"
+        - "edit|modify|update|change"
+      sameSubject: true
+    message: "Tension: '{{subject}}' is immutable but modifications are mentioned"
+
+  # ==========================================================================
+  # Coverage Detection
+  # ==========================================================================
+  
+  - id: semantic-030
+    name: Audit trail coverage incomplete
+    description: "Audit trail required but not all events covered"
+    type: semantic-coverage
+    severity: warning
+    condition:
+      check: auditTrailCoverage
+      requiredEvents: [created, edited, deleted, archived]
+    message: "Audit trail required but not all state changes are covered"
+    
+  - id: semantic-031
+    name: Error handling incomplete
+    description: "API endpoints mentioned without error handling"
+    type: semantic-coverage
+    severity: info
+    condition:
+      check: errorHandlingCoverage
+      requireStatusCodes: [400, 404, 409, 500]
+    message: "API endpoint '{{endpoint}}' missing error handling specification"
+    
+  - id: semantic-032
+    name: Validation rules incomplete
+    description: "Input validation mentioned but rules not exhaustive"
+    type: semantic-coverage
+    severity: info
+    condition:
+      check: validationCoverage
+    message: "Validation mentioned for '{{field}}' but rules may be incomplete"
+
+  # ==========================================================================
+  # Issue Entity Validation
+  # ==========================================================================
+  
+  - id: semantic-040
+    name: Extracted issue needs review
+    description: "LLM extracted an issue entity that needs human review"
+    type: issue-entity
+    severity: warning
+    condition:
+      subject: issue
+      minConfidence: 0.5
+    message: "Detected issue: '{{entity.name}}' - {{entity.description}}"
