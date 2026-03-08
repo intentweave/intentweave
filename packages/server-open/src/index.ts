@@ -14,6 +14,7 @@
  *   POST /api/doc-health  — Documentation freshness check
  *   POST /api/xlink       — Cross-layer code linking
  *   GET  /api/schema      — Graph schema description
+ *   POST /api/insight     — Generate purpose-built visualizations from the KG
  */
 
 export { openPlugin } from "./plugin.js";

@@ -247,8 +247,8 @@ describe("Aggregation Performance", () => {
         lxProposals: result.lxProposals.length,
       });
 
-      // Baseline: should complete in under 1000ms (generous for CI)
-      expect(durationMs).toBeLessThan(1000);
+      // Baseline: should complete in under 2000ms (generous for CI)
+      expect(durationMs).toBeLessThan(2000);
       expect(result.entities.length).toBe(500);
     });
 

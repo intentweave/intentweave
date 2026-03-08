@@ -503,3 +503,62 @@ describe("POST /api/doc-health", () => {
     expect([200, 500]).toContain(res.statusCode);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// Insight routes (decision-tree)
+// ═══════════════════════════════════════════════════════════════
+
+describe("POST /api/insight", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    server = await buildTestServer();
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it("returns a decision-tree visualization with empty KG", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/insight",
+      payload: {
+        question: "Show all decisions",
+        vizType: "decision-tree",
+        session: "test-session",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.vizType).toBe("decision-tree");
+    expect(body.title).toBeDefined();
+    expect(body.data).toBeDefined();
+    expect(body.data.nodes).toBeDefined();
+    expect(body.data.edges).toBeDefined();
+    expect(body.data.rootId).toBeDefined();
+    expect(body.meta).toBeDefined();
+    expect(body.meta.session).toBe("test-session");
+    expect(typeof body.meta.queryTimeMs).toBe("number");
+  });
+
+  it("defaults to decision-tree when vizType is omitted", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/insight",
+      payload: { question: "What architecture decisions?" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.vizType).toBe("decision-tree");
+  });
+
+  it("rejects unsupported vizType", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/insight",
+      payload: { vizType: "sunburst" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

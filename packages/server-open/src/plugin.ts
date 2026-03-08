@@ -13,6 +13,7 @@ import { registerDocHealthRoutes } from "./routes/doc-health.js";
 import { registerRunRoutes } from "./routes/run.js";
 import { registerPersistRoutes } from "./routes/persist.js";
 import { registerXlinkRoutes } from "./routes/xlink.js";
+import { registerInsightRoutes } from "./routes/insight.js";
 
 /**
  * Open track plugin — registers all OSS API routes on the Fastify instance.
@@ -40,8 +41,9 @@ async function openPluginFn(fastify: FastifyInstance): Promise<void> {
   await registerRunRoutes(fastify);
   await registerPersistRoutes(fastify);
   await registerXlinkRoutes(fastify);
+  await registerInsightRoutes(fastify);
 
-  fastify.log.info("Open track routes registered (9 endpoint groups)");
+  fastify.log.info("Open track routes registered (10 endpoint groups)");
 }
 
 export const openPlugin = fp(openPluginFn, {
