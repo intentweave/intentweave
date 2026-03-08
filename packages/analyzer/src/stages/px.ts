@@ -3,27 +3,27 @@
 
 /**
  * PX Stage - Presentation (Core)
- * 
+ *
  * Per-artifact stage that applies filtering and prepares for output.
- * 
+ *
  * Input: mx.json (entities/statements with materializations)
  * Output: px.json (filtered entities/statements ready for aggregation)
- * 
+ *
  * Responsibilities (SPEC-COMPLIANT):
  * - Apply confidence-based filtering (noise reduction)
  * - Apply profile-based filtering rules
  * - Infer artifact role from file path
  * - Track filter decisions for transparency
- * 
+ *
  * NOTE: PX does NOT do semantic diffing (per Gap Analysis).
  * Noise reduction = confidence-based + profile-based filtering only.
  */
 
-import type { PipelineContext } from '../pipeline/context.js';
-import type { Entity, Statement, Evidence } from '@intentweave/core';
-import type { MxStageOutput } from './mx.js';
-import { inferArtifactRole } from '../profiles/loader.js';
-import { getAllEntities, getAllStatements, getOrphanIds } from './mx.js';
+import type { PipelineContext } from "../pipeline/context.js";
+import type { Entity, Statement, Evidence } from "@intentweave/core";
+import type { MxStageOutput } from "./mx.js";
+import { inferArtifactRole } from "../profiles/loader.js";
+import { getAllEntities, getAllStatements, getOrphanIds } from "./mx.js";
 
 // =============================================================================
 // PX Stage Types
@@ -36,9 +36,9 @@ export interface FilterDecision {
   /** Entity or statement cgId */
   id: string;
   /** What was filtered */
-  type: 'entity' | 'statement';
+  type: "entity" | "statement";
   /** Why it was filtered */
-  reason: 'low-confidence' | 'size-limit' | 'excluded-kind' | 'excluded-role';
+  reason: "low-confidence" | "size-limit" | "excluded-kind" | "excluded-role";
   /** The confidence score (if applicable) */
   confidence?: number;
   /** The threshold used (if applicable) */
@@ -54,30 +54,30 @@ export interface PxStageOutput {
   /** JSON Schema reference */
   $schema: string;
   /** Schema version */
-  schemaVersion: '0.1';
+  schemaVersion: "0.1";
   /** Stage identifier */
-  stage: 'PX';
+  stage: "PX";
   /** Artifact ID */
   artifactId: string;
   /** Processing timestamp */
   processedAt: string;
-  
+
   /** Inferred artifact role */
   artifactRole: string;
-  
+
   /** Filtered entities (presentation-ready) */
   entities: Entity[];
   /** Filtered statements */
   statements: Statement[];
   /** Evidence preserved */
   evidence: Evidence[];
-  
+
   /** IDs of orphan entities (not in transitions) */
   orphanEntityIds: string[];
-  
+
   /** Filter decisions for transparency */
   filterDecisions: FilterDecision[];
-  
+
   /** Processing metadata */
   meta: {
     /** Entities included */
@@ -141,39 +141,45 @@ const DEFAULT_OPTIONS: Required<PxStageOptions> = {
 /**
  * Check if entity kind is included by profile
  */
-function isKindIncluded(kind: string, profile: PipelineContext['profile']): boolean {
+function isKindIncluded(
+  kind: string,
+  profile: PipelineContext["profile"],
+): boolean {
   const includeKinds = profile.px?.includeKinds;
   const excludeKinds = profile.px?.excludeKinds;
-  
+
   if (includeKinds && includeKinds.length > 0) {
     return includeKinds.includes(kind);
   }
-  
+
   if (excludeKinds && excludeKinds.length > 0) {
     return !excludeKinds.includes(kind);
   }
-  
+
   return true;
 }
 
 /**
  * Check if artifact role should be processed
  */
-function isRoleIncluded(role: string | undefined, profile: PipelineContext['profile']): boolean {
+function isRoleIncluded(
+  role: string | undefined,
+  profile: PipelineContext["profile"],
+): boolean {
   // If role is undefined, include by default
   if (!role) return true;
-  
+
   const includeRoles = profile.px?.includeRoles;
   const excludeRoles = profile.px?.excludeRoles;
-  
+
   if (includeRoles && includeRoles.length > 0) {
     return includeRoles.includes(role);
   }
-  
+
   if (excludeRoles && excludeRoles.length > 0) {
     return !excludeRoles.includes(role);
   }
-  
+
   return true;
 }
 
@@ -183,61 +189,61 @@ function isRoleIncluded(role: string | undefined, profile: PipelineContext['prof
 function filterEntities(
   entities: Entity[],
   opts: Required<PxStageOptions>,
-  profile: PipelineContext['profile']
+  profile: PipelineContext["profile"],
 ): { included: Entity[]; decisions: FilterDecision[] } {
   const included: Entity[] = [];
   const decisions: FilterDecision[] = [];
-  
+
   for (const entity of entities) {
     // Check confidence
     if (entity.confidence < opts.minEntityConfidence) {
       if (opts.recordFilterDecisions) {
         decisions.push({
           id: entity.cgId,
-          type: 'entity',
-          reason: 'low-confidence',
+          type: "entity",
+          reason: "low-confidence",
           confidence: entity.confidence,
           threshold: opts.minEntityConfidence,
         });
       }
       continue;
     }
-    
+
     // Check profile kind filter
     if (opts.applyProfileFilters && !isKindIncluded(entity.type, profile)) {
       if (opts.recordFilterDecisions) {
         decisions.push({
           id: entity.cgId,
-          type: 'entity',
-          reason: 'excluded-kind',
+          type: "entity",
+          reason: "excluded-kind",
           context: `Kind '${entity.type}' excluded by profile`,
         });
       }
       continue;
     }
-    
+
     included.push(entity);
   }
-  
+
   // Apply size limit
   if (included.length > opts.maxEntities) {
     // Sort by confidence descending, keep top N
     included.sort((a, b) => b.confidence - a.confidence);
     const removed = included.splice(opts.maxEntities);
-    
+
     if (opts.recordFilterDecisions) {
       for (const entity of removed) {
         decisions.push({
           id: entity.cgId,
-          type: 'entity',
-          reason: 'size-limit',
+          type: "entity",
+          reason: "size-limit",
           confidence: entity.confidence,
           context: `Exceeded max entities (${opts.maxEntities})`,
         });
       }
     }
   }
-  
+
   return { included, decisions };
 }
 
@@ -247,56 +253,61 @@ function filterEntities(
 function filterStatements(
   statements: Statement[],
   includedEntityIds: Set<string>,
-  opts: Required<PxStageOptions>
+  opts: Required<PxStageOptions>,
 ): { included: Statement[]; decisions: FilterDecision[] } {
   const included: Statement[] = [];
   const decisions: FilterDecision[] = [];
-  
+
   for (const stmt of statements) {
     // Check confidence
     if (stmt.confidence < opts.minStatementConfidence) {
       if (opts.recordFilterDecisions) {
         decisions.push({
-          id: stmt.id ?? `${stmt.subjectCgId}-${stmt.predicate}-${stmt.objectCgId}`,
-          type: 'statement',
-          reason: 'low-confidence',
+          id:
+            stmt.id ??
+            `${stmt.subjectCgId}-${stmt.predicate}-${stmt.objectCgId}`,
+          type: "statement",
+          reason: "low-confidence",
           confidence: stmt.confidence,
           threshold: opts.minStatementConfidence,
         });
       }
       continue;
     }
-    
+
     // Only include statements where both entities are included
     const subjectIncluded = includedEntityIds.has(stmt.subjectCgId);
-    const objectIncluded = !stmt.objectCgId || includedEntityIds.has(stmt.objectCgId);
-    
+    const objectIncluded =
+      !stmt.objectCgId || includedEntityIds.has(stmt.objectCgId);
+
     if (!subjectIncluded || !objectIncluded) {
       // Don't record this as a decision - it's a consequence of entity filtering
       continue;
     }
-    
+
     included.push(stmt);
   }
-  
+
   // Apply size limit
   if (included.length > opts.maxStatements) {
     included.sort((a, b) => b.confidence - a.confidence);
     const removed = included.splice(opts.maxStatements);
-    
+
     if (opts.recordFilterDecisions) {
       for (const stmt of removed) {
         decisions.push({
-          id: stmt.id ?? `${stmt.subjectCgId}-${stmt.predicate}-${stmt.objectCgId}`,
-          type: 'statement',
-          reason: 'size-limit',
+          id:
+            stmt.id ??
+            `${stmt.subjectCgId}-${stmt.predicate}-${stmt.objectCgId}`,
+          type: "statement",
+          reason: "size-limit",
           confidence: stmt.confidence,
           context: `Exceeded max statements (${opts.maxStatements})`,
         });
       }
     }
   }
-  
+
   return { included, decisions };
 }
 
@@ -306,45 +317,48 @@ function filterStatements(
 
 /**
  * Run PX stage on MX output
- * 
+ *
  * Filters and prepares the graph for presentation/aggregation.
  */
 export async function runPxStage(
   input: PxStageInput,
   ctx: PipelineContext,
-  options: PxStageOptions = {}
+  options: PxStageOptions = {},
 ): Promise<PxStageOutput> {
   const startTime = Date.now();
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  
+
   const { artifactId, filePath, mxOutput } = input;
   const mxEntities = getAllEntities(mxOutput);
   const mxStatements = getAllStatements(mxOutput);
-  
+
   // Use input artifact role (from IN stage) if provided, otherwise infer from profile
-  const artifactRole = input.artifactRole ?? inferArtifactRole(filePath, ctx.profile);
-  
+  const artifactRole =
+    input.artifactRole ?? inferArtifactRole(filePath, ctx.profile);
+
   // Check if entire artifact should be skipped
   if (opts.applyProfileFilters && !isRoleIncluded(artifactRole, ctx.profile)) {
     const processingTimeMs = Date.now() - startTime;
-    
+
     return {
-      $schema: 'intentweave://schemas/px-graph/v1',
-      schemaVersion: '0.1',
-      stage: 'PX',
+      $schema: "intentweave://schemas/px-graph/v1",
+      schemaVersion: "0.1",
+      stage: "PX",
       artifactId,
       processedAt: ctx.timestamp(),
-      artifactRole: artifactRole ?? 'unknown',
+      artifactRole: artifactRole ?? "unknown",
       entities: [],
       statements: [],
       evidence: [],
       orphanEntityIds: [],
-      filterDecisions: [{
-        id: artifactId,
-        type: 'entity',
-        reason: 'excluded-role',
-        context: `Artifact role '${artifactRole}' excluded by profile`,
-      }],
+      filterDecisions: [
+        {
+          id: artifactId,
+          type: "entity",
+          reason: "excluded-role",
+          context: `Artifact role '${artifactRole}' excluded by profile`,
+        },
+      ],
       meta: {
         includedEntityCount: 0,
         filteredEntityCount: mxEntities.length,
@@ -354,38 +368,32 @@ export async function runPxStage(
       },
     };
   }
-  
+
   // Filter entities
-  const { included: includedEntities, decisions: entityDecisions } = filterEntities(
-    mxEntities,
-    opts,
-    ctx.profile
-  );
-  
+  const { included: includedEntities, decisions: entityDecisions } =
+    filterEntities(mxEntities, opts, ctx.profile);
+
   // Build set of included entity IDs
-  const includedEntityIds = new Set(includedEntities.map(e => e.cgId));
-  
+  const includedEntityIds = new Set(includedEntities.map((e) => e.cgId));
+
   // Filter statements
-  const { included: includedStatements, decisions: statementDecisions } = filterStatements(
-    mxStatements,
-    includedEntityIds,
-    opts
-  );
-  
+  const { included: includedStatements, decisions: statementDecisions } =
+    filterStatements(mxStatements, includedEntityIds, opts);
+
   // Update orphan list (only include orphans that made it through filtering)
   const mxOrphans = getOrphanIds(mxOutput);
-  const orphanEntityIds = mxOrphans.filter(id => includedEntityIds.has(id));
-  
+  const orphanEntityIds = mxOrphans.filter((id) => includedEntityIds.has(id));
+
   const filterDecisions = [...entityDecisions, ...statementDecisions];
   const processingTimeMs = Date.now() - startTime;
-  
+
   const output: PxStageOutput = {
-    $schema: 'intentweave://schemas/px-graph/v1',
-    schemaVersion: '0.1',
-    stage: 'PX',
+    $schema: "intentweave://schemas/px-graph/v1",
+    schemaVersion: "0.1",
+    stage: "PX",
     artifactId,
     processedAt: ctx.timestamp(),
-    artifactRole: artifactRole ?? 'unknown',
+    artifactRole: artifactRole ?? "unknown",
     entities: includedEntities,
     statements: includedStatements,
     evidence: mxOutput.evidence,
@@ -399,14 +407,14 @@ export async function runPxStage(
       processingTimeMs,
     },
   };
-  
+
   ctx.logger.debug(`PX stage complete for ${artifactId}`, {
     role: artifactRole,
     entities: includedEntities.length,
     filtered: mxEntities.length - includedEntities.length,
     statements: includedStatements.length,
   });
-  
+
   return output;
 }
 

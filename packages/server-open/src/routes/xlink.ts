@@ -1,10 +1,14 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import type { FastifyInstance } from 'fastify';
-import type { Driver } from 'neo4j-driver';
-import { runCrossLayerLinker, persistCrossLinks, formatXLinkReport } from '@intentweave/cli/linker';
-import { createRunnerFromDriver } from '../helpers/index.js';
+import type { FastifyInstance } from "fastify";
+import type { Driver } from "neo4j-driver";
+import {
+  runCrossLayerLinker,
+  persistCrossLinks,
+  formatXLinkReport,
+} from "@intentweave/cli/linker";
+import { createRunnerFromDriver } from "../helpers/index.js";
 
 /**
  * POST /api/xlink — Cross-layer code linking.
@@ -18,38 +22,51 @@ import { createRunnerFromDriver } from '../helpers/index.js';
  * Creates CodeRef nodes and REALIZED_BY relationships.
  * Wraps the same logic as `iw xlink` CLI command.
  */
-export async function registerXlinkRoutes(fastify: FastifyInstance): Promise<void> {
+export async function registerXlinkRoutes(
+  fastify: FastifyInstance,
+): Promise<void> {
   fastify.post(
-    '/api/xlink',
+    "/api/xlink",
     {
       schema: {
-        tags: ['xlink'],
-        description: 'Cross-layer code linking — connect semantic KG to source code',
+        tags: ["xlink"],
+        description:
+          "Cross-layer code linking — connect semantic KG to source code",
         body: {
-          type: 'object',
-          required: ['directory'],
+          type: "object",
+          required: ["directory"],
           properties: {
-            directory: { type: 'string', description: 'Root directory of the codebase to link' },
-            session: { type: 'string', description: 'Session ID' },
-            strategies: {
-              type: 'array',
-              items: { type: 'string', enum: ['dep', 'import', 'name', 'path'] },
-              default: ['dep', 'import', 'name', 'path'],
-              description: 'Matching strategies to use',
+            directory: {
+              type: "string",
+              description: "Root directory of the codebase to link",
             },
-            persist: { type: 'boolean', default: false, description: 'Write CodeRef nodes to Neo4j' },
+            session: { type: "string", description: "Session ID" },
+            strategies: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: ["dep", "import", "name", "path"],
+              },
+              default: ["dep", "import", "name", "path"],
+              description: "Matching strategies to use",
+            },
+            persist: {
+              type: "boolean",
+              default: false,
+              description: "Write CodeRef nodes to Neo4j",
+            },
           },
         },
         response: {
           200: {
-            type: 'object',
+            type: "object",
             properties: {
-              matched: { type: 'number' },
-              total: { type: 'number' },
-              codeRefs: { type: 'number' },
-              realizedBy: { type: 'number' },
-              byStrategy: { type: 'object' },
-              summary: { type: 'string' },
+              matched: { type: "number" },
+              total: { type: "number" },
+              codeRefs: { type: "number" },
+              realizedBy: { type: "number" },
+              byStrategy: { type: "object" },
+              summary: { type: "string" },
             },
           },
         },
@@ -57,14 +74,18 @@ export async function registerXlinkRoutes(fastify: FastifyInstance): Promise<voi
     },
     async (request) => {
       const body = request.body as {
-        directory: string; session?: string;
-        strategies?: ('dep' | 'import' | 'name' | 'path')[];
+        directory: string;
+        session?: string;
+        strategies?: ("dep" | "import" | "name" | "path")[];
         persist?: boolean;
       };
       const ctx = (request as any).ctx as { sessionId: string };
       const sessionId = body.session ?? ctx.sessionId;
       const driver: Driver = (fastify as any).neo4j;
-      const runner = createRunnerFromDriver(driver, (fastify as any).neo4jDatabase);
+      const runner = createRunnerFromDriver(
+        driver,
+        (fastify as any).neo4jDatabase,
+      );
 
       const result = await runCrossLayerLinker({
         runner,
@@ -76,7 +97,12 @@ export async function registerXlinkRoutes(fastify: FastifyInstance): Promise<voi
 
       // Persist if requested
       if (body.persist) {
-        await persistCrossLinks(runner, sessionId, result.links, (msg: string) => fastify.log.debug(msg));
+        await persistCrossLinks(
+          runner,
+          sessionId,
+          result.links,
+          (msg: string) => fastify.log.debug(msg),
+        );
       }
 
       return {

@@ -3,7 +3,7 @@
 
 /**
  * Transcript System Types
- * 
+ *
  * Canonical types for chat/conversation artifacts and adapter contracts.
  * All adapters produce TranscriptMessage[] in the same format.
  */
@@ -15,26 +15,26 @@
 /**
  * Message role - what purpose a message serves in the transcript.
  * Orthogonal to speaker (who said it).
- * 
+ *
  * Note: Named MessageRole to avoid conflict with core ArtifactRole.
  */
-export type MessageRole = 
-  | 'intent'         // User goals, requests, requirements
-  | 'spec'           // Design decisions, architecture, plans
-  | 'implementation' // Code, configs, file changes
-  | 'runlog'         // Execution output, errors, logs
-  | 'meta'           // Session control, tool invocations, agent commands
-  | 'unknown';       // Unclassified (default)
+export type MessageRole =
+  | "intent" // User goals, requests, requirements
+  | "spec" // Design decisions, architecture, plans
+  | "implementation" // Code, configs, file changes
+  | "runlog" // Execution output, errors, logs
+  | "meta" // Session control, tool invocations, agent commands
+  | "unknown"; // Unclassified (default)
 
 /**
  * Speaker - who authored the message.
  */
-export type Speaker = 'user' | 'assistant' | 'system' | 'tool';
+export type Speaker = "user" | "assistant" | "system" | "tool";
 
 /**
  * How the message role was assigned.
  */
-export type RoleSource = 'override' | 'inline' | 'heuristic' | 'llm';
+export type RoleSource = "override" | "inline" | "heuristic" | "llm";
 
 /**
  * Source location in the original file.
@@ -60,7 +60,7 @@ export interface MessageRefs {
 
 /**
  * A single message in a transcript.
- * 
+ *
  * Identity rules:
  * - sourceKey: stable identity based on seq (NO timestamps)
  * - id: equals sourceKey for storage
@@ -74,7 +74,7 @@ export interface TranscriptMessage {
   id: string;
   /** Content fingerprint for change detection (sha256:... full 64 hex) */
   contentHash: string;
-  
+
   // === Source Metadata ===
   /** Adapter that produced this message */
   source: string;
@@ -84,7 +84,7 @@ export interface TranscriptMessage {
   seq: number;
   /** Original timestamp (optional metadata, NOT identity) */
   ts?: string;
-  
+
   // === Classification ===
   /** Who spoke */
   speaker: Speaker;
@@ -92,13 +92,13 @@ export interface TranscriptMessage {
   messageRole: MessageRole;
   /** How the role was assigned */
   roleSource: RoleSource;
-  
+
   // === Content ===
   /** Original message content (preserved for debugging) */
   rawText: string;
   /** Cleaned/normalized message content */
   text: string;
-  
+
   // === Metadata ===
   /** Parser version that produced this message */
   parserVersion: string;
@@ -119,13 +119,13 @@ export interface ImportState {
   sourcePath: string;
   /** Extracted session ID */
   sessionId: string;
-  
+
   // === File State Tracking ===
   /** Last known file size in bytes */
   lastSize: number;
   /** Last modification time (ms since epoch) */
   lastMtimeMs: number;
-  
+
   // === Rewrite Detection (prefix + suffix + anchor window) ===
   /** SHA256 of first 64KB */
   prefixHash64k: string;
@@ -133,7 +133,7 @@ export interface ImportState {
   suffixHash64k: string;
   /** SHA256 of 64KB window around lastBoundaryOffset (detects middle edits) */
   anchorWindowHash: string;
-  
+
   // === Incremental Cursor (byte-based) ===
   /** Last processed file size */
   lastOffset: number;
@@ -143,7 +143,7 @@ export interface ImportState {
   lastProcessedHeaderOffset: number;
   /** Monotonic sequence number for transcript */
   lastProcessedSeq: number;
-  
+
   // === Metadata ===
   /** Number of messages in transcript */
   messageCount: number;
@@ -174,7 +174,7 @@ export interface RoleOverride {
   /** When the override was set (ISO timestamp) */
   setAt: string;
   /** Who set the override */
-  setBy: 'user' | 'auto';
+  setBy: "user" | "auto";
   /** Optional explanation */
   reason?: string;
   /** Content hash for reimport recovery */
@@ -254,7 +254,7 @@ export interface RoleStats {
 
 /**
  * Adapter contract for transcript importers.
- * 
+ *
  * Two adapter types:
  * - AppendOnlyFileAdapter: incremental import with byte cursors (SpecStory)
  * - SnapshotExportAdapter: re-parses full snapshot, dedupes by ID (ChatGPT)
@@ -262,31 +262,28 @@ export interface RoleStats {
 export interface TranscriptAdapter {
   /** Adapter identifier (e.g., 'specstory', 'chatgpt-export') */
   readonly name: string;
-  
+
   /** Adapter version (bump when parser changes) */
   readonly version: string;
-  
+
   /** File patterns this adapter handles */
   readonly patterns: string[];
-  
+
   /**
    * Check if source has updates.
    * MUST be O(1) - stat + hashes only, NO parsing.
    */
   checkForUpdates(
     sourcePath: string,
-    state: ImportState | null
+    state: ImportState | null,
   ): Promise<UpdateCheck>;
-  
+
   /**
    * Import/update transcript from source.
    * Only called if checkForUpdates indicates changes.
    */
-  import(
-    sourcePath: string,
-    options: ImportOptions
-  ): Promise<ImportResult>;
-  
+  import(sourcePath: string, options: ImportOptions): Promise<ImportResult>;
+
   /**
    * Parse a single message (for testing/debugging).
    */
@@ -319,7 +316,7 @@ export interface TranscriptFingerprintInput {
  * Rewrite check result.
  */
 export interface RewriteCheck {
-  mode: 'unchanged' | 'append' | 'rewrite';
+  mode: "unchanged" | "append" | "rewrite";
   reason?: string;
   /** Previous file size */
   previousSize?: number;
@@ -373,22 +370,22 @@ export const HASH_WINDOW_SIZE = 64 * 1024;
 export const LOOKBACK_SIZE = 32 * 1024;
 
 /** Current heuristics version (bump when rules change) */
-export const HEURISTICS_VERSION = 'v1';
+export const HEURISTICS_VERSION = "v1";
 
 /** All artifact roles */
 export const MESSAGE_ROLES: readonly MessageRole[] = [
-  'intent',
-  'spec', 
-  'implementation',
-  'runlog',
-  'meta',
-  'unknown',
+  "intent",
+  "spec",
+  "implementation",
+  "runlog",
+  "meta",
+  "unknown",
 ] as const;
 
 /** All speakers */
 export const SPEAKERS: readonly Speaker[] = [
-  'user',
-  'assistant',
-  'system',
-  'tool',
+  "user",
+  "assistant",
+  "system",
+  "tool",
 ] as const;

@@ -3,24 +3,24 @@
 
 /**
  * Weave Registry
- * 
+ *
  * Manages canonical key aliases and deprecations.
  * Stored in .iw/weave/registry.json
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import type { WeaveRegistry, WeaveOverrides } from './types.js';
-import { NORMALIZATION_VERSION, generateCanonicalId } from './normalize.js';
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import type { WeaveRegistry, WeaveOverrides } from "./types.js";
+import { NORMALIZATION_VERSION, generateCanonicalId } from "./normalize.js";
 
 // =============================================================================
 // Registry Operations
 // =============================================================================
 
-const REGISTRY_FILENAME = 'registry.json';
-const OVERRIDES_FILENAME = 'overrides.json';
-const LOCK_SUFFIX = '.lock';
+const REGISTRY_FILENAME = "registry.json";
+const OVERRIDES_FILENAME = "overrides.json";
+const LOCK_SUFFIX = ".lock";
 const LOCK_TIMEOUT_MS = 5000;
 
 /**
@@ -28,7 +28,7 @@ const LOCK_TIMEOUT_MS = 5000;
  */
 export function createEmptyRegistry(): WeaveRegistry {
   return {
-    version: '0.1',
+    version: "0.1",
     normalizationVersion: NORMALIZATION_VERSION,
     aliases: {},
     deprecated: {},
@@ -52,28 +52,28 @@ export function createEmptyOverrides(): WeaveOverrides {
  * Returns empty registry if file doesn't exist.
  */
 export async function loadRegistry(iwDir: string): Promise<WeaveRegistry> {
-  const registryPath = join(iwDir, 'weave', REGISTRY_FILENAME);
-  
+  const registryPath = join(iwDir, "weave", REGISTRY_FILENAME);
+
   try {
     if (!existsSync(registryPath)) {
       return createEmptyRegistry();
     }
-    
-    const content = await readFile(registryPath, 'utf-8');
+
+    const content = await readFile(registryPath, "utf-8");
     const registry = JSON.parse(content) as WeaveRegistry;
-    
+
     // Migrate if normalization version differs
     if (registry.normalizationVersion !== NORMALIZATION_VERSION) {
       console.warn(
         `[WX] Registry normalization version mismatch: ` +
-        `${registry.normalizationVersion} vs ${NORMALIZATION_VERSION}. ` +
-        `Aliases may need updating.`
+          `${registry.normalizationVersion} vs ${NORMALIZATION_VERSION}. ` +
+          `Aliases may need updating.`,
       );
     }
-    
+
     return registry;
   } catch (error) {
-    console.error('[WX] Failed to load registry:', error);
+    console.error("[WX] Failed to load registry:", error);
     return createEmptyRegistry();
   }
 }
@@ -81,32 +81,35 @@ export async function loadRegistry(iwDir: string): Promise<WeaveRegistry> {
 /**
  * Save the weave registry to disk with atomic write.
  */
-export async function saveRegistry(iwDir: string, registry: WeaveRegistry): Promise<void> {
-  const weaveDir = join(iwDir, 'weave');
+export async function saveRegistry(
+  iwDir: string,
+  registry: WeaveRegistry,
+): Promise<void> {
+  const weaveDir = join(iwDir, "weave");
   const registryPath = join(weaveDir, REGISTRY_FILENAME);
   const lockPath = registryPath + LOCK_SUFFIX;
-  const tempPath = registryPath + '.tmp';
-  
+  const tempPath = registryPath + ".tmp";
+
   // Ensure directory exists
   await mkdir(weaveDir, { recursive: true });
-  
+
   // Acquire lock
   await acquireLock(lockPath);
-  
+
   try {
     // Update timestamp
     registry.lastUpdated = new Date().toISOString();
-    
+
     // Write to temp file
     const content = JSON.stringify(registry, null, 2);
-    await writeFile(tempPath, content, 'utf-8');
-    
+    await writeFile(tempPath, content, "utf-8");
+
     // Atomic rename
-    await writeFile(registryPath, content, 'utf-8');
-    
+    await writeFile(registryPath, content, "utf-8");
+
     // Clean up temp (ignore errors)
     try {
-      const { unlink } = await import('node:fs/promises');
+      const { unlink } = await import("node:fs/promises");
       await unlink(tempPath);
     } catch {
       // Ignore
@@ -121,17 +124,17 @@ export async function saveRegistry(iwDir: string, registry: WeaveRegistry): Prom
  * Load overrides from disk.
  */
 export async function loadOverrides(iwDir: string): Promise<WeaveOverrides> {
-  const overridesPath = join(iwDir, 'weave', OVERRIDES_FILENAME);
-  
+  const overridesPath = join(iwDir, "weave", OVERRIDES_FILENAME);
+
   try {
     if (!existsSync(overridesPath)) {
       return createEmptyOverrides();
     }
-    
-    const content = await readFile(overridesPath, 'utf-8');
+
+    const content = await readFile(overridesPath, "utf-8");
     return JSON.parse(content) as WeaveOverrides;
   } catch (error) {
-    console.error('[WX] Failed to load overrides:', error);
+    console.error("[WX] Failed to load overrides:", error);
     return createEmptyOverrides();
   }
 }
@@ -147,7 +150,7 @@ export async function loadOverrides(iwDir: string): Promise<WeaveOverrides> {
 export function resolveCanonicalKey(
   key: string,
   registry: WeaveRegistry,
-  overrides?: WeaveOverrides
+  overrides?: WeaveOverrides,
 ): string {
   // First check overrides (take precedence)
   if (overrides) {
@@ -158,31 +161,35 @@ export function resolveCanonicalKey(
       }
     }
   }
-  
+
   // Then check registry aliases
   if (key in registry.aliases) {
     const target = registry.aliases[key];
     // Recursive resolve (with depth limit)
     return resolveCanonicalKeyWithDepth(target, registry, 10);
   }
-  
+
   return key;
 }
 
 function resolveCanonicalKeyWithDepth(
   key: string,
   registry: WeaveRegistry,
-  maxDepth: number
+  maxDepth: number,
 ): string {
   if (maxDepth <= 0) {
     console.warn(`[WX] Alias chain too deep for key: ${key}`);
     return key;
   }
-  
+
   if (key in registry.aliases) {
-    return resolveCanonicalKeyWithDepth(registry.aliases[key], registry, maxDepth - 1);
+    return resolveCanonicalKeyWithDepth(
+      registry.aliases[key],
+      registry,
+      maxDepth - 1,
+    );
   }
-  
+
   return key;
 }
 
@@ -193,7 +200,7 @@ function resolveCanonicalKeyWithDepth(
 export function resolveToCanonicalId(
   key: string,
   registry: WeaveRegistry,
-  overrides?: WeaveOverrides
+  overrides?: WeaveOverrides,
 ): string {
   const resolvedKey = resolveCanonicalKey(key, registry, overrides);
   return generateCanonicalId(resolvedKey);
@@ -204,13 +211,13 @@ export function resolveToCanonicalId(
  */
 export function isDeprecated(
   canonicalId: string,
-  registry: WeaveRegistry
+  registry: WeaveRegistry,
 ): { deprecated: boolean; replacedBy?: string[]; reason?: string } {
   const entry = registry.deprecated[canonicalId];
   if (!entry) {
     return { deprecated: false };
   }
-  
+
   return {
     deprecated: true,
     replacedBy: entry.replacedBy,
@@ -228,7 +235,7 @@ export function isDeprecated(
 export function addAlias(
   registry: WeaveRegistry,
   fromKey: string,
-  toKey: string
+  toKey: string,
 ): WeaveRegistry {
   return {
     ...registry,
@@ -245,8 +252,8 @@ export function addAlias(
 export function deprecateCanonical(
   registry: WeaveRegistry,
   canonicalId: string,
-  reason: 'split' | 'merged' | 'removed',
-  replacedBy?: string[]
+  reason: "split" | "merged" | "removed",
+  replacedBy?: string[],
 ): WeaveRegistry {
   return {
     ...registry,
@@ -267,7 +274,7 @@ export function deprecateCanonical(
 
 async function acquireLock(lockPath: string): Promise<void> {
   const startTime = Date.now();
-  
+
   while (existsSync(lockPath)) {
     if (Date.now() - startTime > LOCK_TIMEOUT_MS) {
       // Force remove stale lock
@@ -276,16 +283,16 @@ async function acquireLock(lockPath: string): Promise<void> {
       break;
     }
     // Wait and retry
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  
+
   // Create lock file
-  await writeFile(lockPath, String(process.pid), 'utf-8');
+  await writeFile(lockPath, String(process.pid), "utf-8");
 }
 
 async function releaseLock(lockPath: string): Promise<void> {
   try {
-    const { unlink } = await import('node:fs/promises');
+    const { unlink } = await import("node:fs/promises");
     await unlink(lockPath);
   } catch {
     // Ignore errors

@@ -3,36 +3,36 @@
 
 /**
  * cgId - CodeGraph Identifier Module
- * 
+ *
  * Migrated from src/domain/cgId.ts and src/domain/workspace/workspaceId.ts
- * 
+ *
  * cgId Format: root|kind|lang|signature[@version]
- * 
+ *
  * Workspace Stable ID Architecture:
  * - The `root` should be a stable workspace ID (e.g., "ws_8f3a", "ws_0000")
  * - This ensures workspace isolation and prevents ID collisions
  * - Legacy root "cgchat" is still supported for backwards compatibility
- * 
+ *
  * Examples:
  * - ws_8f3a|model|kg|resource/document
  * - ws_0000|model|kg|entity/user
  * - cgchat|model|kg|resource/document (legacy)
  */
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from "node:crypto";
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const CANONICAL_SEPARATOR = '|';
-const ALIAS_SEPARATOR = ':';
-const WORKSPACE_ID_PREFIX = 'ws_';
-const LEGACY_ROOT = 'cgchat';
-const DEFAULT_WORKSPACE_ID = 'ws_0000';
-const KNOWN_KINDS = new Set(['code', 'model', 'api', 'db']);
-const DEFAULT_KIND = 'model';
-const DEFAULT_LANG = 'kg';
+const CANONICAL_SEPARATOR = "|";
+const ALIAS_SEPARATOR = ":";
+const WORKSPACE_ID_PREFIX = "ws_";
+const LEGACY_ROOT = "cgchat";
+const DEFAULT_WORKSPACE_ID = "ws_0000";
+const KNOWN_KINDS = new Set(["code", "model", "api", "db"]);
+const DEFAULT_KIND = "model";
+const DEFAULT_LANG = "kg";
 
 export const DEFAULT_CGID_ROOT = DEFAULT_WORKSPACE_ID;
 export const LEGACY_CGID_ROOT = LEGACY_ROOT;
@@ -67,7 +67,7 @@ export interface BuildCgIdOptions {
  */
 export function generateWorkspaceId(): string {
   const bytes = randomBytes(2);
-  const hex = bytes.toString('hex');
+  const hex = bytes.toString("hex");
   return `${WORKSPACE_ID_PREFIX}${hex}`;
 }
 
@@ -77,7 +77,7 @@ export function generateWorkspaceId(): string {
  */
 export function generateLongWorkspaceId(): string {
   const bytes = randomBytes(4);
-  const hex = bytes.toString('hex');
+  const hex = bytes.toString("hex");
   return `${WORKSPACE_ID_PREFIX}${hex}`;
 }
 
@@ -112,27 +112,27 @@ function ensureRoot(root?: string): string {
 
 function encodeSignature(signature: string): string {
   return signature
-    .split('/')
+    .split("/")
     .map((segment) => encodeURIComponent(segment))
-    .join('/');
+    .join("/");
 }
 
 function decodeSignature(signature: string): string {
   return signature
-    .split('/')
+    .split("/")
     .map((segment) => decodeURIComponent(segment))
-    .join('/');
+    .join("/");
 }
 
 export function slugifySegment(input: string): string {
   const normalized = input
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim()
-    .replace(/[\s_]+/g, '-')
-    .replace(/[^a-z0-9\-_.]+/g, '')
-    .replace(/-+/g, '-');
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9\-_.]+/g, "")
+    .replace(/-+/g, "-");
 
   if (!normalized) {
     // Fallback for inputs that only contain special characters (e.g., `- [ ]`)
@@ -140,7 +140,7 @@ export function slugifySegment(input: string): string {
     const hash = Array.from(input)
       .reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
       .toString(36)
-      .replace('-', 'n');
+      .replace("-", "n");
     return `_special_${hash.slice(0, 8)}`;
   }
 
@@ -156,8 +156,10 @@ function sanitizeSegments(segments: string[]): string[] {
  */
 export function parseCgId(id: string): CgId {
   const trimmed = id.trim();
-  const [preVersion, version] = trimmed.split('@', 2);
-  const separator = preVersion.includes(CANONICAL_SEPARATOR) ? CANONICAL_SEPARATOR : ALIAS_SEPARATOR;
+  const [preVersion, version] = trimmed.split("@", 2);
+  const separator = preVersion.includes(CANONICAL_SEPARATOR)
+    ? CANONICAL_SEPARATOR
+    : ALIAS_SEPARATOR;
   const rawParts = preVersion.split(separator);
 
   if (rawParts.length < 4) {
@@ -167,8 +169,8 @@ export function parseCgId(id: string): CgId {
         root: scope,
         kind: DEFAULT_KIND,
         lang: DEFAULT_LANG,
-        signature: decodeSignature([legacyType, ...rest].join('/')),
-        ...(version ? { version } : {})
+        signature: decodeSignature([legacyType, ...rest].join("/")),
+        ...(version ? { version } : {}),
       };
     }
     throw new Error(`Invalid cgId: ${id}`);
@@ -182,8 +184,10 @@ export function parseCgId(id: string): CgId {
       root,
       kind: DEFAULT_KIND,
       lang: DEFAULT_LANG,
-      signature: decodeSignature([legacyType, langCandidate, ...sigParts].join('/')),
-      ...(version ? { version } : {})
+      signature: decodeSignature(
+        [legacyType, langCandidate, ...sigParts].join("/"),
+      ),
+      ...(version ? { version } : {}),
     };
   }
 
@@ -194,7 +198,7 @@ export function parseCgId(id: string): CgId {
     kind: kindCandidate,
     lang: langCandidate,
     signature,
-    ...(version ? { version } : {})
+    ...(version ? { version } : {}),
   };
 }
 
@@ -222,37 +226,48 @@ export function toAlias(cgId: CgId): string {
   return cgId.version ? `${base}@${cgId.version}` : base;
 }
 
-function resolveOptions(options?: BuildCgIdOptions): Required<Omit<BuildCgIdOptions, 'version'>> & { version?: string } {
+function resolveOptions(
+  options?: BuildCgIdOptions,
+): Required<Omit<BuildCgIdOptions, "version">> & { version?: string } {
   return {
     root: ensureRoot(options?.root),
     kind: options?.kind ?? DEFAULT_KIND,
     lang: options?.lang ?? DEFAULT_LANG,
-    version: options?.version
+    version: options?.version,
   };
 }
 
 /**
  * Build a cgId from entity type and segments
  */
-export function buildCgId(entityType: string, ...segments: Array<string | BuildCgIdOptions>): string {
+export function buildCgId(
+  entityType: string,
+  ...segments: Array<string | BuildCgIdOptions>
+): string {
   const rawSegments = [...segments];
   let options: BuildCgIdOptions | undefined;
   const last = rawSegments[rawSegments.length - 1];
-  if (typeof last === 'object' && last !== null && !Array.isArray(last)) {
+  if (typeof last === "object" && last !== null && !Array.isArray(last)) {
     options = last as BuildCgIdOptions;
     rawSegments.pop();
   }
 
   const stringSegments = rawSegments.map((segment) => {
-    if (typeof segment !== 'string') {
-      throw new Error('cgId segments must be strings');
+    if (typeof segment !== "string") {
+      throw new Error("cgId segments must be strings");
     }
     return segment;
   });
 
   const { root, kind, lang, version } = resolveOptions(options);
   const signatureSegments = sanitizeSegments([entityType, ...stringSegments]);
-  return toCanonical({ root, kind, lang, signature: signatureSegments.join('/'), version });
+  return toCanonical({
+    root,
+    kind,
+    lang,
+    signature: signatureSegments.join("/"),
+    version,
+  });
 }
 
 /**
@@ -261,19 +276,19 @@ export function buildCgId(entityType: string, ...segments: Array<string | BuildC
 export function buildWorkspaceCgId(
   workspaceId: string,
   entityType: string,
-  ...segments: Array<string | Omit<BuildCgIdOptions, 'root'>>
+  ...segments: Array<string | Omit<BuildCgIdOptions, "root">>
 ): string {
   const rawSegments = [...segments];
-  let options: Omit<BuildCgIdOptions, 'root'> | undefined;
+  let options: Omit<BuildCgIdOptions, "root"> | undefined;
   const last = rawSegments[rawSegments.length - 1];
-  if (typeof last === 'object' && last !== null && !Array.isArray(last)) {
-    options = last as Omit<BuildCgIdOptions, 'root'>;
+  if (typeof last === "object" && last !== null && !Array.isArray(last)) {
+    options = last as Omit<BuildCgIdOptions, "root">;
     rawSegments.pop();
   }
 
   const stringSegments = rawSegments.map((segment) => {
-    if (typeof segment !== 'string') {
-      throw new Error('cgId segments must be strings');
+    if (typeof segment !== "string") {
+      throw new Error("cgId segments must be strings");
     }
     return segment;
   });
@@ -282,9 +297,15 @@ export function buildWorkspaceCgId(
   const kind = options?.kind ?? DEFAULT_KIND;
   const lang = options?.lang ?? DEFAULT_LANG;
   const version = options?.version;
-  
+
   const signatureSegments = sanitizeSegments([entityType, ...stringSegments]);
-  return toCanonical({ root, kind, lang, signature: signatureSegments.join('/'), version });
+  return toCanonical({
+    root,
+    kind,
+    lang,
+    signature: signatureSegments.join("/"),
+    version,
+  });
 }
 
 /**
@@ -302,7 +323,10 @@ export function extractWorkspaceId(cgIdString: string): string {
 /**
  * Check if a cgId belongs to a specific workspace.
  */
-export function cgIdBelongsToWorkspace(cgIdString: string, workspaceId: string): boolean {
+export function cgIdBelongsToWorkspace(
+  cgIdString: string,
+  workspaceId: string,
+): boolean {
   const cgIdRoot = extractWorkspaceId(cgIdString);
   return cgIdRoot === workspaceId;
 }
@@ -326,7 +350,10 @@ export function hasLegacyRoot(cgIdString: string): boolean {
 /**
  * Migrate a cgId from legacy root to a stable workspace ID.
  */
-export function migrateCgIdToWorkspace(cgIdString: string, newWorkspaceId: string): string {
+export function migrateCgIdToWorkspace(
+  cgIdString: string,
+  newWorkspaceId: string,
+): string {
   const parsed = parseCgId(cgIdString);
   return toCanonical({
     ...parsed,

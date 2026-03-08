@@ -16,4 +16,4 @@
  *   GET  /api/schema      — Graph schema description
  */
 
-export { openPlugin } from './plugin.js';
+export { openPlugin } from "./plugin.js";

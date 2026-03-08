@@ -35,8 +35,8 @@ export class IWError extends Error {
 
   constructor(message: string, options: IWErrorOptions = {}) {
     super(message, { cause: options.cause });
-    this.name = 'IWError';
-    this.code = options.code ?? 'unknown';
+    this.name = "IWError";
+    this.code = options.code ?? "unknown";
     this.context = options.context ?? {};
   }
 }
@@ -64,7 +64,7 @@ export class LLMError extends IWError {
 
   constructor(message: string, options: LLMErrorOptions = {}) {
     super(message, options);
-    this.name = 'LLMError';
+    this.name = "LLMError";
     this.retryable = options.retryable ?? false;
     this.statusCode = options.statusCode;
     this.model = options.model;
@@ -81,7 +81,7 @@ export function classifyHttpError(
 ): LLMError {
   if (status === 429) {
     return new LLMError(`Rate limit exceeded (429): ${body}`, {
-      code: 'rate_limit',
+      code: "rate_limit",
       retryable: true,
       statusCode: status,
       model,
@@ -89,7 +89,7 @@ export function classifyHttpError(
   }
   if (status === 401 || status === 403) {
     return new LLMError(`Authentication failed (${status}): ${body}`, {
-      code: 'auth_error',
+      code: "auth_error",
       retryable: false,
       statusCode: status,
       model,
@@ -97,7 +97,7 @@ export function classifyHttpError(
   }
   if (status === 400) {
     return new LLMError(`Bad request (400): ${body}`, {
-      code: 'bad_request',
+      code: "bad_request",
       retryable: false,
       statusCode: status,
       model,
@@ -105,14 +105,14 @@ export function classifyHttpError(
   }
   if (status >= 500) {
     return new LLMError(`Server error (${status}): ${body}`, {
-      code: 'server_error',
+      code: "server_error",
       retryable: true,
       statusCode: status,
       model,
     });
   }
   return new LLMError(`HTTP error (${status}): ${body}`, {
-    code: 'http_error',
+    code: "http_error",
     retryable: false,
     statusCode: status,
     model,
@@ -130,9 +130,16 @@ export class PipelineError extends IWError {
   readonly stage: string;
   readonly artifactId?: string;
 
-  constructor(message: string, stage: string, options: IWErrorOptions & { artifactId?: string } = {}) {
-    super(message, { ...options, code: options.code ?? `pipeline_${stage.toLowerCase()}` });
-    this.name = 'PipelineError';
+  constructor(
+    message: string,
+    stage: string,
+    options: IWErrorOptions & { artifactId?: string } = {},
+  ) {
+    super(message, {
+      ...options,
+      code: options.code ?? `pipeline_${stage.toLowerCase()}`,
+    });
+    this.name = "PipelineError";
     this.stage = stage;
     this.artifactId = options.artifactId;
   }
@@ -145,14 +152,19 @@ export class AbortThresholdError extends PipelineError {
   readonly failedCount: number;
   readonly totalCount: number;
 
-  constructor(stage: string, failedCount: number, totalCount: number, options: IWErrorOptions & { artifactId?: string } = {}) {
+  constructor(
+    stage: string,
+    failedCount: number,
+    totalCount: number,
+    options: IWErrorOptions & { artifactId?: string } = {},
+  ) {
     const pct = ((failedCount / totalCount) * 100).toFixed(0);
     super(
       `${stage}: ${failedCount}/${totalCount} (${pct}%) failed — exceeds abort threshold`,
       stage,
-      { ...options, code: 'abort_threshold' },
+      { ...options, code: "abort_threshold" },
     );
-    this.name = 'AbortThresholdError';
+    this.name = "AbortThresholdError";
     this.failedCount = failedCount;
     this.totalCount = totalCount;
   }
@@ -167,8 +179,8 @@ export class AbortThresholdError extends PipelineError {
  */
 export class Neo4jError extends IWError {
   constructor(message: string, options: IWErrorOptions = {}) {
-    super(message, { ...options, code: options.code ?? 'neo4j_error' });
-    this.name = 'Neo4jError';
+    super(message, { ...options, code: options.code ?? "neo4j_error" });
+    this.name = "Neo4jError";
   }
 }
 
@@ -177,8 +189,8 @@ export class Neo4jError extends IWError {
  */
 export class Neo4jConnectionError extends Neo4jError {
   constructor(message: string, options: IWErrorOptions = {}) {
-    super(message, { ...options, code: 'neo4j_connection' });
-    this.name = 'Neo4jConnectionError';
+    super(message, { ...options, code: "neo4j_connection" });
+    this.name = "Neo4jConnectionError";
   }
 }
 
@@ -191,8 +203,8 @@ export class Neo4jConnectionError extends Neo4jError {
  */
 export class ConfigError extends IWError {
   constructor(message: string, options: IWErrorOptions = {}) {
-    super(message, { ...options, code: options.code ?? 'config_error' });
-    this.name = 'ConfigError';
+    super(message, { ...options, code: options.code ?? "config_error" });
+    this.name = "ConfigError";
   }
 }
 

@@ -18,12 +18,17 @@
  * triples, NOT on raw text — making it cheaper and more consistent.
  */
 
-import type { LLMProvider, Evidence, TokenUsage } from '@intentweave/core';
-import { buildTokenUsage, zeroTokenUsage, sumTokenUsage, AbortThresholdError } from '@intentweave/core';
-import type { PipelineContext } from '../pipeline/context.js';
-import type { FxStageOutput, RawTriple } from './fx.js';
-import { hashContent } from '../cache/registry.js';
-import { completeWithRetry } from '../providers/llm/completeWithRetry.js';
+import type { LLMProvider, Evidence, TokenUsage } from "@intentweave/core";
+import {
+  buildTokenUsage,
+  zeroTokenUsage,
+  sumTokenUsage,
+  AbortThresholdError,
+} from "@intentweave/core";
+import type { PipelineContext } from "../pipeline/context.js";
+import type { FxStageOutput, RawTriple } from "./fx.js";
+import { hashContent } from "../cache/registry.js";
+import { completeWithRetry } from "../providers/llm/completeWithRetry.js";
 
 // =============================================================================
 // Canonical Vocabulary — small, stable, query-friendly
@@ -38,71 +43,71 @@ import { completeWithRetry } from '../providers/llm/completeWithRetry.js';
  */
 export const CANONICAL_PREDICATES = [
   // Structural
-  'CONTAINS',          // hierarchy / composition
-  'DEPENDS_ON',        // hard dependency
-  'ALTERNATIVE_TO',    // choice between options
-  'IMPLEMENTS',        // realises a requirement / spec / interface
-  'EXTENDS',           // specialisation, inheritance
+  "CONTAINS", // hierarchy / composition
+  "DEPENDS_ON", // hard dependency
+  "ALTERNATIVE_TO", // choice between options
+  "IMPLEMENTS", // realises a requirement / spec / interface
+  "EXTENDS", // specialisation, inheritance
 
   // Descriptive
-  'IS_A',              // type / classification ("X is a Y")
-  'DESCRIBES',         // documentation / provenance ("X documents Y")
-  'HAS_PROPERTY',      // attribute-like relationship when no better fit
+  "IS_A", // type / classification ("X is a Y")
+  "DESCRIBES", // documentation / provenance ("X documents Y")
+  "HAS_PROPERTY", // attribute-like relationship when no better fit
 
   // Behavioral
-  'HAS_STATE',         // entity has a lifecycle state
-  'HAS_PHASE',         // entity belongs to a phase / milestone
-  'TRANSITIONS_TO',    // state → state
-  'TRIGGERS',          // action triggers transition/event
-  'PRECEDES',          // temporal ordering
-  'FOLLOWS',           // temporal ordering (inverse)
+  "HAS_STATE", // entity has a lifecycle state
+  "HAS_PHASE", // entity belongs to a phase / milestone
+  "TRANSITIONS_TO", // state → state
+  "TRIGGERS", // action triggers transition/event
+  "PRECEDES", // temporal ordering
+  "FOLLOWS", // temporal ordering (inverse)
 
   // Design / Decision
-  'DECIDED_FOR',       // decision selected option
-  'DECIDED_AGAINST',   // decision rejected option
-  'SUPERSEDES',        // decision replaces earlier decision
-  'MOTIVATED_BY',      // choice motivated by constraint/goal
-  'ENABLES',           // option/component enables capability
-  'BLOCKS',            // constraint/gap blocks capability
-  'RISKS',             // option/component has risk
-  'DEFERRED_TO',       // requirement/feature pushed to phase
-  'PROPOSED_FOR',      // suggestion, proposal
-  'REPLACES',          // one thing replaces another
-  'REQUIRES',          // prerequisite / must-have
+  "DECIDED_FOR", // decision selected option
+  "DECIDED_AGAINST", // decision rejected option
+  "SUPERSEDES", // decision replaces earlier decision
+  "MOTIVATED_BY", // choice motivated by constraint/goal
+  "ENABLES", // option/component enables capability
+  "BLOCKS", // constraint/gap blocks capability
+  "RISKS", // option/component has risk
+  "DEFERRED_TO", // requirement/feature pushed to phase
+  "PROPOSED_FOR", // suggestion, proposal
+  "REPLACES", // one thing replaces another
+  "REQUIRES", // prerequisite / must-have
 
   // Interaction
-  'CALLS',             // component calls component
-  'USES',              // component/feature uses technology
-  'PRODUCES',          // component produces output/event
-  'CONSUMES',          // component consumes input/event
+  "CALLS", // component calls component
+  "USES", // component/feature uses technology
+  "PRODUCES", // component produces output/event
+  "CONSUMES", // component consumes input/event
 
   // Fallback
-  'RELATED_TO',        // catch-all — use sparingly
+  "RELATED_TO", // catch-all — use sparingly
 ] as const;
 
-export type CanonicalPredicate = typeof CANONICAL_PREDICATES[number];
+export type CanonicalPredicate = (typeof CANONICAL_PREDICATES)[number];
 
 /**
  * Canonical entity types — broad enough to cover most domains.
  */
 export const CANONICAL_ENTITY_TYPES = [
-  'concept',       // abstract idea or principle
-  'decision',      // a choice that was made
-  'option',        // an alternative considered
-  'requirement',   // a stated need
-  'feature',       // a product capability
-  'component',     // a system part/module
-  'technology',    // a specific tool/framework/library
-  'resource',      // a data entity or managed thing
-  'role',          // an actor type
-  'risk',          // a potential problem
-  'phase',         // a timeline period
-  'constraint',    // a limitation
-  'question',      // an unresolved question
-  'tradeoff',      // an explicit tradeoff
+  "concept", // abstract idea or principle
+  "decision", // a choice that was made
+  "option", // an alternative considered
+  "requirement", // a stated need
+  "feature", // a product capability
+  "component", // a system part/module
+  "technology", // a specific tool/framework/library
+  "resource", // a data entity or managed thing
+  "role", // an actor type
+  "risk", // a potential problem
+  "phase", // a timeline period
+  "constraint", // a limitation
+  "question", // an unresolved question
+  "tradeoff", // an explicit tradeoff
 ] as const;
 
-export type CanonicalEntityType = typeof CANONICAL_ENTITY_TYPES[number];
+export type CanonicalEntityType = (typeof CANONICAL_ENTITY_TYPES)[number];
 
 // =============================================================================
 // KX Stage Types
@@ -159,9 +164,9 @@ export interface KxStageOutput {
   /** JSON Schema reference */
   $schema: string;
   /** Schema version */
-  schemaVersion: '0.1';
+  schemaVersion: "0.1";
   /** Stage identifier */
-  stage: 'KX';
+  stage: "KX";
   /** Artifact ID */
   artifactId: string;
   /** Source file path */
@@ -216,7 +221,7 @@ export interface EntityResolution {
   /** Resolved canonical type */
   canonType: CanonicalEntityType;
   /** Resolution method: 'exact' | 'fuzzy' | 'llm' */
-  method: 'exact' | 'fuzzy' | 'llm';
+  method: "exact" | "fuzzy" | "llm";
 }
 
 /**
@@ -318,69 +323,69 @@ COMMON MISTAKES TO AVOID:
  * automatically invalidated (FX cache remains valid).
  */
 export const KX_PROMPT_VERSION = hashContent(
-  KX_SYSTEM_PROMPT + '\n' + CANONICAL_PREDICATES.join(','),
+  KX_SYSTEM_PROMPT + "\n" + CANONICAL_PREDICATES.join(","),
 );
 
 /**
  * KX response JSON schema
  */
 const KX_RESPONSE_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
     entities: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          canonId: { type: 'string' },
-          name: { type: 'string' },
-          type: { type: 'string' },
-          aliases: { type: 'array', items: { type: 'string' } },
+          canonId: { type: "string" },
+          name: { type: "string" },
+          type: { type: "string" },
+          aliases: { type: "array", items: { type: "string" } },
         },
-        required: ['canonId', 'name', 'type', 'aliases'],
+        required: ["canonId", "name", "type", "aliases"],
         additionalProperties: false,
       },
     },
     triples: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          subjectCanonId: { type: 'string' },
-          predicate: { type: 'string' },
-          objectCanonId: { type: 'string' },
-          rawIndex: { type: 'number' },
+          subjectCanonId: { type: "string" },
+          predicate: { type: "string" },
+          objectCanonId: { type: "string" },
+          rawIndex: { type: "number" },
         },
-        required: ['subjectCanonId', 'predicate', 'objectCanonId', 'rawIndex'],
+        required: ["subjectCanonId", "predicate", "objectCanonId", "rawIndex"],
         additionalProperties: false,
       },
     },
     predicateMappings: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          raw: { type: 'string' },
-          canon: { type: 'string' },
+          raw: { type: "string" },
+          canon: { type: "string" },
         },
-        required: ['raw', 'canon'],
+        required: ["raw", "canon"],
         additionalProperties: false,
       },
     },
     dropped: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          rawIndex: { type: 'number' },
-          reason: { type: 'string' },
+          rawIndex: { type: "number" },
+          reason: { type: "string" },
         },
-        required: ['rawIndex', 'reason'],
+        required: ["rawIndex", "reason"],
         additionalProperties: false,
       },
     },
   },
-  required: ['entities', 'triples', 'predicateMappings', 'dropped'],
+  required: ["entities", "triples", "predicateMappings", "dropped"],
   additionalProperties: false,
 };
 
@@ -392,29 +397,30 @@ const KX_RESPONSE_SCHEMA = {
  * Build user prompt with the raw triples for canonicalization
  */
 function buildKxUserPrompt(triples: RawTriple[]): string {
-  const tripleLines = triples.map((t, i) =>
-    `[${i}] (${t.subject}${t.subjectKind ? ` [${t.subjectKind}]` : ''}) ` +
-    `—[ ${t.predicate} ]→ ` +
-    `(${t.object}${t.objectKind ? ` [${t.objectKind}]` : ''})` +
-    `  confidence: ${t.confidence}`
+  const tripleLines = triples.map(
+    (t, i) =>
+      `[${i}] (${t.subject}${t.subjectKind ? ` [${t.subjectKind}]` : ""}) ` +
+      `—[ ${t.predicate} ]→ ` +
+      `(${t.object}${t.objectKind ? ` [${t.objectKind}]` : ""})` +
+      `  confidence: ${t.confidence}`,
   );
 
   return [
     `CANONICALIZE THESE ${triples.length} RAW TRIPLES:\n`,
     ...tripleLines,
-    '\nReturn the canonical entities, triples, and predicate mappings as JSON.',
-  ].join('\n');
+    "\nReturn the canonical entities, triples, and predicate mappings as JSON.",
+  ].join("\n");
 }
 
 /**
  * Validate and coerce a canonical predicate
  */
 function toCanonicalPredicate(raw: string): CanonicalPredicate {
-  const upper = raw.toUpperCase().replace(/[\s-]+/g, '_');
+  const upper = raw.toUpperCase().replace(/[\s-]+/g, "_");
   if ((CANONICAL_PREDICATES as readonly string[]).includes(upper)) {
     return upper as CanonicalPredicate;
   }
-  return 'RELATED_TO';
+  return "RELATED_TO";
 }
 
 /**
@@ -425,21 +431,22 @@ function toCanonicalEntityType(raw: string): CanonicalEntityType {
   if ((CANONICAL_ENTITY_TYPES as readonly string[]).includes(lower)) {
     return lower as CanonicalEntityType;
   }
-  return 'concept'; // safe fallback
+  return "concept"; // safe fallback
 }
 
 /**
  * Slugify an entity name for use as a canonical ID
  */
 function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/([a-z])([A-Z])/g, '$1-$2')
-    .replace(/[\s_/\\]+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    || 'unnamed';
+  return (
+    name
+      .toLowerCase()
+      .replace(/([a-z])([A-Z])/g, "$1-$2")
+      .replace(/[\s_/\\]+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "") || "unnamed"
+  );
 }
 
 /**
@@ -464,11 +471,11 @@ function parseKxResponse(
   const entityResolutions: EntityResolution[] = [];
 
   for (const e of rawEntities) {
-    if (!e || typeof e !== 'object') continue;
+    if (!e || typeof e !== "object") continue;
     const rec = e as Record<string, unknown>;
-    const canonId = slugify(String(rec.canonId ?? rec.name ?? ''));
+    const canonId = slugify(String(rec.canonId ?? rec.name ?? ""));
     const name = String(rec.name ?? canonId);
-    const type = toCanonicalEntityType(String(rec.type ?? 'concept'));
+    const type = toCanonicalEntityType(String(rec.type ?? "concept"));
     const aliases = Array.isArray(rec.aliases) ? rec.aliases.map(String) : [];
 
     if (!entityMap.has(canonId)) {
@@ -487,7 +494,7 @@ function parseKxResponse(
         rawName: alias,
         canonId,
         canonType: type,
-        method: 'llm',
+        method: "llm",
       });
     }
   }
@@ -498,25 +505,29 @@ function parseKxResponse(
   let fallbackCount = 0;
 
   for (const t of rawCanonTriples) {
-    if (!t || typeof t !== 'object') continue;
+    if (!t || typeof t !== "object") continue;
     const rec = t as Record<string, unknown>;
 
-    const subjectCanonId = slugify(String(rec.subjectCanonId ?? ''));
-    const objectCanonId = slugify(String(rec.objectCanonId ?? ''));
-    const predicate = toCanonicalPredicate(String(rec.predicate ?? 'RELATED_TO'));
-    const rawIndex = typeof rec.rawIndex === 'number' ? rec.rawIndex : -1;
+    const subjectCanonId = slugify(String(rec.subjectCanonId ?? ""));
+    const objectCanonId = slugify(String(rec.objectCanonId ?? ""));
+    const predicate = toCanonicalPredicate(
+      String(rec.predicate ?? "RELATED_TO"),
+    );
+    const rawIndex = typeof rec.rawIndex === "number" ? rec.rawIndex : -1;
 
-    if (predicate === 'RELATED_TO') fallbackCount++;
+    if (predicate === "RELATED_TO") fallbackCount++;
 
     // Get raw predicate for provenance
-    const rawPredicate = rawIndex >= 0 && rawIndex < rawTriples.length
-      ? rawTriples[rawIndex].predicate
-      : String(rec.predicate ?? '');
+    const rawPredicate =
+      rawIndex >= 0 && rawIndex < rawTriples.length
+        ? rawTriples[rawIndex].predicate
+        : String(rec.predicate ?? "");
 
     // Get confidence from raw triple if available
-    const confidence = rawIndex >= 0 && rawIndex < rawTriples.length
-      ? rawTriples[rawIndex].confidence
-      : 0.5;
+    const confidence =
+      rawIndex >= 0 && rawIndex < rawTriples.length
+        ? rawTriples[rawIndex].confidence
+        : 0.5;
 
     canonTriples.push({
       subjectCanonId,
@@ -537,17 +548,23 @@ function parseKxResponse(
   }
 
   // ─── Parse predicate mappings ───
-  const rawMappings = Array.isArray(data.predicateMappings) ? data.predicateMappings : [];
+  const rawMappings = Array.isArray(data.predicateMappings)
+    ? data.predicateMappings
+    : [];
   const predicateMappings: PredicateMapping[] = rawMappings
-    .filter((m): m is Record<string, unknown> => m != null && typeof m === 'object')
-    .map(m => ({
-      rawPredicate: String(m.raw ?? ''),
-      canonPredicate: toCanonicalPredicate(String(m.canon ?? 'RELATED_TO')),
+    .filter(
+      (m): m is Record<string, unknown> => m != null && typeof m === "object",
+    )
+    .map((m) => ({
+      rawPredicate: String(m.raw ?? ""),
+      canonPredicate: toCanonicalPredicate(String(m.canon ?? "RELATED_TO")),
       confidence: 0.9,
     }));
 
   // Count merged entities (aliases > 0)
-  const mergedCount = [...entityMap.values()].filter(e => e.aliases.length > 1).length;
+  const mergedCount = [...entityMap.values()].filter(
+    (e) => e.aliases.length > 1,
+  ).length;
 
   return {
     entities: [...entityMap.values()],
@@ -582,7 +599,7 @@ function tryParseJson(content: string): unknown {
 export async function runKxStage(
   input: KxStageInput,
   llmProvider: LLMProvider,
-  ctx?: Pick<PipelineContext, 'logger'>,
+  ctx?: Pick<PipelineContext, "logger">,
 ): Promise<KxStageOutput> {
   const startTime = Date.now();
   const logger = ctx?.logger;
@@ -595,7 +612,12 @@ export async function runKxStage(
   // If no triples, return empty output
   if (fxOutput.triples.length === 0) {
     logger?.info(`[KX] No triples to canonicalize for ${input.artifactId}`);
-    return buildEmptyOutput(input, fxOutput, Date.now() - startTime, llmProvider.name);
+    return buildEmptyOutput(
+      input,
+      fxOutput,
+      Date.now() - startTime,
+      llmProvider.name,
+    );
   }
 
   // ─── Batch canonicalization (parallel) ───
@@ -611,7 +633,9 @@ export async function runKxStage(
     batches.push(allTriples.slice(i, i + BATCH_SIZE));
   }
 
-  logger?.info(`[KX] Processing ${allTriples.length} triples in ${batches.length} batches of ≤${BATCH_SIZE} (concurrency: ${CONCURRENCY})`);
+  logger?.info(
+    `[KX] Processing ${allTriples.length} triples in ${batches.length} batches of ≤${BATCH_SIZE} (concurrency: ${CONCURRENCY})`,
+  );
 
   // ─── Process a single batch ───
   interface BatchResult {
@@ -633,18 +657,22 @@ export async function runKxStage(
     const globalOffset = batchIdx * BATCH_SIZE;
 
     try {
-      const response = await completeWithRetry(llmProvider, {
-        system: KX_SYSTEM_PROMPT,
-        messages: [
-          { role: 'user', content: buildKxUserPrompt(batch) },
-        ],
-        responseSchema: KX_RESPONSE_SCHEMA,
-        temperature: 0.0,
-        timeoutMs: BATCH_TIMEOUT_MS,
-      }, { logger });
+      const response = await completeWithRetry(
+        llmProvider,
+        {
+          system: KX_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: buildKxUserPrompt(batch) }],
+          responseSchema: KX_RESPONSE_SCHEMA,
+          temperature: 0.0,
+          timeoutMs: BATCH_TIMEOUT_MS,
+        },
+        { logger },
+      );
 
-      if (response.finishReason === 'error') {
-        logger?.warn(`[KX] Batch ${batchIdx + 1}/${batches.length} failed: ${response.error}`);
+      if (response.finishReason === "error") {
+        logger?.warn(
+          `[KX] Batch ${batchIdx + 1}/${batches.length} failed: ${response.error}`,
+        );
         return null;
       }
 
@@ -663,10 +691,14 @@ export async function runKxStage(
 
       // Count dropped triples reported by LLM
       const rawData = (parsed ?? {}) as Record<string, unknown>;
-      const droppedCount = Array.isArray(rawData.dropped) ? rawData.dropped.length : 0;
+      const droppedCount = Array.isArray(rawData.dropped)
+        ? rawData.dropped.length
+        : 0;
 
-      logger?.debug(`[KX] Batch ${batchIdx + 1}/${batches.length}: ` +
-        `${result.entities.length} entities, ${result.triples.length} triples, ${droppedCount} dropped`);
+      logger?.debug(
+        `[KX] Batch ${batchIdx + 1}/${batches.length}: ` +
+          `${result.entities.length} entities, ${result.triples.length} triples, ${droppedCount} dropped`,
+      );
 
       return {
         batchIdx,
@@ -686,7 +718,9 @@ export async function runKxStage(
         model: response.model,
       };
     } catch (error) {
-      logger?.warn(`[KX] Batch ${batchIdx + 1}/${batches.length} failed: ${error instanceof Error ? error.message : String(error)}`);
+      logger?.warn(
+        `[KX] Batch ${batchIdx + 1}/${batches.length} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return null;
     }
   }
@@ -698,18 +732,22 @@ export async function runKxStage(
     const end = Math.min(start + CONCURRENCY, batches.length);
     const chunk = Array.from({ length: end - start }, (_, i) => start + i);
 
-    logger?.info(`[KX] Launching batches ${start + 1}–${end} of ${batches.length}…`);
-    const results = await Promise.allSettled(chunk.map(idx => processBatch(idx)));
+    logger?.info(
+      `[KX] Launching batches ${start + 1}–${end} of ${batches.length}…`,
+    );
+    const results = await Promise.allSettled(
+      chunk.map((idx) => processBatch(idx)),
+    );
 
     for (const r of results) {
-      batchResults.push(r.status === 'fulfilled' ? r.value : null);
+      batchResults.push(r.status === "fulfilled" ? r.value : null);
     }
   }
 
   // Accumulated results across batches
-  const failedBatchCount = batchResults.filter(r => r === null).length;
+  const failedBatchCount = batchResults.filter((r) => r === null).length;
   if (batches.length > 0 && failedBatchCount / batches.length > 0.5) {
-    throw new AbortThresholdError('KX', failedBatchCount, batches.length, {
+    throw new AbortThresholdError("KX", failedBatchCount, batches.length, {
       artifactId: input.artifactId,
     });
   }
@@ -722,7 +760,7 @@ export async function runKxStage(
   let totalMergedCount = 0;
   let totalDroppedCount = 0;
   let totalTokensUsed = 0;
-  let lastModel = '';
+  let lastModel = "";
   const batchTokenUsages: TokenUsage[] = [];
 
   for (const result of batchResults) {
@@ -758,7 +796,7 @@ export async function runKxStage(
 
   // Deduplicate predicate mappings
   const seenMappings = new Set<string>();
-  const dedupedMappings = allPredicateMappings.filter(m => {
+  const dedupedMappings = allPredicateMappings.filter((m) => {
     const key = `${m.rawPredicate}→${m.canonPredicate}`;
     if (seenMappings.has(key)) return false;
     seenMappings.add(key);
@@ -768,16 +806,19 @@ export async function runKxStage(
   const latencyMs = Date.now() - startTime;
   const entities = [...globalEntityMap.values()];
 
-  logger?.info(`[KX] Completed ${input.artifactId}: ` +
-    `${entities.length} entities, ${allCanonTriples.length} canon triples, ` +
-    `${totalMergedCount} merged, ${totalFallbackCount} RELATED_TO fallbacks, ${totalDroppedCount} dropped`, {
-    latencyMs,
-  });
+  logger?.info(
+    `[KX] Completed ${input.artifactId}: ` +
+      `${entities.length} entities, ${allCanonTriples.length} canon triples, ` +
+      `${totalMergedCount} merged, ${totalFallbackCount} RELATED_TO fallbacks, ${totalDroppedCount} dropped`,
+    {
+      latencyMs,
+    },
+  );
 
   return {
-    $schema: 'intentweave://schemas/kx/v0.1',
-    schemaVersion: '0.1',
-    stage: 'KX',
+    $schema: "intentweave://schemas/kx/v0.1",
+    schemaVersion: "0.1",
+    stage: "KX",
     artifactId: input.artifactId,
     filePath: fxOutput.filePath,
 
@@ -810,9 +851,10 @@ export async function runKxStage(
     },
 
     // Token usage (aggregated cost)
-    tokenUsage: batchTokenUsages.length > 0
-      ? sumTokenUsage(...batchTokenUsages)
-      : zeroTokenUsage(lastModel),
+    tokenUsage:
+      batchTokenUsages.length > 0
+        ? sumTokenUsage(...batchTokenUsages)
+        : zeroTokenUsage(lastModel),
   };
 }
 
@@ -826,9 +868,9 @@ function buildEmptyOutput(
   providerName: string,
 ): KxStageOutput {
   return {
-    $schema: 'intentweave://schemas/kx/v0.1',
-    schemaVersion: '0.1',
-    stage: 'KX',
+    $schema: "intentweave://schemas/kx/v0.1",
+    schemaVersion: "0.1",
+    stage: "KX",
     artifactId: input.artifactId,
     filePath: fxOutput.filePath,
     rawTriples: [],

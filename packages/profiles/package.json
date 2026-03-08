@@ -11,7 +11,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src", "planpling"],
+  "files": [
+    "dist",
+    "src",
+    "planpling"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

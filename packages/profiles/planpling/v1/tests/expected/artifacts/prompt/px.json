@@ -9,9 +9,7 @@
       "cgId": "ws_0000|model|kg|action/admin",
       "name": "Admin",
       "type": "action",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -34,9 +32,7 @@
       "cgId": "ws_0000|model|kg|action/assign",
       "name": "Assign",
       "type": "action",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -59,9 +55,7 @@
       "cgId": "ws_0000|model|kg|action/delete",
       "name": "Delete",
       "type": "action",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -84,9 +78,7 @@
       "cgId": "ws_0000|model|kg|action/manage",
       "name": "Manage",
       "type": "action",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -109,9 +101,7 @@
       "cgId": "ws_0000|model|kg|action/read",
       "name": "Read",
       "type": "action",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -134,9 +124,7 @@
       "cgId": "ws_0000|model|kg|action/view",
       "name": "View",
       "type": "action",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -159,9 +147,7 @@
       "cgId": "ws_0000|model|kg|action/write",
       "name": "Write",
       "type": "action",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -184,9 +170,7 @@
       "cgId": "ws_0000|model|kg|resource/assignment",
       "name": "Assignment",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -209,9 +193,7 @@
       "cgId": "ws_0000|model|kg|resource/document",
       "name": "Document",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -234,9 +216,7 @@
       "cgId": "ws_0000|model|kg|resource/member",
       "name": "Member",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -259,9 +239,7 @@
       "cgId": "ws_0000|model|kg|resource/permission",
       "name": "Permission",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -284,9 +262,7 @@
       "cgId": "ws_0000|model|kg|resource/project",
       "name": "Project",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -309,9 +285,7 @@
       "cgId": "ws_0000|model|kg|resource/resource",
       "name": "Resource",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -334,9 +308,7 @@
       "cgId": "ws_0000|model|kg|resource/role",
       "name": "Role",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -359,9 +331,7 @@
       "cgId": "ws_0000|model|kg|resource/user",
       "name": "User",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -384,9 +354,7 @@
       "cgId": "ws_0000|model|kg|resource/workspace",
       "name": "Workspace",
       "type": "resource",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -409,9 +377,7 @@
       "cgId": "ws_0000|model|kg|role/projectcontributor",
       "name": "Project:contributor",
       "type": "role",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -434,9 +400,7 @@
       "cgId": "ws_0000|model|kg|role/projectmaintainer",
       "name": "Project:maintainer",
       "type": "role",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -459,9 +423,7 @@
       "cgId": "ws_0000|model|kg|role/projectviewer",
       "name": "Project:viewer",
       "type": "role",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -484,9 +446,7 @@
       "cgId": "ws_0000|model|kg|role/workspaceadmin",
       "name": "Workspace:admin",
       "type": "role",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -509,9 +469,7 @@
       "cgId": "ws_0000|model|kg|role/workspacemember",
       "name": "Workspace:member",
       "type": "role",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -534,9 +492,7 @@
       "cgId": "ws_0000|model|kg|role/workspaceowner",
       "name": "Workspace:owner",
       "type": "role",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,
@@ -559,9 +515,7 @@
       "cgId": "ws_0000|model|kg|rule/req-1",
       "name": "Req-1",
       "type": "rule",
-      "labels": [
-        "Staging"
-      ],
+      "labels": ["Staging"],
       "evidence": [
         {
           "turnIndex": 0,

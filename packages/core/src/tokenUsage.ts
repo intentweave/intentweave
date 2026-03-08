@@ -48,24 +48,24 @@ export interface ModelPricing {
  */
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   // GPT-4o family
-  'gpt-4o': { promptPer1M: 2.50, completionPer1M: 10.00 },
-  'gpt-4o-mini': { promptPer1M: 0.15, completionPer1M: 0.60 },
+  "gpt-4o": { promptPer1M: 2.5, completionPer1M: 10.0 },
+  "gpt-4o-mini": { promptPer1M: 0.15, completionPer1M: 0.6 },
 
   // GPT-5 family
-  'gpt-5-mini': { promptPer1M: 0.15, completionPer1M: 0.60 },
+  "gpt-5-mini": { promptPer1M: 0.15, completionPer1M: 0.6 },
 
   // o-series reasoning
-  'o3-mini': { promptPer1M: 1.10, completionPer1M: 4.40 },
-  'o3': { promptPer1M: 2.00, completionPer1M: 8.00 },
-  'o4-mini': { promptPer1M: 1.10, completionPer1M: 4.40 },
+  "o3-mini": { promptPer1M: 1.1, completionPer1M: 4.4 },
+  o3: { promptPer1M: 2.0, completionPer1M: 8.0 },
+  "o4-mini": { promptPer1M: 1.1, completionPer1M: 4.4 },
 
   // Claude (if users proxy through OpenAI-compat)
-  'claude-3.5-sonnet': { promptPer1M: 3.00, completionPer1M: 15.00 },
-  'claude-sonnet-4': { promptPer1M: 3.00, completionPer1M: 15.00 },
+  "claude-3.5-sonnet": { promptPer1M: 3.0, completionPer1M: 15.0 },
+  "claude-sonnet-4": { promptPer1M: 3.0, completionPer1M: 15.0 },
 
   // Fallback / mock
-  'smart-mock': { promptPer1M: 0, completionPer1M: 0 },
-  'mock': { promptPer1M: 0, completionPer1M: 0 },
+  "smart-mock": { promptPer1M: 0, completionPer1M: 0 },
+  mock: { promptPer1M: 0, completionPer1M: 0 },
   default: { promptPer1M: 0, completionPer1M: 0 },
 };
 
@@ -83,13 +83,13 @@ export function getPricing(model: string): ModelPricing {
 
   // Prefix match — sort by descending key length so longest wins
   const keys = Object.keys(MODEL_PRICING)
-    .filter(k => k !== 'default')
+    .filter((k) => k !== "default")
     .sort((a, b) => b.length - a.length);
   for (const key of keys) {
     if (model.startsWith(key)) return MODEL_PRICING[key];
   }
 
-  return MODEL_PRICING['default'];
+  return MODEL_PRICING["default"];
 }
 
 /**
@@ -165,8 +165,8 @@ export function sumTokenUsage(...usages: TokenUsage[]): TokenUsage {
  *   >= 0.01  → "$1.23"
  */
 export function formatCost(usd: number): string {
-  if (usd === 0) return 'free';
-  if (usd < 0.01) return '< $0.01';
+  if (usd === 0) return "free";
+  if (usd < 0.01) return "< $0.01";
   return `$${usd.toFixed(2)}`;
 }
 
@@ -177,7 +177,7 @@ export function formatCost(usd: number): string {
  *   1234567  → "1,234,567"
  */
 export function formatTokens(count: number): string {
-  return count.toLocaleString('en-US');
+  return count.toLocaleString("en-US");
 }
 
 // =============================================================================
@@ -258,12 +258,14 @@ export function estimateTokenCost(
 
   // Only uncached files consume tokens
   const uncachedSizes = fileSizes
-    .sort((a, b) => b - a)            // sort descending so we skip the "cached" largest? No — 
-    .slice(cachedCount);              // Actually cache hits are not by size. Let's just take last N
+    .sort((a, b) => b - a) // sort descending so we skip the "cached" largest? No —
+    .slice(cachedCount); // Actually cache hits are not by size. Let's just take last N
   // Better: caller should pass only uncached file sizes. For simplicity, assume
   // cache hits are evenly distributed — we just use the first `uncachedFiles` entries.
   // Re-sort to original order is not needed; we only need aggregate sizes.
-  const totalUncachedChars = fileSizes.slice(0, uncachedFiles).reduce((s, sz) => s + sz, 0);
+  const totalUncachedChars = fileSizes
+    .slice(0, uncachedFiles)
+    .reduce((s, sz) => s + sz, 0);
 
   // Chunks = sum of ceil(fileSize / maxChunkSize) across uncached files
   let estimatedChunks = 0;
@@ -273,22 +275,33 @@ export function estimateTokenCost(
 
   // FX: one LLM call per chunk
   const fxCalls = estimatedChunks;
-  const fxPromptTokens = fxCalls * (C.FX_SYSTEM_TOKENS + Math.ceil(C.MAX_CHUNK_SIZE / C.CHARS_PER_TOKEN));
+  const fxPromptTokens =
+    fxCalls *
+    (C.FX_SYSTEM_TOKENS + Math.ceil(C.MAX_CHUNK_SIZE / C.CHARS_PER_TOKEN));
   // Adjust: use actual average chunk size rather than max for prompt tokens
-  const avgChunkChars = uncachedFiles > 0 ? totalUncachedChars / estimatedChunks : 0;
-  const fxPromptTokensAdjusted = fxCalls * (C.FX_SYSTEM_TOKENS + Math.ceil(avgChunkChars / C.CHARS_PER_TOKEN));
+  const avgChunkChars =
+    uncachedFiles > 0 ? totalUncachedChars / estimatedChunks : 0;
+  const fxPromptTokensAdjusted =
+    fxCalls *
+    (C.FX_SYSTEM_TOKENS + Math.ceil(avgChunkChars / C.CHARS_PER_TOKEN));
   const fxCompletionTokens = fxCalls * C.FX_COMPLETION_TOKENS_PER_CHUNK;
 
   // KX: batch triples from FX output
   const totalTriples = estimatedChunks * C.TRIPLES_PER_CHUNK;
   const kxCalls = Math.max(0, Math.ceil(totalTriples / C.KX_BATCH_SIZE));
-  const kxPromptTokens = kxCalls * (C.KX_SYSTEM_TOKENS + C.KX_BATCH_SIZE * C.TOKENS_PER_TRIPLE);
+  const kxPromptTokens =
+    kxCalls * (C.KX_SYSTEM_TOKENS + C.KX_BATCH_SIZE * C.TOKENS_PER_TRIPLE);
   const kxCompletionTokens = kxCalls * C.KX_COMPLETION_TOKENS_PER_BATCH;
 
   const estimatedPromptTokens = fxPromptTokensAdjusted + kxPromptTokens;
   const estimatedCompletionTokens = fxCompletionTokens + kxCompletionTokens;
-  const estimatedTotalTokens = estimatedPromptTokens + estimatedCompletionTokens;
-  const estimatedCostUsd = computeCost(estimatedPromptTokens, estimatedCompletionTokens, pricing);
+  const estimatedTotalTokens =
+    estimatedPromptTokens + estimatedCompletionTokens;
+  const estimatedCostUsd = computeCost(
+    estimatedPromptTokens,
+    estimatedCompletionTokens,
+    pricing,
+  );
 
   return {
     totalFiles,
@@ -310,10 +323,18 @@ export function estimateTokenCost(
  */
 export function formatEstimate(est: TokenCostEstimate): string {
   const lines: string[] = [];
-  lines.push(`Files: ${est.totalFiles} total, ${est.uncachedFiles} to process, ${est.cachedFiles} cached`);
+  lines.push(
+    `Files: ${est.totalFiles} total, ${est.uncachedFiles} to process, ${est.cachedFiles} cached`,
+  );
   lines.push(`Estimated chunks: ${est.estimatedChunks}`);
-  lines.push(`Estimated LLM calls: ${est.estimatedFxCalls} FX + ${est.estimatedKxCalls} KX = ${est.estimatedFxCalls + est.estimatedKxCalls} total`);
-  lines.push(`Estimated tokens: ~${formatTokens(est.estimatedPromptTokens)} prompt + ~${formatTokens(est.estimatedCompletionTokens)} completion = ~${formatTokens(est.estimatedTotalTokens)} total`);
-  lines.push(`Estimated cost: ${formatCost(est.estimatedCostUsd)} (${est.model})`);
-  return lines.join('\n');
+  lines.push(
+    `Estimated LLM calls: ${est.estimatedFxCalls} FX + ${est.estimatedKxCalls} KX = ${est.estimatedFxCalls + est.estimatedKxCalls} total`,
+  );
+  lines.push(
+    `Estimated tokens: ~${formatTokens(est.estimatedPromptTokens)} prompt + ~${formatTokens(est.estimatedCompletionTokens)} completion = ~${formatTokens(est.estimatedTotalTokens)} total`,
+  );
+  lines.push(
+    `Estimated cost: ${formatCost(est.estimatedCostUsd)} (${est.model})`,
+  );
+  return lines.join("\n");
 }

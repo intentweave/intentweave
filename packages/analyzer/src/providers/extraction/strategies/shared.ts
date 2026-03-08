@@ -3,7 +3,7 @@
 
 /**
  * Shared Strategy Utilities
- * 
+ *
  * Common types, prompts, and helper functions for extraction strategies.
  */
 
@@ -14,7 +14,7 @@ import type {
   Chunk,
   EntitySchema,
   ExtractionProfile,
-} from '@intentweave/core';
+} from "@intentweave/core";
 
 // =============================================================================
 // Configuration
@@ -37,7 +37,9 @@ export interface StrategyConfig {
 /**
  * Create default strategy configuration
  */
-export function createDefaultStrategyConfig(overrides?: Partial<StrategyConfig>): StrategyConfig {
+export function createDefaultStrategyConfig(
+  overrides?: Partial<StrategyConfig>,
+): StrategyConfig {
   return {
     temperature: overrides?.temperature ?? 0.1,
     enableConfidence: overrides?.enableConfidence ?? true,
@@ -52,7 +54,7 @@ export function createDefaultStrategyConfig(overrides?: Partial<StrategyConfig>)
 
 /**
  * Layer 1: Core Semantic Frame
- * 
+ *
  * General knowledge graph modeling mindset. Never changes.
  */
 const CORE_SEMANTIC_FRAME = `You are modeling the intent of a document as a Knowledge Graph.
@@ -72,29 +74,29 @@ CRITICAL RULES:
 
 /**
  * Layer 2: Schema Hints (generated from profile)
- * 
+ *
  * Lists allowed kinds and predicates.
  */
 function buildSchemaHints(
   allowedKinds: string[],
-  allowedPredicates: string[]
+  allowedPredicates: string[],
 ): string {
   return `
 ## Entity Kinds (what to extract)
-${allowedKinds.map(k => `- ${k}`).join('\n')}
+${allowedKinds.map((k) => `- ${k}`).join("\n")}
 
 ## Relationship Predicates (how to connect them)
-${allowedPredicates.map(p => `- ${p}`).join('\n')}`;
+${allowedPredicates.map((p) => `- ${p}`).join("\n")}`;
 }
 
 /**
  * Layer 3: Chunk-Type Specific Instructions
- * 
+ *
  * Different extraction strategies based on content structure.
  */
 function buildChunkTypeInstructions(chunkType: string | undefined): string {
   switch (chunkType) {
-    case 'table':
+    case "table":
       return `
 ## TABLE EXTRACTION (Structured Data)
 
@@ -128,7 +130,7 @@ EXTRACTION PATTERN for State Transition Tables:
 
 Parse the JSON data if present (look for <!-- [STRUCTURED_TABLE_DATA] -->).`;
 
-    case 'code':
+    case "code":
       return `
 ## CODE EXTRACTION (TypeScript/JavaScript)
 
@@ -140,7 +142,7 @@ This chunk contains code. Focus on:
 
 Skip implementation details, focus on declarations and contracts.`;
 
-    case 'list':
+    case "list":
       return `
 ## LIST EXTRACTION
 
@@ -172,7 +174,7 @@ Key patterns:
 
 /**
  * Layer 4: Semantic Issue Detection
- * 
+ *
  * Guidance for detecting problems in specifications.
  */
 const SEMANTIC_ISSUE_DETECTION = `
@@ -207,14 +209,20 @@ Always extract the RESOURCE that owns states:
 // Combined Prompts (Built from Layers)
 // =============================================================================
 
-export const SINGLE_PASS_SYSTEM_PROMPT = CORE_SEMANTIC_FRAME + SEMANTIC_ISSUE_DETECTION + DOMAIN_PATTERNS;
+export const SINGLE_PASS_SYSTEM_PROMPT =
+  CORE_SEMANTIC_FRAME + SEMANTIC_ISSUE_DETECTION + DOMAIN_PATTERNS;
 
-export const ENTITIES_ONLY_SYSTEM_PROMPT = CORE_SEMANTIC_FRAME + `
+export const ENTITIES_ONLY_SYSTEM_PROMPT =
+  CORE_SEMANTIC_FRAME +
+  `
 
 You are extracting ENTITIES ONLY in this pass. Do not extract relationships.
-Focus on identifying all meaningful objects mentioned in the text.` + DOMAIN_PATTERNS;
+Focus on identifying all meaningful objects mentioned in the text.` +
+  DOMAIN_PATTERNS;
 
-export const STATEMENTS_ONLY_SYSTEM_PROMPT = CORE_SEMANTIC_FRAME + `
+export const STATEMENTS_ONLY_SYSTEM_PROMPT =
+  CORE_SEMANTIC_FRAME +
+  `
 
 You are extracting RELATIONSHIPS ONLY in this pass.
 You will be given a list of entities that were already extracted.
@@ -230,38 +238,44 @@ IMPORTANT: Generate HAS_STATE statements linking resources to their states!`;
  * JSON Schema for extraction response (single-pass: entities + statements)
  */
 export const EXTRACTION_RESPONSE_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
     entities: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          name: { type: 'string', description: 'Entity name' },
-          kind: { type: 'string', description: 'Entity kind (role, action, resource, state, etc.)' },
-          description: { type: 'string', description: 'Brief description' },
-          confidence: { type: 'number', description: 'Confidence score 0-1' },
+          name: { type: "string", description: "Entity name" },
+          kind: {
+            type: "string",
+            description: "Entity kind (role, action, resource, state, etc.)",
+          },
+          description: { type: "string", description: "Brief description" },
+          confidence: { type: "number", description: "Confidence score 0-1" },
         },
-        required: ['name', 'kind', 'description', 'confidence'],
+        required: ["name", "kind", "description", "confidence"],
         additionalProperties: false,
       },
     },
     statements: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          subject: { type: 'string', description: 'Subject entity name' },
-          predicate: { type: 'string', description: 'Relationship type (ROLE_CAN, HAS_STATE, etc.)' },
-          object: { type: 'string', description: 'Object entity name' },
-          confidence: { type: 'number', description: 'Confidence score 0-1' },
+          subject: { type: "string", description: "Subject entity name" },
+          predicate: {
+            type: "string",
+            description: "Relationship type (ROLE_CAN, HAS_STATE, etc.)",
+          },
+          object: { type: "string", description: "Object entity name" },
+          confidence: { type: "number", description: "Confidence score 0-1" },
         },
-        required: ['subject', 'predicate', 'object', 'confidence'],
+        required: ["subject", "predicate", "object", "confidence"],
         additionalProperties: false,
       },
     },
   },
-  required: ['entities', 'statements'],
+  required: ["entities", "statements"],
   additionalProperties: false,
 } as const;
 
@@ -269,24 +283,31 @@ export const EXTRACTION_RESPONSE_SCHEMA = {
  * JSON Schema for entities-only extraction (Pass 1 of 2-pass mode)
  */
 export const ENTITIES_ONLY_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
     entities: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          name: { type: 'string', description: 'Entity name (MUST be exact substring from source text)' },
-          kind: { type: 'string', description: 'Entity kind from allowed list' },
-          description: { type: 'string', description: 'Brief description' },
-          confidence: { type: 'number', description: 'Confidence score 0-1' },
+          name: {
+            type: "string",
+            description:
+              "Entity name (MUST be exact substring from source text)",
+          },
+          kind: {
+            type: "string",
+            description: "Entity kind from allowed list",
+          },
+          description: { type: "string", description: "Brief description" },
+          confidence: { type: "number", description: "Confidence score 0-1" },
         },
-        required: ['name', 'kind', 'description', 'confidence'],
+        required: ["name", "kind", "description", "confidence"],
         additionalProperties: false,
       },
     },
   },
-  required: ['entities'],
+  required: ["entities"],
   additionalProperties: false,
 } as const;
 
@@ -294,24 +315,33 @@ export const ENTITIES_ONLY_SCHEMA = {
  * JSON Schema for statements-only extraction (Pass 2 of 2-pass mode)
  */
 export const STATEMENTS_ONLY_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
     statements: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          subject: { type: 'string', description: 'Subject entity name (must match entity from list)' },
-          predicate: { type: 'string', description: 'Relationship type from allowed list' },
-          object: { type: 'string', description: 'Object entity name (must match entity from list)' },
-          confidence: { type: 'number', description: 'Confidence score 0-1' },
+          subject: {
+            type: "string",
+            description: "Subject entity name (must match entity from list)",
+          },
+          predicate: {
+            type: "string",
+            description: "Relationship type from allowed list",
+          },
+          object: {
+            type: "string",
+            description: "Object entity name (must match entity from list)",
+          },
+          confidence: { type: "number", description: "Confidence score 0-1" },
         },
-        required: ['subject', 'predicate', 'object', 'confidence'],
+        required: ["subject", "predicate", "object", "confidence"],
         additionalProperties: false,
       },
     },
   },
-  required: ['statements'],
+  required: ["statements"],
   additionalProperties: false,
 } as const;
 
@@ -353,7 +383,7 @@ export interface ExtractedData {
 
 /**
  * Build extraction prompt for a chunk
- * 
+ *
  * Uses the layered prompt architecture:
  * - Layer 1: Core semantic frame (in system prompt)
  * - Layer 2: Schema hints (kinds + predicates)
@@ -364,42 +394,68 @@ export function buildExtractionPrompt(
   chunk: Chunk,
   schema: EntitySchema,
   profile: ExtractionProfile,
-  mode: 'single-pass' | 'entities-only' | 'statements-only',
-  existingEntities?: Entity[]
+  mode: "single-pass" | "entities-only" | "statements-only",
+  existingEntities?: Entity[],
 ): string {
-  const allowedKinds = schema.kinds.length > 0
-    ? schema.kinds
-    : ['role', 'action', 'resource', 'state', 'event', 'requirement', 'component', 'constraint', 'policy', 'issue'];
-  
+  const allowedKinds =
+    schema.kinds.length > 0
+      ? schema.kinds
+      : [
+          "role",
+          "action",
+          "resource",
+          "state",
+          "event",
+          "requirement",
+          "component",
+          "constraint",
+          "policy",
+          "issue",
+        ];
+
   // NOTE: TRIGGERED_BY is required for state machine extraction
   // The LLM extracts "transition TRIGGERED_BY action" which MX inverts to "action TRIGGERS transition"
-  const allowedPredicates = schema.predicates.length > 0
-    ? schema.predicates
-    : ['ROLE_CAN', 'HAS_STATE', 'TRANSITIONS_TO', 'TRIGGERED_BY', 'FROM_STATE', 'TO_STATE', 'REQUIRES', 'CONTAINS', 'IMPLEMENTS', 'CONFLICTS_WITH', 'AFFECTS'];
-  
+  const allowedPredicates =
+    schema.predicates.length > 0
+      ? schema.predicates
+      : [
+          "ROLE_CAN",
+          "HAS_STATE",
+          "TRANSITIONS_TO",
+          "TRIGGERED_BY",
+          "FROM_STATE",
+          "TO_STATE",
+          "REQUIRES",
+          "CONTAINS",
+          "IMPLEMENTS",
+          "CONFLICTS_WITH",
+          "AFFECTS",
+        ];
+
   // Determine chunk type from metadata or infer from content
   const metadataChunkType = chunk.metadata?.chunkType;
-  const chunkType: string | undefined = typeof metadataChunkType === 'string' 
-    ? metadataChunkType 
-    : inferChunkType(chunk.content);
-  
+  const chunkType: string | undefined =
+    typeof metadataChunkType === "string"
+      ? metadataChunkType
+      : inferChunkType(chunk.content);
+
   // Build the prompt using layers
-  let prompt = '';
-  
+  let prompt = "";
+
   // Layer 2: Schema hints
   prompt += buildSchemaHints(allowedKinds, allowedPredicates);
-  
+
   // Layer 3: Chunk-type specific instructions
   prompt += buildChunkTypeInstructions(chunkType);
-  
+
   // Layer 4: Document context
   prompt += `
 
 ## Document Context
 - Profile: ${profile.name}
-- Artifact role: ${profile.artifactRole ?? 'general'}
-- Chunk type: ${chunkType ?? 'text'}
-- File: ${chunk.metadata?.sourceFile ?? 'unknown'}
+- Artifact role: ${profile.artifactRole ?? "general"}
+- Chunk type: ${chunkType ?? "text"}
+- File: ${chunk.metadata?.sourceFile ?? "unknown"}
 
 ## Content to Extract From
 \`\`\`
@@ -407,10 +463,14 @@ ${chunk.content}
 \`\`\``;
 
   // For statements-only mode, include existing entities
-  if (mode === 'statements-only' && existingEntities && existingEntities.length > 0) {
+  if (
+    mode === "statements-only" &&
+    existingEntities &&
+    existingEntities.length > 0
+  ) {
     const entityList = existingEntities
-      .map(e => `- "${e.name}" (${e.type})`)
-      .join('\n');
+      .map((e) => `- "${e.name}" (${e.type})`)
+      .join("\n");
     prompt += `
 
 ## Entities Already Extracted
@@ -426,16 +486,25 @@ ${entityList}`;
  */
 function inferChunkType(content: string): string | undefined {
   // Check for table patterns
-  if (content.includes('| ') && content.includes(' |') && content.includes('---')) {
-    return 'table';
+  if (
+    content.includes("| ") &&
+    content.includes(" |") &&
+    content.includes("---")
+  ) {
+    return "table";
   }
   // Check for code patterns
-  if (content.startsWith('```') || /^\s*(function|class|interface|type|const|let|var|export|import)\s/.test(content)) {
-    return 'code';
+  if (
+    content.startsWith("```") ||
+    /^\s*(function|class|interface|type|const|let|var|export|import)\s/.test(
+      content,
+    )
+  ) {
+    return "code";
   }
   // Check for list patterns
   if (/^(\s*[-*]\s|\s*\d+\.\s)/m.test(content)) {
-    return 'list';
+    return "list";
   }
   return undefined;
 }
@@ -446,33 +515,35 @@ function inferChunkType(content: string): string | undefined {
 export function convertToEntity(
   extracted: ExtractedEntity,
   chunk: Chunk,
-  _schema: EntitySchema
+  _schema: EntitySchema,
 ): Entity {
   const kind = normalizeKind(extracted.kind);
-  
+
   // Build cgId from entity kind and normalized name
   // Use simple format: kind:name (normalized)
-  const normalizedName = extracted.name.toLowerCase().replace(/\s+/g, '_');
+  const normalizedName = extracted.name.toLowerCase().replace(/\s+/g, "_");
   const cgId = `${kind}:${normalizedName}`;
-  
+
   // Get turnIndex from chunk or default to 0
   const turnIndex = chunk.turnIndex ?? 0;
-  
+
   return {
     cgId,
     name: extracted.name,
-    type: kind as Entity['type'],
+    type: kind as Entity["type"],
     confidence: extracted.confidence,
-    labels: ['Staging'],
-    evidence: [{
-      turnIndex,
-      text: chunk.content.slice(0, 200),
-      chunk_id: chunk.id,
-      confidence: extracted.confidence,
-      source_stage: 'RX',
-    }],
-    source: 'llm',
-    state: 'new',
+    labels: ["Staging"],
+    evidence: [
+      {
+        turnIndex,
+        text: chunk.content.slice(0, 200),
+        chunk_id: chunk.id,
+        confidence: extracted.confidence,
+        source_stage: "RX",
+      },
+    ],
+    source: "llm",
+    state: "new",
     aliases: [],
   };
 }
@@ -483,33 +554,35 @@ export function convertToEntity(
 export function convertToStatement(
   extracted: ExtractedStatement,
   chunk: Chunk,
-  entities: Entity[]
+  entities: Entity[],
 ): Statement {
   // Find matching subject and object entities
-  const subjectEntity = entities.find(e => 
-    e.name.toLowerCase() === extracted.subject.toLowerCase()
+  const subjectEntity = entities.find(
+    (e) => e.name.toLowerCase() === extracted.subject.toLowerCase(),
   );
-  const objectEntity = entities.find(e => 
-    e.name.toLowerCase() === extracted.object.toLowerCase()
+  const objectEntity = entities.find(
+    (e) => e.name.toLowerCase() === extracted.object.toLowerCase(),
   );
-  
+
   // Get turnIndex from chunk or default to 0
   const turnIndex = chunk.turnIndex ?? 0;
-  
+
   return {
     subjectCgId: subjectEntity?.cgId ?? `unknown:${extracted.subject}`,
     predicate: extracted.predicate,
     objectCgId: objectEntity?.cgId ?? `unknown:${extracted.object}`,
     confidence: extracted.confidence,
-    labels: ['Staging'],
-    evidence: [{
-      turnIndex,
-      text: chunk.content.slice(0, 200),
-      chunk_id: chunk.id,
-      confidence: extracted.confidence,
-      source_stage: 'RX',
-    }],
-    state: 'new',
+    labels: ["Staging"],
+    evidence: [
+      {
+        turnIndex,
+        text: chunk.content.slice(0, 200),
+        chunk_id: chunk.id,
+        confidence: extracted.confidence,
+        source_stage: "RX",
+      },
+    ],
+    state: "new",
     chunk_id: chunk.id,
   };
 }
@@ -519,34 +592,34 @@ export function convertToStatement(
  */
 export function normalizeKind(kind: string): string {
   const normalized = kind.toLowerCase().trim();
-  
+
   // Map common variations
   const kindMap: Record<string, string> = {
-    'roles': 'role',
-    'actions': 'action',
-    'resources': 'resource',
-    'states': 'state',
-    'requirements': 'requirement',
-    'components': 'component',
-    'actor': 'role',
-    'actors': 'role',
-    'entity': 'resource',
-    'entities': 'resource',
-    'object': 'resource',
-    'objects': 'resource',
-    'status': 'state',
-    'condition': 'state',
-    'conditions': 'state',
-    'activity': 'action',
-    'activities': 'action',
-    'operation': 'action',
-    'operations': 'action',
-    'service': 'component',
-    'services': 'component',
-    'module': 'component',
-    'modules': 'component',
+    roles: "role",
+    actions: "action",
+    resources: "resource",
+    states: "state",
+    requirements: "requirement",
+    components: "component",
+    actor: "role",
+    actors: "role",
+    entity: "resource",
+    entities: "resource",
+    object: "resource",
+    objects: "resource",
+    status: "state",
+    condition: "state",
+    conditions: "state",
+    activity: "action",
+    activities: "action",
+    operation: "action",
+    operations: "action",
+    service: "component",
+    services: "component",
+    module: "component",
+    modules: "component",
   };
-  
+
   return kindMap[normalized] ?? normalized;
 }
 
@@ -555,7 +628,7 @@ export function normalizeKind(kind: string): string {
  */
 export function deduplicateEntities(entities: Entity[]): Entity[] {
   const seen = new Map<string, Entity>();
-  
+
   for (const entity of entities) {
     const key = `${entity.name.toLowerCase()}:${entity.type}`;
     if (!seen.has(key)) {
@@ -568,7 +641,7 @@ export function deduplicateEntities(entities: Entity[]): Entity[] {
       }
     }
   }
-  
+
   return Array.from(seen.values());
 }
 
@@ -578,13 +651,13 @@ export function deduplicateEntities(entities: Entity[]): Entity[] {
 export function createEvidence(
   chunk: Chunk,
   entities: Entity[],
-  _statements: Statement[]
+  _statements: Statement[],
 ): Evidence[] {
   const evidence: Evidence[] = [];
-  
+
   // Get turnIndex from chunk or default to 0
   const turnIndex = chunk.turnIndex ?? 0;
-  
+
   // Create evidence for each entity found
   for (const entity of entities) {
     evidence.push({
@@ -592,9 +665,9 @@ export function createEvidence(
       text: chunk.content.slice(0, 200), // First 200 chars as context
       chunk_id: chunk.id,
       confidence: entity.confidence,
-      source_stage: 'RX',
+      source_stage: "RX",
     });
   }
-  
+
   return evidence;
 }

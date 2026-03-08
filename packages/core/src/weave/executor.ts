@@ -3,7 +3,7 @@
 
 /**
  * Weave Executor (WX Stage)
- * 
+ *
  * Phase 1 Implementation:
  * - Groups entities by canonicalKey within same artifactRole
  * - Assigns deterministic canonicalIds
@@ -26,20 +26,20 @@ import type {
   WeaveDebugInfo,
   MergeExplanation,
   PotentialMergePair,
-} from './types.js';
+} from "./types.js";
 import {
   buildCanonicalKey,
   generateCanonicalId,
   generateCanonicalStatementId,
   normalizePredicate,
   normalizeName,
-} from './normalize.js';
-import { deduplicateEvidence, mergeEvidenceIds } from './evidence.js';
+} from "./normalize.js";
+import { deduplicateEvidence, mergeEvidenceIds } from "./evidence.js";
 import {
   createEmptyRegistry,
   resolveToCanonicalId,
   isDeprecated,
-} from './registry.js';
+} from "./registry.js";
 
 // =============================================================================
 // Types
@@ -73,7 +73,7 @@ export interface WeaveOptions {
 
 /**
  * Execute the WX (Weave) stage.
- * 
+ *
  * Phase 1 algorithm:
  * 1. Group entities by (artifactRole, canonicalKey)
  * 2. For each group:
@@ -87,7 +87,7 @@ export interface WeaveOptions {
  */
 export function executeWeave(
   input: WeaveInput,
-  options: WeaveOptions = {}
+  options: WeaveOptions = {},
 ): WeaveResult {
   const { sameRoleOnly = true, warnOnConflict = true, debug = false } = options;
   const registry = input.registry ?? createEmptyRegistry();
@@ -116,7 +116,8 @@ export function executeWeave(
     const roleDistribution: Record<string, number> = {};
     const typeDistribution: Record<string, number> = {};
     for (const entity of input.entities) {
-      roleDistribution[entity.artifactRole] = (roleDistribution[entity.artifactRole] || 0) + 1;
+      roleDistribution[entity.artifactRole] =
+        (roleDistribution[entity.artifactRole] || 0) + 1;
       typeDistribution[entity.type] = (typeDistribution[entity.type] || 0) + 1;
       // Track normalization
       const normalized = normalizeName(entity.name);
@@ -143,22 +144,23 @@ export function executeWeave(
     const size = groupMembers.length;
     clusterSizeDistribution[size] = (clusterSizeDistribution[size] || 0) + 1;
     totalMembers += size;
-    
+
     if (size === 1) {
       singletonCount++;
     }
-    
+
     if (size > largestClusterSize) {
       largestClusterSize = size;
-      largestClusterMembers = groupMembers.map(e => `${e.name} (${e.cgId})`);
+      largestClusterMembers = groupMembers.map((e) => `${e.name} (${e.cgId})`);
     }
   }
 
   stats.clusterSizeDistribution = clusterSizeDistribution;
   stats.singletonCount = singletonCount;
   stats.largestClusterSize = largestClusterSize;
-  stats.avgMemberCount = entityGroups.size > 0 ? totalMembers / entityGroups.size : 0;
-  
+  stats.avgMemberCount =
+    entityGroups.size > 0 ? totalMembers / entityGroups.size : 0;
+
   if (debug) {
     stats.largestClusterMembers = largestClusterMembers;
   }
@@ -173,19 +175,21 @@ export function executeWeave(
 
   for (const [groupKey, rawEntities] of entityGroups) {
     const result = mergeEntityGroup(groupKey, rawEntities, registry, overrides);
-    
+
     if (result.conflict) {
       conflicts.push(result.conflict);
       stats.conflictCount++;
-      
+
       if (!warnOnConflict) {
         throw new Error(`Weave conflict: ${result.conflict.description}`);
       }
-      warnings.push(`Conflict in group ${groupKey}: ${result.conflict.description}`);
+      warnings.push(
+        `Conflict in group ${groupKey}: ${result.conflict.description}`,
+      );
     }
 
     canonicalEntities.push(result.canonical);
-    
+
     // Map all member cgIds to this canonical
     for (const cgId of result.canonical.memberCgIds) {
       cgIdToCanonicalId.set(cgId, result.canonical.canonicalId);
@@ -200,9 +204,9 @@ export function executeWeave(
         type: result.canonical.type,
         normalizedName: normalizeName(result.canonical.displayName),
         memberCgIds: result.canonical.memberCgIds,
-        originalNames: rawEntities.map(e => e.name),
-        artifactIds: [...new Set(rawEntities.map(e => e.artifactId))],
-        reason: 'same_key',
+        originalNames: rawEntities.map((e) => e.name),
+        artifactIds: [...new Set(rawEntities.map((e) => e.artifactId))],
+        reason: "same_key",
       };
     }
   }
@@ -213,25 +217,30 @@ export function executeWeave(
   const canonicalStatements = remapAndDeduplicateStatements(
     input.statements,
     cgIdToCanonicalId,
-    registry
+    registry,
   );
 
   stats.canonicalStatementCount = canonicalStatements.length;
 
   // Step 4: Deduplicate evidence
-  const { deduplicated: deduplicatedEvidence, superseded } = deduplicateEvidence(
-    input.evidence
-  );
+  const { deduplicated: deduplicatedEvidence, superseded } =
+    deduplicateEvidence(input.evidence);
 
   if (superseded.size > 0 && debug) {
-    (debugInfo as Record<string, unknown>).supersededEvidence = Array.from(superseded.entries());
+    (debugInfo as Record<string, unknown>).supersededEvidence = Array.from(
+      superseded.entries(),
+    );
   }
 
   // Step 5: Find potential merge pairs (false negative detection) - only if debug
   if (debug) {
-    const potentialMergePairs = findPotentialMergePairs(input.entities, entityGroups, sameRoleOnly);
+    const potentialMergePairs = findPotentialMergePairs(
+      input.entities,
+      entityGroups,
+      sameRoleOnly,
+    );
     stats.rejectedMergeCandidates = potentialMergePairs.length;
-    
+
     debugInfo.mergeExplanations = mergeExplanations;
     debugInfo.potentialMergePairs = potentialMergePairs.slice(0, 100); // Top 100
   }
@@ -258,7 +267,7 @@ interface GroupKey {
 
 function groupEntities(
   entities: RawEntity[],
-  sameRoleOnly: boolean
+  sameRoleOnly: boolean,
 ): Map<string, RawEntity[]> {
   const groups = new Map<string, RawEntity[]>();
 
@@ -295,25 +304,25 @@ function mergeEntityGroup(
   groupKey: string,
   rawEntities: RawEntity[],
   registry: WeaveRegistry,
-  overrides?: WeaveOverrides
+  overrides?: WeaveOverrides,
 ): MergeResult {
   // Validate all have same type
-  const types = new Set(rawEntities.map(e => e.type));
+  const types = new Set(rawEntities.map((e) => e.type));
   let conflict: WeaveConflict | undefined;
 
   if (types.size > 1) {
     conflict = {
-      kind: 'type-mismatch',
+      kind: "type-mismatch",
       canonicalKey: groupKey,
-      cgIds: rawEntities.map(e => e.cgId),
-      description: `Type mismatch in group: ${Array.from(types).join(', ')}`,
+      cgIds: rawEntities.map((e) => e.cgId),
+      description: `Type mismatch in group: ${Array.from(types).join(", ")}`,
       values: Array.from(types),
     };
   }
 
   // Pick representative (most evidence)
   const sorted = [...rawEntities].sort(
-    (a, b) => (b.evidenceIds?.length ?? 0) - (a.evidenceIds?.length ?? 0)
+    (a, b) => (b.evidenceIds?.length ?? 0) - (a.evidenceIds?.length ?? 0),
   );
   const representative = sorted[0];
 
@@ -333,13 +342,15 @@ function mergeEntityGroup(
     // Emit warning but continue
     console.warn(
       `[WX] Canonical ${canonicalId} is deprecated (${deprecation.reason}). ` +
-      `Consider using: ${deprecation.replacedBy?.join(', ')}`
+        `Consider using: ${deprecation.replacedBy?.join(", ")}`,
     );
   }
 
   // Merge evidence from all members
-  const allEvidenceIds = rawEntities.flatMap(e => e.evidenceIds ?? []);
-  const mergedEvidenceIds = mergeEvidenceIds(...rawEntities.map(e => e.evidenceIds ?? []));
+  const allEvidenceIds = rawEntities.flatMap((e) => e.evidenceIds ?? []);
+  const mergedEvidenceIds = mergeEvidenceIds(
+    ...rawEntities.map((e) => e.evidenceIds ?? []),
+  );
 
   // Choose display name by frequency + role trust
   const displayName = chooseDisplayName(rawEntities);
@@ -357,10 +368,11 @@ function mergeEntityGroup(
     key: canonicalKey,
     type: representative.type,
     displayName,
-    memberCgIds: rawEntities.map(e => e.cgId),
+    memberCgIds: rawEntities.map((e) => e.cgId),
     evidenceIds: mergedEvidenceIds,
     artifactRole: representative.artifactRole,
-    properties: Object.keys(mergedProperties).length > 0 ? mergedProperties : undefined,
+    properties:
+      Object.keys(mergedProperties).length > 0 ? mergedProperties : undefined,
   };
 
   return { canonical, conflict };
@@ -368,7 +380,7 @@ function mergeEntityGroup(
 
 /**
  * Choose the best display name from a group of entities.
- * 
+ *
  * Priority:
  * 1. Most frequent name
  * 2. Break ties by role trust (spec > intent > implementation)
@@ -385,14 +397,19 @@ function chooseDisplayName(entities: RawEntity[]): string {
   };
 
   // Count frequencies
-  const nameCounts = new Map<string, { count: number; role: string; length: number }>();
+  const nameCounts = new Map<
+    string,
+    { count: number; role: string; length: number }
+  >();
   for (const entity of entities) {
     const name = entity.name;
     const existing = nameCounts.get(name);
     if (existing) {
       existing.count++;
       // Keep highest role trust
-      if ((roleTrust[entity.artifactRole] ?? 0) > (roleTrust[existing.role] ?? 0)) {
+      if (
+        (roleTrust[entity.artifactRole] ?? 0) > (roleTrust[existing.role] ?? 0)
+      ) {
         existing.role = entity.artifactRole;
       }
     } else {
@@ -411,12 +428,12 @@ function chooseDisplayName(entities: RawEntity[]): string {
 
     // Count (desc)
     if (infoB.count !== infoA.count) return infoB.count - infoA.count;
-    
+
     // Role trust (desc)
     const trustA = roleTrust[infoA.role] ?? 0;
     const trustB = roleTrust[infoB.role] ?? 0;
     if (trustB !== trustA) return trustB - trustA;
-    
+
     // Length (asc)
     return infoA.length - infoB.length;
   });
@@ -431,7 +448,7 @@ function chooseDisplayName(entities: RawEntity[]): string {
 function remapAndDeduplicateStatements(
   statements: RawStatement[],
   cgIdToCanonicalId: Map<string, string>,
-  registry: WeaveRegistry
+  registry: WeaveRegistry,
 ): CanonicalStatement[] {
   const statementMap = new Map<string, CanonicalStatement>();
 
@@ -474,7 +491,7 @@ function remapAndDeduplicateStatements(
       // Merge evidence
       existing.evidenceIds = mergeEvidenceIds(
         existing.evidenceIds ?? [],
-        stmt.evidenceIds ?? []
+        stmt.evidenceIds ?? [],
       );
       existing.memberStmtIds = [...(existing.memberStmtIds ?? []), stmt.id];
     } else {
@@ -505,10 +522,10 @@ function remapAndDeduplicateStatements(
 function findPotentialMergePairs(
   entities: RawEntity[],
   _existingGroups: Map<string, RawEntity[]>,
-  sameRoleOnly: boolean
+  sameRoleOnly: boolean,
 ): PotentialMergePair[] {
   const pairs: PotentialMergePair[] = [];
-  
+
   // Build normalized name index
   const byNormalizedName = new Map<string, RawEntity[]>();
   for (const entity of entities) {
@@ -517,17 +534,17 @@ function findPotentialMergePairs(
     existing.push(entity);
     byNormalizedName.set(normalized, existing);
   }
-  
+
   // Find entities with same normalized name but different groups
   for (const [normalizedName, sameNameEntities] of byNormalizedName) {
     if (sameNameEntities.length < 2) continue;
-    
+
     // Compare all pairs
     for (let i = 0; i < sameNameEntities.length; i++) {
       for (let j = i + 1; j < sameNameEntities.length; j++) {
         const a = sameNameEntities[i];
         const b = sameNameEntities[j];
-        
+
         const keyA = buildCanonicalKey({
           role: a.artifactRole,
           type: a.type,
@@ -538,21 +555,22 @@ function findPotentialMergePairs(
           type: b.type,
           name: b.name,
         });
-        
+
         const groupKeyA = sameRoleOnly ? `${a.artifactRole}|${keyA}` : keyA;
         const groupKeyB = sameRoleOnly ? `${b.artifactRole}|${keyB}` : keyB;
-        
+
         // They're already in same group
         if (groupKeyA === groupKeyB) continue;
-        
+
         // Determine blocking reason
-        let blockingReason: PotentialMergePair['blockingReason'] = 'different_key';
+        let blockingReason: PotentialMergePair["blockingReason"] =
+          "different_key";
         if (a.artifactRole !== b.artifactRole) {
-          blockingReason = 'different_role';
+          blockingReason = "different_role";
         } else if (a.type !== b.type) {
-          blockingReason = 'different_type';
+          blockingReason = "different_type";
         }
-        
+
         pairs.push({
           cgIdA: a.cgId,
           cgIdB: b.cgId,
@@ -568,10 +586,10 @@ function findPotentialMergePairs(
       }
     }
   }
-  
+
   // Sort by similarity (highest first)
   pairs.sort((a, b) => (b.similarityScore ?? 0) - (a.similarityScore ?? 0));
-  
+
   return pairs;
 }
 
@@ -579,16 +597,26 @@ function findPotentialMergePairs(
  * Simple name similarity score (Jaccard on tokens).
  */
 function computeNameSimilarity(a: string, b: string): number {
-  const tokensA = new Set(a.toLowerCase().split(/\W+/).filter(t => t.length > 0));
-  const tokensB = new Set(b.toLowerCase().split(/\W+/).filter(t => t.length > 0));
-  
+  const tokensA = new Set(
+    a
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((t) => t.length > 0),
+  );
+  const tokensB = new Set(
+    b
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((t) => t.length > 0),
+  );
+
   if (tokensA.size === 0 || tokensB.size === 0) return 0;
-  
+
   let intersection = 0;
   for (const t of tokensA) {
     if (tokensB.has(t)) intersection++;
   }
-  
+
   const union = tokensA.size + tokensB.size - intersection;
   return union > 0 ? intersection / union : 0;
 }

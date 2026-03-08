@@ -24,7 +24,10 @@
  */
 export interface Neo4jRunner {
   /** Execute a Cypher query and return plain-object rows */
-  run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]>;
+  run(
+    cypher: string,
+    params?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>[]>;
 }
 
 /**
@@ -44,7 +47,7 @@ export interface CodeReference {
   /** Symbol / import / dep name */
   name: string;
   /** What this code ref represents */
-  kind: 'package-dep' | 'import' | 'symbol' | 'file' | 'directory';
+  kind: "package-dep" | "import" | "symbol" | "file" | "directory";
   /** Matching strategy that produced this link */
   strategy: string;
   /** Match confidence */
@@ -149,11 +152,13 @@ export async function buildTopicContext(
   const hops = options.hops ?? 2;
 
   if (!llm) {
-    throw new Error('LLM completer required for topic-based context retrieval.');
+    throw new Error(
+      "LLM completer required for topic-based context retrieval.",
+    );
   }
 
   // Step 1: Fetch all entity names (for LLM seed selection)
-  log?.('Fetching entity names for seed selection…');
+  log?.("Fetching entity names for seed selection…");
   const allNames = await runner.run(
     `MATCH (n:Canon)
      WHERE n.session_id = $sid
@@ -167,7 +172,7 @@ export async function buildTopicContext(
     return emptyBundle(topic, sessionId);
   }
 
-  const nameList = allNames.map(r => `- ${r.name} (${r.type})`).join('\n');
+  const nameList = allNames.map((r) => `- ${r.name} (${r.type})`).join("\n");
 
   // Step 2: LLM picks seeds
   log?.(`Selecting relevant entities for topic: "${topic}"…`);
@@ -182,9 +187,11 @@ Prefer high-level concepts and decisions over low-level details.`,
 
   let seedNames: string[];
   try {
-    seedNames = JSON.parse(seedJson.replace(/^```json?\s*\n?/i, '').replace(/\n?```\s*$/i, ''));
+    seedNames = JSON.parse(
+      seedJson.replace(/^```json?\s*\n?/i, "").replace(/\n?```\s*$/i, ""),
+    );
   } catch {
-    seedNames = [...seedJson.matchAll(/"([^"]+)"/g)].map(m => m[1]);
+    seedNames = [...seedJson.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   }
 
   log?.(`Selected ${seedNames.length} seed entities`);
@@ -221,7 +228,7 @@ export async function buildEntityContext(
     { sid: sessionId, name: entityName },
   );
 
-  const seedNames = matches.map(r => r.name as string);
+  const seedNames = matches.map((r) => r.name as string);
   if (seedNames.length === 0) {
     return emptyBundle(entityName, sessionId);
   }
@@ -240,9 +247,10 @@ export async function buildFullContext(
   const limit = options.limit ?? 500;
   const minConf = options.minConfidence ?? 0;
 
-  log?.('Retrieving full session context…');
+  log?.("Retrieving full session context…");
 
-  const entities = await fetchEntities(runner,
+  const entities = await fetchEntities(
+    runner,
     `MATCH (n:Canon)
      WHERE n.session_id = $sid
        AND coalesce(n.confidence, 1.0) >= $minConf
@@ -255,9 +263,10 @@ export async function buildFullContext(
     { sid: sessionId, lim: limit, minConf },
   );
 
-  const entityNames = entities.map(e => e.name);
+  const entityNames = entities.map((e) => e.name);
 
-  const relationships = await fetchRelationships(runner,
+  const relationships = await fetchRelationships(
+    runner,
     `MATCH (a:Canon)-[r:CANON_REL]->(b:Canon)
      WHERE a.session_id = $sid
        AND coalesce(r.confidence, 1.0) >= $minConf
@@ -282,7 +291,7 @@ export async function buildFullContext(
     await enrichWithProvenance(runner, sessionId, entities);
   }
 
-  return buildBundle('Full session', sessionId, entities, relationships);
+  return buildBundle("Full session", sessionId, entities, relationships);
 }
 
 // =============================================================================
@@ -298,10 +307,11 @@ async function expandAndEnrich(
 ): Promise<ContextBundle> {
   const { runner, sessionId, log } = options;
   const minConf = options.minConfidence ?? 0;
-  const hopRange = hops > 1 ? `1..${hops}` : '1';
+  const hopRange = hops > 1 ? `1..${hops}` : "1";
 
   // Expand neighborhood from seeds (directed awareness: follow outgoing first)
-  const entities = await fetchEntities(runner,
+  const entities = await fetchEntities(
+    runner,
     `MATCH (seed:Canon)
      WHERE seed.session_id = $sid AND seed.name IN $seeds
      WITH collect(seed) AS seedNodes
@@ -324,10 +334,11 @@ async function expandAndEnrich(
 
   log?.(`Expanded to ${entities.length} entities`);
 
-  const entityNames = entities.map(e => e.name);
+  const entityNames = entities.map((e) => e.name);
 
   // Fetch relationships within the subgraph
-  const relationships = await fetchRelationships(runner,
+  const relationships = await fetchRelationships(
+    runner,
     `MATCH (a:Canon)-[r:CANON_REL]->(b:Canon)
      WHERE a.session_id = $sid
        AND a.name IN $names AND b.name IN $names
@@ -347,13 +358,13 @@ async function expandAndEnrich(
 
   // Enrich with rationales from raw triples
   if (options.includeRationales) {
-    log?.('Enriching with raw triple rationales…');
+    log?.("Enriching with raw triple rationales…");
     await enrichWithRationales(runner, sessionId, relationships, entityNames);
   }
 
   // Add provenance to entities
   if (options.includeProvenance) {
-    log?.('Adding provenance…');
+    log?.("Adding provenance…");
     await enrichWithProvenance(runner, sessionId, entities);
   }
 
@@ -392,13 +403,16 @@ async function enrichWithRationales(
   if (rawTriples.length === 0) return;
 
   // Build a lookup: "subject|object" → best rationale
-  const rationaleMap = new Map<string, { rationale: string; confidence: number }>();
+  const rationaleMap = new Map<
+    string,
+    { rationale: string; confidence: number }
+  >();
 
   for (const rt of rawTriples) {
-    const subj = String(rt.subject ?? '').toLowerCase();
-    const obj = String(rt.object ?? '').toLowerCase();
-    const rationale = String(rt.rationale ?? '');
-    const conf = typeof rt.confidence === 'number' ? rt.confidence : 0.5;
+    const subj = String(rt.subject ?? "").toLowerCase();
+    const obj = String(rt.object ?? "").toLowerCase();
+    const rationale = String(rt.rationale ?? "");
+    const conf = typeof rt.confidence === "number" ? rt.confidence : 0.5;
     const key = `${subj}|${obj}`;
 
     const existing = rationaleMap.get(key);
@@ -427,7 +441,7 @@ async function enrichWithProvenance(
 ): Promise<void> {
   if (entities.length === 0) return;
 
-  const entityNames = entities.map(e => e.name);
+  const entityNames = entities.map((e) => e.name);
 
   // Fetch distinct artifact IDs per entity from raw triples
   const provenanceRows = await runner.run(
@@ -464,7 +478,7 @@ export async function enrichWithDescriptions(
 ): Promise<void> {
   if (entities.length === 0) return;
 
-  const entityNames = entities.map(e => e.name);
+  const entityNames = entities.map((e) => e.name);
 
   // Get the best rationale mentioning each entity as subject
   const descriptions = await runner.run(
@@ -505,7 +519,7 @@ export async function enrichWithCodeRefs(
 ): Promise<void> {
   if (entities.length === 0) return;
 
-  const entityNames = entities.map(e => e.name);
+  const entityNames = entities.map((e) => e.name);
 
   const rows = await runner.run(
     `MATCH (c:Canon)-[r:REALIZED_BY]->(cr:CodeRef)
@@ -527,11 +541,11 @@ export async function enrichWithCodeRefs(
   for (const row of rows) {
     const name = String(row.entityName);
     const ref: CodeReference = {
-      filePath: String(row.filePath ?? ''),
-      name: String(row.refName ?? ''),
-      kind: (row.kind as CodeReference['kind']) ?? 'file',
-      strategy: String(row.strategy ?? ''),
-      confidence: typeof row.confidence === 'number' ? row.confidence : 0.5,
+      filePath: String(row.filePath ?? ""),
+      name: String(row.refName ?? ""),
+      kind: (row.kind as CodeReference["kind"]) ?? "file",
+      strategy: String(row.strategy ?? ""),
+      confidence: typeof row.confidence === "number" ? row.confidence : 0.5,
     };
     if (!refMap.has(name)) refMap.set(name, []);
     refMap.get(name)!.push(ref);
@@ -555,12 +569,14 @@ async function fetchEntities(
   params: Record<string, unknown>,
 ): Promise<ContextEntity[]> {
   const rows = await runner.run(cypher, params);
-  return rows.map(r => ({
-    canonId: String(r.canonId ?? ''),
-    name: String(r.name ?? ''),
-    type: String(r.type ?? ''),
-    aliases: Array.isArray(r.aliases) ? (r.aliases as unknown[]).map(String) : [],
-    confidence: typeof r.confidence === 'number' ? r.confidence : 1.0,
+  return rows.map((r) => ({
+    canonId: String(r.canonId ?? ""),
+    name: String(r.name ?? ""),
+    type: String(r.type ?? ""),
+    aliases: Array.isArray(r.aliases)
+      ? (r.aliases as unknown[]).map(String)
+      : [],
+    confidence: typeof r.confidence === "number" ? r.confidence : 1.0,
     sources: r.artifactId ? [String(r.artifactId)] : [],
   }));
 }
@@ -571,13 +587,13 @@ async function fetchRelationships(
   params: Record<string, unknown>,
 ): Promise<ContextRelationship[]> {
   const rows = await runner.run(cypher, params);
-  return rows.map(r => ({
-    sourceName: String(r.sourceName ?? ''),
-    sourceType: String(r.sourceType ?? ''),
-    predicate: String(r.predicate ?? ''),
-    targetName: String(r.targetName ?? ''),
-    targetType: String(r.targetType ?? ''),
-    confidence: typeof r.confidence === 'number' ? r.confidence : 1.0,
+  return rows.map((r) => ({
+    sourceName: String(r.sourceName ?? ""),
+    sourceType: String(r.sourceType ?? ""),
+    predicate: String(r.predicate ?? ""),
+    targetName: String(r.targetName ?? ""),
+    targetType: String(r.targetType ?? ""),
+    confidence: typeof r.confidence === "number" ? r.confidence : 1.0,
     rawPredicate: r.rawPredicate ? String(r.rawPredicate) : undefined,
     source: r.artifactId ? String(r.artifactId) : undefined,
   }));
@@ -589,7 +605,12 @@ function emptyBundle(topic: string, sessionId: string): ContextBundle {
     sessionId,
     entities: [],
     relationships: [],
-    stats: { totalEntities: 0, totalRelationships: 0, entityTypes: {}, predicateCounts: {} },
+    stats: {
+      totalEntities: 0,
+      totalRelationships: 0,
+      entityTypes: {},
+      predicateCounts: {},
+    },
   };
 }
 
@@ -667,16 +688,20 @@ export function formatContextMarkdown(
 
   // ── Header ─────────────────────────────────────────────────────────
   sections.push(`# Knowledge Context: ${bundle.topic}`);
-  sections.push(`> Session: ${bundle.sessionId} | ${bundle.stats.totalEntities} entities, ${bundle.stats.totalRelationships} relationships\n`);
+  sections.push(
+    `> Session: ${bundle.sessionId} | ${bundle.stats.totalEntities} entities, ${bundle.stats.totalRelationships} relationships\n`,
+  );
 
   // ── Entity Overview ────────────────────────────────────────────────
   if (bundle.stats.totalEntities > 0) {
-    const overviewLines = ['## Entity Overview'];
-    for (const [type, count] of Object.entries(bundle.stats.entityTypes).sort((a, b) => b[1] - a[1])) {
+    const overviewLines = ["## Entity Overview"];
+    for (const [type, count] of Object.entries(bundle.stats.entityTypes).sort(
+      (a, b) => b[1] - a[1],
+    )) {
       overviewLines.push(`- **${type}**: ${count}`);
     }
-    overviewLines.push('');
-    sections.push(overviewLines.join('\n'));
+    overviewLines.push("");
+    sections.push(overviewLines.join("\n"));
   }
 
   // ── Entities by Type ───────────────────────────────────────────────
@@ -686,13 +711,15 @@ export function formatContextMarkdown(
     byType.get(e.type)!.push(e);
   }
 
-  for (const [type, ents] of [...byType.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+  for (const [type, ents] of [...byType.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  )) {
     const typeLines = [`## ${capitalize(type)}s`];
     for (const e of ents) {
       const parts: string[] = [`- **${e.name}**`];
 
       if (e.aliases.length > 0) {
-        parts.push(` (aka: ${e.aliases.join(', ')})`);
+        parts.push(` (aka: ${e.aliases.join(", ")})`);
       }
 
       // Confidence badge for non-max confidence
@@ -700,7 +727,7 @@ export function formatContextMarkdown(
         parts.push(` [${Math.round(e.confidence * 100)}%]`);
       }
 
-      typeLines.push(parts.join(''));
+      typeLines.push(parts.join(""));
 
       // Description (from rationale)
       if (options.includeDescriptions && e.description) {
@@ -709,50 +736,59 @@ export function formatContextMarkdown(
 
       // Provenance
       if (options.includeProvenance && e.sources.length > 0) {
-        typeLines.push(`  _Source: ${e.sources.join(', ')}_`);
+        typeLines.push(`  _Source: ${e.sources.join(", ")}_`);
       }
 
       // Code references (from cross-layer linker)
       if (options.includeCodeRefs && e.codeRefs && e.codeRefs.length > 0) {
-        typeLines.push(`  📂 Code: ${e.codeRefs.map(r => `\`${r.filePath}\` (${r.kind})`).join(', ')}`);
+        typeLines.push(
+          `  📂 Code: ${e.codeRefs.map((r) => `\`${r.filePath}\` (${r.kind})`).join(", ")}`,
+        );
       }
     }
-    typeLines.push('');
-    sections.push(typeLines.join('\n'));
+    typeLines.push("");
+    sections.push(typeLines.join("\n"));
   }
 
   // ── Code References Summary ────────────────────────────────────────
   if (options.includeCodeRefs) {
-    const linkedEntities = bundle.entities.filter(e => e.codeRefs && e.codeRefs.length > 0);
+    const linkedEntities = bundle.entities.filter(
+      (e) => e.codeRefs && e.codeRefs.length > 0,
+    );
     if (linkedEntities.length > 0) {
-      const codeLines = ['## Code References'];
-      codeLines.push(`> ${linkedEntities.length} entities linked to source code\n`);
+      const codeLines = ["## Code References"];
+      codeLines.push(
+        `> ${linkedEntities.length} entities linked to source code\n`,
+      );
 
       for (const e of linkedEntities) {
         codeLines.push(`### ${e.name} (${e.type})`);
         for (const ref of e.codeRefs!) {
-          const stratBadge = ref.strategy ? `[${ref.strategy}]` : '';
+          const stratBadge = ref.strategy ? `[${ref.strategy}]` : "";
           codeLines.push(`- \`${ref.filePath}\` — ${ref.kind} ${stratBadge}`);
         }
-        codeLines.push('');
+        codeLines.push("");
       }
-      sections.push(codeLines.join('\n'));
+      sections.push(codeLines.join("\n"));
     }
   }
 
   // ── Relationships by Predicate ─────────────────────────────────────
   if (bundle.relationships.length > 0) {
-    const relLines = ['## Relationships'];
+    const relLines = ["## Relationships"];
     const byPred = new Map<string, ContextRelationship[]>();
     for (const r of bundle.relationships) {
       if (!byPred.has(r.predicate)) byPred.set(r.predicate, []);
       byPred.get(r.predicate)!.push(r);
     }
 
-    for (const [pred, rels] of [...byPred.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [pred, rels] of [...byPred.entries()].sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    )) {
       relLines.push(`### ${pred}`);
       for (const r of rels) {
-        const confStr = r.confidence < 0.9 ? ` [${Math.round(r.confidence * 100)}%]` : '';
+        const confStr =
+          r.confidence < 0.9 ? ` [${Math.round(r.confidence * 100)}%]` : "";
         relLines.push(`- ${r.sourceName} → ${r.targetName}${confStr}`);
 
         // Inline rationale
@@ -760,65 +796,67 @@ export function formatContextMarkdown(
           relLines.push(`  > ${r.rationale}`);
         }
       }
-      relLines.push('');
+      relLines.push("");
     }
-    sections.push(relLines.join('\n'));
+    sections.push(relLines.join("\n"));
   }
 
   // ── Decision Trail ─────────────────────────────────────────────────
-  const decisions = bundle.relationships.filter(r =>
-    r.predicate === 'DECIDED_FOR' || r.predicate === 'DECIDED_AGAINST',
+  const decisions = bundle.relationships.filter(
+    (r) => r.predicate === "DECIDED_FOR" || r.predicate === "DECIDED_AGAINST",
   );
   if (decisions.length > 0) {
-    const decLines = ['## Decision Trail'];
+    const decLines = ["## Decision Trail"];
     for (const d of decisions) {
-      const verb = d.predicate === 'DECIDED_FOR' ? '✅ chose' : '❌ rejected';
+      const verb = d.predicate === "DECIDED_FOR" ? "✅ chose" : "❌ rejected";
       const line = `- **${d.sourceName}** ${verb} **${d.targetName}**`;
       decLines.push(d.rationale ? `${line}\n  > ${d.rationale}` : line);
     }
-    decLines.push('');
-    sections.push(decLines.join('\n'));
+    decLines.push("");
+    sections.push(decLines.join("\n"));
   }
 
   // ── Risks ──────────────────────────────────────────────────────────
-  const risks = bundle.relationships.filter(r => r.predicate === 'RISKS');
+  const risks = bundle.relationships.filter((r) => r.predicate === "RISKS");
   if (risks.length > 0) {
-    const riskLines = ['## Risks'];
+    const riskLines = ["## Risks"];
     for (const r of risks) {
       const line = `- ${r.sourceName} ⚠ ${r.targetName}`;
       riskLines.push(r.rationale ? `${line}\n  > ${r.rationale}` : line);
     }
-    riskLines.push('');
-    sections.push(riskLines.join('\n'));
+    riskLines.push("");
+    sections.push(riskLines.join("\n"));
   }
 
   // ── Token budget trimming ──────────────────────────────────────────
-  let output = sections.join('\n');
+  let output = sections.join("\n");
 
   if (budget !== Infinity && estimateTokens(output) > budget) {
     // Progressive trimming: strip from least to most important
     // Pass 1: Remove provenance lines
-    output = output.replace(/\n  _Source: .*_/g, '');
+    output = output.replace(/\n  _Source: .*_/g, "");
 
     if (estimateTokens(output) > budget) {
       // Pass 2: Remove descriptions
-      output = output.replace(/\n  > (?!✅|❌).*$/gm, '');
+      output = output.replace(/\n  > (?!✅|❌).*$/gm, "");
     }
 
     if (estimateTokens(output) > budget) {
       // Pass 3: Remove Risks section
-      output = output.replace(/## Risks[\s\S]*?(?=\n## |$)/, '');
+      output = output.replace(/## Risks[\s\S]*?(?=\n## |$)/, "");
     }
 
     if (estimateTokens(output) > budget) {
       // Pass 4: Remove Decision Trail
-      output = output.replace(/## Decision Trail[\s\S]*?(?=\n## |$)/, '');
+      output = output.replace(/## Decision Trail[\s\S]*?(?=\n## |$)/, "");
     }
 
     if (estimateTokens(output) > budget) {
       // Pass 5: Truncate to budget with indicator
       const cutLen = budget * 4;
-      output = output.slice(0, cutLen) + '\n\n_[Context truncated to fit token budget]_';
+      output =
+        output.slice(0, cutLen) +
+        "\n\n_[Context truncated to fit token budget]_";
     }
   }
 

@@ -8,7 +8,7 @@
  * Used by LLM providers and Neo4j connections.
  */
 
-import { LLMError } from './errors.js';
+import { LLMError } from "./errors.js";
 
 export interface RetryOptions {
   /** Maximum number of retry attempts (default: 3) */
@@ -25,12 +25,13 @@ export interface RetryOptions {
   isRetryable?: (error: Error) => boolean;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<RetryOptions, 'onRetry' | 'isRetryable'>> = {
-  maxRetries: 3,
-  initialDelayMs: 1000,
-  backoffMultiplier: 2,
-  maxDelayMs: 30_000,
-};
+const DEFAULT_OPTIONS: Required<Omit<RetryOptions, "onRetry" | "isRetryable">> =
+  {
+    maxRetries: 3,
+    initialDelayMs: 1000,
+    backoffMultiplier: 2,
+    maxDelayMs: 30_000,
+  };
 
 /**
  * Default retryable check: LLMError with retryable=true, or network errors.
@@ -41,14 +42,14 @@ function defaultIsRetryable(error: Error): boolean {
   // Common network error patterns
   const msg = error.message.toLowerCase();
   return (
-    msg.includes('econnreset') ||
-    msg.includes('econnrefused') ||
-    msg.includes('etimedout') ||
-    msg.includes('socket hang up') ||
-    msg.includes('fetch failed') ||
-    msg.includes('network') ||
-    msg.includes('timeout') ||
-    msg.includes('aborted')
+    msg.includes("econnreset") ||
+    msg.includes("econnrefused") ||
+    msg.includes("etimedout") ||
+    msg.includes("socket hang up") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("timeout") ||
+    msg.includes("aborted")
   );
 }
 
@@ -69,8 +70,10 @@ export async function withRetry<T>(
   options: RetryOptions = {},
 ): Promise<T> {
   const maxRetries = options.maxRetries ?? DEFAULT_OPTIONS.maxRetries;
-  const initialDelayMs = options.initialDelayMs ?? DEFAULT_OPTIONS.initialDelayMs;
-  const backoffMultiplier = options.backoffMultiplier ?? DEFAULT_OPTIONS.backoffMultiplier;
+  const initialDelayMs =
+    options.initialDelayMs ?? DEFAULT_OPTIONS.initialDelayMs;
+  const backoffMultiplier =
+    options.backoffMultiplier ?? DEFAULT_OPTIONS.backoffMultiplier;
   const maxDelayMs = options.maxDelayMs ?? DEFAULT_OPTIONS.maxDelayMs;
   const isRetryable = options.isRetryable ?? defaultIsRetryable;
 
@@ -110,5 +113,5 @@ export async function withRetry<T>(
  * Sleep for a given number of milliseconds.
  */
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

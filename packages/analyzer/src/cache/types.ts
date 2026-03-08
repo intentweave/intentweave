@@ -3,10 +3,10 @@
 
 /**
  * Incremental Pipeline Cache Types
- * 
+ *
  * Content-addressed cache with dependency graph and invalidation cascade.
  * Provides Bazel-like incremental behavior without external build tools.
- * 
+ *
  * Key concepts:
  * - ArtifactKey: stable identifier for an artifact (not a hash)
  * - Fingerprint: content hash + config hash for cache invalidation
@@ -19,16 +19,22 @@
 // =============================================================================
 
 /** Per-artifact pipeline stages in execution order */
-export type PerArtifactStage = 'IN' | 'RX' | 'CX' | 'MX' | 'PX';
+export type PerArtifactStage = "IN" | "RX" | "CX" | "MX" | "PX";
 
 /** Global (cross-artifact) stages */
-export type GlobalStage = 'AGG' | 'LX';
+export type GlobalStage = "AGG" | "LX";
 
 /** All stages (reexport PerArtifactStage from orchestrator includes AGG) */
 export type AllStage = PerArtifactStage | GlobalStage;
 
 /** Ordered per-artifact stages for cascade logic */
-export const PIPELINE_STAGES: readonly PerArtifactStage[] = ['IN', 'RX', 'CX', 'MX', 'PX'] as const;
+export const PIPELINE_STAGES: readonly PerArtifactStage[] = [
+  "IN",
+  "RX",
+  "CX",
+  "MX",
+  "PX",
+] as const;
 
 /** Stage index for cascade computation */
 export const STAGE_INDEX: Record<PerArtifactStage, number> = {
@@ -49,11 +55,11 @@ export const STAGE_INDEX: Record<PerArtifactStage, number> = {
  * - chat: chat turn artifact
  * - bundle: code bundle (future)
  */
-export type ArtifactKeyType = 'file' | 'chat' | 'bundle';
+export type ArtifactKeyType = "file" | "chat" | "bundle";
 
 /**
  * ArtifactKey: stable identifier for an artifact (not a hash)
- * 
+ *
  * Format examples:
  * - file:spec/intent.md
  * - chat:conv_<id>:turn_<id>
@@ -70,7 +76,7 @@ export interface ArtifactKey {
  * Parse an artifact key string into structured form
  */
 export function parseArtifactKey(keyString: string): ArtifactKey {
-  const colonIndex = keyString.indexOf(':');
+  const colonIndex = keyString.indexOf(":");
   if (colonIndex === -1) {
     throw new Error(`Invalid artifact key format: ${keyString}`);
   }
@@ -91,23 +97,29 @@ export function serializeArtifactKey(artifactKey: ArtifactKey): string {
  */
 export function fileArtifactKey(relativePath: string): ArtifactKey {
   // Normalize path separators
-  const normalized = relativePath.replace(/\\/g, '/');
-  return { type: 'file', key: normalized };
+  const normalized = relativePath.replace(/\\/g, "/");
+  return { type: "file", key: normalized };
 }
 
 /**
  * Create a chat turn artifact key
  */
-export function chatArtifactKey(conversationId: string, turnId: string): ArtifactKey {
-  return { type: 'chat', key: `${conversationId}:${turnId}` };
+export function chatArtifactKey(
+  conversationId: string,
+  turnId: string,
+): ArtifactKey {
+  return { type: "chat", key: `${conversationId}:${turnId}` };
 }
 
 /**
  * Create a transcript session artifact key
  * Format: chat:specstory:<sessionId>
  */
-export function transcriptArtifactKey(source: string, sessionId: string): ArtifactKey {
-  return { type: 'chat', key: `${source}:${sessionId}` };
+export function transcriptArtifactKey(
+  source: string,
+  sessionId: string,
+): ArtifactKey {
+  return { type: "chat", key: `${source}:${sessionId}` };
 }
 
 // =============================================================================
@@ -116,7 +128,7 @@ export function transcriptArtifactKey(source: string, sessionId: string): Artifa
 
 /**
  * Fingerprint: content hash + configuration hash for cache invalidation
- * 
+ *
  * Combined with upstream hashes to create a cache key that prevents
  * "cache hits" across incompatible runs.
  */
@@ -155,11 +167,11 @@ export function computeCacheKeyHash(key: StageCacheKey): string {
     key.stage,
     key.contentHash,
     key.configHash,
-    key.upstreamHash ?? 'none',
-    key.contextHash ?? 'none',
+    key.upstreamHash ?? "none",
+    key.contextHash ?? "none",
   ];
   // Hash will be computed using crypto in the cache implementation
-  return components.join('|');
+  return components.join("|");
 }
 
 // =============================================================================
@@ -246,13 +258,13 @@ export interface GlobalStageMeta {
  * Reason why a stage is invalidated
  */
 export type InvalidationReason =
-  | 'content-changed'     // Input content hash changed
-  | 'config-changed'      // Stage config hash changed
-  | 'upstream-changed'    // Upstream stage output changed (cascade)
-  | 'context-changed'     // Context dependencies changed
-  | 'cache-miss'          // No cached output found
-  | 'forced'              // Explicitly forced by user
-  | 'px-set-changed';     // PX outputs changed (for AGG/LX)
+  | "content-changed" // Input content hash changed
+  | "config-changed" // Stage config hash changed
+  | "upstream-changed" // Upstream stage output changed (cascade)
+  | "context-changed" // Context dependencies changed
+  | "cache-miss" // No cached output found
+  | "forced" // Explicitly forced by user
+  | "px-set-changed"; // PX outputs changed (for AGG/LX)
 
 /**
  * Invalidation status for a single stage
@@ -322,7 +334,7 @@ export interface GlobalPlan {
 
 /**
  * Complete run plan
- * 
+ *
  * Generated before execution to show what work will be done.
  * Can be printed with --plan flag before running.
  */

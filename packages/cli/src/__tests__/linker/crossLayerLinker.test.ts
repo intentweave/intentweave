@@ -9,21 +9,16 @@
  * - persistCrossLinks: Neo4j write flow
  */
 
-import { describe, it, expect } from 'vitest';
-import {
-  formatXLinkReport,
-} from '../../linker/crossLayerLinker.js';
-import {
-  createCrossLink,
-  createXLinkResult,
-} from '../helpers.js';
+import { describe, it, expect } from "vitest";
+import { formatXLinkReport } from "../../linker/crossLayerLinker.js";
+import { createCrossLink, createXLinkResult } from "../helpers.js";
 
 // =============================================================================
 // formatXLinkReport
 // =============================================================================
 
-describe('formatXLinkReport', () => {
-  it('renders header and summary section', () => {
+describe("formatXLinkReport", () => {
+  it("renders header and summary section", () => {
     const result = createXLinkResult({
       stats: {
         totalCanonEntities: 251,
@@ -35,14 +30,14 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('# Cross-Layer Link Report');
-    expect(report).toContain('Canon entities: 251');
-    expect(report).toContain('Linked to code: 35');
-    expect(report).toContain('Unlinked: 216');
-    expect(report).toContain('Total code references: 45');
+    expect(report).toContain("# Cross-Layer Link Report");
+    expect(report).toContain("Canon entities: 251");
+    expect(report).toContain("Linked to code: 35");
+    expect(report).toContain("Unlinked: 216");
+    expect(report).toContain("Total code references: 45");
   });
 
-  it('renders strategy breakdown', () => {
+  it("renders strategy breakdown", () => {
     const result = createXLinkResult({
       stats: {
         totalCanonEntities: 100,
@@ -54,14 +49,14 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('## Matches by Strategy');
-    expect(report).toContain('**Package deps**: 5');
-    expect(report).toContain('**Imports**: 10');
-    expect(report).toContain('**Symbol names**: 7');
-    expect(report).toContain('**File paths**: 3');
+    expect(report).toContain("## Matches by Strategy");
+    expect(report).toContain("**Package deps**: 5");
+    expect(report).toContain("**Imports**: 10");
+    expect(report).toContain("**Symbol names**: 7");
+    expect(report).toContain("**File paths**: 3");
   });
 
-  it('skips strategies with zero matches', () => {
+  it("skips strategies with zero matches", () => {
     const result = createXLinkResult({
       stats: {
         totalCanonEntities: 10,
@@ -73,11 +68,11 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('**Package deps**: 5');
-    expect(report).not.toContain('**Imports**: 0');
+    expect(report).toContain("**Package deps**: 5");
+    expect(report).not.toContain("**Imports**: 0");
   });
 
-  it('renders coverage by entity type', () => {
+  it("renders coverage by entity type", () => {
     const result = createXLinkResult({
       stats: {
         totalCanonEntities: 50,
@@ -92,37 +87,45 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('## Coverage by Entity Type');
-    expect(report).toContain('**technology**: 8/12 linked');
-    expect(report).toContain('**concept**: 2/30 linked');
+    expect(report).toContain("## Coverage by Entity Type");
+    expect(report).toContain("**technology**: 8/12 linked");
+    expect(report).toContain("**concept**: 2/30 linked");
   });
 
-  it('renders linked entities grouped by canon name', () => {
+  it("renders linked entities grouped by canon name", () => {
     const result = createXLinkResult({
       links: [
         createCrossLink({
-          canonName: 'React',
-          canonType: 'technology',
-          codeRef: { filePath: 'package.json', name: 'react', kind: 'package-dep' },
-          strategy: 'dep',
+          canonName: "React",
+          canonType: "technology",
+          codeRef: {
+            filePath: "package.json",
+            name: "react",
+            kind: "package-dep",
+          },
+          strategy: "dep",
           confidence: 0.99,
-          detail: 'Found react in dependencies',
+          detail: "Found react in dependencies",
         }),
         createCrossLink({
-          canonName: 'React',
-          canonType: 'technology',
-          codeRef: { filePath: 'src/App.tsx', name: 'react', kind: 'import' },
-          strategy: 'import',
+          canonName: "React",
+          canonType: "technology",
+          codeRef: { filePath: "src/App.tsx", name: "react", kind: "import" },
+          strategy: "import",
           confidence: 0.95,
-          detail: 'Import from react',
+          detail: "Import from react",
         }),
         createCrossLink({
-          canonName: 'TypeScript',
-          canonType: 'technology',
-          codeRef: { filePath: 'tsconfig.json', name: 'typescript', kind: 'file' },
-          strategy: 'path',
+          canonName: "TypeScript",
+          canonType: "technology",
+          codeRef: {
+            filePath: "tsconfig.json",
+            name: "typescript",
+            kind: "file",
+          },
+          strategy: "path",
           confidence: 0.85,
-          detail: 'tsconfig.json references TypeScript',
+          detail: "tsconfig.json references TypeScript",
         }),
       ],
       stats: {
@@ -135,19 +138,19 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('## Linked Entities');
-    expect(report).toContain('### React (technology)');
-    expect(report).toContain('package.json');
-    expect(report).toContain('src/App.tsx');
-    expect(report).toContain('### TypeScript (technology)');
+    expect(report).toContain("## Linked Entities");
+    expect(report).toContain("### React (technology)");
+    expect(report).toContain("package.json");
+    expect(report).toContain("src/App.tsx");
+    expect(report).toContain("### TypeScript (technology)");
   });
 
-  it('truncates entities with >8 references', () => {
+  it("truncates entities with >8 references", () => {
     const links = Array.from({ length: 12 }, (_, i) =>
       createCrossLink({
-        canonName: 'React',
-        canonType: 'technology',
-        codeRef: { filePath: `file${i}.ts`, name: 'react', kind: 'import' },
+        canonName: "React",
+        canonType: "technology",
+        codeRef: { filePath: `file${i}.ts`, name: "react", kind: "import" },
         detail: `ref ${i}`,
       }),
     );
@@ -163,24 +166,24 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('+4 more references');
+    expect(report).toContain("+4 more references");
   });
 
-  it('renders unlinked entities by type', () => {
+  it("renders unlinked entities by type", () => {
     const result = createXLinkResult({
       unlinked: [
-        { name: 'microservices', type: 'concept' },
-        { name: 'event-sourcing', type: 'concept' },
-        { name: 'Redis', type: 'technology' },
+        { name: "microservices", type: "concept" },
+        { name: "event-sourcing", type: "concept" },
+        { name: "Redis", type: "technology" },
       ],
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('## Unlinked Entities');
-    expect(report).toContain('**concept**: microservices, event-sourcing');
-    expect(report).toContain('**technology**: Redis');
+    expect(report).toContain("## Unlinked Entities");
+    expect(report).toContain("**concept**: microservices, event-sourcing");
+    expect(report).toContain("**technology**: Redis");
   });
 
-  it('computes percentages correctly', () => {
+  it("computes percentages correctly", () => {
     const result = createXLinkResult({
       stats: {
         totalCanonEntities: 200,
@@ -192,10 +195,10 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('25%');
+    expect(report).toContain("25%");
   });
 
-  it('handles zero total entities without division error', () => {
+  it("handles zero total entities without division error", () => {
     const result = createXLinkResult({
       stats: {
         totalCanonEntities: 0,
@@ -207,13 +210,13 @@ describe('formatXLinkReport', () => {
       },
     });
     const report = formatXLinkReport(result);
-    expect(report).toContain('0%');
+    expect(report).toContain("0%");
   });
 
-  it('renders empty report cleanly', () => {
+  it("renders empty report cleanly", () => {
     const result = createXLinkResult();
     const report = formatXLinkReport(result);
-    expect(report).toContain('# Cross-Layer Link Report');
-    expect(report).toContain('Canon entities: 0');
+    expect(report).toContain("# Cross-Layer Link Report");
+    expect(report).toContain("Canon entities: 0");
   });
 });

@@ -3,7 +3,7 @@
 
 /**
  * SpecStory Markdown Parser
- * 
+ *
  * Parses SpecStory markdown files into TranscriptMessage format.
  * Handles incremental parsing with absolute byte offsets.
  */
@@ -13,27 +13,27 @@ import type {
   MessageRole,
   Speaker,
   TranscriptParseResult,
-} from './types.js';
+} from "./types.js";
 import {
   computeContentHash,
   buildSourceKey,
   charToByteOffset,
-} from './hash.js';
+} from "./hash.js";
 import {
   scoreMessage,
   speakerToMessageRole,
   stripInlineTags,
-} from './heuristics.js';
+} from "./heuristics.js";
 
 // =============================================================================
 // Constants
 // =============================================================================
 
 /** Adapter name for SpecStory */
-export const SPECSTORY_ADAPTER_NAME = 'specstory';
+export const SPECSTORY_ADAPTER_NAME = "specstory";
 
 /** Current adapter version */
-export const SPECSTORY_ADAPTER_VERSION = '0.1.0';
+export const SPECSTORY_ADAPTER_VERSION = "0.1.0";
 
 /** Parser version string */
 export const SPECSTORY_PARSER_VERSION = `specstory-parser@${SPECSTORY_ADAPTER_VERSION}`;
@@ -55,7 +55,7 @@ interface RawParsedMessage {
   absContentEnd: number;
   contentHash: string;
   messageRole: MessageRole;
-  roleSource: 'heuristic' | 'inline';
+  roleSource: "heuristic" | "inline";
 }
 
 /**
@@ -82,7 +82,8 @@ const SESSION_PATTERN = /<!-- vscode Session ([a-f0-9-]+) \(([^)]+)\) -->/;
  * Matches: _**User (timestamp)**_, _**Assistant (model)**_, etc.
  * Must be anchored at start of line.
  */
-const MESSAGE_HEADER_PATTERN = /^_\*\*(User|Assistant|System|Tool)\s*(?:\(([^)]*)\))?\*\*_/gm;
+const MESSAGE_HEADER_PATTERN =
+  /^_\*\*(User|Assistant|System|Tool)\s*(?:\(([^)]*)\))?\*\*_/gm;
 
 /** Timestamp pattern in header metadata */
 const TIMESTAMP_PATTERN = /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?Z?)/;
@@ -105,21 +106,21 @@ const SAFE_BOUNDARY_PATTERN = /---\s*\n\s*_\*\*(?:User|Assistant|System|Tool)/g;
 
 /**
  * Parse a SpecStory file buffer completely.
- * 
+ *
  * @param buffer - File content as Buffer
  * @param sessionId - Optional session ID override
  * @returns Parse result with raw messages
  */
 export function parseSpecStoryFile(
   buffer: Buffer,
-  sessionId?: string
+  sessionId?: string,
 ): SpecStoryParseResult {
-  return parseSpecStorySlice(buffer, 0, sessionId ?? '');
+  return parseSpecStorySlice(buffer, 0, sessionId ?? "");
 }
 
 /**
  * Parse a slice of a SpecStory file (for incremental import).
- * 
+ *
  * @param buffer - Slice content as Buffer
  * @param sliceStartOffset - Absolute byte offset where this slice begins
  * @param fallbackSessionId - Session ID to use if not found in content
@@ -128,72 +129,78 @@ export function parseSpecStoryFile(
 export function parseSpecStorySlice(
   buffer: Buffer,
   sliceStartOffset: number,
-  fallbackSessionId: string
+  fallbackSessionId: string,
 ): SpecStoryParseResult {
-  const content = buffer.toString('utf-8');
+  const content = buffer.toString("utf-8");
   const rawMessages: RawParsedMessage[] = [];
-  
+
   // Extract session ID from header if present
   const sessionMatch = content.match(SESSION_PATTERN);
   const sessionId = sessionMatch?.[1] ?? fallbackSessionId;
-  
+
   // Reset pattern for fresh matching
   MESSAGE_HEADER_PATTERN.lastIndex = 0;
-  
+
   let match: RegExpExecArray | null;
   let lastHeaderEndCharOffset = 0;
   let prevMessage: RawParsedMessage | null = null;
   let prevHeaderCharOffset = 0;
-  
+
   while ((match = MESSAGE_HEADER_PATTERN.exec(content)) !== null) {
     const charOffset = match.index;
     const headerText = match[0];
     const speakerRaw = match[1].toLowerCase() as Speaker;
-    const meta = match[2] ?? '';
-    
+    const meta = match[2] ?? "";
+
     // Convert char offset to byte offset
     const byteOffset = charToByteOffset(content, charOffset);
     const absHeaderOffset = sliceStartOffset + byteOffset;
-    
+
     // Close previous message
     if (prevMessage) {
       const rawContent = content.slice(lastHeaderEndCharOffset, charOffset);
-      finalizeParsedMessage(prevMessage, rawContent, sliceStartOffset, charOffset, content);
+      finalizeParsedMessage(
+        prevMessage,
+        rawContent,
+        sliceStartOffset,
+        charOffset,
+        content,
+      );
     }
-    
+
     // Parse timestamp (optional, NOT used for identity)
     const tsMatch = meta.match(TIMESTAMP_PATTERN);
     const timestamp = tsMatch?.[1];
-    
+
     // Parse model for assistant
     let model: string | undefined;
-    if (speakerRaw === 'assistant') {
+    if (speakerRaw === "assistant") {
       const modelMatch = meta.match(MODEL_PATTERN);
       if (modelMatch && !meta.match(/^\d{4}/)) {
         model = modelMatch[1];
       }
     }
-    
+
     // Create raw message
     const msg: RawParsedMessage = {
       speaker: speakerRaw,
       model,
       ts: timestamp,
-      rawText: '',
-      text: '',
+      rawText: "",
+      text: "",
       absHeaderOffset,
       absContentEnd: 0,
-      contentHash: '',
-      messageRole: 'unknown',
-      roleSource: 'heuristic',
+      contentHash: "",
+      messageRole: "unknown",
+      roleSource: "heuristic",
     };
-    
+
     rawMessages.push(msg);
     prevMessage = msg;
     prevHeaderCharOffset = charOffset;
     lastHeaderEndCharOffset = charOffset + headerText.length;
   }
-  
+
   // Finalize last message
   if (prevMessage) {
     const rawContent = content.slice(lastHeaderEndCharOffset);
@@ -202,13 +209,16 @@ export function parseSpecStorySlice(
       rawContent,
       sliceStartOffset,
       content.length,
-      content
+      content,
     );
   }
-  
+
   // Find last safe boundary
-  const lastSafeBoundaryOffset = findLastSafeBoundary(content, sliceStartOffset);
-  
+  const lastSafeBoundaryOffset = findLastSafeBoundary(
+    content,
+    sliceStartOffset,
+  );
+
   return {
     rawMessages,
     sessionId,
@@ -224,28 +234,29 @@ function finalizeParsedMessage(
   rawContent: string,
   sliceStartOffset: number,
   contentEndCharOffset: number,
-  fullContent: string
+  fullContent: string,
 ): void {
   // Clean content
   msg.rawText = cleanMessageContent(rawContent);
   msg.text = stripInlineTags(msg.rawText);
   msg.contentHash = computeContentHash(msg.text);
-  
+
   // Compute content end byte offset
-  msg.absContentEnd = sliceStartOffset + charToByteOffset(fullContent, contentEndCharOffset);
-  
+  msg.absContentEnd =
+    sliceStartOffset + charToByteOffset(fullContent, contentEndCharOffset);
+
   // Check for inline role override
   const inlineMatch = msg.rawText.match(INLINE_ROLE_PATTERN);
   const commentMatch = msg.rawText.match(COMMENT_ROLE_PATTERN);
   const inlineRole = inlineMatch?.[1] ?? commentMatch?.[1];
-  
+
   if (inlineRole && isValidMessageRole(inlineRole)) {
     msg.messageRole = inlineRole as MessageRole;
-    msg.roleSource = 'inline';
+    msg.roleSource = "inline";
   } else {
     // Use heuristics
     msg.messageRole = speakerToMessageRole(msg.speaker);
-    msg.roleSource = 'heuristic';
+    msg.roleSource = "heuristic";
   }
 }
 
@@ -254,8 +265,8 @@ function finalizeParsedMessage(
  */
 function cleanMessageContent(raw: string): string {
   return raw
-    .replace(/^---\s*/, '')      // Remove leading separator
-    .replace(/\s*---$/, '')      // Remove trailing separator
+    .replace(/^---\s*/, "") // Remove leading separator
+    .replace(/\s*---$/, "") // Remove trailing separator
     .trim();
 }
 
@@ -263,20 +274,23 @@ function cleanMessageContent(raw: string): string {
  * Find the last safe message boundary in content.
  * A safe boundary is where we can safely resume parsing without splitting a message.
  */
-function findLastSafeBoundary(content: string, sliceStartOffset: number): number {
+function findLastSafeBoundary(
+  content: string,
+  sliceStartOffset: number,
+): number {
   SAFE_BOUNDARY_PATTERN.lastIndex = 0;
-  
+
   let lastMatch = -1;
   let match: RegExpExecArray | null;
-  
+
   while ((match = SAFE_BOUNDARY_PATTERN.exec(content)) !== null) {
     lastMatch = match.index;
   }
-  
+
   if (lastMatch < 0) {
     return sliceStartOffset;
   }
-  
+
   return sliceStartOffset + charToByteOffset(content, lastMatch);
 }
 
@@ -284,7 +298,14 @@ function findLastSafeBoundary(content: string, sliceStartOffset: number): number
  * Check if a string is a valid MessageRole.
  */
 function isValidMessageRole(role: string): boolean {
-  const validRoles: MessageRole[] = ['intent', 'spec', 'implementation', 'runlog', 'meta', 'unknown'];
+  const validRoles: MessageRole[] = [
+    "intent",
+    "spec",
+    "implementation",
+    "runlog",
+    "meta",
+    "unknown",
+  ];
   return validRoles.includes(role.toLowerCase() as MessageRole);
 }
 
@@ -294,27 +315,27 @@ function isValidMessageRole(role: string): boolean {
 
 /**
  * Extract session ID from SpecStory filename.
- * 
+ *
  * @param filename - Filename like "2025-09-25_18-36Z-project-setup.md"
  * @returns Extracted slug or full basename
  */
 export function extractSessionIdFromFilename(filename: string): string {
   // Remove .md extension
-  const base = filename.replace(/\.md$/, '');
-  
+  const base = filename.replace(/\.md$/, "");
+
   // Try to extract slug after timestamp
   // Pattern: YYYY-MM-DD_HH-MMZ-<slug>
   const slugMatch = base.match(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}Z?-(.+)$/);
   if (slugMatch) {
     return slugMatch[1];
   }
-  
+
   return base;
 }
 
 /**
  * Extract session UUID from file content.
- * 
+ *
  * @param content - File content string
  * @returns Session UUID or null
  */
@@ -329,7 +350,7 @@ export function extractSessionUUID(content: string): string | null {
 
 /**
  * Convert raw parsed messages to TranscriptMessages with seq assignment.
- * 
+ *
  * @param rawMessages - Raw parsed messages
  * @param sessionId - Session identifier
  * @param startSeq - Starting sequence number
@@ -340,12 +361,12 @@ export function buildTranscriptMessages(
   rawMessages: RawParsedMessage[],
   sessionId: string,
   startSeq: number = 1,
-  source: string = SPECSTORY_ADAPTER_NAME
+  source: string = SPECSTORY_ADAPTER_NAME,
 ): TranscriptMessage[] {
   return rawMessages.map((raw, index) => {
     const seq = startSeq + index;
     const sourceKey = buildSourceKey(source, sessionId, seq);
-    
+
     return {
       sourceKey,
       id: sourceKey,
@@ -362,7 +383,7 @@ export function buildTranscriptMessages(
       parserVersion: SPECSTORY_PARSER_VERSION,
       refs: {
         sourceLoc: {
-          file: '', // Filled in by adapter
+          file: "", // Filled in by adapter
           byteStart: raw.absHeaderOffset,
           byteEnd: raw.absContentEnd,
         },
@@ -374,14 +395,14 @@ export function buildTranscriptMessages(
 /**
  * Filter messages to only those with header offset greater than threshold.
  * Used for incremental import.
- * 
+ *
  * @param messages - Raw parsed messages
  * @param lastProcessedHeaderOffset - Offset of last processed header
  * @returns Filtered messages
  */
 export function filterNewMessages(
   messages: RawParsedMessage[],
-  lastProcessedHeaderOffset: number
+  lastProcessedHeaderOffset: number,
 ): RawParsedMessage[] {
-  return messages.filter(m => m.absHeaderOffset > lastProcessedHeaderOffset);
+  return messages.filter((m) => m.absHeaderOffset > lastProcessedHeaderOffset);
 }

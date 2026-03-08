@@ -13,9 +13,9 @@
  * @packageDocumentation
  */
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as yaml from 'yaml';
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import * as yaml from "yaml";
 
 // =============================================================================
 // Types
@@ -79,20 +79,20 @@ export interface RuleDefinition {
   description: string;
   /** Rule type */
   type:
-    | 'missing-edge'
-    | 'shape-violation'
-    | 'coverage-target'
-    | 'forbidden-kind'
-    | 'cardinality-violation'
-    | 'orphan-entity'
-    | 'semantic-contradiction'
-    | 'semantic-ambiguity'
-    | 'semantic-tension'
-    | 'semantic-coverage'
-    | 'issue-entity'
-    | 'custom';
+    | "missing-edge"
+    | "shape-violation"
+    | "coverage-target"
+    | "forbidden-kind"
+    | "cardinality-violation"
+    | "orphan-entity"
+    | "semantic-contradiction"
+    | "semantic-ambiguity"
+    | "semantic-tension"
+    | "semantic-coverage"
+    | "issue-entity"
+    | "custom";
   /** Severity */
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   /** Condition parameters */
   condition: Record<string, unknown>;
   /** Rule message template */
@@ -234,7 +234,7 @@ export interface LoadPackOptions {
  */
 export async function loadProfilePack(
   packPath: string,
-  options: LoadPackOptions = {}
+  options: LoadPackOptions = {},
 ): Promise<ProfilePack> {
   const { validate = true, resolveExtends = true, baseDir } = options;
 
@@ -245,15 +245,15 @@ export async function loadProfilePack(
   }
 
   // Load profile.yaml (required)
-  const profilePath = path.join(packPath, 'profile.yaml');
+  const profilePath = path.join(packPath, "profile.yaml");
   const profileYaml = await loadYamlFile<ProfileYaml>(profilePath);
 
   // Load shapes.yaml (optional)
-  const shapesPath = path.join(packPath, 'shapes.yaml');
+  const shapesPath = path.join(packPath, "shapes.yaml");
   const shapesYaml = await loadYamlFileSafe<ShapesYaml>(shapesPath);
 
   // Load rules from rules/*.yaml (optional)
-  const rulesDir = path.join(packPath, 'rules');
+  const rulesDir = path.join(packPath, "rules");
   const rules = await loadRulesFromDir(rulesDir);
 
   // Build the pack
@@ -265,7 +265,7 @@ export async function loadProfilePack(
       author: profileYaml.author,
       extends: profileYaml.extends,
     },
-    kinds: (profileYaml.kinds ?? []).map(k => ({
+    kinds: (profileYaml.kinds ?? []).map((k) => ({
       id: k.id,
       label: k.label,
       description: k.description,
@@ -274,9 +274,9 @@ export async function loadProfilePack(
       color: k.color,
       icon: k.icon,
     })),
-    shapes: (shapesYaml?.shapes ?? []).map(s => ({
+    shapes: (shapesYaml?.shapes ?? []).map((s) => ({
       subject: s.subject,
-      predicates: s.predicates.map(p => ({
+      predicates: s.predicates.map((p) => ({
         name: p.name,
         targets: Array.isArray(p.targets) ? p.targets : [p.targets],
         minCard: p.minCard,
@@ -285,7 +285,7 @@ export async function loadProfilePack(
       })),
     })),
     rules,
-    linkingRules: (profileYaml.linking ?? []).map(l => ({
+    linkingRules: (profileYaml.linking ?? []).map((l) => ({
       sourceRole: l.sourceRole,
       targetRole: l.targetRole,
       sourceKind: l.sourceKind,
@@ -309,7 +309,7 @@ export async function loadProfilePack(
       pack = mergeProfilePacks(basePack, pack);
     } catch (error) {
       throw new Error(
-        `Failed to load base pack "${pack.meta.extends}": ${error instanceof Error ? error.message : String(error)}`
+        `Failed to load base pack "${pack.meta.extends}": ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -325,7 +325,10 @@ export async function loadProfilePack(
 /**
  * Merge two profile packs (base and overlay)
  */
-function mergeProfilePacks(base: ProfilePack, overlay: ProfilePack): ProfilePack {
+function mergeProfilePacks(
+  base: ProfilePack,
+  overlay: ProfilePack,
+): ProfilePack {
   // Merge kinds - overlay wins for duplicates
   const kindsById = new Map<string, KindDefinition>();
   for (const kind of base.kinds) {
@@ -379,13 +382,15 @@ function mergeProfilePacks(base: ProfilePack, overlay: ProfilePack): ProfilePack
  */
 async function loadYamlFile<T>(filePath: string): Promise<T> {
   try {
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, "utf-8");
     return yaml.parse(content) as T;
   } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeError(error) && error.code === "ENOENT") {
       throw new Error(`Required file not found: ${filePath}`);
     }
-    throw new Error(`Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -394,10 +399,10 @@ async function loadYamlFile<T>(filePath: string): Promise<T> {
  */
 async function loadYamlFileSafe<T>(filePath: string): Promise<T | null> {
   try {
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, "utf-8");
     return yaml.parse(content) as T;
   } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeError(error) && error.code === "ENOENT") {
       return null;
     }
     throw error;
@@ -413,7 +418,10 @@ async function loadRulesFromDir(rulesDir: string): Promise<RuleDefinition[]> {
   try {
     const entries = await fs.readdir(rulesDir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.isFile() && (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml'))) {
+      if (
+        entry.isFile() &&
+        (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))
+      ) {
         const rulePath = path.join(rulesDir, entry.name);
         const rulesYaml = await loadYamlFile<RulesYaml>(rulePath);
         for (const rule of rulesYaml.rules ?? []) {
@@ -421,8 +429,9 @@ async function loadRulesFromDir(rulesDir: string): Promise<RuleDefinition[]> {
             id: rule.id,
             name: rule.name,
             description: rule.description,
-            type: rule.type as RuleDefinition['type'],
-            severity: (rule.severity as RuleDefinition['severity']) ?? 'warning',
+            type: rule.type as RuleDefinition["type"],
+            severity:
+              (rule.severity as RuleDefinition["severity"]) ?? "warning",
             condition: rule.condition,
             message: rule.message,
             enabled: rule.enabled ?? true,
@@ -432,7 +441,7 @@ async function loadRulesFromDir(rulesDir: string): Promise<RuleDefinition[]> {
     }
   } catch (error) {
     // Rules directory doesn't exist - that's fine
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeError(error) && error.code === "ENOENT") {
       return [];
     }
     throw error;
@@ -445,7 +454,7 @@ async function loadRulesFromDir(rulesDir: string): Promise<RuleDefinition[]> {
  * Type guard for Node.js errors
  */
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
+  return error instanceof Error && "code" in error;
 }
 
 // =============================================================================
@@ -460,17 +469,17 @@ export function validateProfilePack(pack: ProfilePack): void {
 
   // Validate meta
   if (!pack.meta.name) {
-    errors.push('Profile pack must have a name');
+    errors.push("Profile pack must have a name");
   }
   if (!pack.meta.version) {
-    errors.push('Profile pack must have a version');
+    errors.push("Profile pack must have a version");
   }
 
   // Validate kinds
   const kindIds = new Set<string>();
   for (const kind of pack.kinds) {
     if (!kind.id) {
-      errors.push('Kind must have an id');
+      errors.push("Kind must have an id");
     }
     if (!kind.label) {
       errors.push(`Kind "${kind.id}" must have a label`);
@@ -482,7 +491,7 @@ export function validateProfilePack(pack: ProfilePack): void {
 
     if (kind.extends && !kindIds.has(kind.extends)) {
       // Check if extends exists in the pack
-      const extendsExists = pack.kinds.some(k => k.id === kind.extends);
+      const extendsExists = pack.kinds.some((k) => k.id === kind.extends);
       if (!extendsExists) {
         errors.push(`Kind "${kind.id}" extends unknown kind "${kind.extends}"`);
       }
@@ -498,7 +507,7 @@ export function validateProfilePack(pack: ProfilePack): void {
       for (const target of pred.targets) {
         if (!kindIds.has(target)) {
           errors.push(
-            `Shape predicate "${pred.name}" on "${shape.subject}" references undefined kind "${target}"`
+            `Shape predicate "${pred.name}" on "${shape.subject}" references undefined kind "${target}"`,
           );
         }
       }
@@ -509,7 +518,7 @@ export function validateProfilePack(pack: ProfilePack): void {
   const ruleIds = new Set<string>();
   for (const rule of pack.rules) {
     if (!rule.id) {
-      errors.push('Rule must have an id');
+      errors.push("Rule must have an id");
     }
     if (!rule.name) {
       errors.push(`Rule "${rule.id}" must have a name`);
@@ -524,7 +533,9 @@ export function validateProfilePack(pack: ProfilePack): void {
   }
 
   if (errors.length > 0) {
-    throw new Error(`Profile pack validation failed:\n  - ${errors.join('\n  - ')}`);
+    throw new Error(
+      `Profile pack validation failed:\n  - ${errors.join("\n  - ")}`,
+    );
   }
 }
 
@@ -535,7 +546,9 @@ export function validateProfilePack(pack: ProfilePack): void {
 /**
  * Discover profile packs in a directory
  */
-export async function discoverProfilePacks(searchDir: string): Promise<string[]> {
+export async function discoverProfilePacks(
+  searchDir: string,
+): Promise<string[]> {
   const packs: string[] = [];
 
   try {
@@ -543,7 +556,7 @@ export async function discoverProfilePacks(searchDir: string): Promise<string[]>
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const packPath = path.join(searchDir, entry.name);
-        const profilePath = path.join(packPath, 'profile.yaml');
+        const profilePath = path.join(packPath, "profile.yaml");
         try {
           await fs.access(profilePath);
           packs.push(packPath);
@@ -553,7 +566,7 @@ export async function discoverProfilePacks(searchDir: string): Promise<string[]>
       }
     }
   } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeError(error) && error.code === "ENOENT") {
       return [];
     }
     throw error;
@@ -565,7 +578,10 @@ export async function discoverProfilePacks(searchDir: string): Promise<string[]>
 /**
  * Create an empty profile pack structure
  */
-export function createEmptyProfilePack(name: string, version = '1.0.0'): ProfilePack {
+export function createEmptyProfilePack(
+  name: string,
+  version = "1.0.0",
+): ProfilePack {
   return {
     meta: {
       name,
@@ -575,7 +591,7 @@ export function createEmptyProfilePack(name: string, version = '1.0.0'): Profile
     shapes: [],
     rules: [],
     linkingRules: [],
-    packPath: '',
+    packPath: "",
   };
 }
 
@@ -589,56 +605,91 @@ export function createEmptyProfilePack(name: string, version = '1.0.0'): Profile
 export function getDefaultProfilePack(): ProfilePack {
   return {
     meta: {
-      name: 'default',
-      version: '1.0.0',
-      description: 'Default IntentWeave profile pack',
+      name: "default",
+      version: "1.0.0",
+      description: "Default IntentWeave profile pack",
     },
     kinds: [
-      { id: 'resource', label: 'Resource', description: 'A domain resource or entity' },
-      { id: 'state', label: 'State', description: 'A state an entity can be in' },
-      { id: 'action', label: 'Action', description: 'An action that can be performed' },
-      { id: 'event', label: 'Event', description: 'A domain event' },
-      { id: 'role', label: 'Role', description: 'An actor or user role' },
-      { id: 'service', label: 'Service', description: 'A service or component' },
-      { id: 'transition', label: 'Transition', description: 'A state transition' },
+      {
+        id: "resource",
+        label: "Resource",
+        description: "A domain resource or entity",
+      },
+      {
+        id: "state",
+        label: "State",
+        description: "A state an entity can be in",
+      },
+      {
+        id: "action",
+        label: "Action",
+        description: "An action that can be performed",
+      },
+      { id: "event", label: "Event", description: "A domain event" },
+      { id: "role", label: "Role", description: "An actor or user role" },
+      {
+        id: "service",
+        label: "Service",
+        description: "A service or component",
+      },
+      {
+        id: "transition",
+        label: "Transition",
+        description: "A state transition",
+      },
     ],
     shapes: [
       {
-        subject: 'resource',
+        subject: "resource",
         predicates: [
-          { name: 'HAS_STATE', targets: ['state'], required: false },
-          { name: 'TRIGGERS', targets: ['event'], required: false },
+          { name: "HAS_STATE", targets: ["state"], required: false },
+          { name: "TRIGGERS", targets: ["event"], required: false },
         ],
       },
       {
-        subject: 'role',
+        subject: "role",
         predicates: [
-          { name: 'CAN', targets: ['action'], required: false },
-          { name: 'OWNS', targets: ['resource'], required: false },
+          { name: "CAN", targets: ["action"], required: false },
+          { name: "OWNS", targets: ["resource"], required: false },
         ],
       },
       {
-        subject: 'action',
+        subject: "action",
         predicates: [
-          { name: 'AFFECTS', targets: ['resource'], required: false },
-          { name: 'TRIGGERS', targets: ['event'], required: false },
+          { name: "AFFECTS", targets: ["resource"], required: false },
+          { name: "TRIGGERS", targets: ["event"], required: false },
         ],
       },
       {
-        subject: 'transition',
+        subject: "transition",
         predicates: [
-          { name: 'FROM_STATE', targets: ['state'], required: true },
-          { name: 'TO_STATE', targets: ['state'], required: true },
-          { name: 'WHEN', targets: ['event'], required: false },
+          { name: "FROM_STATE", targets: ["state"], required: true },
+          { name: "TO_STATE", targets: ["state"], required: true },
+          { name: "WHEN", targets: ["event"], required: false },
         ],
       },
     ],
     rules: [],
     linkingRules: [
-      { sourceRole: 'intent', targetRole: 'spec', predicate: 'REFINES', confidence: 0.9 },
-      { sourceRole: 'spec', targetRole: 'code', predicate: 'IMPLEMENTS', confidence: 0.85 },
-      { sourceRole: 'code', targetRole: 'test', predicate: 'TESTED_BY', confidence: 0.8 },
+      {
+        sourceRole: "intent",
+        targetRole: "spec",
+        predicate: "REFINES",
+        confidence: 0.9,
+      },
+      {
+        sourceRole: "spec",
+        targetRole: "code",
+        predicate: "IMPLEMENTS",
+        confidence: 0.85,
+      },
+      {
+        sourceRole: "code",
+        targetRole: "test",
+        predicate: "TESTED_BY",
+        confidence: 0.8,
+      },
     ],
-    packPath: '<built-in>',
+    packPath: "<built-in>",
   };
 }

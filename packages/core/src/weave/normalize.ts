@@ -3,18 +3,18 @@
 
 /**
  * Weave Normalization Utilities
- * 
+ *
  * Deterministic normalization for entity names, predicates, and canonical keys.
  * All normalization is versioned to prevent silent ID churn across algorithm changes.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
 // =============================================================================
 // Normalization Version (bump this when changing normalization algorithms)
 // =============================================================================
 
-export const NORMALIZATION_VERSION = 'norm-v1';
+export const NORMALIZATION_VERSION = "norm-v1";
 
 // =============================================================================
 // Name Normalization
@@ -22,50 +22,72 @@ export const NORMALIZATION_VERSION = 'norm-v1';
 
 /**
  * Normalize an entity name for canonical key generation.
- * 
+ *
  * Rules (v1):
  * - Lowercase
  * - Trim whitespace
  * - Collapse internal whitespace to single underscore
  * - Remove punctuation except: - _ / (common in identifiers)
  * - Remove common stopwords (optional, controlled by flag)
- * 
+ *
  * @example
  * normalizeName("Session State") // "session_state"
  * normalizeName("The User's Profile") // "users_profile"
  * normalizeName("  Foo   Bar  ") // "foo_bar"
  */
-export function normalizeName(name: string, options?: { removeStopwords?: boolean }): string {
+export function normalizeName(
+  name: string,
+  options?: { removeStopwords?: boolean },
+): string {
   let result = name
     // Trim
     .trim()
     // Lowercase
     .toLowerCase()
     // Replace common separators with underscore
-    .replace(/[\s\-\.]+/g, '_')
+    .replace(/[\s\-\.]+/g, "_")
     // Remove punctuation except allowed: _ - /
-    .replace(/[^a-z0-9_\-\/]/g, '')
+    .replace(/[^a-z0-9_\-\/]/g, "")
     // Collapse multiple underscores
-    .replace(/_+/g, '_')
+    .replace(/_+/g, "_")
     // Remove leading/trailing underscores
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_+|_+$/g, "");
 
   if (options?.removeStopwords) {
     result = removeStopwords(result);
   }
 
-  return result || 'unnamed';
+  return result || "unnamed";
 }
 
 const STOPWORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-  'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "of",
+  "with",
+  "by",
+  "from",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
 ]);
 
 function removeStopwords(normalized: string): string {
-  const parts = normalized.split('_');
-  const filtered = parts.filter(p => !STOPWORDS.has(p) && p.length > 0);
-  return filtered.length > 0 ? filtered.join('_') : normalized;
+  const parts = normalized.split("_");
+  const filtered = parts.filter((p) => !STOPWORDS.has(p) && p.length > 0);
+  return filtered.length > 0 ? filtered.join("_") : normalized;
 }
 
 // =============================================================================
@@ -79,11 +101,11 @@ function toUpperSnakeCase(str: string): string {
   // Insert underscore before capital letters (but not at start)
   // e.g. "hasState" -> "has_State" -> "HAS_STATE"
   return str
-    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
     .toUpperCase()
-    .replace(/[\s\-]+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/[\s\-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 /**
@@ -93,36 +115,36 @@ function toUpperSnakeCase(str: string): string {
  */
 const PREDICATE_ALIASES: Record<string, string> = {
   // State/status variants
-  'HAS_STATUS': 'HAS_STATE',
-  'STATUS': 'HAS_STATE',
-  
+  HAS_STATUS: "HAS_STATE",
+  STATUS: "HAS_STATE",
+
   // Implementation variants
-  'IMPLEMENTS': 'REALIZES',
-  'SATISFIES': 'REALIZES',
-  'FULFILLS': 'REALIZES',
-  
+  IMPLEMENTS: "REALIZES",
+  SATISFIES: "REALIZES",
+  FULFILLS: "REALIZES",
+
   // Reference variants
-  'MENTIONS': 'REFERENCES',
-  'CITES': 'REFERENCES',
-  'LINKS_TO': 'REFERENCES',
-  
+  MENTIONS: "REFERENCES",
+  CITES: "REFERENCES",
+  LINKS_TO: "REFERENCES",
+
   // Containment variants
-  'INCLUDES': 'CONTAINS',
-  'HAS': 'CONTAINS',
-  
+  INCLUDES: "CONTAINS",
+  HAS: "CONTAINS",
+
   // Dependency variants
-  'DEPENDS_ON': 'REQUIRES',
-  'NEEDS': 'REQUIRES',
+  DEPENDS_ON: "REQUIRES",
+  NEEDS: "REQUIRES",
 };
 
 /**
  * Normalize a predicate for canonical statement generation.
- * 
+ *
  * Rules:
  * - Convert camelCase to UPPER_SNAKE_CASE
  * - Replace hyphens and spaces with underscore
  * - Apply alias table
- * 
+ *
  * @example
  * normalizePredicate("hasState") // "HAS_STATE"
  * normalizePredicate("depends-on") // "REQUIRES"
@@ -153,14 +175,28 @@ export function getCanonicalPredicate(predicate: string): string {
 // Canonical Key Generation
 // =============================================================================
 
-export type ArtifactRole = 'intent' | 'spec' | 'implementation' | 'test' | 'config' | 'unknown';
-export type EntityType = 'resource' | 'state' | 'action' | 'rule' | 'transition' | 'event' | 'role' | 'unknown';
+export type ArtifactRole =
+  | "intent"
+  | "spec"
+  | "implementation"
+  | "test"
+  | "config"
+  | "unknown";
+export type EntityType =
+  | "resource"
+  | "state"
+  | "action"
+  | "rule"
+  | "transition"
+  | "event"
+  | "role"
+  | "unknown";
 
 /**
  * Build a canonical key for entity grouping.
- * 
+ *
  * Format: <version>|<artifactRole>|<entityType>|<normalizedName>
- * 
+ *
  * @example
  * buildCanonicalKey({ role: 'spec', type: 'rule', name: 'Promotion Criteria' })
  * // "norm-v1|spec|rule|promotion_criteria"
@@ -183,9 +219,9 @@ export function parseCanonicalKey(key: string): {
   type: EntityType;
   normalizedName: string;
 } | null {
-  const parts = key.split('|');
+  const parts = key.split("|");
   if (parts.length !== 4) return null;
-  
+
   const [version, role, type, normalizedName] = parts;
   return {
     version,
@@ -201,10 +237,10 @@ export function parseCanonicalKey(key: string): {
 
 /**
  * Generate a stable cgId for a raw entity.
- * 
+ *
  * This ID is stable across re-extractions as long as the concept
  * (name + type) remains the same in the artifact.
- * 
+ *
  * Format: sha256(artifactId|artifactRole|type|normalizedName)
  */
 export function generateStableCgId(params: {
@@ -221,30 +257,30 @@ export function generateStableCgId(params: {
     params.artifactRole,
     params.type,
     normName,
-    params.ordinal !== undefined ? String(params.ordinal) : '',
-  ].join('|');
-  
+    params.ordinal !== undefined ? String(params.ordinal) : "",
+  ].join("|");
+
   return sha256Short(input);
 }
 
 /**
  * Generate a deterministic canonicalId from a canonical key.
- * 
+ *
  * Format: ce_<base32(sha256(canonicalKey)).slice(0, 16)>
- * 
+ *
  * This eliminates the need for a registry to assign sequential IDs,
  * and avoids concurrency/locking issues.
  */
 export function generateCanonicalId(canonicalKey: string): string {
-  const hash = createHash('sha256').update(canonicalKey).digest();
+  const hash = createHash("sha256").update(canonicalKey).digest();
   // Use base32 (alphanumeric, case-insensitive) for readability
-  const base32 = hash.toString('hex').slice(0, 16);
+  const base32 = hash.toString("hex").slice(0, 16);
   return `ce_${base32}`;
 }
 
 /**
  * Generate a deterministic canonical statement ID.
- * 
+ *
  * Format: cs_<sha256(subjectCanonicalId|predicate|objectCanonicalId|objectLiteral)>
  */
 export function generateCanonicalStatementId(params: {
@@ -254,9 +290,9 @@ export function generateCanonicalStatementId(params: {
   objectLiteral?: string;
 }): string {
   const normPred = normalizePredicate(params.predicate);
-  const objectPart = params.objectCanonicalId ?? params.objectLiteral ?? '';
+  const objectPart = params.objectCanonicalId ?? params.objectLiteral ?? "";
   const input = `${params.subjectCanonicalId}|${normPred}|${objectPart}`;
-  const hash = createHash('sha256').update(input).digest('hex').slice(0, 16);
+  const hash = createHash("sha256").update(input).digest("hex").slice(0, 16);
   return `cs_${hash}`;
 }
 
@@ -265,7 +301,7 @@ export function generateCanonicalStatementId(params: {
 // =============================================================================
 
 function sha256Short(input: string): string {
-  return createHash('sha256').update(input).digest('hex').slice(0, 16);
+  return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
 /**

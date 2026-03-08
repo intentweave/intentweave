@@ -20,11 +20,21 @@
  * Output: fx.json  (raw triples with evidence)
  */
 
-import type { Chunk, LLMProvider, Evidence, TokenUsage } from '@intentweave/core';
-import { buildTokenUsage, zeroTokenUsage, sumTokenUsage, AbortThresholdError } from '@intentweave/core';
-import type { PipelineContext } from '../pipeline/context.js';
-import { hashContent } from '../cache/registry.js';
-import { completeWithRetry } from '../providers/llm/completeWithRetry.js';
+import type {
+  Chunk,
+  LLMProvider,
+  Evidence,
+  TokenUsage,
+} from "@intentweave/core";
+import {
+  buildTokenUsage,
+  zeroTokenUsage,
+  sumTokenUsage,
+  AbortThresholdError,
+} from "@intentweave/core";
+import type { PipelineContext } from "../pipeline/context.js";
+import { hashContent } from "../cache/registry.js";
+import { completeWithRetry } from "../providers/llm/completeWithRetry.js";
 
 // =============================================================================
 // FX Stage Types
@@ -89,9 +99,9 @@ export interface FxStageOutput {
   /** JSON Schema reference */
   $schema: string;
   /** Schema version */
-  schemaVersion: '0.1';
+  schemaVersion: "0.1";
   /** Stage identifier */
-  stage: 'FX';
+  stage: "FX";
   /** Artifact ID */
   artifactId: string;
   /** Source file path */
@@ -217,27 +227,49 @@ export const FX_PROMPT_VERSION = hashContent(FX_SYSTEM_PROMPT);
  * JSON Schema for FX response — deliberately loose
  */
 const FX_RESPONSE_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
     triples: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          subject: { type: 'string', description: 'Subject entity name' },
-          predicate: { type: 'string', description: 'Relationship (natural language)' },
-          object: { type: 'string', description: 'Object entity name' },
-          subjectKind: { type: 'string', description: 'Entity kind hint for subject (e.g. concept, decision, component)' },
-          objectKind: { type: 'string', description: 'Entity kind hint for object (e.g. concept, decision, component)' },
-          confidence: { type: 'number', description: 'Confidence 0.0–1.0' },
-          rationale: { type: 'string', description: 'Brief extraction rationale' },
+          subject: { type: "string", description: "Subject entity name" },
+          predicate: {
+            type: "string",
+            description: "Relationship (natural language)",
+          },
+          object: { type: "string", description: "Object entity name" },
+          subjectKind: {
+            type: "string",
+            description:
+              "Entity kind hint for subject (e.g. concept, decision, component)",
+          },
+          objectKind: {
+            type: "string",
+            description:
+              "Entity kind hint for object (e.g. concept, decision, component)",
+          },
+          confidence: { type: "number", description: "Confidence 0.0–1.0" },
+          rationale: {
+            type: "string",
+            description: "Brief extraction rationale",
+          },
         },
-        required: ['subject', 'predicate', 'object', 'subjectKind', 'objectKind', 'confidence', 'rationale'],
+        required: [
+          "subject",
+          "predicate",
+          "object",
+          "subjectKind",
+          "objectKind",
+          "confidence",
+          "rationale",
+        ],
         additionalProperties: false,
       },
     },
   },
-  required: ['triples'],
+  required: ["triples"],
   additionalProperties: false,
 };
 
@@ -255,23 +287,25 @@ function buildFxUserPrompt(chunk: Chunk, documentContext?: string): string {
     parts.push(`DOCUMENT CONTEXT: ${documentContext}\n`);
   }
 
-  parts.push('TEXT TO ANALYZE:\n');
-  parts.push('```');
+  parts.push("TEXT TO ANALYZE:\n");
+  parts.push("```");
   parts.push(chunk.content);
-  parts.push('```');
+  parts.push("```");
 
   if (chunk.filePath) {
-    parts.push(`\n(Source: ${chunk.filePath}${chunk.startLine ? `:${chunk.startLine}` : ''})`);
+    parts.push(
+      `\n(Source: ${chunk.filePath}${chunk.startLine ? `:${chunk.startLine}` : ""})`,
+    );
   }
 
-  return parts.join('\n');
+  return parts.join("\n");
 }
 
 /**
  * Parse the LLM response into raw triples
  */
 function parseFxResponse(response: unknown, maxTriples: number): RawTriple[] {
-  if (!response || typeof response !== 'object') return [];
+  if (!response || typeof response !== "object") return [];
 
   const data = response as Record<string, unknown>;
   const triples = data.triples;
@@ -279,21 +313,28 @@ function parseFxResponse(response: unknown, maxTriples: number): RawTriple[] {
 
   return triples
     .slice(0, maxTriples)
-    .filter((t): t is Record<string, unknown> =>
-      t != null &&
-      typeof t === 'object' &&
-      typeof (t as Record<string, unknown>).subject === 'string' &&
-      typeof (t as Record<string, unknown>).predicate === 'string' &&
-      typeof (t as Record<string, unknown>).object === 'string'
+    .filter(
+      (t): t is Record<string, unknown> =>
+        t != null &&
+        typeof t === "object" &&
+        typeof (t as Record<string, unknown>).subject === "string" &&
+        typeof (t as Record<string, unknown>).predicate === "string" &&
+        typeof (t as Record<string, unknown>).object === "string",
     )
-    .map(t => ({
+    .map((t) => ({
       subject: String(t.subject).trim(),
       predicate: String(t.predicate).trim(),
       object: String(t.object).trim(),
-      subjectKind: typeof t.subjectKind === 'string' ? t.subjectKind.trim() : undefined,
-      objectKind: typeof t.objectKind === 'string' ? t.objectKind.trim() : undefined,
-      confidence: typeof t.confidence === 'number' ? Math.max(0, Math.min(1, t.confidence)) : 0.5,
-      rationale: typeof t.rationale === 'string' ? t.rationale.trim() : undefined,
+      subjectKind:
+        typeof t.subjectKind === "string" ? t.subjectKind.trim() : undefined,
+      objectKind:
+        typeof t.objectKind === "string" ? t.objectKind.trim() : undefined,
+      confidence:
+        typeof t.confidence === "number"
+          ? Math.max(0, Math.min(1, t.confidence))
+          : 0.5,
+      rationale:
+        typeof t.rationale === "string" ? t.rationale.trim() : undefined,
     }));
 }
 
@@ -308,14 +349,21 @@ async function extractChunk(
 ): Promise<FxChunkResult> {
   const maxTriples = options.maxTriplesPerChunk ?? 50;
 
-  const response = await completeWithRetry(llmProvider, {
-    system: FX_SYSTEM_PROMPT,
-    messages: [
-      { role: 'user', content: buildFxUserPrompt(chunk, options.documentContext) },
-    ],
-    responseSchema: FX_RESPONSE_SCHEMA,
-    temperature: 0.1, // Low temperature for consistent extraction
-  }, { logger });
+  const response = await completeWithRetry(
+    llmProvider,
+    {
+      system: FX_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: buildFxUserPrompt(chunk, options.documentContext),
+        },
+      ],
+      responseSchema: FX_RESPONSE_SCHEMA,
+      temperature: 0.1, // Low temperature for consistent extraction
+    },
+    { logger },
+  );
 
   const parsed = response.parsed ?? tryParseJson(response.content);
   const triples = parseFxResponse(parsed, maxTriples);
@@ -327,7 +375,7 @@ async function extractChunk(
     chunk_id: chunk.id,
     chunk_index: chunk.index,
     confidence: t.confidence,
-    source_stage: 'RX' as const, // Use RX for compat, will be re-tagged as FX downstream
+    source_stage: "RX" as const, // Use RX for compat, will be re-tagged as FX downstream
   }));
 
   // Track token usage from the LLM response
@@ -372,7 +420,7 @@ function tryParseJson(content: string): unknown {
 export async function runFxStage(
   input: FxStageInput,
   options: FxStageOptions,
-  ctx?: Pick<PipelineContext, 'logger'>,
+  ctx?: Pick<PipelineContext, "logger">,
 ): Promise<FxStageOutput> {
   const startTime = Date.now();
   const logger = ctx?.logger;
@@ -390,60 +438,79 @@ export async function runFxStage(
     const end = Math.min(start + CONCURRENCY, input.chunks.length);
     const slice = input.chunks.slice(start, end);
 
-    logger?.debug(`[FX] Launching chunks ${start + 1}–${end} of ${input.chunks.length}…`);
+    logger?.debug(
+      `[FX] Launching chunks ${start + 1}–${end} of ${input.chunks.length}…`,
+    );
 
     const settled = await Promise.allSettled(
       slice.map(async (chunk, i) => {
-        const result = await extractChunk(chunk, options.llmProvider, options, logger);
-        logger?.debug(`[FX] Chunk ${chunk.id}: ${result.triples.length} triples extracted`);
+        const result = await extractChunk(
+          chunk,
+          options.llmProvider,
+          options,
+          logger,
+        );
+        logger?.debug(
+          `[FX] Chunk ${chunk.id}: ${result.triples.length} triples extracted`,
+        );
         return { index: start + i, result };
       }),
     );
 
     for (const outcome of settled) {
-      if (outcome.status === 'fulfilled') {
+      if (outcome.status === "fulfilled") {
         chunkResults[outcome.value.index] = outcome.value.result;
       } else {
         const idx = settled.indexOf(outcome);
         const chunk = slice[idx];
-        logger?.warn(`[FX] Chunk ${chunk.id} failed, skipping`, { error: String(outcome.reason) });
-        chunkResults[start + idx] = { chunkId: chunk.id, triples: [], evidence: [] };
+        logger?.warn(`[FX] Chunk ${chunk.id} failed, skipping`, {
+          error: String(outcome.reason),
+        });
+        chunkResults[start + idx] = {
+          chunkId: chunk.id,
+          triples: [],
+          evidence: [],
+        };
       }
     }
   }
 
   // Flatten results
-  const allTriples = chunkResults.flatMap(r => r.triples);
-  const allEvidence = chunkResults.flatMap(r => r.evidence);
+  const allTriples = chunkResults.flatMap((r) => r.triples);
+  const allEvidence = chunkResults.flatMap((r) => r.evidence);
   const latencyMs = Date.now() - startTime;
 
   // Abort if too many chunks failed (> 50%)
   // A chunk is "failed" if it has 0 triples AND either no tokenUsage or 0 tokens
   // (the API returned an error — e.g. quota exhausted, rate limit, timeout)
-  const failedChunks = chunkResults.filter(r =>
-    r.triples.length === 0 &&
-    (!r.tokenUsage || r.tokenUsage.totalTokens === 0)
+  const failedChunks = chunkResults.filter(
+    (r) =>
+      r.triples.length === 0 &&
+      (!r.tokenUsage || r.tokenUsage.totalTokens === 0),
   ).length;
   if (input.chunks.length > 0 && failedChunks / input.chunks.length > 0.5) {
-    throw new AbortThresholdError('FX', failedChunks, input.chunks.length, {
+    throw new AbortThresholdError("FX", failedChunks, input.chunks.length, {
       artifactId: input.artifactId,
     });
   }
 
   // Aggregate token usage across all chunks
   const chunkUsages = chunkResults
-    .map(r => r.tokenUsage)
+    .map((r) => r.tokenUsage)
     .filter((u): u is TokenUsage => u != null);
-  const tokenUsage = chunkUsages.length > 0
-    ? sumTokenUsage(...chunkUsages)
-    : zeroTokenUsage(options.llmProvider.name);
+  const tokenUsage =
+    chunkUsages.length > 0
+      ? sumTokenUsage(...chunkUsages)
+      : zeroTokenUsage(options.llmProvider.name);
 
-  logger?.info(`[FX] Completed ${input.artifactId}: ${allTriples.length} raw triples in ${latencyMs}ms (${tokenUsage.totalTokens} tokens)`);
+  logger?.info(
+    `[FX] Completed ${input.artifactId}: ${allTriples.length} raw triples in ${latencyMs}ms (${tokenUsage.totalTokens} tokens)`,
+  );
 
   return {
-    $schema: 'intentweave://schemas/fx/v0.1',
-    schemaVersion: '0.1',
-    stage: 'FX',
+    $schema: "intentweave://schemas/fx/v0.1",
+    schemaVersion: "0.1",
+    stage: "FX",
     artifactId: input.artifactId,
     filePath: input.filePath,
     triples: allTriples,

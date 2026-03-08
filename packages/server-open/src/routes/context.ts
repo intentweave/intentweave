@@ -1,8 +1,8 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import type { FastifyInstance } from 'fastify';
-import type { Driver } from 'neo4j-driver';
+import type { FastifyInstance } from "fastify";
+import type { Driver } from "neo4j-driver";
 import {
   buildTopicContext,
   buildEntityContext,
@@ -11,8 +11,8 @@ import {
   enrichWithCodeRefs,
   formatContextMarkdown,
   formatContextJson,
-} from '@intentweave/cli/context';
-import { createRunnerFromDriver } from '../helpers/index.js';
+} from "@intentweave/cli/context";
+import { createRunnerFromDriver } from "../helpers/index.js";
 
 /**
  * POST /api/context — Build RAG context from the knowledge graph.
@@ -24,32 +24,65 @@ import { createRunnerFromDriver } from '../helpers/index.js';
  *
  * Wraps the same logic as `iw context` CLI command.
  */
-export async function registerContextRoutes(fastify: FastifyInstance): Promise<void> {
+export async function registerContextRoutes(
+  fastify: FastifyInstance,
+): Promise<void> {
   fastify.post(
-    '/api/context',
+    "/api/context",
     {
       schema: {
-        tags: ['context'],
-        description: 'Build RAG context from the knowledge graph',
+        tags: ["context"],
+        description: "Build RAG context from the knowledge graph",
         body: {
-          type: 'object',
+          type: "object",
           properties: {
-            topic: { type: 'string', description: 'Natural language topic for semantic retrieval' },
-            entity: { type: 'string', description: 'Seed entity name for neighborhood expansion' },
-            all: { type: 'boolean', default: false, description: 'Dump all entities in session' },
-            session: { type: 'string', description: 'Session ID' },
-            hops: { type: 'integer', default: 2, description: 'Hops for neighborhood expansion' },
-            limit: { type: 'integer', default: 50, description: 'Maximum entities to return' },
-            format: { type: 'string', enum: ['markdown', 'json'], default: 'json' },
+            topic: {
+              type: "string",
+              description: "Natural language topic for semantic retrieval",
+            },
+            entity: {
+              type: "string",
+              description: "Seed entity name for neighborhood expansion",
+            },
+            all: {
+              type: "boolean",
+              default: false,
+              description: "Dump all entities in session",
+            },
+            session: { type: "string", description: "Session ID" },
+            hops: {
+              type: "integer",
+              default: 2,
+              description: "Hops for neighborhood expansion",
+            },
+            limit: {
+              type: "integer",
+              default: 50,
+              description: "Maximum entities to return",
+            },
+            format: {
+              type: "string",
+              enum: ["markdown", "json"],
+              default: "json",
+            },
           },
         },
         response: {
           200: {
-            type: 'object',
+            type: "object",
             properties: {
-              context: { type: 'string', description: 'Formatted context (markdown or JSON string)' },
-              entities: { type: 'number', description: 'Number of entities included' },
-              relationships: { type: 'number', description: 'Number of relationships included' },
+              context: {
+                type: "string",
+                description: "Formatted context (markdown or JSON string)",
+              },
+              entities: {
+                type: "number",
+                description: "Number of entities included",
+              },
+              relationships: {
+                type: "number",
+                description: "Number of relationships included",
+              },
             },
           },
         },
@@ -57,13 +90,21 @@ export async function registerContextRoutes(fastify: FastifyInstance): Promise<v
     },
     async (request, reply) => {
       const body = request.body as {
-        topic?: string; entity?: string; all?: boolean;
-        session?: string; hops?: number; limit?: number; format?: string;
+        topic?: string;
+        entity?: string;
+        all?: boolean;
+        session?: string;
+        hops?: number;
+        limit?: number;
+        format?: string;
       };
       const ctx = (request as any).ctx as { sessionId: string };
       const sessionId = body.session ?? ctx.sessionId;
       const driver: Driver = (fastify as any).neo4j;
-      const runner = createRunnerFromDriver(driver, (fastify as any).neo4jDatabase);
+      const runner = createRunnerFromDriver(
+        driver,
+        (fastify as any).neo4jDatabase,
+      );
 
       const opts = {
         runner,
@@ -83,11 +124,12 @@ export async function registerContextRoutes(fastify: FastifyInstance): Promise<v
         // Topic mode requires an LLM — return 400 if not available
         // For now, return an error. Server-side LLM integration will be added later.
         return (reply as any).status(400).send({
-          error: 'Topic-based context requires an LLM provider. Use entity or all mode, or add LLM config.',
+          error:
+            "Topic-based context requires an LLM provider. Use entity or all mode, or add LLM config.",
         });
       } else {
         return (reply as any).status(400).send({
-          error: 'Provide one of: topic, entity, or all=true',
+          error: "Provide one of: topic, entity, or all=true",
         });
       }
 
@@ -95,9 +137,10 @@ export async function registerContextRoutes(fastify: FastifyInstance): Promise<v
       await enrichWithDescriptions(runner, sessionId, bundle.entities);
       await enrichWithCodeRefs(runner, sessionId, bundle.entities);
 
-      const formatted = body.format === 'markdown'
-        ? formatContextMarkdown(bundle, {})
-        : formatContextJson(bundle);
+      const formatted =
+        body.format === "markdown"
+          ? formatContextMarkdown(bundle, {})
+          : formatContextJson(bundle);
 
       return {
         context: formatted,

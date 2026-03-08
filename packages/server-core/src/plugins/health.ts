@@ -1,8 +1,8 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import fp from 'fastify-plugin';
-import type { FastifyInstance } from 'fastify';
+import fp from "fastify-plugin";
+import type { FastifyInstance } from "fastify";
 
 /**
  * Health and readiness endpoints.
@@ -12,50 +12,50 @@ import type { FastifyInstance } from 'fastify';
  */
 async function healthPluginFn(fastify: FastifyInstance): Promise<void> {
   fastify.get(
-    '/health',
+    "/health",
     {
       schema: {
-        tags: ['health'],
-        description: 'Liveness probe — always returns 200',
+        tags: ["health"],
+        description: "Liveness probe — always returns 200",
         response: {
           200: {
-            type: 'object',
+            type: "object",
             properties: {
-              status: { type: 'string' },
-              uptime: { type: 'number' },
-              timestamp: { type: 'string' },
+              status: { type: "string" },
+              uptime: { type: "number" },
+              timestamp: { type: "string" },
             },
           },
         },
       },
     },
     async () => ({
-      status: 'ok',
+      status: "ok",
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     }),
   );
 
   fastify.get(
-    '/ready',
+    "/ready",
     {
       schema: {
-        tags: ['health'],
-        description: 'Readiness probe — checks Neo4j connectivity',
+        tags: ["health"],
+        description: "Readiness probe — checks Neo4j connectivity",
         response: {
           200: {
-            type: 'object',
+            type: "object",
             properties: {
-              status: { type: 'string' },
-              neo4j: { type: 'string' },
+              status: { type: "string" },
+              neo4j: { type: "string" },
             },
           },
           503: {
-            type: 'object',
+            type: "object",
             properties: {
-              status: { type: 'string' },
-              neo4j: { type: 'string' },
-              error: { type: 'string' },
+              status: { type: "string" },
+              neo4j: { type: "string" },
+              error: { type: "string" },
             },
           },
         },
@@ -66,16 +66,16 @@ async function healthPluginFn(fastify: FastifyInstance): Promise<void> {
         const driver = (fastify as any).neo4j;
         if (!driver) {
           return reply.status(503).send({
-            status: 'error',
-            neo4j: 'not configured',
+            status: "error",
+            neo4j: "not configured",
           });
         }
         await driver.verifyConnectivity();
-        return { status: 'ok', neo4j: 'connected' };
+        return { status: "ok", neo4j: "connected" };
       } catch (err: any) {
         return reply.status(503).send({
-          status: 'error',
-          neo4j: 'disconnected',
+          status: "error",
+          neo4j: "disconnected",
           error: err.message,
         });
       }
@@ -84,6 +84,6 @@ async function healthPluginFn(fastify: FastifyInstance): Promise<void> {
 }
 
 export const healthPlugin = fp(healthPluginFn, {
-  name: 'iw-health',
-  fastify: '5.x',
+  name: "iw-health",
+  fastify: "5.x",
 });

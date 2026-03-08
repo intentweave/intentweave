@@ -78,16 +78,19 @@ Update this fixture when planpling evolves, in this order:
 ## Golden Contracts
 
 ### Filesystem Contract (must exist)
+
 - ✅ `.iw/runs/<runId>/artifacts/<artifactId>/{in,rx,cx,mx,px}.json`
 - ✅ `.iw/runs/<runId>/aggregate/{lx.proposals,coverage,findings}.json`
 - ✅ `.iw/runs/<runId>/run.meta.json`
 
 ### Schema Contract (must exist in each JSON)
+
 - ✅ All files have `schemaVersion`
 - ✅ Aggregate files have `$schema` headers
 - ✅ Stage outputs have `$schema` (if implemented)
 
 ### Semantic Contract (pin minimal set)
+
 - ✅ Expected kinds appear: `planpling:Role`, `planpling:Permission`
 - ✅ At least one link proposal exists in `lx.proposals.json`
 - ✅ Coverage report generated (even if empty)
@@ -96,6 +99,7 @@ Update this fixture when planpling evolves, in this order:
 ## CI Integration
 
 This fixture is validated in CI via:
+
 - `.github/workflows/golden-fixture.yml`
 - `scripts/validate-golden-diff.js`
 

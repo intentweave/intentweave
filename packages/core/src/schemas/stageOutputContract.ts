@@ -3,42 +3,47 @@
 
 /**
  * Unified Stage Output Contract
- * 
+ *
  * Normalizes stage output formats between:
  * - Server/Interactive mode: Uses StagingSnapshot (simple { entities, statements })
  * - Core/Rich mode: Uses RxStageOutput, CxStageOutput, MxStageOutput, PxStageOutput
- * 
+ *
  * This contract provides:
  * 1. Re-exports of existing stage output types from types/stages.ts
  * 2. Converters: StagingSnapshot -> Core Stage Output
  * 3. Serializers for rx.json, cx.json, mx.json, px.json format compatibility
- * 
+ *
  * Goal: Both modes can produce the same JSON output format for parity testing
  * and analysis tools.
- * 
+ *
  * @version 1.0.0
  */
 
-import type { Entity, Statement, Evidence, StagingSnapshot } from '../types/index.js';
+import type {
+  Entity,
+  Statement,
+  Evidence,
+  StagingSnapshot,
+} from "../types/index.js";
 import {
   type InStageOutput,
-  type RxStageOutput, 
-  type CxStageOutput, 
-  type MxStageOutput, 
+  type RxStageOutput,
+  type CxStageOutput,
+  type MxStageOutput,
   type PxStageOutput,
   type AliasMapping,
   type FilterDecision,
   type BaseStageOutput,
   STAGE_SCHEMAS,
   CURRENT_SCHEMA_VERSION,
-} from '../types/stages.js';
+} from "../types/stages.js";
 
 // Re-export stage types for consumers of this module
 export type {
   InStageOutput,
-  RxStageOutput, 
-  CxStageOutput, 
-  MxStageOutput, 
+  RxStageOutput,
+  CxStageOutput,
+  MxStageOutput,
   PxStageOutput,
   AliasMapping,
   FilterDecision,
@@ -54,7 +59,7 @@ export { STAGE_SCHEMAS, CURRENT_SCHEMA_VERSION };
 /**
  * Stage identifiers
  */
-export type StageId = 'IN' | 'RX' | 'CX' | 'MX' | 'PX' | 'LX' | 'AGG';
+export type StageId = "IN" | "RX" | "CX" | "MX" | "PX" | "LX" | "AGG";
 
 /**
  * Base processing metadata for converters
@@ -75,7 +80,7 @@ export interface NormalizationRecord {
   /** Entity cgId */
   cgId: string;
   /** Type of normalization */
-  type: 'name' | 'kind' | 'merge';
+  type: "name" | "kind" | "merge";
   /** Original value */
   from: string;
   /** New value */
@@ -123,11 +128,11 @@ export interface ServerStageEnvelope {
  * Schema URLs for stage outputs (external references)
  */
 export const STAGE_SCHEMA_URLS = {
-  IN: 'https://intentweave.dev/schemas/in-stage-output.json',
-  RX: 'https://intentweave.dev/schemas/rx-stage-output.json',
-  CX: 'https://intentweave.dev/schemas/cx-stage-output.json',
-  MX: 'https://intentweave.dev/schemas/mx-stage-output.json',
-  PX: 'https://intentweave.dev/schemas/px-stage-output.json',
+  IN: "https://intentweave.dev/schemas/in-stage-output.json",
+  RX: "https://intentweave.dev/schemas/rx-stage-output.json",
+  CX: "https://intentweave.dev/schemas/cx-stage-output.json",
+  MX: "https://intentweave.dev/schemas/mx-stage-output.json",
+  PX: "https://intentweave.dev/schemas/px-stage-output.json",
 } as const;
 
 /**
@@ -142,19 +147,19 @@ export function toRxStageOutput(
     model?: string;
     latencyMs?: number;
     tokensUsed?: number;
-  } = {}
+  } = {},
 ): RxStageOutput {
   const now = new Date().toISOString();
-  
+
   // Extract evidence from statements
   const evidence: Evidence[] = snapshot.statements
     .filter((s: Statement) => s.evidence && s.evidence.length > 0)
     .flatMap((s: Statement) => s.evidence ?? []);
-  
+
   return {
     $schema: STAGE_SCHEMAS.rx,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    stage: 'RX',
+    stage: "RX",
     artifactId,
     processedAt: now,
     filePath: options.filePath ?? artifactId,
@@ -162,7 +167,7 @@ export function toRxStageOutput(
     statements: snapshot.statements,
     evidence,
     meta: {
-      provider: options.provider ?? 'server',
+      provider: options.provider ?? "server",
       model: options.model,
       latencyMs: options.latencyMs ?? 0,
       tokensUsed: options.tokensUsed,
@@ -181,20 +186,20 @@ export function toCxStageOutput(
     filePath?: string;
     aliases?: AliasMapping[];
     processingTimeMs?: number;
-  } = {}
+  } = {},
 ): CxStageOutput {
   const now = new Date().toISOString();
-  
+
   const evidence: Evidence[] = snapshot.statements
     .filter((s: Statement) => s.evidence && s.evidence.length > 0)
     .flatMap((s: Statement) => s.evidence ?? []);
-  
+
   return {
     $schema: STAGE_SCHEMAS.cx,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    stage: 'CX',
+    stage: "CX",
     artifactId,
-    parentStage: 'RX',
+    parentStage: "RX",
     processedAt: now,
     filePath: options.filePath ?? artifactId,
     entities: snapshot.entities,
@@ -220,20 +225,20 @@ export function toMxStageOutput(
     filePath?: string;
     transitionsCreated?: number;
     processingTimeMs?: number;
-  } = {}
+  } = {},
 ): MxStageOutput {
   const now = new Date().toISOString();
-  
+
   const evidence: Evidence[] = snapshot.statements
     .filter((s: Statement) => s.evidence && s.evidence.length > 0)
     .flatMap((s: Statement) => s.evidence ?? []);
-  
+
   return {
     $schema: STAGE_SCHEMAS.mx,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    stage: 'MX',
+    stage: "MX",
     artifactId,
-    parentStage: 'CX',
+    parentStage: "CX",
     processedAt: now,
     filePath: options.filePath ?? artifactId,
     entities: snapshot.entities,
@@ -264,20 +269,20 @@ export function toPxStageOutput(
     statementsBeforeFilter?: number;
     confidenceThreshold?: number;
     profile?: string;
-  } = {}
+  } = {},
 ): PxStageOutput {
   const now = new Date().toISOString();
-  
+
   const evidence: Evidence[] = snapshot.statements
     .filter((s: Statement) => s.evidence && s.evidence.length > 0)
     .flatMap((s: Statement) => s.evidence ?? []);
-  
+
   return {
     $schema: STAGE_SCHEMAS.px,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    stage: 'PX',
+    stage: "PX",
     artifactId,
-    parentStage: 'MX',
+    parentStage: "MX",
     processedAt: now,
     filePath: options.filePath ?? artifactId,
     artifactRole: options.artifactRole,
@@ -286,10 +291,12 @@ export function toPxStageOutput(
     evidence,
     filterDecisions: options.filterDecisions,
     meta: {
-      profile: options.profile ?? 'default',
-      entitiesBeforeFilter: options.entitiesBeforeFilter ?? snapshot.entities.length,
+      profile: options.profile ?? "default",
+      entitiesBeforeFilter:
+        options.entitiesBeforeFilter ?? snapshot.entities.length,
       entitiesAfterFilter: snapshot.entities.length,
-      statementsBeforeFilter: options.statementsBeforeFilter ?? snapshot.statements.length,
+      statementsBeforeFilter:
+        options.statementsBeforeFilter ?? snapshot.statements.length,
       statementsAfterFilter: snapshot.statements.length,
       confidenceThreshold: options.confidenceThreshold ?? 0.5,
       processingTimeMs: options.processingTimeMs ?? 0,
@@ -299,40 +306,42 @@ export function toPxStageOutput(
 
 /**
  * Convert ServerStageEnvelope to ArtifactPipelineOutput format
- * 
+ *
  * This allows server outputs to be compared directly with core outputs
  */
 export function serverEnvelopeToArtifactOutput(
   envelope: ServerStageEnvelope,
-  content: string = ''
+  content: string = "",
 ): ArtifactPipelineOutput {
   const artifactId = envelope.artifactId;
   const filePath = artifactId;
-  
+
   // Build IN stage (minimal)
   const inOutput: InStageOutput = {
     $schema: STAGE_SCHEMAS.in,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    stage: 'IN',
+    stage: "IN",
     artifactId,
     processedAt: envelope.meta.processedAt,
     filePath,
-    artifactFormat: 'text',
-    chunks: [{
-      id: `${artifactId}:chunk:0`,
-      content,
-      type: 'block',
-      startLine: 1,
-      endLine: content.split('\n').length,
-    }],
+    artifactFormat: "text",
+    chunks: [
+      {
+        id: `${artifactId}:chunk:0`,
+        content,
+        type: "block",
+        startLine: 1,
+        endLine: content.split("\n").length,
+      },
+    ],
     meta: {
       chunkCount: 1,
-      totalLines: content.split('\n').length,
+      totalLines: content.split("\n").length,
       totalChars: content.length,
       processingTimeMs: 0,
     },
   };
-  
+
   // Convert RX
   const rxOutput = toRxStageOutput(envelope.rx, artifactId, {
     filePath,
@@ -341,28 +350,26 @@ export function serverEnvelopeToArtifactOutput(
     latencyMs: envelope.meta.latencyMs,
     tokensUsed: envelope.meta.tokensUsed,
   });
-  
+
   // Convert CX (or use RX if not run)
-  const cxOutput = toCxStageOutput(
-    envelope.cx ?? envelope.rx,
-    artifactId,
-    { filePath }
-  );
-  
+  const cxOutput = toCxStageOutput(envelope.cx ?? envelope.rx, artifactId, {
+    filePath,
+  });
+
   // Convert MX (or use CX if not run)
   const mxOutput = toMxStageOutput(
     envelope.mx ?? envelope.cx ?? envelope.rx,
     artifactId,
-    { filePath }
+    { filePath },
   );
-  
+
   // Convert PX (or use MX if not run)
   const pxOutput = toPxStageOutput(
     envelope.px ?? envelope.mx ?? envelope.cx ?? envelope.rx,
     artifactId,
-    { filePath }
+    { filePath },
   );
-  
+
   return {
     artifactId,
     in: inOutput,
@@ -381,7 +388,7 @@ export function serverEnvelopeToArtifactOutput(
  * Extract StagingSnapshot from any stage output
  */
 export function toStagingSnapshot(
-  stageOutput: RxStageOutput | CxStageOutput | MxStageOutput | PxStageOutput
+  stageOutput: RxStageOutput | CxStageOutput | MxStageOutput | PxStageOutput,
 ): StagingSnapshot {
   return {
     entities: stageOutput.entities,
@@ -393,7 +400,9 @@ export function toStagingSnapshot(
  * Extract final snapshot from ArtifactPipelineOutput
  * Uses PX (filtered) output as the final state
  */
-export function getFinalSnapshot(output: ArtifactPipelineOutput): StagingSnapshot {
+export function getFinalSnapshot(
+  output: ArtifactPipelineOutput,
+): StagingSnapshot {
   return toStagingSnapshot(output.px);
 }
 
@@ -405,7 +414,12 @@ export function getFinalSnapshot(output: ArtifactPipelineOutput): StagingSnapsho
  * Serialize stage output to JSON string
  */
 export function serializeStageOutput(
-  output: InStageOutput | RxStageOutput | CxStageOutput | MxStageOutput | PxStageOutput
+  output:
+    | InStageOutput
+    | RxStageOutput
+    | CxStageOutput
+    | MxStageOutput
+    | PxStageOutput,
 ): string {
   return JSON.stringify(output, null, 2);
 }
@@ -414,19 +428,21 @@ export function serializeStageOutput(
  * Write stage outputs to files (CLI-compatible format)
  */
 export interface StageOutputFiles {
-  'in.json': string;
-  'rx.json': string;
-  'cx.json': string;
-  'mx.json': string;
-  'px.json': string;
+  "in.json": string;
+  "rx.json": string;
+  "cx.json": string;
+  "mx.json": string;
+  "px.json": string;
 }
 
-export function serializeAllStageOutputs(output: ArtifactPipelineOutput): StageOutputFiles {
+export function serializeAllStageOutputs(
+  output: ArtifactPipelineOutput,
+): StageOutputFiles {
   return {
-    'in.json': serializeStageOutput(output.in),
-    'rx.json': serializeStageOutput(output.rx),
-    'cx.json': serializeStageOutput(output.cx),
-    'mx.json': serializeStageOutput(output.mx),
-    'px.json': serializeStageOutput(output.px),
+    "in.json": serializeStageOutput(output.in),
+    "rx.json": serializeStageOutput(output.rx),
+    "cx.json": serializeStageOutput(output.cx),
+    "mx.json": serializeStageOutput(output.mx),
+    "px.json": serializeStageOutput(output.px),
   };
 }

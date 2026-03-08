@@ -3,22 +3,22 @@
 
 /**
  * @intentweave/core
- * 
+ *
  * Core types, utilities, and interfaces for IntentWeave.
  * This package contains the foundational types shared across all IntentWeave packages.
  */
 
 // Types (includes EntityType, ENTITY_TYPES - the single source of truth)
-export * from './types/index.js';
+export * from "./types/index.js";
 
 // cgId utilities
-export * from './cgId/index.js';
+export * from "./cgId/index.js";
 
 // Predicates (includes Predicate, PREDICATES - the single source of truth)
-export * from './predicates/index.js';
+export * from "./predicates/index.js";
 
 // Shapes - explicit exports to avoid conflicts with extractionSchema
-export { 
+export {
   SHAPE_RULES,
   shapeCheck,
   isKnownPredicate,
@@ -27,37 +27,37 @@ export {
   getAllowedSubjectTypes,
   getAllowedObjectTypes,
   type ShapeCheckResult,
-} from './shapes/index.js';
+} from "./shapes/index.js";
 
 // Workspace
-export * from './workspace/index.js';
+export * from "./workspace/index.js";
 
 // Canonical Output (JSON writer, schema headers)
-export * from './output/index.js';
+export * from "./output/index.js";
 
 // JSON Schemas (includes extractionSchema with UNIFIED_EXTRACTION_SCHEMA)
-export * from './schemas/index.js';
+export * from "./schemas/index.js";
 
 // Interfaces
-export * from './interfaces.js';
+export * from "./interfaces.js";
 
 // Token usage & cost tracking
-export * from './tokenUsage.js';
+export * from "./tokenUsage.js";
 
 // Error hierarchy
-export * from './errors.js';
+export * from "./errors.js";
 
 // Retry utility
-export * from './retry.js';
+export * from "./retry.js";
 
 // Transcripts (chat/conversation as first-class artifacts)
-export * from './transcripts/index.js';
+export * from "./transcripts/index.js";
 
 // Reports (actionable reports for humans + AI assistants)
-export * from './reports/index.js';
+export * from "./reports/index.js";
 
 // Bundle (consolidated graph output)
-export * from './bundle/index.js';
+export * from "./bundle/index.js";
 
 // Weave (WX canonicalization stage)
-export * from './weave/index.js';
+export * from "./weave/index.js";

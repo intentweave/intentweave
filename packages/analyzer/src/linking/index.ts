@@ -11,7 +11,7 @@ export {
   createEmptyLxOutput,
   type LxArtifactInput,
   type LxCoreOptions,
-} from './lxCore.js';
+} from "./lxCore.js";
 
 export {
   generateCoverageReport,
@@ -23,4 +23,4 @@ export {
   type RoleTransitionCoverage,
   type InconsistencyFinding,
   type IncompletenessFinding,
-} from './coverageReport.js';
+} from "./coverageReport.js";

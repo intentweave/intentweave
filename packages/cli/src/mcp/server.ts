@@ -18,9 +18,9 @@
  *   iw mcp --session <id> --verbose   # log activity to stderr
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 import {
   buildTopicContext as sharedBuildTopicContext,
   buildEntityContext as sharedBuildEntityContext,
@@ -31,17 +31,17 @@ import {
   type Neo4jRunner,
   type ContextOptions,
   type FormatOptions,
-} from '../context/index.js';
+} from "../context/index.js";
 import {
   analyzeImpact,
   formatImpactMarkdown,
   type ImpactOptions,
-} from '../impact/index.js';
+} from "../impact/index.js";
 import {
   analyzeDocHealth,
   formatDocHealthMarkdown,
   type DocHealthOptions,
-} from '../doc-health/index.js';
+} from "../doc-health/index.js";
 
 // =============================================================================
 // Neo4j connection (same dynamic import pattern as CLI commands)
@@ -64,22 +64,32 @@ async function getConnection(uri?: string): Promise<Neo4jConnection> {
       return _conn;
     } catch {
       // Connection is stale — close and recreate
-      try { await _conn.close(); } catch { /* ignore */ }
+      try {
+        await _conn.close();
+      } catch {
+        /* ignore */
+      }
       _conn = undefined;
     }
   }
 
-  const neo4j = await import('neo4j-driver');
-  const neoUri = uri ?? _connUri ?? process.env.NEO4J_URI ?? 'bolt://localhost:7687';
+  const neo4j = await import("neo4j-driver");
+  const neoUri =
+    uri ?? _connUri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
   _connUri = neoUri; // remember for reconnection
-  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? 'neo4j';
+  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? "neo4j";
   const password = process.env.NEO4J_PASSWORD;
 
   if (!password) {
-    throw new Error('NEO4J_PASSWORD environment variable is required. Example: export NEO4J_PASSWORD=codegraph');
+    throw new Error(
+      "NEO4J_PASSWORD environment variable is required. Example: export NEO4J_PASSWORD=codegraph",
+    );
   }
 
-  const driver = neo4j.default.driver(neoUri, neo4j.default.auth.basic(user, password));
+  const driver = neo4j.default.driver(
+    neoUri,
+    neo4j.default.auth.basic(user, password),
+  );
   await driver.verifyConnectivity();
   const session = driver.session();
 
@@ -97,7 +107,12 @@ async function getConnection(uri?: string): Promise<Neo4jConnection> {
 
 function toPlainValue(v: unknown): unknown {
   if (v === null || v === undefined) return v;
-  if (typeof v === 'object' && v !== null && 'toNumber' in v && typeof (v as any).toNumber === 'function') {
+  if (
+    typeof v === "object" &&
+    v !== null &&
+    "toNumber" in v &&
+    typeof (v as any).toNumber === "function"
+  ) {
     return (v as any).toNumber();
   }
   if (Array.isArray(v)) return v.map(toPlainValue);
@@ -117,12 +132,13 @@ async function runCypher(
   params: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>[]> {
   const conn = await getConnection();
-  const neo4j = await import('neo4j-driver');
+  const neo4j = await import("neo4j-driver");
 
   // Convert numeric params to Neo4j integers
   const cleanParams: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(params)) {
-    cleanParams[k] = typeof v === 'number' ? neo4j.default.int(Math.round(v)) : v;
+    cleanParams[k] =
+      typeof v === "number" ? neo4j.default.int(Math.round(v)) : v;
   }
 
   const result = await conn.session.run(cypher, cleanParams);
@@ -130,7 +146,7 @@ async function runCypher(
     const row: Record<string, unknown> = {};
     for (const key of rec.keys) {
       const v = rec.get(key);
-      if (v !== null && typeof v === 'object' && 'properties' in v) {
+      if (v !== null && typeof v === "object" && "properties" in v) {
         row[key as string] = plainProps(v.properties);
       } else {
         row[key as string] = toPlainValue(v);
@@ -144,27 +160,32 @@ async function runCypher(
 // LLM helper (for NL → Cypher translation)
 // =============================================================================
 
-async function llmComplete(system: string, userMessage: string): Promise<string> {
-  const { OpenAILLMProvider } = await import('@intentweave/analyzer/llm');
+async function llmComplete(
+  system: string,
+  userMessage: string,
+): Promise<string> {
+  const { OpenAILLMProvider } = await import("@intentweave/analyzer/llm");
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY environment variable required for natural-language queries.');
+    throw new Error(
+      "OPENAI_API_KEY environment variable required for natural-language queries.",
+    );
   }
 
   const provider = new OpenAILLMProvider({
     apiKey,
-    model: 'gpt-4o-mini',
+    model: "gpt-4o-mini",
     timeoutMs: 30_000,
   });
 
   const response = await provider.complete({
     system,
-    messages: [{ role: 'user', content: userMessage }],
+    messages: [{ role: "user", content: userMessage }],
     temperature: 0,
     maxTokens: 2048,
   });
 
-  if (response.finishReason === 'error') {
+  if (response.finishReason === "error") {
     throw new Error(`LLM error: ${response.error}`);
   }
   return response.content.trim();
@@ -231,13 +252,16 @@ async function toolQuery(args: {
     cypherQuery = args.cypher;
   } else {
     const system = buildCypherSystemPrompt(args.session_id);
-    cypherQuery = await llmComplete(system, `Question: ${args.question}\nLimit: ${args.limit}`);
+    cypherQuery = await llmComplete(
+      system,
+      `Question: ${args.question}\nLimit: ${args.limit}`,
+    );
     cypherQuery = cypherQuery
-      .replace(/^```(?:cypher)?\s*\n?/i, '')
-      .replace(/\n?```\s*$/i, '')
+      .replace(/^```(?:cypher)?\s*\n?/i, "")
+      .replace(/\n?```\s*$/i, "")
       .trim();
 
-    if (cypherQuery.startsWith('//')) {
+    if (cypherQuery.startsWith("//")) {
       return cypherQuery;
     }
   }
@@ -249,21 +273,23 @@ async function toolQuery(args: {
 
   // Format as markdown table
   const columns = Object.keys(rows[0]);
-  const header = '| ' + columns.join(' | ') + ' |';
-  const sep = '| ' + columns.map(() => '---').join(' | ') + ' |';
-  const dataRows = rows.slice(0, args.limit).map(row =>
-    '| ' + columns.map(c => stringify(row[c])).join(' | ') + ' |',
-  );
+  const header = "| " + columns.join(" | ") + " |";
+  const sep = "| " + columns.map(() => "---").join(" | ") + " |";
+  const dataRows = rows
+    .slice(0, args.limit)
+    .map(
+      (row) => "| " + columns.map((c) => stringify(row[c])).join(" | ") + " |",
+    );
 
   return [
     `Found ${rows.length} result(s):`,
-    '',
+    "",
     header,
     sep,
     ...dataRows,
-    '',
+    "",
     `Cypher: \`${cypherQuery}\``,
-  ].join('\n');
+  ].join("\n");
 }
 
 /**
@@ -280,7 +306,10 @@ function createMcpRunner(): Neo4jRunner {
 /**
  * Create an LLM completer from the MCP server's llmComplete function.
  */
-function createMcpLlmCompleter(): (opts: { system: string; userMessage: string }) => Promise<string> {
+function createMcpLlmCompleter(): (opts: {
+  system: string;
+  userMessage: string;
+}) => Promise<string> {
   return async (opts) => llmComplete(opts.system, opts.userMessage);
 }
 
@@ -337,14 +366,17 @@ async function toolEntities(args: {
   limit: number;
 }): Promise<string> {
   let cypher: string;
-  const params: Record<string, unknown> = { sid: args.session_id, lim: args.limit };
+  const params: Record<string, unknown> = {
+    sid: args.session_id,
+    lim: args.limit,
+  };
 
   if (args.search) {
     cypher = `MATCH (n:Canon)
       WHERE n.session_id = $sid
         AND (toLower(n.name) CONTAINS toLower($search)
              OR ANY(a IN coalesce(n.aliases, []) WHERE toLower(a) CONTAINS toLower($search)))
-      ${args.type ? 'AND toLower(n.type) = toLower($type)' : ''}
+      ${args.type ? "AND toLower(n.type) = toLower($type)" : ""}
       RETURN n.name AS name, n.type AS type, n.confidence AS confidence
       ORDER BY n.confidence DESC, n.name
       LIMIT $lim`;
@@ -366,15 +398,16 @@ async function toolEntities(args: {
   }
 
   const rows = await runCypher(cypher, params);
-  if (rows.length === 0) return 'No entities found.';
+  if (rows.length === 0) return "No entities found.";
 
-  const header = '| name | type | confidence |';
-  const sep = '| --- | --- | --- |';
-  const dataRows = rows.map(r =>
-    `| ${r.name} | ${r.type} | ${typeof r.confidence === 'number' ? r.confidence.toFixed(2) : ''} |`,
+  const header = "| name | type | confidence |";
+  const sep = "| --- | --- | --- |";
+  const dataRows = rows.map(
+    (r) =>
+      `| ${r.name} | ${r.type} | ${typeof r.confidence === "number" ? r.confidence.toFixed(2) : ""} |`,
   );
 
-  return [header, sep, ...dataRows].join('\n');
+  return [header, sep, ...dataRows].join("\n");
 }
 
 function toolSchema(): string {
@@ -422,10 +455,10 @@ async function toolImpact(args: {
 // =============================================================================
 
 function stringify(v: unknown): string {
-  if (v === null || v === undefined) return '';
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  if (Array.isArray(v)) return v.map(stringify).join(', ');
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.map(stringify).join(", ");
   return JSON.stringify(v);
 }
 
@@ -446,27 +479,38 @@ export interface McpServerOptions {
 export async function startMcpServer(options: McpServerOptions): Promise<void> {
   const { sessionId, verbose } = options;
   const log = verbose
-    ? (...args: unknown[]) => console.error('[iw-mcp]', ...args)
+    ? (...args: unknown[]) => console.error("[iw-mcp]", ...args)
     : () => {};
 
   log(`Starting MCP server for session "${sessionId}"…`);
 
   const server = new McpServer({
-    name: 'intentweave-kg',
-    version: '1.0.0',
+    name: "intentweave-kg",
+    version: "1.0.0",
   });
 
   // ── Tool: kg_query ──────────────────────────────────────────────────
   server.tool(
-    'kg_query',
-    'Query the knowledge graph with a natural-language question or raw Cypher. Returns results as a markdown table.',
+    "kg_query",
+    "Query the knowledge graph with a natural-language question or raw Cypher. Returns results as a markdown table.",
     {
-      question: z.string().describe('Natural-language question about the knowledge graph'),
-      cypher: z.string().optional().describe('Raw Cypher query (if provided, question is ignored)'),
-      limit: z.number().optional().default(50).describe('Max number of rows to return'),
+      question: z
+        .string()
+        .describe("Natural-language question about the knowledge graph"),
+      cypher: z
+        .string()
+        .optional()
+        .describe("Raw Cypher query (if provided, question is ignored)"),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Max number of rows to return"),
     },
     async (args) => {
-      log(`kg_query: ${args.cypher ? 'cypher' : 'NL'} — "${args.cypher ?? args.question}"`);
+      log(
+        `kg_query: ${args.cypher ? "cypher" : "NL"} — "${args.cypher ?? args.question}"`,
+      );
       try {
         const result = await toolQuery({
           question: args.question,
@@ -474,25 +518,48 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
           session_id: sessionId,
           limit: args.limit ?? 50,
         });
-        return { content: [{ type: 'text', text: result }] };
+        return { content: [{ type: "text", text: result }] };
       } catch (err: any) {
-        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        return {
+          content: [{ type: "text", text: `Error: ${err.message}` }],
+          isError: true,
+        };
       }
     },
   );
 
   // ── Tool: kg_context ────────────────────────────────────────────────
   server.tool(
-    'kg_context',
-    'Build structured knowledge context (entities + relationships + code references) for a topic or entity. Returns markdown suitable for LLM prompt injection. Includes cross-layer links showing which source files implement each concept.',
+    "kg_context",
+    "Build structured knowledge context (entities + relationships + code references) for a topic or entity. Returns markdown suitable for LLM prompt injection. Includes cross-layer links showing which source files implement each concept.",
     {
-      topic: z.string().optional().describe('Topic to build context for (uses LLM to select relevant entities)'),
-      entity: z.string().optional().describe('Seed from a specific entity name and expand its neighborhood'),
-      hops: z.number().optional().default(2).describe('Neighborhood expansion depth (1-3)'),
-      limit: z.number().optional().default(200).describe('Max entities to include'),
+      topic: z
+        .string()
+        .optional()
+        .describe(
+          "Topic to build context for (uses LLM to select relevant entities)",
+        ),
+      entity: z
+        .string()
+        .optional()
+        .describe(
+          "Seed from a specific entity name and expand its neighborhood",
+        ),
+      hops: z
+        .number()
+        .optional()
+        .default(2)
+        .describe("Neighborhood expansion depth (1-3)"),
+      limit: z
+        .number()
+        .optional()
+        .default(200)
+        .describe("Max entities to include"),
     },
     async (args) => {
-      log(`kg_context: topic="${args.topic ?? ''}" entity="${args.entity ?? ''}"`);
+      log(
+        `kg_context: topic="${args.topic ?? ""}" entity="${args.entity ?? ""}"`,
+      );
       try {
         const result = await toolContext({
           topic: args.topic,
@@ -501,24 +568,41 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
           hops: args.hops ?? 2,
           limit: args.limit ?? 200,
         });
-        return { content: [{ type: 'text', text: result }] };
+        return { content: [{ type: "text", text: result }] };
       } catch (err: any) {
-        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        return {
+          content: [{ type: "text", text: `Error: ${err.message}` }],
+          isError: true,
+        };
       }
     },
   );
 
   // ── Tool: kg_entities ───────────────────────────────────────────────
   server.tool(
-    'kg_entities',
-    'List or search entities in the knowledge graph. Filter by type (concept, decision, component, technology, etc.) and/or search by name.',
+    "kg_entities",
+    "List or search entities in the knowledge graph. Filter by type (concept, decision, component, technology, etc.) and/or search by name.",
     {
-      type: z.string().optional().describe('Filter to entity type: concept, decision, option, requirement, feature, component, technology, resource, role, risk, phase, constraint, question, tradeoff'),
-      search: z.string().optional().describe('Search entities by name (case-insensitive substring match)'),
-      limit: z.number().optional().default(100).describe('Max entities to return'),
+      type: z
+        .string()
+        .optional()
+        .describe(
+          "Filter to entity type: concept, decision, option, requirement, feature, component, technology, resource, role, risk, phase, constraint, question, tradeoff",
+        ),
+      search: z
+        .string()
+        .optional()
+        .describe("Search entities by name (case-insensitive substring match)"),
+      limit: z
+        .number()
+        .optional()
+        .default(100)
+        .describe("Max entities to return"),
     },
     async (args) => {
-      log(`kg_entities: type="${args.type ?? ''}" search="${args.search ?? ''}"`);
+      log(
+        `kg_entities: type="${args.type ?? ""}" search="${args.search ?? ""}"`,
+      );
       try {
         const result = await toolEntities({
           session_id: sessionId,
@@ -526,20 +610,31 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
           search: args.search,
           limit: args.limit ?? 100,
         });
-        return { content: [{ type: 'text', text: result }] };
+        return { content: [{ type: "text", text: result }] };
       } catch (err: any) {
-        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        return {
+          content: [{ type: "text", text: `Error: ${err.message}` }],
+          isError: true,
+        };
       }
     },
   );
 
   // ── Tool: kg_impact ──────────────────────────────────────────────
   server.tool(
-    'kg_impact',
-    'Analyze semantic impact of changing file(s). Shows which concepts, decisions, and risks are affected. Use this before making changes to understand the blast radius.',
+    "kg_impact",
+    "Analyze semantic impact of changing file(s). Shows which concepts, decisions, and risks are affected. Use this before making changes to understand the blast radius.",
     {
-      files: z.array(z.string()).describe('Workspace-relative file path(s) to analyze (e.g. ["package.json", "ui/src/App.tsx"])'),
-      hops: z.number().optional().default(2).describe('Ripple expansion depth (1-3)'),
+      files: z
+        .array(z.string())
+        .describe(
+          'Workspace-relative file path(s) to analyze (e.g. ["package.json", "ui/src/App.tsx"])',
+        ),
+      hops: z
+        .number()
+        .optional()
+        .default(2)
+        .describe("Ripple expansion depth (1-3)"),
     },
     async (args) => {
       log(`kg_impact: files=${JSON.stringify(args.files)}`);
@@ -549,47 +644,58 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
           session_id: sessionId,
           hops: args.hops ?? 2,
         });
-        return { content: [{ type: 'text', text: result }] };
+        return { content: [{ type: "text", text: result }] };
       } catch (err: any) {
-        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        return {
+          content: [{ type: "text", text: `Error: ${err.message}` }],
+          isError: true,
+        };
       }
     },
   );
 
   // ── Tool: kg_doc_health ─────────────────────────────────────────────
   server.tool(
-    'kg_doc_health',
-    'Analyze documentation freshness. Detects stale references (entities that were decided against or superseded), structural drift (new relationships not reflected in docs), contradictions, and undocumented entities.',
+    "kg_doc_health",
+    "Analyze documentation freshness. Detects stale references (entities that were decided against or superseded), structural drift (new relationships not reflected in docs), contradictions, and undocumented entities.",
     {
-      files: z.array(z.string()).optional().describe('Document file path(s) to analyze (omit to scan all session documents)'),
+      files: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Document file path(s) to analyze (omit to scan all session documents)",
+        ),
     },
     async (args) => {
-      log(`kg_doc_health: files=${JSON.stringify(args.files ?? 'all')}`);
+      log(`kg_doc_health: files=${JSON.stringify(args.files ?? "all")}`);
       try {
         const result = await toolDocHealth({
           files: args.files,
           session_id: sessionId,
         });
-        return { content: [{ type: 'text', text: result }] };
+        return { content: [{ type: "text", text: result }] };
       } catch (err: any) {
-        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+        return {
+          content: [{ type: "text", text: `Error: ${err.message}` }],
+          isError: true,
+        };
       }
     },
   );
 
   // ── Tool: kg_schema ─────────────────────────────────────────────────
   server.tool(
-    'kg_schema',
-    'Describe the knowledge graph schema: node types, entity types, relationship predicates, and property names.',
+    "kg_schema",
+    "Describe the knowledge graph schema: node types, entity types, relationship predicates, and property names.",
     {},
     async () => {
-      log('kg_schema');
-      return { content: [{ type: 'text', text: toolSchema() }] };
+      log("kg_schema");
+      return { content: [{ type: "text", text: toolSchema() }] };
     },
   );
 
   // ── Connect via stdio ───────────────────────────────────────────────
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  log('MCP server running (stdio transport). Waiting for messages…');
+  log("MCP server running (stdio transport). Waiting for messages…");
 }

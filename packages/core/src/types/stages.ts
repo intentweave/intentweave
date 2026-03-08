@@ -3,15 +3,15 @@
 
 /**
  * Stage Output Schema Types
- * 
+ *
  * Defines the output types for each pipeline stage.
  * All stage outputs include $schema URI and schemaVersion for validation.
- * 
+ *
  * Per-artifact stages: IN → RX → CX → MX → PX
  * Per-run aggregation: LX, Coverage, Validation
  */
 
-import type { Entity, Statement, Evidence } from './index.js';
+import type { Entity, Statement, Evidence } from "./index.js";
 
 // =============================================================================
 // Schema Constants
@@ -21,14 +21,14 @@ import type { Entity, Statement, Evidence } from './index.js';
  * Schema URIs for each stage output
  */
 export const STAGE_SCHEMAS = {
-  in: 'intentweave://schemas/in-graph/v1',
-  rx: 'intentweave://schemas/rx-graph/v1',
-  cx: 'intentweave://schemas/cx-graph/v1',
-  mx: 'intentweave://schemas/mx-graph/v1',
-  px: 'intentweave://schemas/px-graph/v1',
-  lx: 'intentweave://schemas/lx-proposals/v1',
-  coverage: 'intentweave://schemas/coverage/v1',
-  findings: 'intentweave://schemas/findings/v1',
+  in: "intentweave://schemas/in-graph/v1",
+  rx: "intentweave://schemas/rx-graph/v1",
+  cx: "intentweave://schemas/cx-graph/v1",
+  mx: "intentweave://schemas/mx-graph/v1",
+  px: "intentweave://schemas/px-graph/v1",
+  lx: "intentweave://schemas/lx-proposals/v1",
+  coverage: "intentweave://schemas/coverage/v1",
+  findings: "intentweave://schemas/findings/v1",
 } as const;
 
 export type StageSchemaType = keyof typeof STAGE_SCHEMAS;
@@ -36,7 +36,7 @@ export type StageSchemaType = keyof typeof STAGE_SCHEMAS;
 /**
  * Current schema version (semantic version string)
  */
-export const CURRENT_SCHEMA_VERSION = '0.1' as const;
+export const CURRENT_SCHEMA_VERSION = "0.1" as const;
 
 // =============================================================================
 // Base Stage Output
@@ -75,7 +75,14 @@ export interface SemanticChunk {
   /** Chunk content */
   content: string;
   /** Chunk type (section, block, paragraph, etc.) */
-  type: 'section' | 'block' | 'paragraph' | 'code' | 'heading' | 'list' | 'other';
+  type:
+    | "section"
+    | "block"
+    | "paragraph"
+    | "code"
+    | "heading"
+    | "list"
+    | "other";
   /** Heading level (if applicable) */
   headingLevel?: number;
   /** Section title (if section type) */
@@ -101,7 +108,7 @@ export interface SemanticChunk {
  */
 export interface InStageOutput extends BaseStageOutput {
   $schema: typeof STAGE_SCHEMAS.in;
-  stage: 'IN';
+  stage: "IN";
   artifactId: string;
   /** Source file path */
   filePath: string;
@@ -133,7 +140,7 @@ export interface InStageOutput extends BaseStageOutput {
  */
 export interface RxStageOutput extends BaseStageOutput {
   $schema: typeof STAGE_SCHEMAS.rx;
-  stage: 'RX';
+  stage: "RX";
   artifactId: string;
   /** Source file path */
   filePath: string;
@@ -175,7 +182,7 @@ export interface AliasMapping {
   /** Normalized value */
   to: string;
   /** Rule that created the alias */
-  rule: 'shape-inference' | 'canonicalization' | 'dedup' | 'manual';
+  rule: "shape-inference" | "canonicalization" | "dedup" | "manual";
   /** Confidence of the mapping */
   confidence?: number;
 }
@@ -185,10 +192,10 @@ export interface AliasMapping {
  */
 export interface CxStageOutput extends BaseStageOutput {
   $schema: typeof STAGE_SCHEMAS.cx;
-  stage: 'CX';
+  stage: "CX";
   artifactId: string;
   /** Parent stage */
-  parentStage: 'RX';
+  parentStage: "RX";
   /** Source file path */
   filePath: string;
   /** Consolidated entities */
@@ -237,10 +244,10 @@ export interface TransitionBinding {
  */
 export interface MxStageOutput extends BaseStageOutput {
   $schema: typeof STAGE_SCHEMAS.mx;
-  stage: 'MX';
+  stage: "MX";
   artifactId: string;
   /** Parent stage */
-  parentStage: 'CX';
+  parentStage: "CX";
   /** Source file path */
   filePath: string;
   /** Materialized entities (includes transitions) */
@@ -277,7 +284,12 @@ export interface FilterDecision {
   /** Whether entity was kept */
   kept: boolean;
   /** Reason for decision */
-  reason: 'profile-match' | 'confidence-threshold' | 'kind-filter' | 'explicit-include' | 'explicit-exclude';
+  reason:
+    | "profile-match"
+    | "confidence-threshold"
+    | "kind-filter"
+    | "explicit-include"
+    | "explicit-exclude";
   /** Original confidence (if filtered by confidence) */
   originalConfidence?: number;
 }
@@ -287,10 +299,10 @@ export interface FilterDecision {
  */
 export interface PxStageOutput extends BaseStageOutput {
   $schema: typeof STAGE_SCHEMAS.px;
-  stage: 'PX';
+  stage: "PX";
   artifactId: string;
   /** Parent stage */
-  parentStage: 'MX';
+  parentStage: "MX";
   /** Source file path */
   filePath: string;
   /** Artifact role (from profile mapping) */
@@ -349,24 +361,24 @@ export interface CoverageMetrics {
  */
 export interface CoverageStageOutput extends BaseStageOutput {
   $schema: typeof STAGE_SCHEMAS.coverage;
-  stage: 'COVERAGE';
+  stage: "COVERAGE";
   runId: string;
   workspaceKey: string;
   /** Coverage by artifact role pair */
   coverage: {
-    'spec→impl'?: CoverageMetrics;
-    'prompt→spec'?: CoverageMetrics;
+    "spec→impl"?: CoverageMetrics;
+    "prompt→spec"?: CoverageMetrics;
     [key: string]: CoverageMetrics | undefined;
   };
   /** Detected inconsistencies */
   inconsistencies: Array<{
-    type: 'semantic-drift' | 'naming-mismatch' | 'kind-mismatch';
+    type: "semantic-drift" | "naming-mismatch" | "kind-mismatch";
     description: string;
     instances: Array<Record<string, string>>;
   }>;
   /** Detected incompletenesses */
   incompletenesses: Array<{
-    type: 'missing-impl' | 'missing-spec' | 'orphan-entity';
+    type: "missing-impl" | "missing-spec" | "orphan-entity";
     description: string;
     count: number;
     items: string[];
@@ -389,7 +401,7 @@ export interface ValidationFinding {
   /** Rule that produced the finding */
   ruleId: string;
   /** Severity level */
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   /** Affected entity cgId (if applicable) */
   entityCgId?: string;
   /** Affected statement ID (if applicable) */
@@ -405,7 +417,7 @@ export interface ValidationFinding {
  */
 export interface FindingsStageOutput extends BaseStageOutput {
   $schema: typeof STAGE_SCHEMAS.findings;
-  stage: 'FINDINGS';
+  stage: "FINDINGS";
   runId: string;
   workspaceKey: string;
   /** Rules applied */
@@ -430,21 +442,41 @@ export interface FindingsStageOutput extends BaseStageOutput {
 // =============================================================================
 
 export function isInStageOutput(output: unknown): output is InStageOutput {
-  return typeof output === 'object' && output !== null && (output as BaseStageOutput).stage === 'IN';
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    (output as BaseStageOutput).stage === "IN"
+  );
 }
 
 export function isRxStageOutput(output: unknown): output is RxStageOutput {
-  return typeof output === 'object' && output !== null && (output as BaseStageOutput).stage === 'RX';
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    (output as BaseStageOutput).stage === "RX"
+  );
 }
 
 export function isCxStageOutput(output: unknown): output is CxStageOutput {
-  return typeof output === 'object' && output !== null && (output as BaseStageOutput).stage === 'CX';
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    (output as BaseStageOutput).stage === "CX"
+  );
 }
 
 export function isMxStageOutput(output: unknown): output is MxStageOutput {
-  return typeof output === 'object' && output !== null && (output as BaseStageOutput).stage === 'MX';
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    (output as BaseStageOutput).stage === "MX"
+  );
 }
 
 export function isPxStageOutput(output: unknown): output is PxStageOutput {
-  return typeof output === 'object' && output !== null && (output as BaseStageOutput).stage === 'PX';
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    (output as BaseStageOutput).stage === "PX"
+  );
 }

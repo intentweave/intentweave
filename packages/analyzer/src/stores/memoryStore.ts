@@ -3,12 +3,12 @@
 
 /**
  * Memory-based Store Implementation
- * 
+ *
  * In-memory store for testing and ephemeral use cases.
  * Data is lost when the process exits.
  */
 
-import type { StagingSnapshot } from '@intentweave/core';
+import type { StagingSnapshot } from "@intentweave/core";
 import type {
   Store,
   Artifact,
@@ -19,7 +19,7 @@ import type {
   LinkProposal,
   CoverageReport,
   FindingsReport,
-} from './types.js';
+} from "./types.js";
 
 /**
  * Options for creating a MemoryStore
@@ -40,7 +40,7 @@ export class MemoryStore implements Store {
   private snapshots = new Map<string, StagingSnapshot>();
   private runs = new Map<string, RunMeta>();
   private aggregates = new Map<string, RunAggregates>();
-  
+
   private workspaceKey: string | null;
   private runId: string | null;
 
@@ -133,12 +133,22 @@ export class MemoryStore implements Store {
     }
   }
 
-  async writeStageOutput(artifactId: string, stage: Stage, output: unknown): Promise<void> {
+  async writeStageOutput(
+    artifactId: string,
+    stage: Stage,
+    output: unknown,
+  ): Promise<void> {
     // Store stage output using the same key pattern as snapshots
-    this.snapshots.set(this.snapshotKey(artifactId, stage), output as StagingSnapshot);
+    this.snapshots.set(
+      this.snapshotKey(artifactId, stage),
+      output as StagingSnapshot,
+    );
   }
 
-  async readStageOutput<T = unknown>(artifactId: string, stage: Stage): Promise<T | null> {
+  async readStageOutput<T = unknown>(
+    artifactId: string,
+    stage: Stage,
+  ): Promise<T | null> {
     const data = this.snapshots.get(this.snapshotKey(artifactId, stage));
     return (data as T) ?? null;
   }
@@ -159,11 +169,18 @@ export class MemoryStore implements Store {
     return `${artifactId}:${stage}`;
   }
 
-  async readSnapshot(artifactId: string, stage: Stage): Promise<StagingSnapshot | null> {
+  async readSnapshot(
+    artifactId: string,
+    stage: Stage,
+  ): Promise<StagingSnapshot | null> {
     return this.snapshots.get(this.snapshotKey(artifactId, stage)) ?? null;
   }
 
-  async writeSnapshot(artifactId: string, stage: Stage, snapshot: StagingSnapshot): Promise<void> {
+  async writeSnapshot(
+    artifactId: string,
+    stage: Stage,
+    snapshot: StagingSnapshot,
+  ): Promise<void> {
     this.snapshots.set(this.snapshotKey(artifactId, stage), snapshot);
   }
 
@@ -171,7 +188,7 @@ export class MemoryStore implements Store {
     const stages: Stage[] = [];
     for (const key of this.snapshots.keys()) {
       if (key.startsWith(`${artifactId}:`)) {
-        const stage = key.split(':')[1] as Stage;
+        const stage = key.split(":")[1] as Stage;
         stages.push(stage);
       }
     }
@@ -198,7 +215,10 @@ export class MemoryStore implements Store {
     return this.aggregates.get(runId) ?? {};
   }
 
-  async saveAggregates(runId: string, aggregates: Partial<RunAggregates>): Promise<void> {
+  async saveAggregates(
+    runId: string,
+    aggregates: Partial<RunAggregates>,
+  ): Promise<void> {
     const existing = this.aggregates.get(runId) ?? {};
     this.aggregates.set(runId, { ...existing, ...aggregates });
   }
@@ -212,7 +232,8 @@ export class MemoryStore implements Store {
 /**
  * Create a new in-memory store
  */
-export function createMemoryStore(options: MemoryStoreOptions = {}): MemoryStore {
+export function createMemoryStore(
+  options: MemoryStoreOptions = {},
+): MemoryStore {
   return new MemoryStore(options);
 }
-

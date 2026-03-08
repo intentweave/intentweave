@@ -10,7 +10,7 @@
  * - enrichWithDescriptions / enrichWithCodeRefs: enrichment
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 import {
   formatContextMarkdown,
   formatContextJson,
@@ -19,7 +19,7 @@ import {
   buildTopicContext,
   enrichWithDescriptions,
   enrichWithCodeRefs,
-} from '../../context/contextBuilder.js';
+} from "../../context/contextBuilder.js";
 import {
   createContextBundle,
   createContextEntity,
@@ -27,27 +27,32 @@ import {
   createMockRunner,
   createSequentialMockRunner,
   createMockLlm,
-} from '../helpers.js';
+} from "../helpers.js";
 
 // =============================================================================
 // formatContextMarkdown
 // =============================================================================
 
-describe('formatContextMarkdown', () => {
-  it('renders header with topic and session', () => {
+describe("formatContextMarkdown", () => {
+  it("renders header with topic and session", () => {
     const bundle = createContextBundle({
-      topic: 'authentication',
-      sessionId: 'planpling',
-      stats: { totalEntities: 5, totalRelationships: 3, entityTypes: {}, predicateCounts: {} },
+      topic: "authentication",
+      sessionId: "planpling",
+      stats: {
+        totalEntities: 5,
+        totalRelationships: 3,
+        entityTypes: {},
+        predicateCounts: {},
+      },
     });
     const md = formatContextMarkdown(bundle);
-    expect(md).toContain('# Knowledge Context: authentication');
-    expect(md).toContain('planpling');
-    expect(md).toContain('5 entities');
-    expect(md).toContain('3 relationships');
+    expect(md).toContain("# Knowledge Context: authentication");
+    expect(md).toContain("planpling");
+    expect(md).toContain("5 entities");
+    expect(md).toContain("3 relationships");
   });
 
-  it('renders entity overview by type', () => {
+  it("renders entity overview by type", () => {
     const bundle = createContextBundle({
       stats: {
         totalEntities: 3,
@@ -57,83 +62,142 @@ describe('formatContextMarkdown', () => {
       },
     });
     const md = formatContextMarkdown(bundle);
-    expect(md).toContain('## Entity Overview');
-    expect(md).toContain('**technology**: 2');
-    expect(md).toContain('**concept**: 1');
+    expect(md).toContain("## Entity Overview");
+    expect(md).toContain("**technology**: 2");
+    expect(md).toContain("**concept**: 1");
   });
 
-  it('renders entities grouped by type', () => {
-    const bundle = createContextBundle({
-      entities: [
-        createContextEntity({ name: 'React', type: 'technology', aliases: ['react.js'] }),
-        createContextEntity({ name: 'Redux', type: 'technology' }),
-        createContextEntity({ name: 'SPA', type: 'concept', confidence: 0.7 }),
-      ],
-      stats: { totalEntities: 3, totalRelationships: 0, entityTypes: { technology: 2, concept: 1 }, predicateCounts: {} },
-    });
-    const md = formatContextMarkdown(bundle);
-    expect(md).toContain('## Technologys');
-    expect(md).toContain('**React**');
-    expect(md).toContain('aka: react.js');
-    expect(md).toContain('## Concepts');
-    expect(md).toContain('[70%]'); // Low confidence badge
-  });
-
-  it('includes descriptions when option set', () => {
-    const bundle = createContextBundle({
-      entities: [
-        createContextEntity({ name: 'React', type: 'technology', description: 'UI library by Meta' }),
-      ],
-      stats: { totalEntities: 1, totalRelationships: 0, entityTypes: { technology: 1 }, predicateCounts: {} },
-    });
-    const md = formatContextMarkdown(bundle, { includeDescriptions: true });
-    expect(md).toContain('UI library by Meta');
-  });
-
-  it('omits descriptions when option not set', () => {
-    const bundle = createContextBundle({
-      entities: [
-        createContextEntity({ name: 'React', type: 'technology', description: 'UI library by Meta' }),
-      ],
-      stats: { totalEntities: 1, totalRelationships: 0, entityTypes: { technology: 1 }, predicateCounts: {} },
-    });
-    const md = formatContextMarkdown(bundle, {});
-    expect(md).not.toContain('UI library by Meta');
-  });
-
-  it('includes provenance when option set', () => {
-    const bundle = createContextBundle({
-      entities: [
-        createContextEntity({ name: 'React', type: 'technology', sources: ['concept-talk.md'] }),
-      ],
-      stats: { totalEntities: 1, totalRelationships: 0, entityTypes: { technology: 1 }, predicateCounts: {} },
-    });
-    const md = formatContextMarkdown(bundle, { includeProvenance: true });
-    expect(md).toContain('concept-talk.md');
-  });
-
-  it('includes code refs when option set', () => {
+  it("renders entities grouped by type", () => {
     const bundle = createContextBundle({
       entities: [
         createContextEntity({
-          name: 'React',
-          type: 'technology',
-          codeRefs: [{ filePath: 'package.json', name: 'react', kind: 'package-dep', strategy: 'dep', confidence: 0.99 }],
+          name: "React",
+          type: "technology",
+          aliases: ["react.js"],
         }),
+        createContextEntity({ name: "Redux", type: "technology" }),
+        createContextEntity({ name: "SPA", type: "concept", confidence: 0.7 }),
       ],
-      stats: { totalEntities: 1, totalRelationships: 0, entityTypes: { technology: 1 }, predicateCounts: {} },
+      stats: {
+        totalEntities: 3,
+        totalRelationships: 0,
+        entityTypes: { technology: 2, concept: 1 },
+        predicateCounts: {},
+      },
     });
-    const md = formatContextMarkdown(bundle, { includeCodeRefs: true });
-    expect(md).toContain('📂 Code:');
-    expect(md).toContain('package.json');
-    expect(md).toContain('## Code References');
+    const md = formatContextMarkdown(bundle);
+    expect(md).toContain("## Technologys");
+    expect(md).toContain("**React**");
+    expect(md).toContain("aka: react.js");
+    expect(md).toContain("## Concepts");
+    expect(md).toContain("[70%]"); // Low confidence badge
   });
 
-  it('renders relationships grouped by predicate', () => {
+  it("includes descriptions when option set", () => {
+    const bundle = createContextBundle({
+      entities: [
+        createContextEntity({
+          name: "React",
+          type: "technology",
+          description: "UI library by Meta",
+        }),
+      ],
+      stats: {
+        totalEntities: 1,
+        totalRelationships: 0,
+        entityTypes: { technology: 1 },
+        predicateCounts: {},
+      },
+    });
+    const md = formatContextMarkdown(bundle, { includeDescriptions: true });
+    expect(md).toContain("UI library by Meta");
+  });
+
+  it("omits descriptions when option not set", () => {
+    const bundle = createContextBundle({
+      entities: [
+        createContextEntity({
+          name: "React",
+          type: "technology",
+          description: "UI library by Meta",
+        }),
+      ],
+      stats: {
+        totalEntities: 1,
+        totalRelationships: 0,
+        entityTypes: { technology: 1 },
+        predicateCounts: {},
+      },
+    });
+    const md = formatContextMarkdown(bundle, {});
+    expect(md).not.toContain("UI library by Meta");
+  });
+
+  it("includes provenance when option set", () => {
+    const bundle = createContextBundle({
+      entities: [
+        createContextEntity({
+          name: "React",
+          type: "technology",
+          sources: ["concept-talk.md"],
+        }),
+      ],
+      stats: {
+        totalEntities: 1,
+        totalRelationships: 0,
+        entityTypes: { technology: 1 },
+        predicateCounts: {},
+      },
+    });
+    const md = formatContextMarkdown(bundle, { includeProvenance: true });
+    expect(md).toContain("concept-talk.md");
+  });
+
+  it("includes code refs when option set", () => {
+    const bundle = createContextBundle({
+      entities: [
+        createContextEntity({
+          name: "React",
+          type: "technology",
+          codeRefs: [
+            {
+              filePath: "package.json",
+              name: "react",
+              kind: "package-dep",
+              strategy: "dep",
+              confidence: 0.99,
+            },
+          ],
+        }),
+      ],
+      stats: {
+        totalEntities: 1,
+        totalRelationships: 0,
+        entityTypes: { technology: 1 },
+        predicateCounts: {},
+      },
+    });
+    const md = formatContextMarkdown(bundle, { includeCodeRefs: true });
+    expect(md).toContain("📂 Code:");
+    expect(md).toContain("package.json");
+    expect(md).toContain("## Code References");
+  });
+
+  it("renders relationships grouped by predicate", () => {
     const bundle = createContextBundle({
       relationships: [
-        createContextRelationship({ sourceName: 'A', predicate: 'DEPENDS_ON', targetName: 'B', confidence: 0.9 }),
-        createContextRelationship({ sourceName: 'C', predicate: 'USES', targetName: 'D', confidence: 0.7 }),
+        createContextRelationship({
+          sourceName: "A",
+          predicate: "DEPENDS_ON",
+          targetName: "B",
+          confidence: 0.9,
+        }),
+        createContextRelationship({
+          sourceName: "C",
+          predicate: "USES",
+          targetName: "D",
+          confidence: 0.7,
+        }),
       ],
       stats: {
         totalEntities: 0,
@@ -143,84 +207,124 @@ describe('formatContextMarkdown', () => {
       },
     });
     const md = formatContextMarkdown(bundle);
-    expect(md).toContain('## Relationships');
-    expect(md).toContain('### DEPENDS_ON');
-    expect(md).toContain('A → B');
-    expect(md).toContain('### USES');
-    expect(md).toContain('[70%]');
+    expect(md).toContain("## Relationships");
+    expect(md).toContain("### DEPENDS_ON");
+    expect(md).toContain("A → B");
+    expect(md).toContain("### USES");
+    expect(md).toContain("[70%]");
   });
 
-  it('shows rationales inline when option set', () => {
+  it("shows rationales inline when option set", () => {
     const bundle = createContextBundle({
       relationships: [
         createContextRelationship({
-          sourceName: 'App',
-          predicate: 'USES',
-          targetName: 'React',
-          rationale: 'Main UI framework',
+          sourceName: "App",
+          predicate: "USES",
+          targetName: "React",
+          rationale: "Main UI framework",
         }),
       ],
-      stats: { totalEntities: 0, totalRelationships: 1, entityTypes: {}, predicateCounts: { USES: 1 } },
+      stats: {
+        totalEntities: 0,
+        totalRelationships: 1,
+        entityTypes: {},
+        predicateCounts: { USES: 1 },
+      },
     });
     const md = formatContextMarkdown(bundle, { includeRationales: true });
-    expect(md).toContain('Main UI framework');
+    expect(md).toContain("Main UI framework");
   });
 
-  it('renders decision trail for DECIDED_FOR/AGAINST rels', () => {
+  it("renders decision trail for DECIDED_FOR/AGAINST rels", () => {
     const bundle = createContextBundle({
       relationships: [
-        createContextRelationship({ sourceName: 'arch', predicate: 'DECIDED_FOR', targetName: 'React' }),
-        createContextRelationship({ sourceName: 'arch', predicate: 'DECIDED_AGAINST', targetName: 'Angular' }),
+        createContextRelationship({
+          sourceName: "arch",
+          predicate: "DECIDED_FOR",
+          targetName: "React",
+        }),
+        createContextRelationship({
+          sourceName: "arch",
+          predicate: "DECIDED_AGAINST",
+          targetName: "Angular",
+        }),
       ],
-      stats: { totalEntities: 0, totalRelationships: 2, entityTypes: {}, predicateCounts: {} },
+      stats: {
+        totalEntities: 0,
+        totalRelationships: 2,
+        entityTypes: {},
+        predicateCounts: {},
+      },
     });
     const md = formatContextMarkdown(bundle);
-    expect(md).toContain('## Decision Trail');
-    expect(md).toContain('✅ chose');
-    expect(md).toContain('❌ rejected');
+    expect(md).toContain("## Decision Trail");
+    expect(md).toContain("✅ chose");
+    expect(md).toContain("❌ rejected");
   });
 
-  it('renders risks section', () => {
+  it("renders risks section", () => {
     const bundle = createContextBundle({
       relationships: [
-        createContextRelationship({ sourceName: 'complexity', predicate: 'RISKS', targetName: 'delivery' }),
+        createContextRelationship({
+          sourceName: "complexity",
+          predicate: "RISKS",
+          targetName: "delivery",
+        }),
       ],
-      stats: { totalEntities: 0, totalRelationships: 1, entityTypes: {}, predicateCounts: {} },
+      stats: {
+        totalEntities: 0,
+        totalRelationships: 1,
+        entityTypes: {},
+        predicateCounts: {},
+      },
     });
     const md = formatContextMarkdown(bundle);
-    expect(md).toContain('## Risks');
-    expect(md).toContain('⚠');
+    expect(md).toContain("## Risks");
+    expect(md).toContain("⚠");
   });
 
-  it('trims provenance first when over token budget', () => {
+  it("trims provenance first when over token budget", () => {
     const entities = Array.from({ length: 50 }, (_, i) =>
       createContextEntity({
         name: `Entity${i}`,
-        type: 'concept',
+        type: "concept",
         sources: [`very-long-source-document-name-${i}.md`],
       }),
     );
     const bundle = createContextBundle({
       entities,
-      stats: { totalEntities: 50, totalRelationships: 0, entityTypes: { concept: 50 }, predicateCounts: {} },
+      stats: {
+        totalEntities: 50,
+        totalRelationships: 0,
+        entityTypes: { concept: 50 },
+        predicateCounts: {},
+      },
     });
 
     // Very tight budget
-    const md = formatContextMarkdown(bundle, { includeProvenance: true, tokenBudget: 200 });
+    const md = formatContextMarkdown(bundle, {
+      includeProvenance: true,
+      tokenBudget: 200,
+    });
     // Provenance should be stripped first
-    expect(md).not.toContain('_Source:');
+    expect(md).not.toContain("_Source:");
   });
 
-  it('hard-truncates when budget is extremely small', () => {
+  it("hard-truncates when budget is extremely small", () => {
     const entities = Array.from({ length: 100 }, (_, i) =>
-      createContextEntity({ name: `Entity${i}`, type: 'concept' }),
+      createContextEntity({ name: `Entity${i}`, type: "concept" }),
     );
     const bundle = createContextBundle({
       entities,
-      stats: { totalEntities: 100, totalRelationships: 0, entityTypes: { concept: 100 }, predicateCounts: {} },
+      stats: {
+        totalEntities: 100,
+        totalRelationships: 0,
+        entityTypes: { concept: 100 },
+        predicateCounts: {},
+      },
     });
     const md = formatContextMarkdown(bundle, { tokenBudget: 50 });
-    expect(md).toContain('[Context truncated to fit token budget]');
+    expect(md).toContain("[Context truncated to fit token budget]");
   });
 });
 
@@ -228,15 +332,15 @@ describe('formatContextMarkdown', () => {
 // formatContextJson
 // =============================================================================
 
-describe('formatContextJson', () => {
-  it('serializes as valid JSON', () => {
+describe("formatContextJson", () => {
+  it("serializes as valid JSON", () => {
     const bundle = createContextBundle({
-      entities: [createContextEntity({ name: 'React' })],
+      entities: [createContextEntity({ name: "React" })],
     });
     const json = formatContextJson(bundle);
     const parsed = JSON.parse(json);
-    expect(parsed.entities[0].name).toBe('React');
-    expect(parsed.topic).toBe('test topic');
+    expect(parsed.entities[0].name).toBe("React");
+    expect(parsed.topic).toBe("test topic");
   });
 });
 
@@ -244,27 +348,48 @@ describe('formatContextJson', () => {
 // buildFullContext — with mock runner
 // =============================================================================
 
-describe('buildFullContext', () => {
-  it('fetches all entities and relationships from session', async () => {
+describe("buildFullContext", () => {
+  it("fetches all entities and relationships from session", async () => {
     const runner = createSequentialMockRunner([
       // Entities query
       [
-        { canonId: 'react', name: 'React', type: 'technology', aliases: ['react.js'], confidence: 0.99, sources: ['doc.md'] },
-        { canonId: 'spa', name: 'SPA', type: 'concept', aliases: [], confidence: 0.85, sources: [] },
+        {
+          canonId: "react",
+          name: "React",
+          type: "technology",
+          aliases: ["react.js"],
+          confidence: 0.99,
+          sources: ["doc.md"],
+        },
+        {
+          canonId: "spa",
+          name: "SPA",
+          type: "concept",
+          aliases: [],
+          confidence: 0.85,
+          sources: [],
+        },
       ],
       // Relationships query
       [
-        { sName: 'SPA', sType: 'concept', predicate: 'USES', tName: 'React', tType: 'technology', confidence: 0.9 },
+        {
+          sName: "SPA",
+          sType: "concept",
+          predicate: "USES",
+          tName: "React",
+          tType: "technology",
+          confidence: 0.9,
+        },
       ],
     ]);
 
     const bundle = await buildFullContext({
       runner,
-      sessionId: 'test-session',
+      sessionId: "test-session",
     });
 
     expect(bundle.entities).toHaveLength(2);
-    expect(bundle.entities[0].name).toBe('React');
+    expect(bundle.entities[0].name).toBe("React");
     expect(bundle.relationships).toHaveLength(1);
     expect(bundle.stats.totalEntities).toBe(2);
     expect(bundle.stats.totalRelationships).toBe(1);
@@ -272,12 +397,12 @@ describe('buildFullContext', () => {
     expect(bundle.stats.entityTypes.concept).toBe(1);
   });
 
-  it('returns empty bundle for empty session', async () => {
+  it("returns empty bundle for empty session", async () => {
     const runner = createSequentialMockRunner([[], []]);
 
     const bundle = await buildFullContext({
       runner,
-      sessionId: 'empty',
+      sessionId: "empty",
     });
 
     expect(bundle.entities).toHaveLength(0);
@@ -289,40 +414,61 @@ describe('buildFullContext', () => {
 // buildEntityContext — with mock runner
 // =============================================================================
 
-describe('buildEntityContext', () => {
-  it('finds entity and expands neighborhood', async () => {
+describe("buildEntityContext", () => {
+  it("finds entity and expands neighborhood", async () => {
     const runner = createSequentialMockRunner([
       // Seed lookup (fuzzy match)
-      [{ canonId: 'react', name: 'React', type: 'technology' }],
+      [{ canonId: "react", name: "React", type: "technology" }],
       // Neighborhood expansion
       [
-        { canonId: 'react', name: 'React', type: 'technology', aliases: [], confidence: 0.99, sources: [] },
-        { canonId: 'frontend', name: 'frontend', type: 'component', aliases: [], confidence: 0.9, sources: [] },
+        {
+          canonId: "react",
+          name: "React",
+          type: "technology",
+          aliases: [],
+          confidence: 0.99,
+          sources: [],
+        },
+        {
+          canonId: "frontend",
+          name: "frontend",
+          type: "component",
+          aliases: [],
+          confidence: 0.9,
+          sources: [],
+        },
       ],
       // Relationships
       [
-        { sName: 'frontend', sType: 'component', predicate: 'USES', tName: 'React', tType: 'technology', confidence: 0.9 },
+        {
+          sName: "frontend",
+          sType: "component",
+          predicate: "USES",
+          tName: "React",
+          tType: "technology",
+          confidence: 0.9,
+        },
       ],
     ]);
 
-    const bundle = await buildEntityContext('React', {
+    const bundle = await buildEntityContext("React", {
       runner,
-      sessionId: 'test',
+      sessionId: "test",
       hops: 1,
     });
 
     expect(bundle.entities.length).toBeGreaterThanOrEqual(1);
-    expect(bundle.topic).toContain('React');
+    expect(bundle.topic).toContain("React");
   });
 
-  it('returns empty bundle when entity not found', async () => {
+  it("returns empty bundle when entity not found", async () => {
     const runner = createSequentialMockRunner([
       [], // No seed match
     ]);
 
-    const bundle = await buildEntityContext('NonExistent', {
+    const bundle = await buildEntityContext("NonExistent", {
       runner,
-      sessionId: 'test',
+      sessionId: "test",
     });
 
     expect(bundle.entities).toHaveLength(0);
@@ -333,46 +479,67 @@ describe('buildEntityContext', () => {
 // buildTopicContext — with mock runner + LLM
 // =============================================================================
 
-describe('buildTopicContext', () => {
-  it('requires an LLM completer', async () => {
+describe("buildTopicContext", () => {
+  it("requires an LLM completer", async () => {
     const runner = createMockRunner();
 
     await expect(
-      buildTopicContext('auth', { runner, sessionId: 'test' }),
-    ).rejects.toThrow('LLM completer required');
+      buildTopicContext("auth", { runner, sessionId: "test" }),
+    ).rejects.toThrow("LLM completer required");
   });
 
-  it('uses LLM to pick seed entities from full list', async () => {
+  it("uses LLM to pick seed entities from full list", async () => {
     const runner = createSequentialMockRunner([
       // All entity names
       [
-        { name: 'React', type: 'technology' },
-        { name: 'authentication', type: 'concept' },
-        { name: 'JWT', type: 'technology' },
+        { name: "React", type: "technology" },
+        { name: "authentication", type: "concept" },
+        { name: "JWT", type: "technology" },
       ],
       // Seed lookup
-      [{ canonId: 'auth', name: 'authentication', type: 'concept' }],
+      [{ canonId: "auth", name: "authentication", type: "concept" }],
       // Neighborhood
       [
-        { canonId: 'auth', name: 'authentication', type: 'concept', aliases: [], confidence: 0.9, sources: [] },
-        { canonId: 'jwt', name: 'JWT', type: 'technology', aliases: [], confidence: 0.85, sources: [] },
+        {
+          canonId: "auth",
+          name: "authentication",
+          type: "concept",
+          aliases: [],
+          confidence: 0.9,
+          sources: [],
+        },
+        {
+          canonId: "jwt",
+          name: "JWT",
+          type: "technology",
+          aliases: [],
+          confidence: 0.85,
+          sources: [],
+        },
       ],
       // Relationships
       [
-        { sName: 'authentication', sType: 'concept', predicate: 'USES', tName: 'JWT', tType: 'technology', confidence: 0.9 },
+        {
+          sName: "authentication",
+          sType: "concept",
+          predicate: "USES",
+          tName: "JWT",
+          tType: "technology",
+          confidence: 0.9,
+        },
       ],
     ]);
 
     // LLM returns seed entity names as JSON array
     const llm = createMockLlm('["authentication", "JWT"]');
 
-    const bundle = await buildTopicContext('auth mechanisms', {
+    const bundle = await buildTopicContext("auth mechanisms", {
       runner,
-      sessionId: 'test',
+      sessionId: "test",
       llm,
     });
 
-    expect(bundle.topic).toBe('auth mechanisms');
+    expect(bundle.topic).toBe("auth mechanisms");
     expect(bundle.entities.length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -381,25 +548,30 @@ describe('buildTopicContext', () => {
 // enrichWithDescriptions
 // =============================================================================
 
-describe('enrichWithDescriptions', () => {
-  it('attaches descriptions from raw triple rationales', async () => {
+describe("enrichWithDescriptions", () => {
+  it("attaches descriptions from raw triple rationales", async () => {
     const runner = createMockRunner([
       {
         match: /RawTriple/,
         rows: [
-          { entityName: 'React', bestRationale: 'A JavaScript library for building UIs' },
+          {
+            entityName: "React",
+            bestRationale: "A JavaScript library for building UIs",
+          },
         ],
       },
     ]);
 
     const entities = [
-      createContextEntity({ name: 'React', type: 'technology' }),
-      createContextEntity({ name: 'Vue', type: 'technology' }),
+      createContextEntity({ name: "React", type: "technology" }),
+      createContextEntity({ name: "Vue", type: "technology" }),
     ];
 
-    await enrichWithDescriptions(runner, 'test', entities);
+    await enrichWithDescriptions(runner, "test", entities);
 
-    expect(entities[0].description).toBe('A JavaScript library for building UIs');
+    expect(entities[0].description).toBe(
+      "A JavaScript library for building UIs",
+    );
     expect(entities[1].description).toBeUndefined();
   });
 });
@@ -408,18 +580,18 @@ describe('enrichWithDescriptions', () => {
 // enrichWithCodeRefs
 // =============================================================================
 
-describe('enrichWithCodeRefs', () => {
-  it('attaches code references from CodeRef nodes', async () => {
+describe("enrichWithCodeRefs", () => {
+  it("attaches code references from CodeRef nodes", async () => {
     const runner = createMockRunner([
       {
         match: /CodeRef/,
         rows: [
           {
-            entityName: 'React',
-            filePath: 'package.json',
-            name: 'react',
-            kind: 'package-dep',
-            strategy: 'dep',
+            entityName: "React",
+            filePath: "package.json",
+            name: "react",
+            kind: "package-dep",
+            strategy: "dep",
             confidence: 0.99,
           },
         ],
@@ -427,13 +599,13 @@ describe('enrichWithCodeRefs', () => {
     ]);
 
     const entities = [
-      createContextEntity({ name: 'React', type: 'technology' }),
+      createContextEntity({ name: "React", type: "technology" }),
     ];
 
-    await enrichWithCodeRefs(runner, 'test', entities);
+    await enrichWithCodeRefs(runner, "test", entities);
 
     expect(entities[0].codeRefs).toHaveLength(1);
-    expect(entities[0].codeRefs![0].filePath).toBe('package.json');
-    expect(entities[0].codeRefs![0].kind).toBe('package-dep');
+    expect(entities[0].codeRefs![0].filePath).toBe("package.json");
+    expect(entities[0].codeRefs![0].kind).toBe("package-dep");
   });
 });

@@ -23,8 +23,8 @@
  *   (:Canon:Entity) -[:CANON_REL {predicate}]-> (:Canon:Entity)
  */
 
-import type { Neo4jRunner } from '../context/index.js';
-import * as fs from 'node:fs/promises';
+import type { Neo4jRunner } from "../context/index.js";
+import * as fs from "node:fs/promises";
 
 // =============================================================================
 // Types
@@ -33,7 +33,7 @@ import * as fs from 'node:fs/promises';
 /** A single issue found in a document */
 export interface DocIssue {
   /** Issue severity */
-  severity: 'stale' | 'drift' | 'missing' | 'contradiction' | 'stale-temporal';
+  severity: "stale" | "drift" | "missing" | "contradiction" | "stale-temporal";
   /** Human-readable description */
   message: string;
   /** The entity name involved */
@@ -49,7 +49,7 @@ export interface DocReport {
   /** File path of the document */
   filePath: string;
   /** Overall health score: fresh, warning, rotten */
-  status: 'fresh' | 'warning' | 'rotten';
+  status: "fresh" | "warning" | "rotten";
   /** Entities mentioned in this document that are still current */
   freshCount: number;
   /** Total entities extracted from this document */
@@ -109,9 +109,16 @@ export interface DocHealthOptions {
 // Predicates that signal staleness
 // =============================================================================
 
-const STALE_PREDICATES = ['DECIDED_AGAINST', 'SUPERSEDES', 'REPLACES'] as const;
-const DECISION_PREDICATES = ['DECIDED_FOR', 'DECIDED_AGAINST'] as const;
-const STRUCTURAL_PREDICATES = ['CONTAINS', 'DEPENDS_ON', 'IMPLEMENTS', 'EXTENDS', 'USES', 'CALLS'] as const;
+const STALE_PREDICATES = ["DECIDED_AGAINST", "SUPERSEDES", "REPLACES"] as const;
+const DECISION_PREDICATES = ["DECIDED_FOR", "DECIDED_AGAINST"] as const;
+const STRUCTURAL_PREDICATES = [
+  "CONTAINS",
+  "DEPENDS_ON",
+  "IMPLEMENTS",
+  "EXTENDS",
+  "USES",
+  "CALLS",
+] as const;
 
 // =============================================================================
 // Main entry
@@ -127,7 +134,9 @@ const STRUCTURAL_PREDICATES = ['CONTAINS', 'DEPENDS_ON', 'IMPLEMENTS', 'EXTENDS'
  * 4. Check for structural drift (new relationships not in doc's triples)
  * 5. Find undocumented entities (canon entities with no RawTriple from any .md)
  */
-export async function analyzeDocHealth(options: DocHealthOptions): Promise<DocHealthResult> {
+export async function analyzeDocHealth(
+  options: DocHealthOptions,
+): Promise<DocHealthResult> {
   const {
     runner,
     sessionId,
@@ -138,7 +147,7 @@ export async function analyzeDocHealth(options: DocHealthOptions): Promise<DocHe
   } = options;
 
   // Step 1: Find all docs in the session
-  log('Step 1: Discovering documents…');
+  log("Step 1: Discovering documents…");
   const docRows = await runner.run(
     `MATCH (rt:RawTriple)
      WHERE rt.session_id = $sid
@@ -148,14 +157,14 @@ export async function analyzeDocHealth(options: DocHealthOptions): Promise<DocHe
   );
 
   let docPaths = docRows
-    .map(r => String(r.filePath))
-    .filter(p => p && p !== 'null' && p !== 'undefined');
+    .map((r) => String(r.filePath))
+    .filter((p) => p && p !== "null" && p !== "undefined");
 
   // Filter to requested files if provided
   if (files && files.length > 0) {
-    const normalized = new Set(files.map(f => f.replace(/^\.\//, '')));
-    docPaths = docPaths.filter(p => {
-      const norm = p.replace(/^\.\//, '');
+    const normalized = new Set(files.map((f) => f.replace(/^\.\//, "")));
+    docPaths = docPaths.filter((p) => {
+      const norm = p.replace(/^\.\//, "");
       return normalized.has(norm) || normalized.has(p);
     });
   }
@@ -172,25 +181,42 @@ export async function analyzeDocHealth(options: DocHealthOptions): Promise<DocHe
   }
 
   // Step 5: Find undocumented entities
-  log('Step 5: Finding undocumented entities…');
-  const undocumented = await findUndocumentedEntities(runner, sessionId, minRelCount);
+  log("Step 5: Finding undocumented entities…");
+  const undocumented = await findUndocumentedEntities(
+    runner,
+    sessionId,
+    minRelCount,
+  );
   log(`  Found ${undocumented.length} undocumented entity(ies)`);
 
   // Aggregate stats
   const stats = {
     docsAnalyzed: reports.length,
-    freshDocs: reports.filter(r => r.status === 'fresh').length,
-    warningDocs: reports.filter(r => r.status === 'warning').length,
-    rottenDocs: reports.filter(r => r.status === 'rotten').length,
+    freshDocs: reports.filter((r) => r.status === "fresh").length,
+    warningDocs: reports.filter((r) => r.status === "warning").length,
+    rottenDocs: reports.filter((r) => r.status === "rotten").length,
     totalIssues: reports.reduce((sum, r) => sum + r.issues.length, 0),
-    staleCount: reports.reduce((sum, r) => sum + r.issues.filter(i => i.severity === 'stale').length, 0),
-    driftCount: reports.reduce((sum, r) => sum + r.issues.filter(i => i.severity === 'drift').length, 0),
-    missingCount: reports.reduce((sum, r) => sum + r.issues.filter(i => i.severity === 'missing').length, 0),
+    staleCount: reports.reduce(
+      (sum, r) => sum + r.issues.filter((i) => i.severity === "stale").length,
+      0,
+    ),
+    driftCount: reports.reduce(
+      (sum, r) => sum + r.issues.filter((i) => i.severity === "drift").length,
+      0,
+    ),
+    missingCount: reports.reduce(
+      (sum, r) => sum + r.issues.filter((i) => i.severity === "missing").length,
+      0,
+    ),
     contradictionCount: reports.reduce(
-      (sum, r) => sum + r.issues.filter(i => i.severity === 'contradiction').length, 0,
+      (sum, r) =>
+        sum + r.issues.filter((i) => i.severity === "contradiction").length,
+      0,
     ),
     temporalCount: reports.reduce(
-      (sum, r) => sum + r.issues.filter(i => i.severity === 'stale-temporal').length, 0,
+      (sum, r) =>
+        sum + r.issues.filter((i) => i.severity === "stale-temporal").length,
+      0,
     ),
     undocumentedCount: undocumented.length,
   };
@@ -219,7 +245,7 @@ async function analyzeDocument(
     { sid: sessionId, file: filePath },
   );
 
-  const entities = entityRows.map(r => ({
+  const entities = entityRows.map((r) => ({
     name: String(r.name),
     type: String(r.type),
     canonId: String(r.canonId ?? r.name),
@@ -228,7 +254,7 @@ async function analyzeDocument(
   if (entities.length === 0) {
     return {
       filePath,
-      status: 'fresh',
+      status: "fresh",
       freshCount: 0,
       totalCount: 0,
       freshnessPercent: 100,
@@ -236,7 +262,7 @@ async function analyzeDocument(
     };
   }
 
-  const entityNames = entities.map(e => e.name);
+  const entityNames = entities.map((e) => e.name);
 
   // Check for staleness — all three predicates flag the TARGET as stale:
   //
@@ -263,15 +289,16 @@ async function analyzeDocument(
     const pred = String(row.predicate);
     const decidedBy = String(row.decidedBy);
     const verbMap: Record<string, string> = {
-      DECIDED_AGAINST: 'decided against',
-      SUPERSEDES: 'superseded',
-      REPLACES: 'replaced',
+      DECIDED_AGAINST: "decided against",
+      SUPERSEDES: "superseded",
+      REPLACES: "replaced",
     };
     issues.push({
-      severity: 'stale',
+      severity: "stale",
       message: `"${entityName}" was ${verbMap[pred] ?? pred} by "${decidedBy}"`,
       entityName,
-      entityType: entities.find(e => e.name === entityName)?.type ?? 'unknown',
+      entityType:
+        entities.find((e) => e.name === entityName)?.type ?? "unknown",
       detail: `${pred} by: ${decidedBy}`,
     });
   }
@@ -289,20 +316,26 @@ async function analyzeDocument(
          AND ce.name = target
      }
      RETURN entityName, collect(predicate + ' → ' + target) AS newRels`,
-    { sid: sessionId, names: entityNames, structPreds: [...STRUCTURAL_PREDICATES], file: filePath },
+    {
+      sid: sessionId,
+      names: entityNames,
+      structPreds: [...STRUCTURAL_PREDICATES],
+      file: filePath,
+    },
   );
 
   for (const row of driftRows) {
     const entityName = String(row.entityName);
     const newRels = row.newRels as string[];
     if (newRels && newRels.length > 0) {
-      const preview = newRels.slice(0, 5).join(', ');
-      const suffix = newRels.length > 5 ? ` (+${newRels.length - 5} more)` : '';
+      const preview = newRels.slice(0, 5).join(", ");
+      const suffix = newRels.length > 5 ? ` (+${newRels.length - 5} more)` : "";
       issues.push({
-        severity: 'drift',
+        severity: "drift",
         message: `"${entityName}" has ${newRels.length} relationship(s) not covered by this document`,
         entityName,
-        entityType: entities.find(e => e.name === entityName)?.type ?? 'unknown',
+        entityType:
+          entities.find((e) => e.name === entityName)?.type ?? "unknown",
         detail: `New: ${preview}${suffix}`,
       });
     }
@@ -328,22 +361,31 @@ async function analyzeDocument(
     const entityName = String(row.entityName);
     const target = String(row.target);
     issues.push({
-      severity: 'contradiction',
+      severity: "contradiction",
       message: `Document says ${row.docPred} "${target}" but graph says ${row.graphPred}`,
       entityName,
-      entityType: entities.find(e => e.name === entityName)?.type ?? 'unknown',
+      entityType:
+        entities.find((e) => e.name === entityName)?.type ?? "unknown",
       detail: `Doc: ${row.docPred}, Graph: ${row.graphPred}`,
     });
   }
 
   // ─── Temporal staleness: entity updated_at > doc mtime ────────────
   if (cwd) {
-    await checkTemporalStaleness(runner, sessionId, filePath, entities, issues, cwd, log);
+    await checkTemporalStaleness(
+      runner,
+      sessionId,
+      filePath,
+      entities,
+      issues,
+      cwd,
+      log,
+    );
   }
 
   // Deduplicate issues by entity+severity
   const seen = new Set<string>();
-  const deduped = issues.filter(i => {
+  const deduped = issues.filter((i) => {
     const key = `${i.entityName}|${i.severity}|${i.message}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -351,18 +393,31 @@ async function analyzeDocument(
   });
 
   // Compute freshness
-  const staleEntityNames = new Set(deduped.filter(i => i.severity === 'stale').map(i => i.entityName));
-  const freshCount = entities.filter(e => !staleEntityNames.has(e.name)).length;
-  const freshnessPercent = entities.length > 0 ? Math.round((freshCount / entities.length) * 100) : 100;
+  const staleEntityNames = new Set(
+    deduped.filter((i) => i.severity === "stale").map((i) => i.entityName),
+  );
+  const freshCount = entities.filter(
+    (e) => !staleEntityNames.has(e.name),
+  ).length;
+  const freshnessPercent =
+    entities.length > 0
+      ? Math.round((freshCount / entities.length) * 100)
+      : 100;
 
   // Determine status
-  let status: 'fresh' | 'warning' | 'rotten';
-  if (freshnessPercent >= 80 && deduped.filter(i => i.severity === 'stale').length === 0) {
-    status = 'fresh';
-  } else if (freshnessPercent < 50 || deduped.filter(i => i.severity === 'stale').length >= 3) {
-    status = 'rotten';
+  let status: "fresh" | "warning" | "rotten";
+  if (
+    freshnessPercent >= 80 &&
+    deduped.filter((i) => i.severity === "stale").length === 0
+  ) {
+    status = "fresh";
+  } else if (
+    freshnessPercent < 50 ||
+    deduped.filter((i) => i.severity === "stale").length >= 3
+  ) {
+    status = "rotten";
   } else {
-    status = 'warning';
+    status = "warning";
   }
 
   return {
@@ -400,7 +455,9 @@ async function checkTemporalStaleness(
   // Resolve document mtime
   let docMtime: Date;
   try {
-    const resolvedPath = filePath.startsWith('/') ? filePath : `${cwd}/${filePath}`;
+    const resolvedPath = filePath.startsWith("/")
+      ? filePath
+      : `${cwd}/${filePath}`;
     const stat = await fs.stat(resolvedPath);
     docMtime = stat.mtime;
   } catch {
@@ -409,7 +466,7 @@ async function checkTemporalStaleness(
     return;
   }
 
-  const entityNames = entities.map(e => e.name);
+  const entityNames = entities.map((e) => e.name);
 
   // Fetch updated_at for all entities extracted from this document
   const rows = await runner.run(
@@ -421,25 +478,27 @@ async function checkTemporalStaleness(
 
   for (const row of rows) {
     const entityName = String(row.name);
-    const entityType = String(row.type ?? 'unknown');
+    const entityType = String(row.type ?? "unknown");
     const updatedAt = row.updatedAt as any;
 
     // Neo4j returns DateTime objects — convert to JS Date
     let updatedDate: Date;
-    if (updatedAt && typeof updatedAt.toStandardDate === 'function') {
+    if (updatedAt && typeof updatedAt.toStandardDate === "function") {
       updatedDate = updatedAt.toStandardDate() as Date;
     } else if (updatedAt instanceof Date) {
       updatedDate = updatedAt;
-    } else if (typeof updatedAt === 'string') {
+    } else if (typeof updatedAt === "string") {
       updatedDate = new Date(updatedAt);
     } else {
       continue; // Can't parse — skip
     }
 
     if (updatedDate > docMtime) {
-      const daysBehind = Math.ceil((updatedDate.getTime() - docMtime.getTime()) / (1000 * 60 * 60 * 24));
+      const daysBehind = Math.ceil(
+        (updatedDate.getTime() - docMtime.getTime()) / (1000 * 60 * 60 * 24),
+      );
       issues.push({
-        severity: 'stale-temporal',
+        severity: "stale-temporal",
         message: `"${entityName}" was updated in the graph ${daysBehind}d after this document was last modified`,
         entityName,
         entityType,
@@ -476,7 +535,7 @@ async function findUndocumentedEntities(
     { sid: sessionId, minRel: minRelCount },
   );
 
-  return rows.map(r => ({
+  return rows.map((r) => ({
     name: String(r.name),
     type: String(r.type),
     relationshipCount: Number(r.relCount) || 0,
@@ -488,17 +547,17 @@ async function findUndocumentedEntities(
 // =============================================================================
 
 const STATUS_ICONS: Record<string, string> = {
-  fresh: '✅',
-  warning: '⚠️',
-  rotten: '🔴',
+  fresh: "✅",
+  warning: "⚠️",
+  rotten: "🔴",
 };
 
 const SEVERITY_ICONS: Record<string, string> = {
-  stale: '🪦',
-  drift: '🔀',
-  missing: '📭',
-  contradiction: '⚡',
-  'stale-temporal': '🕐',
+  stale: "🪦",
+  drift: "🔀",
+  missing: "📭",
+  contradiction: "⚡",
+  "stale-temporal": "🕐",
 };
 
 export function formatDocHealthMarkdown(result: DocHealthResult): string {
@@ -507,68 +566,77 @@ export function formatDocHealthMarkdown(result: DocHealthResult): string {
 
   // ── Header ──────────────────────────────────────────────────────────
   lines.push(`# 📋 Documentation Health Report`);
-  lines.push('');
+  lines.push("");
   lines.push(`**Session:** ${sessionId}`);
   lines.push(`**Documents analyzed:** ${stats.docsAnalyzed}`);
-  lines.push('');
+  lines.push("");
 
   // ── Summary bar ─────────────────────────────────────────────────────
-  lines.push('## Summary');
-  lines.push('');
+  lines.push("## Summary");
+  lines.push("");
   lines.push(`| Status | Count |`);
   lines.push(`| --- | --- |`);
   lines.push(`| ✅ Fresh | ${stats.freshDocs} |`);
   lines.push(`| ⚠️ Warning | ${stats.warningDocs} |`);
   lines.push(`| 🔴 Rotten | ${stats.rottenDocs} |`);
-  lines.push('');
+  lines.push("");
 
   if (stats.totalIssues > 0) {
     lines.push(`**Issues found:** ${stats.totalIssues}`);
     const issueParts: string[] = [];
     if (stats.staleCount > 0) issueParts.push(`🪦 ${stats.staleCount} stale`);
     if (stats.driftCount > 0) issueParts.push(`🔀 ${stats.driftCount} drift`);
-    if (stats.contradictionCount > 0) issueParts.push(`⚡ ${stats.contradictionCount} contradiction`);
-    if (stats.temporalCount > 0) issueParts.push(`🕐 ${stats.temporalCount} temporal`);
-    if (stats.missingCount > 0) issueParts.push(`📭 ${stats.missingCount} missing`);
-    lines.push(issueParts.join(' · '));
-    lines.push('');
+    if (stats.contradictionCount > 0)
+      issueParts.push(`⚡ ${stats.contradictionCount} contradiction`);
+    if (stats.temporalCount > 0)
+      issueParts.push(`🕐 ${stats.temporalCount} temporal`);
+    if (stats.missingCount > 0)
+      issueParts.push(`📭 ${stats.missingCount} missing`);
+    lines.push(issueParts.join(" · "));
+    lines.push("");
   }
 
   // ── Per-doc reports (worst first) ───────────────────────────────────
   const sortOrder: Record<string, number> = { rotten: 0, warning: 1, fresh: 2 };
-  const sorted = [...reports].sort((a, b) => (sortOrder[a.status] ?? 2) - (sortOrder[b.status] ?? 2));
+  const sorted = [...reports].sort(
+    (a, b) => (sortOrder[a.status] ?? 2) - (sortOrder[b.status] ?? 2),
+  );
 
   for (const report of sorted) {
-    const icon = STATUS_ICONS[report.status] ?? '?';
+    const icon = STATUS_ICONS[report.status] ?? "?";
     lines.push(`### ${icon} ${report.filePath}`);
-    lines.push('');
-    lines.push(`**Freshness:** ${report.freshnessPercent}% (${report.freshCount}/${report.totalCount} entities current)`);
-    lines.push('');
+    lines.push("");
+    lines.push(
+      `**Freshness:** ${report.freshnessPercent}% (${report.freshCount}/${report.totalCount} entities current)`,
+    );
+    lines.push("");
 
     if (report.issues.length === 0) {
-      lines.push('No issues found.');
-      lines.push('');
+      lines.push("No issues found.");
+      lines.push("");
       continue;
     }
 
     for (const issue of report.issues) {
-      const sIcon = SEVERITY_ICONS[issue.severity] ?? '•';
+      const sIcon = SEVERITY_ICONS[issue.severity] ?? "•";
       lines.push(`- ${sIcon} **${issue.severity}**: ${issue.message}`);
       if (issue.detail) {
         lines.push(`  - ${issue.detail}`);
       }
     }
-    lines.push('');
+    lines.push("");
   }
 
   // ── Undocumented entities ───────────────────────────────────────────
   if (undocumented.length > 0) {
-    lines.push('## 📭 Undocumented Entities');
-    lines.push('');
-    lines.push('These entities exist in the knowledge graph but have no documentation provenance:');
-    lines.push('');
-    lines.push('| Entity | Type | Relationships |');
-    lines.push('| --- | --- | --- |');
+    lines.push("## 📭 Undocumented Entities");
+    lines.push("");
+    lines.push(
+      "These entities exist in the knowledge graph but have no documentation provenance:",
+    );
+    lines.push("");
+    lines.push("| Entity | Type | Relationships |");
+    lines.push("| --- | --- | --- |");
 
     for (const ent of undocumented.slice(0, 30)) {
       lines.push(`| ${ent.name} | ${ent.type} | ${ent.relationshipCount} |`);
@@ -576,37 +644,51 @@ export function formatDocHealthMarkdown(result: DocHealthResult): string {
     if (undocumented.length > 30) {
       lines.push(`| … | _+${undocumented.length - 30} more_ | |`);
     }
-    lines.push('');
+    lines.push("");
   }
 
   // ── Recommendations ─────────────────────────────────────────────────
   if (stats.totalIssues > 0 || undocumented.length > 0) {
-    lines.push('## 💡 Recommendations');
-    lines.push('');
+    lines.push("## 💡 Recommendations");
+    lines.push("");
     if (stats.staleCount > 0) {
-      lines.push('- **Update stale references**: Remove or update mentions of entities that have been superseded or decided against.');
+      lines.push(
+        "- **Update stale references**: Remove or update mentions of entities that have been superseded or decided against.",
+      );
     }
     if (stats.driftCount > 0) {
-      lines.push('- **Document new relationships**: Some entities have evolved since the documentation was written. Consider updating the docs to reflect new dependencies and connections.');
+      lines.push(
+        "- **Document new relationships**: Some entities have evolved since the documentation was written. Consider updating the docs to reflect new dependencies and connections.",
+      );
     }
     if (stats.contradictionCount > 0) {
-      lines.push('- **Resolve contradictions**: Some documents state decisions that conflict with the current graph state.');
+      lines.push(
+        "- **Resolve contradictions**: Some documents state decisions that conflict with the current graph state.",
+      );
     }
     if (stats.temporalCount > 0) {
-      lines.push('- **Review temporally stale docs**: Some entities were updated in the knowledge graph after the document was last modified. Re-check those sections for accuracy.');
+      lines.push(
+        "- **Review temporally stale docs**: Some entities were updated in the knowledge graph after the document was last modified. Re-check those sections for accuracy.",
+      );
     }
     if (undocumented.length > 0) {
-      lines.push(`- **Document new entities**: ${undocumented.length} entity(ies) with significant graph presence have no documentation.`);
+      lines.push(
+        `- **Document new entities**: ${undocumented.length} entity(ies) with significant graph presence have no documentation.`,
+      );
     }
-    lines.push('');
+    lines.push("");
   }
 
   // ── Tip ─────────────────────────────────────────────────────────────
-  lines.push('---');
-  lines.push('_Run `iw doc-health` periodically to catch documentation rot early._');
-  lines.push('_Use `iw context --entity <name>` to understand an entity before updating docs._');
+  lines.push("---");
+  lines.push(
+    "_Run `iw doc-health` periodically to catch documentation rot early._",
+  );
+  lines.push(
+    "_Use `iw context --entity <name>` to understand an entity before updating docs._",
+  );
 
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 export function formatDocHealthJson(result: DocHealthResult): string {

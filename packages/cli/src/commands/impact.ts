@@ -15,16 +15,16 @@
  *   iw impact package.json -s planpling --hops 3 --format json -o impact.json
  */
 
-import { Command } from 'commander';
-import chalk from 'chalk';
-import { writeFileSync } from 'node:fs';
+import { Command } from "commander";
+import chalk from "chalk";
+import { writeFileSync } from "node:fs";
 import {
   analyzeImpact,
   formatImpactMarkdown,
   formatImpactJson,
   type ImpactOptions,
-} from '../impact/index.js';
-import type { Neo4jRunner } from '../context/index.js';
+} from "../impact/index.js";
+import type { Neo4jRunner } from "../context/index.js";
 
 // =============================================================================
 // Neo4j connection (same pattern as other commands)
@@ -37,19 +37,22 @@ interface Neo4jConnection {
 }
 
 async function connectNeo4j(uri?: string): Promise<Neo4jConnection> {
-  const neo4j = await import('neo4j-driver');
-  const neoUri = uri ?? process.env.NEO4J_URI ?? 'bolt://localhost:7687';
-  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? 'neo4j';
+  const neo4j = await import("neo4j-driver");
+  const neoUri = uri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
+  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? "neo4j";
   const password = process.env.NEO4J_PASSWORD;
 
   if (!password) {
     throw new Error(
-      'Neo4j password required. Set NEO4J_PASSWORD environment variable.\n' +
-      'Example: export NEO4J_PASSWORD=codegraph',
+      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
+        "Example: export NEO4J_PASSWORD=codegraph",
     );
   }
 
-  const driver = neo4j.default.driver(neoUri, neo4j.default.auth.basic(user, password));
+  const driver = neo4j.default.driver(
+    neoUri,
+    neo4j.default.auth.basic(user, password),
+  );
   await driver.verifyConnectivity();
   const session = driver.session();
 
@@ -69,7 +72,12 @@ async function connectNeo4j(uri?: string): Promise<Neo4jConnection> {
 
 function toPlainValue(v: unknown): unknown {
   if (v === null || v === undefined) return v;
-  if (typeof v === 'object' && v !== null && 'toNumber' in v && typeof (v as any).toNumber === 'function') {
+  if (
+    typeof v === "object" &&
+    v !== null &&
+    "toNumber" in v &&
+    typeof (v as any).toNumber === "function"
+  ) {
     return (v as any).toNumber();
   }
   if (Array.isArray(v)) return v.map(toPlainValue);
@@ -86,18 +94,22 @@ function plainProps(props: Record<string, unknown>): Record<string, unknown> {
 
 function createRunner(conn: Neo4jConnection): Neo4jRunner {
   return {
-    async run(cypher: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>[]> {
-      const neo4j = await import('neo4j-driver');
+    async run(
+      cypher: string,
+      params: Record<string, unknown> = {},
+    ): Promise<Record<string, unknown>[]> {
+      const neo4j = await import("neo4j-driver");
       const cleanParams: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(params)) {
-        cleanParams[k] = typeof v === 'number' ? neo4j.default.int(Math.round(v)) : v;
+        cleanParams[k] =
+          typeof v === "number" ? neo4j.default.int(Math.round(v)) : v;
       }
       const result = await conn.session.run(cypher, cleanParams);
       return result.records.map((rec: any) => {
         const row: Record<string, unknown> = {};
         for (const key of rec.keys) {
           const v = rec.get(key);
-          if (v !== null && typeof v === 'object' && 'properties' in v) {
+          if (v !== null && typeof v === "object" && "properties" in v) {
             row[key as string] = plainProps(v.properties);
           } else {
             row[key as string] = toPlainValue(v);
@@ -113,17 +125,19 @@ function createRunner(conn: Neo4jConnection): Neo4jRunner {
 // Command
 // =============================================================================
 
-export const impactCommand = new Command('impact')
-  .description('Analyze semantic impact of changing file(s) — shows affected concepts, decisions, and risks')
-  .argument('<files...>', 'File path(s) to analyze (workspace-relative)')
-  .option('-s, --session <id>', 'Session ID (required)', '')
-  .option('--hops <n>', 'Ripple expansion depth (1-3)', '2')
-  .option('--limit <n>', 'Max ripple entities', '100')
-  .option('--min-confidence <n>', 'Min confidence threshold (0.0-1.0)', '0')
-  .option('-f, --format <fmt>', 'Output format: markdown | json', 'markdown')
-  .option('-o, --output <path>', 'Write output to file')
-  .option('-v, --verbose', 'Show progress on stderr')
-  .option('--neo4j-uri <uri>', 'Neo4j connection URI')
+export const impactCommand = new Command("impact")
+  .description(
+    "Analyze semantic impact of changing file(s) — shows affected concepts, decisions, and risks",
+  )
+  .argument("<files...>", "File path(s) to analyze (workspace-relative)")
+  .option("-s, --session <id>", "Session ID (required)", "")
+  .option("--hops <n>", "Ripple expansion depth (1-3)", "2")
+  .option("--limit <n>", "Max ripple entities", "100")
+  .option("--min-confidence <n>", "Min confidence threshold (0.0-1.0)", "0")
+  .option("-f, --format <fmt>", "Output format: markdown | json", "markdown")
+  .option("-o, --output <path>", "Write output to file")
+  .option("-v, --verbose", "Show progress on stderr")
+  .option("--neo4j-uri <uri>", "Neo4j connection URI")
   .action(async (files: string[], options) => {
     const {
       session: sessionId,
@@ -136,7 +150,11 @@ export const impactCommand = new Command('impact')
     } = options;
 
     if (!sessionId) {
-      console.error(chalk.red('Session ID required. Use --session <id> (e.g., --session planpling).'));
+      console.error(
+        chalk.red(
+          "Session ID required. Use --session <id> (e.g., --session planpling).",
+        ),
+      );
       process.exit(1);
     }
 
@@ -148,10 +166,12 @@ export const impactCommand = new Command('impact')
 
     try {
       conn = await connectNeo4j(options.neo4jUri);
-      if (verbose) console.error(chalk.blue('Connected to Neo4j'));
+      if (verbose) console.error(chalk.blue("Connected to Neo4j"));
 
       const runner = createRunner(conn);
-      const log = verbose ? (msg: string) => console.error(chalk.blue(msg)) : undefined;
+      const log = verbose
+        ? (msg: string) => console.error(chalk.blue(msg))
+        : undefined;
 
       const impactOpts: ImpactOptions = {
         runner,
@@ -164,22 +184,27 @@ export const impactCommand = new Command('impact')
 
       const result = await analyzeImpact(files, impactOpts);
 
-      const formatted = format === 'json'
-        ? formatImpactJson(result)
-        : formatImpactMarkdown(result);
+      const formatted =
+        format === "json"
+          ? formatImpactJson(result)
+          : formatImpactMarkdown(result);
 
       if (output) {
-        writeFileSync(output, formatted, 'utf-8');
+        writeFileSync(output, formatted, "utf-8");
         console.error(chalk.green(`Impact analysis written to ${output}`));
       } else {
         console.log(formatted);
       }
 
       if (verbose) {
-        console.error(chalk.blue(`\n${result.stats.directCount} direct, ${result.stats.rippleCount} ripple, ${result.stats.decisionCount} decisions, ${result.stats.riskCount} risks`));
+        console.error(
+          chalk.blue(
+            `\n${result.stats.directCount} direct, ${result.stats.rippleCount} ripple, ${result.stats.decisionCount} decisions, ${result.stats.riskCount} risks`,
+          ),
+        );
       }
     } catch (err: any) {
-      console.error(chalk.red('Error:'), err.message ?? err);
+      console.error(chalk.red("Error:"), err.message ?? err);
       process.exit(1);
     } finally {
       if (conn) await conn.close();

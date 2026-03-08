@@ -42,7 +42,11 @@
       "import": "./schemas/*.json"
     }
   },
-  "files": ["dist", "src", "schemas"],
+  "files": [
+    "dist",
+    "src",
+    "schemas"
+  ],
   "scripts": {
     "build": "tsc && cp -r schemas dist/",
     "test": "vitest run",

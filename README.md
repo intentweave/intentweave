@@ -27,6 +27,7 @@ pnpm dev
 ```
 
 The server starts at `http://localhost:3000` with:
+
 - 📖 API docs: `http://localhost:3000/docs`
 - ❤️ Health: `http://localhost:3000/health`
 - 📡 SSE: `http://localhost:3000/stream`
@@ -57,14 +58,14 @@ iw xlink . --session my-project --persist
 
 IntentWeave exposes MCP tools for use in VS Code Copilot:
 
-| Tool | Purpose |
-|------|---------|
-| `kg_query` | Natural language or Cypher query |
-| `kg_context` | Build RAG context from graph |
-| `kg_entities` | List/search entities |
-| `kg_impact` | Semantic impact analysis |
-| `kg_doc_health` | Documentation freshness |
-| `kg_schema` | Graph schema description |
+| Tool            | Purpose                          |
+| --------------- | -------------------------------- |
+| `kg_query`      | Natural language or Cypher query |
+| `kg_context`    | Build RAG context from graph     |
+| `kg_entities`   | List/search entities             |
+| `kg_impact`     | Semantic impact analysis         |
+| `kg_doc_health` | Documentation freshness          |
+| `kg_schema`     | Graph schema description         |
 
 ---
 

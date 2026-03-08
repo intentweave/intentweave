@@ -3,9 +3,9 @@
 
 /**
  * Weave Module
- * 
+ *
  * WX (Weave/Canonicalization) stage for IntentWeave.
- * 
+ *
  * Provides:
  * - Normalization utilities (names, predicates, canonical keys)
  * - Evidence management (creation, deduplication, physical + logical anchoring)
@@ -27,7 +27,7 @@ export {
   generateCanonicalStatementId,
   hashLiteral,
   // Note: ArtifactRole and EntityType are already exported from ./types/index.js
-} from './normalize.js';
+} from "./normalize.js";
 
 // Evidence
 export {
@@ -40,7 +40,7 @@ export {
   mergeEvidenceIds,
   sanitizeExcerpt,
   DEFAULT_EVIDENCE_POLICY,
-} from './evidence.js';
+} from "./evidence.js";
 
 // Registry
 export {
@@ -54,44 +54,44 @@ export {
   isDeprecated,
   addAlias,
   deprecateCanonical,
-} from './registry.js';
+} from "./registry.js";
 
 // Executor
 export {
   executeWeave,
   type WeaveInput,
   type WeaveOptions,
-} from './executor.js';
+} from "./executor.js";
 
 // Types
 export type {
   // Evidence
   EvidenceRecord,
   EvidencePolicy,
-  
+
   // Raw layer
   RawEntity,
   RawStatement,
-  
+
   // Canonical layer
   CanonicalEntity,
   CanonicalStatement,
-  
+
   // Mappings
   EntityMapping,
   StatementMapping,
-  
+
   // Conflicts & stats
   WeaveConflict,
   WeaveStats,
   WeaveResult,
-  
+
   // Registry
   WeaveRegistry,
   WeaveOverrides,
-  
+
   // Bundle v2
   GraphBundleV2,
   ArtifactSummary,
   LxLink,
-} from './types.js';
+} from "./types.js";

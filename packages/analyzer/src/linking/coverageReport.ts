@@ -20,7 +20,7 @@ import type {
   LinkProposal,
   LinkPredicate,
   ArtifactRole,
-} from '@intentweave/core';
+} from "@intentweave/core";
 
 // =============================================================================
 // Types
@@ -55,9 +55,9 @@ export interface InconsistencyFinding {
   /** Unique finding ID */
   id: string;
   /** Type of inconsistency */
-  type: 'semantic-drift' | 'stale-link' | 'conflicting-definition';
+  type: "semantic-drift" | "stale-link" | "conflicting-definition";
   /** Severity level */
-  severity: 'warning' | 'error';
+  severity: "warning" | "error";
   /** Source entity cgId */
   sourceCgId: string;
   /** Target entity cgId */
@@ -77,9 +77,13 @@ export interface IncompletenessFinding {
   /** Unique finding ID */
   id: string;
   /** Type of incompleteness */
-  type: 'missing-implementation' | 'missing-spec' | 'missing-test' | 'orphan-impl';
+  type:
+    | "missing-implementation"
+    | "missing-spec"
+    | "missing-test"
+    | "orphan-impl";
   /** Severity level */
-  severity: 'info' | 'warning';
+  severity: "info" | "warning";
   /** Entity cgId that is incomplete */
   entityCgId: string;
   /** Entity name for display */
@@ -97,9 +101,9 @@ export interface IncompletenessFinding {
  */
 export interface CoverageReport {
   /** Schema identifier */
-  $schema: 'intentweave://schemas/coverage-report/v1';
+  $schema: "intentweave://schemas/coverage-report/v1";
   /** Schema version */
-  schemaVersion: '0.1';
+  schemaVersion: "0.1";
   /** Run ID */
   runId: string;
   /** Workspace key */
@@ -164,7 +168,9 @@ export interface CoverageReportInput {
   /** All entities with their artifact IDs */
   entities: Array<Entity & { artifactId: string; artifactRole: ArtifactRole }>;
   /** All statements with their artifact IDs */
-  statements: Array<Statement & { artifactId: string; artifactRole: ArtifactRole }>;
+  statements: Array<
+    Statement & { artifactId: string; artifactRole: ArtifactRole }
+  >;
   /** LX link proposals */
   linkProposals: LinkProposal[];
   /** Artifact metadata */
@@ -180,7 +186,7 @@ export interface CoverageReportInput {
 
 /**
  * Expected role transitions for traceability.
- * 
+ *
  * Valid ArtifactRoles: 'intent' | 'spec' | 'code' | 'test' | 'doc' | 'config'
  */
 const ROLE_TRANSITIONS: Array<{
@@ -189,11 +195,11 @@ const ROLE_TRANSITIONS: Array<{
   predicate: LinkPredicate;
   required: boolean;
 }> = [
-  { source: 'intent', target: 'spec', predicate: 'REFINES', required: true },
-  { source: 'spec', target: 'code', predicate: 'IMPLEMENTS', required: true },
-  { source: 'code', target: 'test', predicate: 'MAPS_TO', required: false },
-  { source: 'spec', target: 'doc', predicate: 'DESCRIBES', required: false },
-  { source: 'spec', target: 'test', predicate: 'MAPS_TO', required: false },
+  { source: "intent", target: "spec", predicate: "REFINES", required: true },
+  { source: "spec", target: "code", predicate: "IMPLEMENTS", required: true },
+  { source: "code", target: "test", predicate: "MAPS_TO", required: false },
+  { source: "spec", target: "doc", predicate: "DESCRIBES", required: false },
+  { source: "spec", target: "test", predicate: "MAPS_TO", required: false },
 ];
 
 // =============================================================================
@@ -205,14 +211,9 @@ const ROLE_TRANSITIONS: Array<{
  */
 export function generateCoverageReport(
   input: CoverageReportInput,
-  options: CoverageReportOptions
+  options: CoverageReportOptions,
 ): CoverageReport {
-  const {
-    entities,
-    statements,
-    linkProposals,
-    artifacts,
-  } = input;
+  const { entities, statements, linkProposals, artifacts } = input;
 
   const {
     runId,
@@ -223,10 +224,15 @@ export function generateCoverageReport(
   } = options;
 
   // Filter to confident links
-  const confidentLinks = linkProposals.filter(l => l.confidence >= minLinkConfidence);
+  const confidentLinks = linkProposals.filter(
+    (l) => l.confidence >= minLinkConfidence,
+  );
 
   // Build entity lookup
-  const entityById = new Map<string, Entity & { artifactId: string; artifactRole: ArtifactRole }>();
+  const entityById = new Map<
+    string,
+    Entity & { artifactId: string; artifactRole: ArtifactRole }
+  >();
   for (const e of entities) {
     entityById.set(e.cgId, e);
   }
@@ -241,12 +247,17 @@ export function generateCoverageReport(
   const roleTransitions = calculateRoleTransitionCoverage(
     entities,
     confidentLinks,
-    artifactRoles
+    artifactRoles,
   );
 
   // Detect inconsistencies
   const inconsistencies = detectInconsistencies
-    ? detectSemanticInconsistencies(entities, statements, confidentLinks, entityById)
+    ? detectSemanticInconsistencies(
+        entities,
+        statements,
+        confidentLinks,
+        entityById,
+      )
     : [];
 
   // Detect incompletenesses
@@ -258,7 +269,7 @@ export function generateCoverageReport(
   const artifactMetrics = calculateArtifactMetrics(
     entities,
     confidentLinks,
-    artifacts
+    artifacts,
   );
 
   // Calculate summary
@@ -268,18 +279,18 @@ export function generateCoverageReport(
     linkedEntityIds.add(link.targetCgId);
   }
 
-  const acceptedLinks = confidentLinks.filter(l => l.accepted !== false);
+  const acceptedLinks = confidentLinks.filter((l) => l.accepted !== false);
 
   // Calculate traceability score
   const traceabilityScore = calculateTraceabilityScore(
     roleTransitions,
     entities.length,
-    linkedEntityIds.size
+    linkedEntityIds.size,
   );
 
   return {
-    $schema: 'intentweave://schemas/coverage-report/v1',
-    schemaVersion: '0.1',
+    $schema: "intentweave://schemas/coverage-report/v1",
+    schemaVersion: "0.1",
     runId,
     workspaceKey,
     summary: {
@@ -288,9 +299,10 @@ export function generateCoverageReport(
       acceptedLinks: acceptedLinks.length,
       traceabilityScore,
       linkedEntityCount: linkedEntityIds.size,
-      linkedEntityPercent: entities.length > 0
-        ? Math.round((linkedEntityIds.size / entities.length) * 100)
-        : 0,
+      linkedEntityPercent:
+        entities.length > 0
+          ? Math.round((linkedEntityIds.size / entities.length) * 100)
+          : 0,
     },
     roleTransitions,
     inconsistencies,
@@ -309,20 +321,22 @@ export function generateCoverageReport(
 function calculateRoleTransitionCoverage(
   entities: Array<Entity & { artifactId: string; artifactRole: ArtifactRole }>,
   links: LinkProposal[],
-  artifactRoles: Map<string, ArtifactRole>
+  artifactRoles: Map<string, ArtifactRole>,
 ): RoleTransitionCoverage[] {
   const result: RoleTransitionCoverage[] = [];
 
   for (const transition of ROLE_TRANSITIONS) {
     // Get source entities for this transition
-    const sourceEntities = entities.filter(e => e.artifactRole === transition.source);
-    
+    const sourceEntities = entities.filter(
+      (e) => e.artifactRole === transition.source,
+    );
+
     if (sourceEntities.length === 0) {
       continue; // Skip if no source entities
     }
 
     // Find links matching this transition
-    const matchingLinks = links.filter(link => {
+    const matchingLinks = links.filter((link) => {
       const sourceArtifactRole = artifactRoles.get(link.sourceArtifact);
       const targetArtifactRole = artifactRoles.get(link.targetArtifact);
       return (
@@ -333,18 +347,22 @@ function calculateRoleTransitionCoverage(
     });
 
     // Count linked source entities
-    const linkedSourceIds = new Set(matchingLinks.map(l => l.sourceCgId));
-    const linkedCount = sourceEntities.filter(e => linkedSourceIds.has(e.cgId)).length;
+    const linkedSourceIds = new Set(matchingLinks.map((l) => l.sourceCgId));
+    const linkedCount = sourceEntities.filter((e) =>
+      linkedSourceIds.has(e.cgId),
+    ).length;
 
     // Find unlinked entities
     const unlinkedEntities = sourceEntities
-      .filter(e => !linkedSourceIds.has(e.cgId))
-      .map(e => e.cgId);
+      .filter((e) => !linkedSourceIds.has(e.cgId))
+      .map((e) => e.cgId);
 
     // Calculate average confidence
-    const avgConfidence = matchingLinks.length > 0
-      ? matchingLinks.reduce((sum, l) => sum + l.confidence, 0) / matchingLinks.length
-      : 0;
+    const avgConfidence =
+      matchingLinks.length > 0
+        ? matchingLinks.reduce((sum, l) => sum + l.confidence, 0) /
+          matchingLinks.length
+        : 0;
 
     result.push({
       sourceRole: transition.source,
@@ -370,9 +388,14 @@ function calculateRoleTransitionCoverage(
  */
 function detectSemanticInconsistencies(
   entities: Array<Entity & { artifactId: string; artifactRole: ArtifactRole }>,
-  statements: Array<Statement & { artifactId: string; artifactRole: ArtifactRole }>,
+  statements: Array<
+    Statement & { artifactId: string; artifactRole: ArtifactRole }
+  >,
   links: LinkProposal[],
-  entityById: Map<string, Entity & { artifactId: string; artifactRole: ArtifactRole }>
+  entityById: Map<
+    string,
+    Entity & { artifactId: string; artifactRole: ArtifactRole }
+  >,
 ): InconsistencyFinding[] {
   const findings: InconsistencyFinding[] = [];
   let findingId = 0;
@@ -391,8 +414,8 @@ function detectSemanticInconsistencies(
       if (link.confidence >= 0.9) {
         findings.push({
           id: `inconsistency-${++findingId}`,
-          type: 'semantic-drift',
-          severity: 'warning',
+          type: "semantic-drift",
+          severity: "warning",
           sourceCgId: link.sourceCgId,
           targetCgId: link.targetCgId,
           message: `Linked entities have different types: ${source.type} vs ${target.type}`,
@@ -403,11 +426,11 @@ function detectSemanticInconsistencies(
     }
 
     // Check for stale links (low confidence on IMPLEMENTS)
-    if (link.predicate === 'IMPLEMENTS' && link.confidence < 0.7) {
+    if (link.predicate === "IMPLEMENTS" && link.confidence < 0.7) {
       findings.push({
         id: `inconsistency-${++findingId}`,
-        type: 'stale-link',
-        severity: 'warning',
+        type: "stale-link",
+        severity: "warning",
         sourceCgId: link.sourceCgId,
         targetCgId: link.targetCgId,
         message: `Implementation link has low confidence (${(link.confidence * 100).toFixed(0)}%)`,
@@ -418,7 +441,10 @@ function detectSemanticInconsistencies(
   }
 
   // Check for conflicting definitions (same name, different content)
-  const entitiesByName = new Map<string, Array<Entity & { artifactId: string; artifactRole: ArtifactRole }>>();
+  const entitiesByName = new Map<
+    string,
+    Array<Entity & { artifactId: string; artifactRole: ArtifactRole }>
+  >();
   for (const e of entities) {
     const normalized = e.name.toLowerCase().trim();
     if (!entitiesByName.has(normalized)) {
@@ -430,22 +456,22 @@ function detectSemanticInconsistencies(
   for (const [name, sameNameEntities] of entitiesByName) {
     if (sameNameEntities.length > 1) {
       // Check if they are linked
-      const cgIds = new Set(sameNameEntities.map(e => e.cgId));
+      const cgIds = new Set(sameNameEntities.map((e) => e.cgId));
       const hasLink = links.some(
-        l => cgIds.has(l.sourceCgId) && cgIds.has(l.targetCgId)
+        (l) => cgIds.has(l.sourceCgId) && cgIds.has(l.targetCgId),
       );
 
       if (!hasLink) {
         // Same name but not linked - possible conflict
-        const roles = [...new Set(sameNameEntities.map(e => e.artifactRole))];
+        const roles = [...new Set(sameNameEntities.map((e) => e.artifactRole))];
         if (roles.length > 1) {
           findings.push({
             id: `inconsistency-${++findingId}`,
-            type: 'conflicting-definition',
-            severity: 'warning',
+            type: "conflicting-definition",
+            severity: "warning",
             sourceCgId: sameNameEntities[0].cgId,
             targetCgId: sameNameEntities[1].cgId,
-            message: `Multiple definitions of "${name}" across ${roles.join(', ')} artifacts without links`,
+            message: `Multiple definitions of "${name}" across ${roles.join(", ")} artifacts without links`,
             confidence: 0.7,
             suggestion: `Review if these are the same concept and should be linked`,
           });
@@ -467,7 +493,7 @@ function detectSemanticInconsistencies(
 function detectMissingImplementations(
   entities: Array<Entity & { artifactId: string; artifactRole: ArtifactRole }>,
   links: LinkProposal[],
-  artifactRoles: Map<string, ArtifactRole>
+  artifactRoles: Map<string, ArtifactRole>,
 ): IncompletenessFinding[] {
   const findings: IncompletenessFinding[] = [];
   let findingId = 0;
@@ -482,23 +508,23 @@ function detectMissingImplementations(
 
   // Check spec entities without implementations
   // Valid roles: 'intent' | 'spec' | 'code' | 'test' | 'doc' | 'config'
-  const specRoles: ArtifactRole[] = ['spec'];
+  const specRoles: ArtifactRole[] = ["spec"];
   for (const entity of entities) {
     if (specRoles.includes(entity.artifactRole)) {
       // Check if this spec has an implementation link
       const hasImplLink = links.some(
-        l => l.sourceCgId === entity.cgId && l.predicate === 'IMPLEMENTS'
+        (l) => l.sourceCgId === entity.cgId && l.predicate === "IMPLEMENTS",
       );
 
       if (!hasImplLink) {
         findings.push({
           id: `incompleteness-${++findingId}`,
-          type: 'missing-implementation',
-          severity: 'warning',
+          type: "missing-implementation",
+          severity: "warning",
           entityCgId: entity.cgId,
           entityName: entity.name,
           artifactId: entity.artifactId,
-          expectedRole: 'code',
+          expectedRole: "code",
           message: `Specification "${entity.name}" has no linked implementation`,
         });
       }
@@ -506,22 +532,22 @@ function detectMissingImplementations(
   }
 
   // Check intent entities without specs
-  const intentRoles: ArtifactRole[] = ['intent'];
+  const intentRoles: ArtifactRole[] = ["intent"];
   for (const entity of entities) {
     if (intentRoles.includes(entity.artifactRole)) {
       const hasSpecLink = links.some(
-        l => l.sourceCgId === entity.cgId && l.predicate === 'REFINES'
+        (l) => l.sourceCgId === entity.cgId && l.predicate === "REFINES",
       );
 
       if (!hasSpecLink) {
         findings.push({
           id: `incompleteness-${++findingId}`,
-          type: 'missing-spec',
-          severity: 'info',
+          type: "missing-spec",
+          severity: "info",
           entityCgId: entity.cgId,
           entityName: entity.name,
           artifactId: entity.artifactId,
-          expectedRole: 'spec',
+          expectedRole: "spec",
           message: `Intent "${entity.name}" has no linked specification`,
         });
       }
@@ -529,22 +555,22 @@ function detectMissingImplementations(
   }
 
   // Check code entities without specs (orphan implementations)
-  const codeRoles: ArtifactRole[] = ['code'];
+  const codeRoles: ArtifactRole[] = ["code"];
   for (const entity of entities) {
     if (codeRoles.includes(entity.artifactRole)) {
       const hasSpecLink = links.some(
-        l => l.targetCgId === entity.cgId && l.predicate === 'IMPLEMENTS'
+        (l) => l.targetCgId === entity.cgId && l.predicate === "IMPLEMENTS",
       );
 
       if (!hasSpecLink) {
         findings.push({
           id: `incompleteness-${++findingId}`,
-          type: 'orphan-impl',
-          severity: 'info',
+          type: "orphan-impl",
+          severity: "info",
           entityCgId: entity.cgId,
           entityName: entity.name,
           artifactId: entity.artifactId,
-          expectedRole: 'spec',
+          expectedRole: "spec",
           message: `Implementation "${entity.name}" has no linked specification`,
         });
       }
@@ -564,11 +590,13 @@ function detectMissingImplementations(
 function calculateArtifactMetrics(
   entities: Array<Entity & { artifactId: string; artifactRole: ArtifactRole }>,
   links: LinkProposal[],
-  artifacts: Array<{ artifactId: string; artifactRole: ArtifactRole }>
-): CoverageReport['artifacts'] {
-  return artifacts.map(artifact => {
-    const artifactEntities = entities.filter(e => e.artifactId === artifact.artifactId);
-    const entityIds = new Set(artifactEntities.map(e => e.cgId));
+  artifacts: Array<{ artifactId: string; artifactRole: ArtifactRole }>,
+): CoverageReport["artifacts"] {
+  return artifacts.map((artifact) => {
+    const artifactEntities = entities.filter(
+      (e) => e.artifactId === artifact.artifactId,
+    );
+    const entityIds = new Set(artifactEntities.map((e) => e.cgId));
 
     // Count entities with links
     const linkedIds = new Set<string>();
@@ -611,7 +639,7 @@ function calculateArtifactMetrics(
 function calculateTraceabilityScore(
   roleTransitions: RoleTransitionCoverage[],
   totalEntities: number,
-  linkedEntities: number
+  linkedEntities: number,
 ): number {
   if (totalEntities === 0) return 100;
 
@@ -621,7 +649,9 @@ function calculateTraceabilityScore(
 
   for (const transition of roleTransitions) {
     const transitionDef = ROLE_TRANSITIONS.find(
-      t => t.source === transition.sourceRole && t.target === transition.targetRole
+      (t) =>
+        t.source === transition.sourceRole &&
+        t.target === transition.targetRole,
     );
     const weight = transitionDef?.required ? 2 : 1;
     weightedSum += transition.coveragePercent * weight;
@@ -649,11 +679,11 @@ function calculateTraceabilityScore(
  */
 export function createEmptyCoverageReport(
   runId: string,
-  workspaceKey: string
+  workspaceKey: string,
 ): CoverageReport {
   return {
-    $schema: 'intentweave://schemas/coverage-report/v1',
-    schemaVersion: '0.1',
+    $schema: "intentweave://schemas/coverage-report/v1",
+    schemaVersion: "0.1",
     runId,
     workspaceKey,
     summary: {
@@ -682,9 +712,11 @@ export function summarizeCoverageReport(report: CoverageReport): string {
   ];
 
   if (report.roleTransitions.length > 0) {
-    lines.push('  Role Transitions:');
+    lines.push("  Role Transitions:");
     for (const t of report.roleTransitions) {
-      lines.push(`    ${t.sourceRole}→${t.targetRole}: ${t.coveragePercent}% (${t.linkedCount}/${t.sourceCount})`);
+      lines.push(
+        `    ${t.sourceRole}→${t.targetRole}: ${t.coveragePercent}% (${t.linkedCount}/${t.sourceCount})`,
+      );
     }
   }
 
@@ -696,5 +728,5 @@ export function summarizeCoverageReport(report: CoverageReport): string {
     lines.push(`  Incompletenesses: ${report.incompletenesses.length} found`);
   }
 
-  return lines.join('\n');
+  return lines.join("\n");
 }

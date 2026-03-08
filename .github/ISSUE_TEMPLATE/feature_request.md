@@ -1,8 +1,8 @@
 ---
 name: Feature Request
 about: Suggest a feature for IntentWeave
-title: '[Feature] '
-labels: ['enhancement']
+title: "[Feature] "
+labels: ["enhancement"]
 ---
 
 ## Problem / Motivation

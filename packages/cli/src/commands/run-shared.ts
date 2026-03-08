@@ -8,11 +8,11 @@
  * without duplicating code.
  */
 
-import * as crypto from 'node:crypto';
-import * as path from 'node:path';
-import * as fs from 'node:fs/promises';
-import chalk from 'chalk';
-import { glob } from 'glob';
+import * as crypto from "node:crypto";
+import * as path from "node:path";
+import * as fs from "node:fs/promises";
+import chalk from "chalk";
+import { glob } from "glob";
 import {
   createPipelineContext,
   createFileStore,
@@ -20,12 +20,15 @@ import {
   convertProfileForAnalyzer,
   type ArtifactInput,
   type Profile,
-} from '@intentweave/analyzer';
-import { SmartMockLLMProvider, OpenAILLMProvider } from '@intentweave/analyzer/llm';
-import type { LLMProvider } from '@intentweave/core';
-import { createWorkspaceRef } from '@intentweave/core';
-import { profileRegistry } from '@intentweave/profiles';
-import { IW_DIR } from '../constants.js';
+} from "@intentweave/analyzer";
+import {
+  SmartMockLLMProvider,
+  OpenAILLMProvider,
+} from "@intentweave/analyzer/llm";
+import type { LLMProvider } from "@intentweave/core";
+import { createWorkspaceRef } from "@intentweave/core";
+import { profileRegistry } from "@intentweave/profiles";
+import { IW_DIR } from "../constants.js";
 
 // ── Run ID / artifact ID ────────────────────────────────────
 
@@ -36,10 +39,10 @@ export function generateRunId(): string {
   const now = new Date();
   const dateStr = now
     .toISOString()
-    .replace(/[:.]/g, '-')
-    .replace('T', '_')
+    .replace(/[:.]/g, "-")
+    .replace("T", "_")
     .slice(0, 19);
-  const suffix = crypto.randomBytes(4).toString('hex');
+  const suffix = crypto.randomBytes(4).toString("hex");
   return `run-${dateStr}-${suffix}`;
 }
 
@@ -49,23 +52,23 @@ export function generateRunId(): string {
 export function generateArtifactId(filePath: string, basePath: string): string {
   const relativePath = path.relative(basePath, filePath);
   return relativePath
-    .replace(/\\/g, '/')
-    .replace(/\.[^.]+$/, '')
-    .replace(/[^a-zA-Z0-9/_-]/g, '_');
+    .replace(/\\/g, "/")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-zA-Z0-9/_-]/g, "_");
 }
 
 // ── File collection ─────────────────────────────────────────
 
 /** Default ignore patterns (always excluded). */
 const DEFAULT_IGNORE = [
-  '**/node_modules/**',
-  '**/.git/**',
-  '**/dist/**',
-  '**/build/**',
-  '**/.iw/**',
-  '**/coverage/**',
-  '**/*.min.js',
-  '**/*.map',
+  "**/node_modules/**",
+  "**/.git/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/.iw/**",
+  "**/coverage/**",
+  "**/*.min.js",
+  "**/*.map",
 ];
 
 /**
@@ -89,7 +92,7 @@ export async function collectFiles(
     if (stat?.isFile()) {
       files.push(absolutePattern);
     } else if (stat?.isDirectory()) {
-      const dirFiles = await glob('**/*', {
+      const dirFiles = await glob("**/*", {
         cwd: absolutePattern,
         nodir: true,
         absolute: true,
@@ -127,7 +130,7 @@ export async function buildArtifacts(
     files.map(async (filePath) => ({
       artifactId: generateArtifactId(filePath, basePath),
       filePath,
-      content: await fs.readFile(filePath, 'utf-8'),
+      content: await fs.readFile(filePath, "utf-8"),
       ...(roleOverride && { artifactRole: roleOverride }),
     })),
   );
@@ -149,11 +152,13 @@ export interface ProviderSetupOptions {
  * Returns the provider.  Exits the process if keys are missing.
  */
 export function createLLMProvider(opts: ProviderSetupOptions): LLMProvider {
-  if (opts.providerName === 'openai') {
+  if (opts.providerName === "openai") {
     const apiKey = opts.apiKeyOverride ?? process.env.OPENAI_API_KEY;
     if (!apiKey) {
       console.error(
-        chalk.red('OpenAI API key required.  Set OPENAI_API_KEY or use --api-key.'),
+        chalk.red(
+          "OpenAI API key required.  Set OPENAI_API_KEY or use --api-key.",
+        ),
       );
       process.exit(1);
     }
@@ -166,7 +171,7 @@ export function createLLMProvider(opts: ProviderSetupOptions): LLMProvider {
     if (opts.verbose) {
       console.log(
         chalk.blue(
-          `Using OpenAI provider with model: ${opts.modelName}${timeout !== 60_000 ? `, timeout: ${timeout}ms` : ''}`,
+          `Using OpenAI provider with model: ${opts.modelName}${timeout !== 60_000 ? `, timeout: ${timeout}ms` : ""}`,
         ),
       );
     }
@@ -174,10 +179,12 @@ export function createLLMProvider(opts: ProviderSetupOptions): LLMProvider {
   }
 
   const provider = new SmartMockLLMProvider({
-    workspaceKey: opts.workspaceKey ?? 'default',
+    workspaceKey: opts.workspaceKey ?? "default",
   });
   if (opts.verbose) {
-    console.log(chalk.blue('Using SmartMock provider (deterministic, no API key needed)'));
+    console.log(
+      chalk.blue("Using SmartMock provider (deterministic, no API key needed)"),
+    );
   }
   return provider as unknown as LLMProvider;
 }
@@ -193,19 +200,19 @@ export interface WorkspaceInfo {
  */
 export async function loadWorkspaceInfo(cwd: string): Promise<WorkspaceInfo> {
   const iwDir = path.join(cwd, IW_DIR);
-  let workspaceKey = 'default';
-  let workspaceId = 'ws_default';
+  let workspaceKey = "default";
+  let workspaceId = "ws_default";
 
   try {
-    const configPath = path.join(iwDir, 'config.json');
-    const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+    const configPath = path.join(iwDir, "config.json");
+    const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
     workspaceKey =
       (config.name || workspaceKey)
         .toLowerCase()
-        .replace(/[^a-z0-9-]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '')
-        .slice(0, 64) || 'default';
+        .replace(/[^a-z0-9-]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 64) || "default";
     workspaceId = config.id || workspaceId;
   } catch {
     // Use defaults
@@ -222,7 +229,7 @@ export function resolveProfile(profileName: string): Profile {
   const registryProfile = profileRegistry.resolve(profileName);
   if (!registryProfile) {
     console.error(chalk.red(`Unknown profile: ${profileName}`));
-    console.log('Available profiles:', profileRegistry.list().join(', '));
+    console.log("Available profiles:", profileRegistry.list().join(", "));
     process.exit(1);
   }
   return convertProfileForAnalyzer(registryProfile);
@@ -271,5 +278,5 @@ export function buildPipelineContext(opts: {
 export function formatProgress(progress: number, width = 30): string {
   const filled = Math.round(progress * width);
   const empty = width - filled;
-  return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${(progress * 100).toFixed(0)}%`;
+  return `[${"█".repeat(filled)}${"░".repeat(empty)}] ${(progress * 100).toFixed(0)}%`;
 }

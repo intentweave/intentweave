@@ -17,7 +17,7 @@
  * No LLM calls — purely algorithmic merge.
  */
 
-import type { KxStageOutput, CanonEntity, CanonTriple } from './kx.js';
+import type { KxStageOutput, CanonEntity, CanonTriple } from "./kx.js";
 
 // =============================================================================
 // GX Types
@@ -32,7 +32,7 @@ export interface EntityMerge {
   /** Entity IDs that were merged into the survivor */
   mergedIds: string[];
   /** Merge method: 'exact' (same slug) | 'fuzzy' (name/alias similarity) */
-  method: 'exact' | 'fuzzy';
+  method: "exact" | "fuzzy";
   /** Similarity score for fuzzy merges (0–1) */
   similarity?: number;
 }
@@ -72,7 +72,10 @@ export interface GxOptions {
   /** Minimum similarity threshold for fuzzy merges (0–1, default 0.8) */
   fuzzyThreshold?: number;
   /** Logger */
-  logger?: { info: (msg: string, meta?: any) => void; debug: (msg: string, meta?: any) => void };
+  logger?: {
+    info: (msg: string, meta?: any) => void;
+    debug: (msg: string, meta?: any) => void;
+  };
 }
 
 // =============================================================================
@@ -108,7 +111,9 @@ export function runGxStage(
   }
 
   const inputEntityCount = allEntities.length;
-  logger?.info(`[GX] Starting merge: ${inputEntityCount} entities, ${inputTripleCount} triples from ${kxOutputs.length} artifacts`);
+  logger?.info(
+    `[GX] Starting merge: ${inputEntityCount} entities, ${inputTripleCount} triples from ${kxOutputs.length} artifacts`,
+  );
 
   // ─── Phase 2: Exact-slug merge ───
   // Group entities by canonId — identical slugs get unified
@@ -132,14 +137,14 @@ export function runGxStage(
       }
       existing.confidence = Math.max(existing.confidence, e.confidence);
       // Prefer non-'concept' type (more specific)
-      if (existing.type === 'concept' && e.type !== 'concept') {
+      if (existing.type === "concept" && e.type !== "concept") {
         existing.type = e.type;
       }
     }
   }
 
   // Track which entities were merged (those that appeared more than once)
-  const seenIds = new Map<string, number>();  // canonId → count
+  const seenIds = new Map<string, number>(); // canonId → count
   for (const e of allEntities) {
     seenIds.set(e.canonId, (seenIds.get(e.canonId) ?? 0) + 1);
   }
@@ -147,18 +152,20 @@ export function runGxStage(
     if (count > 1) {
       exactMerges.push({
         survivorId: id,
-        mergedIds: [],  // exact merge — same ID
-        method: 'exact',
+        mergedIds: [], // exact merge — same ID
+        method: "exact",
       });
     }
   }
 
-  logger?.debug(`[GX] After exact merge: ${entityMap.size} entities (${inputEntityCount - entityMap.size} merged)`);
+  logger?.debug(
+    `[GX] After exact merge: ${entityMap.size} entities (${inputEntityCount - entityMap.size} merged)`,
+  );
 
   // ─── Phase 3: Fuzzy merge ───
   // Find near-duplicate entities via alias overlap + name similarity
   const fuzzyMerges: EntityMerge[] = [];
-  const remapTable = new Map<string, string>();  // oldId → survivorId
+  const remapTable = new Map<string, string>(); // oldId → survivorId
 
   const entityList = [...entityMap.values()];
   const consumed = new Set<string>();
@@ -172,7 +179,8 @@ export function runGxStage(
       if (consumed.has(b.canonId)) continue;
 
       // Skip if types are incompatible (unless one is 'concept')
-      if (a.type !== b.type && a.type !== 'concept' && b.type !== 'concept') continue;
+      if (a.type !== b.type && a.type !== "concept" && b.type !== "concept")
+        continue;
 
       // Guard: prevent merging entities that differ only by a numeric suffix
       // e.g. "option-a" vs "option-b", "phase-1" vs "phase-2", "section-4-3" vs "section-4-5"
@@ -193,7 +201,7 @@ export function runGxStage(
           a.aliases.push(b.name);
         }
         a.confidence = Math.max(a.confidence, b.confidence);
-        if (a.type === 'concept' && b.type !== 'concept') {
+        if (a.type === "concept" && b.type !== "concept") {
           a.type = b.type;
         }
 
@@ -204,17 +212,19 @@ export function runGxStage(
         fuzzyMerges.push({
           survivorId: a.canonId,
           mergedIds: [b.canonId],
-          method: 'fuzzy',
+          method: "fuzzy",
           similarity: sim,
         });
       }
     }
   }
 
-  logger?.debug(`[GX] After fuzzy merge: ${entityMap.size} entities (${fuzzyMerges.length} fuzzy merges)`);
+  logger?.debug(
+    `[GX] After fuzzy merge: ${entityMap.size} entities (${fuzzyMerges.length} fuzzy merges)`,
+  );
 
   // ─── Phase 4: Remap triples ───
-  const remappedTriples: CanonTriple[] = allTriples.map(t => ({
+  const remappedTriples: CanonTriple[] = allTriples.map((t) => ({
     ...t,
     subjectCanonId: remapTable.get(t.subjectCanonId) ?? t.subjectCanonId,
     objectCanonId: remapTable.get(t.objectCanonId) ?? t.objectCanonId,
@@ -232,15 +242,17 @@ export function runGxStage(
 
   // Remove self-referential triples that might have been created by merge
   const dedupedTriples = [...tripleMap.values()].filter(
-    t => t.subjectCanonId !== t.objectCanonId,
+    (t) => t.subjectCanonId !== t.objectCanonId,
   );
 
   const latencyMs = Date.now() - startTime;
   const entities = [...entityMap.values()];
 
-  logger?.info(`[GX] Completed: ${entities.length} entities, ${dedupedTriples.length} triples ` +
-    `(${exactMerges.length} exact, ${fuzzyMerges.length} fuzzy merges, ` +
-    `${inputTripleCount - dedupedTriples.length} triples deduped) [${latencyMs}ms]`);
+  logger?.info(
+    `[GX] Completed: ${entities.length} entities, ${dedupedTriples.length} triples ` +
+      `(${exactMerges.length} exact, ${fuzzyMerges.length} fuzzy merges, ` +
+      `${inputTripleCount - dedupedTriples.length} triples deduped) [${latencyMs}ms]`,
+  );
 
   return {
     entities,
@@ -274,26 +286,29 @@ function entitySimilarity(a: CanonEntity, b: CanonEntity): number {
   const slugSim = 1 - normalizedLevenshtein(a.canonId, b.canonId);
 
   // 2. Name similarity (case-insensitive)
-  const nameSim = 1 - normalizedLevenshtein(
-    a.name.toLowerCase(),
-    b.name.toLowerCase(),
-  );
+  const nameSim =
+    1 - normalizedLevenshtein(a.name.toLowerCase(), b.name.toLowerCase());
 
   // 3. Alias overlap (Jaccard-ish)
-  const aAll = new Set([a.name.toLowerCase(), ...a.aliases.map(s => s.toLowerCase())]);
-  const bAll = new Set([b.name.toLowerCase(), ...b.aliases.map(s => s.toLowerCase())]);
+  const aAll = new Set([
+    a.name.toLowerCase(),
+    ...a.aliases.map((s) => s.toLowerCase()),
+  ]);
+  const bAll = new Set([
+    b.name.toLowerCase(),
+    ...b.aliases.map((s) => s.toLowerCase()),
+  ]);
   let overlap = 0;
   for (const x of aAll) {
     if (bAll.has(x)) overlap++;
   }
-  const aliasSim = overlap > 0
-    ? overlap / Math.min(aAll.size, bAll.size)
-    : 0;
+  const aliasSim = overlap > 0 ? overlap / Math.min(aAll.size, bAll.size) : 0;
 
   // Weighted combination
   // If any alias overlaps, that's a very strong signal
-  if (aliasSim >= 1.0) return 1.0;  // Exact alias match
-  if (overlap > 0) return Math.max(0.85, (slugSim * 0.3 + nameSim * 0.3 + aliasSim * 0.4));
+  if (aliasSim >= 1.0) return 1.0; // Exact alias match
+  if (overlap > 0)
+    return Math.max(0.85, slugSim * 0.3 + nameSim * 0.3 + aliasSim * 0.4);
 
   // Otherwise rely on name/slug similarity
   return slugSim * 0.5 + nameSim * 0.5;
@@ -349,7 +364,8 @@ function levenshtein(a: string, b: string): number {
  */
 function differsOnlyByNumber(a: string, b: string): boolean {
   // Strip all numeric characters and single-letter suffixes at segment boundaries
-  const normalize = (s: string) => s.replace(/[\d]+/g, '#').replace(/-[a-z]$/i, '-#');
+  const normalize = (s: string) =>
+    s.replace(/[\d]+/g, "#").replace(/-[a-z]$/i, "-#");
   const na = normalize(a);
   const nb = normalize(b);
 

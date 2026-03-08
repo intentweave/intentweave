@@ -72,7 +72,16 @@
     "LinkProposal": {
       "type": "object",
       "description": "Cross-artifact link proposal. Matches TypeScript LinkProposal interface.",
-      "required": ["sourceArtifact", "sourceCgId", "targetArtifact", "targetCgId", "predicate", "confidence", "matchMethod", "evidence"],
+      "required": [
+        "sourceArtifact",
+        "sourceCgId",
+        "targetArtifact",
+        "targetCgId",
+        "predicate",
+        "confidence",
+        "matchMethod",
+        "evidence"
+      ],
       "properties": {
         "id": {
           "type": "string",
@@ -96,7 +105,13 @@
         },
         "predicate": {
           "type": "string",
-          "enum": ["REFINES", "DERIVED_FROM", "IMPLEMENTS", "DESCRIBES", "MAPS_TO"],
+          "enum": [
+            "REFINES",
+            "DERIVED_FROM",
+            "IMPLEMENTS",
+            "DESCRIBES",
+            "MAPS_TO"
+          ],
           "description": "Link predicate type for cross-artifact relationships"
         },
         "confidence": {

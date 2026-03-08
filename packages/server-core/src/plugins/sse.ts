@@ -1,9 +1,9 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import fp from 'fastify-plugin';
-import { EventEmitter } from 'node:events';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import fp from "fastify-plugin";
+import { EventEmitter } from "node:events";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 export interface SseEvent {
   event: string;
@@ -21,7 +21,7 @@ export class SseHub {
   /** Broadcast an event to all connected SSE clients. */
   broadcast(event: string, data: unknown): void {
     this.eventId++;
-    this.emitter.emit('message', {
+    this.emitter.emit("message", {
       event,
       data,
       id: String(this.eventId),
@@ -31,10 +31,10 @@ export class SseHub {
   /** Subscribe a Fastify reply to the SSE stream. */
   subscribe(reply: FastifyReply): void {
     reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     });
 
     const onMessage = (evt: SseEvent) => {
@@ -43,16 +43,16 @@ export class SseHub {
       reply.raw.write(`data: ${JSON.stringify(evt.data)}\n\n`);
     };
 
-    this.emitter.on('message', onMessage);
+    this.emitter.on("message", onMessage);
 
     // Keep-alive heartbeat
     const heartbeat = setInterval(() => {
-      reply.raw.write(':heartbeat\n\n');
+      reply.raw.write(":heartbeat\n\n");
     }, 30_000);
 
-    reply.raw.on('close', () => {
+    reply.raw.on("close", () => {
       clearInterval(heartbeat);
-      this.emitter.off('message', onMessage);
+      this.emitter.off("message", onMessage);
     });
   }
 }
@@ -62,14 +62,14 @@ export class SseHub {
  */
 async function ssePluginFn(fastify: FastifyInstance): Promise<void> {
   const hub = new SseHub();
-  fastify.decorate('sse', hub);
+  fastify.decorate("sse", hub);
 
   fastify.get(
-    '/stream',
+    "/stream",
     {
       schema: {
-        tags: ['health'],
-        description: 'Server-Sent Events stream for real-time updates',
+        tags: ["health"],
+        description: "Server-Sent Events stream for real-time updates",
       },
     },
     async (_req, reply) => {
@@ -79,6 +79,6 @@ async function ssePluginFn(fastify: FastifyInstance): Promise<void> {
 }
 
 export const ssePlugin = fp(ssePluginFn, {
-  name: 'iw-sse',
-  fastify: '5.x',
+  name: "iw-sse",
+  fastify: "5.x",
 });

@@ -3,38 +3,38 @@
 
 /**
  * REF Stage - Reference Resolution (Core)
- * 
+ *
  * Post-RX step that resolves statement references to canonical entity cgIds.
- * 
+ *
  * This is a first-class step that runs immediately after RX parsing, before CX/MX.
  * It ensures statements reference actual entities, fixing LLM-generated cgIds that
  * don't match any existing entity.
- * 
+ *
  * Why this exists:
  * - LLM extraction produces statements with cgIds that may not match entities
  * - e.g., Statement: `ws_0000|model|kg|resource/submitted`
  *         Entity:    `ws_0000|model|kg|state/submitted`
  * - Without resolution, downstream stages (MX) can't find entities for statements
- * 
+ *
  * Architecture:
  * - Deterministic (no LLM calls)
  * - Runs after RX, before CX
  * - Logs resolution events for debugging
  * - Shared by CLI, server, and all pipeline consumers
- * 
+ *
  * Resolution Strategy (ordered by precedence):
  * 1. Exact cgId match (confidence: 1.0)
  * 2. (type, normalizedName) exact match (confidence: 0.95)
  * 3. Aliases from extraction context (confidence: 0.9)
  * 4. Partial match - ONLY if unique (confidence: similarity)
  * 5. Unresolved with reason if ambiguous
- * 
+ *
  * Evidence Preservation:
  * - Original cgId stored in statement._resolution.originalCgId
  * - Match method and confidence tracked for audit
  */
 
-import type { Entity, Statement } from '@intentweave/core';
+import type { Entity, Statement } from "@intentweave/core";
 
 // =============================================================================
 // Types
@@ -49,13 +49,20 @@ export interface ResolutionEvent {
   /** Resolved cgId (entity cgId it was matched to, or original if unresolved) */
   resolvedCgId: string;
   /** How the resolution was made */
-  matchType: 'exact' | 'type-name' | 'name-match' | 'normalized-name' | 'alias' | 'partial-match' | 'unresolved';
+  matchType:
+    | "exact"
+    | "type-name"
+    | "name-match"
+    | "normalized-name"
+    | "alias"
+    | "partial-match"
+    | "unresolved";
   /** Confidence in the resolution (1.0 for exact, lower for fuzzy, 0 for unresolved) */
   confidence: number;
   /** Which statement field was resolved */
-  field: 'subjectCgId' | 'objectCgId';
+  field: "subjectCgId" | "objectCgId";
   /** Reason for unresolved (if applicable) */
-  unresolvedReason?: 'no-match' | 'ambiguous' | 'below-threshold';
+  unresolvedReason?: "no-match" | "ambiguous" | "below-threshold";
   /** Number of candidate matches (for ambiguous case) */
   candidateCount?: number;
 }
@@ -69,9 +76,9 @@ export interface ResolutionMeta {
   /** Original object cgId before resolution */
   originalObjectCgId?: string;
   /** Match method for subject */
-  subjectMatchType?: ResolutionEvent['matchType'];
+  subjectMatchType?: ResolutionEvent["matchType"];
   /** Match method for object */
-  objectMatchType?: ResolutionEvent['matchType'];
+  objectMatchType?: ResolutionEvent["matchType"];
   /** Confidence for subject resolution */
   subjectConfidence?: number;
   /** Confidence for object resolution */
@@ -127,14 +134,14 @@ export interface RefResolutionOptions {
 
 /**
  * Normalize a name for comparison
- * 
+ *
  * Enhanced normalization strategy (P2 fix):
  * 1. Split camelCase/PascalCase into tokens ("UserDeactivated" → "user deactivated")
  * 2. Casefold (toLowerCase)
  * 3. Slugify (spaces/underscores/dashes → single space)
  * 4. Remove punctuation (but preserve alphanumeric)
  * 5. Trim and collapse whitespace
- * 
+ *
  * @example
  * - "UserDeactivated" → "user deactivated"
  * - "user-deactivated" → "user deactivated"
@@ -144,51 +151,51 @@ export interface RefResolutionOptions {
 function normalizeName(name: string): string {
   // Step 1: Split camelCase/PascalCase into tokens
   // "UserDeactivated" → "User Deactivated"
-  // "XMLParser" → "XML Parser"  
+  // "XMLParser" → "XML Parser"
   const withSpaces = name
-    .replace(/([a-z])([A-Z])/g, '$1 $2')         // lowercase followed by uppercase
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');  // sequence of uppercase followed by uppercase+lowercase
-  
+    .replace(/([a-z])([A-Z])/g, "$1 $2") // lowercase followed by uppercase
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2"); // sequence of uppercase followed by uppercase+lowercase
+
   // Step 2: Casefold
   const lower = withSpaces.toLowerCase();
-  
+
   // Step 3: Slugify - convert separators to spaces
-  const spaced = lower.replace(/[_-]+/g, ' ');
-  
+  const spaced = lower.replace(/[_-]+/g, " ");
+
   // Step 4: Remove punctuation (keep alphanumeric and spaces)
-  const cleaned = spaced.replace(/[^a-z0-9\s]/g, '');
-  
+  const cleaned = spaced.replace(/[^a-z0-9\s]/g, "");
+
   // Step 5: Collapse whitespace and trim
-  return cleaned.replace(/\s+/g, ' ').trim();
+  return cleaned.replace(/\s+/g, " ").trim();
 }
 
 /**
  * Extract entity name from a cgId
- * 
+ *
  * Handles formats:
  * - `ws_0000|model|kg|type/name`
  * - `ws_0000|model|kg|type/name-suffix`
- * 
+ *
  * @returns Extracted name or null if can't parse
  */
 export function extractNameFromCgId(cgId: string): string | null {
   // Match the last segment after the final /
   const match = cgId.match(/\/([^/]+)$/);
   if (!match) return null;
-  
+
   let name = match[1];
-  
+
   // Remove common type suffixes that get appended
   // e.g., "active-state" → "active", "submit-action" → "submit"
-  name = name.replace(/-(state|action|resource|role|event|transition)$/i, '');
-  
+  name = name.replace(/-(state|action|resource|role|event|transition)$/i, "");
+
   // Convert kebab-case to space-separated for matching
-  return name.replace(/-/g, ' ').trim();
+  return name.replace(/-/g, " ").trim();
 }
 
 /**
  * Extract entity type from a cgId
- * 
+ *
  * @returns Type like 'state', 'action', 'resource', or null
  */
 export function extractTypeFromCgId(cgId: string): string | null {
@@ -204,9 +211,9 @@ export function extractTypeFromCgId(cgId: string): string | null {
 function calculateSimilarity(a: string, b: string): number {
   const normA = normalizeName(a);
   const normB = normalizeName(b);
-  
+
   if (normA === normB) return 1.0;
-  
+
   // Levenshtein distance
   const matrix: number[][] = [];
   for (let i = 0; i <= normB.length; i++) {
@@ -223,15 +230,15 @@ function calculateSimilarity(a: string, b: string): number {
         matrix[i][j] = Math.min(
           matrix[i - 1][j - 1] + 1,
           matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
+          matrix[i - 1][j] + 1,
         );
       }
     }
   }
-  
+
   const distance = matrix[normB.length][normA.length];
   const maxLen = Math.max(normA.length, normB.length);
-  return maxLen === 0 ? 0 : 1 - (distance / maxLen);
+  return maxLen === 0 ? 0 : 1 - distance / maxLen;
 }
 
 // =============================================================================
@@ -243,14 +250,14 @@ function calculateSimilarity(a: string, b: string): number {
  */
 function buildEntityIndex(entities: Entity[]): Map<string, Entity[]> {
   const index = new Map<string, Entity[]>();
-  
+
   for (const entity of entities) {
     const normalizedName = normalizeName(entity.name);
     const existing = index.get(normalizedName) ?? [];
     existing.push(entity);
     index.set(normalizedName, existing);
   }
-  
+
   return index;
 }
 
@@ -259,7 +266,7 @@ function buildEntityIndex(entities: Entity[]): Map<string, Entity[]> {
  */
 function buildTypeNameIndex(entities: Entity[]): Map<string, Entity> {
   const index = new Map<string, Entity>();
-  
+
   for (const entity of entities) {
     const key = `${entity.type}:${normalizeName(entity.name)}`;
     // Only keep first match per type+name (avoid duplicates)
@@ -267,7 +274,7 @@ function buildTypeNameIndex(entities: Entity[]): Map<string, Entity> {
       index.set(key, entity);
     }
   }
-  
+
   return index;
 }
 
@@ -275,7 +282,7 @@ function buildTypeNameIndex(entities: Entity[]): Map<string, Entity> {
  * Find entity by exact cgId
  */
 function findByExactCgId(cgId: string, entities: Entity[]): Entity | undefined {
-  return entities.find(e => e.cgId === cgId);
+  return entities.find((e) => e.cgId === cgId);
 }
 
 /**
@@ -284,18 +291,18 @@ function findByExactCgId(cgId: string, entities: Entity[]): Entity | undefined {
 function findAllPartialMatches(
   name: string,
   entities: Entity[],
-  minSimilarity: number
+  minSimilarity: number,
 ): Array<{ entity: Entity; similarity: number }> {
   const normalizedName = normalizeName(name);
   const matches: Array<{ entity: Entity; similarity: number }> = [];
-  
+
   for (const entity of entities) {
     const similarity = calculateSimilarity(entity.name, normalizedName);
     if (similarity >= minSimilarity) {
       matches.push({ entity, similarity });
     }
   }
-  
+
   // Sort by similarity descending
   return matches.sort((a, b) => b.similarity - a.similarity);
 }
@@ -306,9 +313,9 @@ function findAllPartialMatches(
 
 interface InternalResolution {
   resolvedCgId: string;
-  matchType: ResolutionEvent['matchType'];
+  matchType: ResolutionEvent["matchType"];
   confidence: number;
-  unresolvedReason?: 'no-match' | 'ambiguous' | 'below-threshold';
+  unresolvedReason?: "no-match" | "ambiguous" | "below-threshold";
   candidateCount?: number;
 }
 
@@ -318,7 +325,7 @@ interface InternalResolution {
 
 /**
  * Resolve a single cgId to a canonical entity cgId
- * 
+ *
  * Resolution strategy (ordered by precedence - SAFE):
  * 1. Exact cgId match (confidence: 1.0)
  * 2. (type, normalizedName) exact match (confidence: 0.95)
@@ -331,37 +338,41 @@ function resolveCgId(
   entities: Entity[],
   entityIndex: Map<string, Entity[]>,
   typeNameIndex: Map<string, Entity>,
-  options: Required<RefResolutionOptions>
+  options: Required<RefResolutionOptions>,
 ): InternalResolution {
   // 1. Exact cgId match
   const exactMatch = findByExactCgId(cgId, entities);
   if (exactMatch) {
-    return { resolvedCgId: cgId, matchType: 'exact', confidence: 1.0 };
+    return { resolvedCgId: cgId, matchType: "exact", confidence: 1.0 };
   }
-  
+
   // 2. Extract name and type from cgId
   const extractedName = extractNameFromCgId(cgId);
   const extractedType = extractTypeFromCgId(cgId);
-  
+
   if (!extractedName) {
     // Can't extract name - unresolved
-    return { 
-      resolvedCgId: cgId, 
-      matchType: 'unresolved', 
+    return {
+      resolvedCgId: cgId,
+      matchType: "unresolved",
       confidence: 0.0,
-      unresolvedReason: 'no-match'
+      unresolvedReason: "no-match",
     };
   }
-  
+
   // 3. (type, normalizedName) exact match
   if (extractedType) {
     const typeNameKey = `${extractedType}:${normalizeName(extractedName)}`;
     const typeNameMatch = typeNameIndex.get(typeNameKey);
     if (typeNameMatch) {
-      return { resolvedCgId: typeNameMatch.cgId, matchType: 'type-name', confidence: 0.95 };
+      return {
+        resolvedCgId: typeNameMatch.cgId,
+        matchType: "type-name",
+        confidence: 0.95,
+      };
     }
   }
-  
+
   // 4. Alias lookup (from extraction context)
   if (options.aliases) {
     const aliasMatch = options.aliases.get(normalizeName(extractedName));
@@ -369,66 +380,78 @@ function resolveCgId(
       // Verify the alias points to a real entity
       const aliasEntity = findByExactCgId(aliasMatch, entities);
       if (aliasEntity) {
-        return { resolvedCgId: aliasMatch, matchType: 'alias', confidence: 0.9 };
+        return {
+          resolvedCgId: aliasMatch,
+          matchType: "alias",
+          confidence: 0.9,
+        };
       }
     }
   }
-  
+
   // 5. Name-only match (any type) - check for ambiguity
   const normalizedName = normalizeName(extractedName);
   const nameMatches = entityIndex.get(normalizedName);
-  
+
   if (nameMatches && nameMatches.length === 1) {
     // Unique name match
-    return { resolvedCgId: nameMatches[0].cgId, matchType: 'name-match', confidence: 0.85 };
+    return {
+      resolvedCgId: nameMatches[0].cgId,
+      matchType: "name-match",
+      confidence: 0.85,
+    };
   } else if (nameMatches && nameMatches.length > 1) {
     // Ambiguous - multiple entities with same name
-    return { 
-      resolvedCgId: cgId, 
-      matchType: 'unresolved', 
+    return {
+      resolvedCgId: cgId,
+      matchType: "unresolved",
       confidence: 0.0,
-      unresolvedReason: 'ambiguous',
-      candidateCount: nameMatches.length
+      unresolvedReason: "ambiguous",
+      candidateCount: nameMatches.length,
     };
   }
-  
+
   // 6. Partial match - ONLY if unique
-  const partialMatches = findAllPartialMatches(extractedName, entities, options.minSimilarity);
-  
+  const partialMatches = findAllPartialMatches(
+    extractedName,
+    entities,
+    options.minSimilarity,
+  );
+
   if (partialMatches.length === 1) {
     // Unique partial match
-    return { 
-      resolvedCgId: partialMatches[0].entity.cgId, 
-      matchType: 'partial-match', 
-      confidence: partialMatches[0].similarity 
+    return {
+      resolvedCgId: partialMatches[0].entity.cgId,
+      matchType: "partial-match",
+      confidence: partialMatches[0].similarity,
     };
   } else if (partialMatches.length > 1) {
     // Check if there's a clear winner (significantly better than runner-up)
     const [best, second] = partialMatches;
     if (best.similarity - second.similarity > 0.15) {
       // Clear winner - use it
-      return { 
-        resolvedCgId: best.entity.cgId, 
-        matchType: 'partial-match', 
-        confidence: best.similarity 
+      return {
+        resolvedCgId: best.entity.cgId,
+        matchType: "partial-match",
+        confidence: best.similarity,
       };
     }
     // Ambiguous partial matches
-    return { 
-      resolvedCgId: cgId, 
-      matchType: 'unresolved', 
+    return {
+      resolvedCgId: cgId,
+      matchType: "unresolved",
       confidence: 0.0,
-      unresolvedReason: 'ambiguous',
-      candidateCount: partialMatches.length
+      unresolvedReason: "ambiguous",
+      candidateCount: partialMatches.length,
     };
   }
-  
+
   // No match found
-  return { 
-    resolvedCgId: cgId, 
-    matchType: 'unresolved', 
+  return {
+    resolvedCgId: cgId,
+    matchType: "unresolved",
     confidence: 0.0,
-    unresolvedReason: 'no-match'
+    unresolvedReason: "no-match",
   };
 }
 
@@ -438,19 +461,19 @@ function resolveCgId(
 
 /**
  * Resolve statement references to canonical entity cgIds
- * 
+ *
  * This is the main entry point for reference resolution.
  * Call this after RX parsing, before CX/MX stages.
- * 
+ *
  * Evidence Preservation:
  * - Stores original cgIds in statement._resolution for audit
  * - Tracks match method and confidence
- * 
+ *
  * @param entities - Entities from RX extraction
- * @param statements - Statements from RX extraction  
+ * @param statements - Statements from RX extraction
  * @param options - Resolution options
  * @returns Resolved statements and resolution events
- * 
+ *
  * @example
  * ```typescript
  * const rxOutput = await runRxStage(input, ctx);
@@ -464,18 +487,18 @@ function resolveCgId(
 export function resolveStatementRefs(
   entities: Entity[],
   statements: Statement[],
-  options: RefResolutionOptions = {}
+  options: RefResolutionOptions = {},
 ): RefResolutionResult {
   const opts: Required<RefResolutionOptions> = {
     minSimilarity: options.minSimilarity ?? 0.7,
     verbose: options.verbose ?? false,
     aliases: options.aliases ?? new Map(),
   };
-  
+
   // Build entity indexes for fast lookup
   const entityIndex = buildEntityIndex(entities);
   const typeNameIndex = buildTypeNameIndex(entities);
-  
+
   const resolutions: ResolutionEvent[] = [];
   const stats = {
     totalChecked: 0,
@@ -484,37 +507,46 @@ export function resolveStatementRefs(
     unresolved: 0,
     ambiguous: 0,
   };
-  
-  const resolvedStatements: ResolvedStatement[] = statements.map(stmt => {
+
+  const resolvedStatements: ResolvedStatement[] = statements.map((stmt) => {
     let subjectCgId = stmt.subjectCgId;
     let objectCgId = stmt.objectCgId;
-    
+
     // Track resolution metadata for evidence preservation
     const resolution: ResolutionMeta = {};
-    
+
     // Track if subject/object are unresolved by REF
     let subjectUnresolved = false;
     let objectUnresolved = false;
-    
+
     // Resolve subjectCgId
     stats.totalChecked++;
-    const subjectResolution = resolveCgId(subjectCgId, entities, entityIndex, typeNameIndex, opts);
-    
-    if (subjectResolution.matchType === 'exact' && subjectResolution.confidence === 1.0) {
+    const subjectResolution = resolveCgId(
+      subjectCgId,
+      entities,
+      entityIndex,
+      typeNameIndex,
+      opts,
+    );
+
+    if (
+      subjectResolution.matchType === "exact" &&
+      subjectResolution.confidence === 1.0
+    ) {
       stats.alreadyResolved++;
-    } else if (subjectResolution.matchType === 'unresolved') {
+    } else if (subjectResolution.matchType === "unresolved") {
       stats.unresolved++;
       subjectUnresolved = true;
-      if (subjectResolution.unresolvedReason === 'ambiguous') {
+      if (subjectResolution.unresolvedReason === "ambiguous") {
         stats.ambiguous++;
       }
       // Record unresolved event
       resolutions.push({
         originalCgId: subjectCgId,
         resolvedCgId: subjectCgId,
-        matchType: 'unresolved',
+        matchType: "unresolved",
         confidence: 0,
-        field: 'subjectCgId',
+        field: "subjectCgId",
         unresolvedReason: subjectResolution.unresolvedReason,
         candidateCount: subjectResolution.candidateCount,
       });
@@ -525,38 +557,47 @@ export function resolveStatementRefs(
         resolvedCgId: subjectResolution.resolvedCgId,
         matchType: subjectResolution.matchType,
         confidence: subjectResolution.confidence,
-        field: 'subjectCgId',
+        field: "subjectCgId",
       });
-      
+
       // Preserve evidence
       resolution.originalSubjectCgId = subjectCgId;
       resolution.subjectMatchType = subjectResolution.matchType;
       resolution.subjectConfidence = subjectResolution.confidence;
-      
+
       subjectCgId = subjectResolution.resolvedCgId;
       stats.resolvedByName++;
     }
-    
+
     // Resolve objectCgId if present
     if (objectCgId) {
       stats.totalChecked++;
-      const objectResolution = resolveCgId(objectCgId, entities, entityIndex, typeNameIndex, opts);
-      
-      if (objectResolution.matchType === 'exact' && objectResolution.confidence === 1.0) {
+      const objectResolution = resolveCgId(
+        objectCgId,
+        entities,
+        entityIndex,
+        typeNameIndex,
+        opts,
+      );
+
+      if (
+        objectResolution.matchType === "exact" &&
+        objectResolution.confidence === 1.0
+      ) {
         stats.alreadyResolved++;
-      } else if (objectResolution.matchType === 'unresolved') {
+      } else if (objectResolution.matchType === "unresolved") {
         stats.unresolved++;
         objectUnresolved = true;
-        if (objectResolution.unresolvedReason === 'ambiguous') {
+        if (objectResolution.unresolvedReason === "ambiguous") {
           stats.ambiguous++;
         }
         // Record unresolved event
         resolutions.push({
           originalCgId: objectCgId,
           resolvedCgId: objectCgId,
-          matchType: 'unresolved',
+          matchType: "unresolved",
           confidence: 0,
-          field: 'objectCgId',
+          field: "objectCgId",
           unresolvedReason: objectResolution.unresolvedReason,
           candidateCount: objectResolution.candidateCount,
         });
@@ -567,54 +608,58 @@ export function resolveStatementRefs(
           resolvedCgId: objectResolution.resolvedCgId,
           matchType: objectResolution.matchType,
           confidence: objectResolution.confidence,
-          field: 'objectCgId',
+          field: "objectCgId",
         });
-        
+
         // Preserve evidence
         resolution.originalObjectCgId = objectCgId;
         resolution.objectMatchType = objectResolution.matchType;
         resolution.objectConfidence = objectResolution.confidence;
-        
+
         objectCgId = objectResolution.resolvedCgId;
         stats.resolvedByName++;
       }
     }
-    
+
     // Build resolved statement with evidence preservation
     const resolvedStmt: ResolvedStatement = {
       ...stmt,
       subjectCgId,
       objectCgId,
     };
-    
+
     // Clear stale flags from DefaultExtraction (REF is the canonical resolver)
     delete (resolvedStmt as any)._unresolvedRef;
     delete (resolvedStmt as any)._refResolution;
-    
+
     // Only attach _resolution if we actually resolved something
     if (Object.keys(resolution).length > 0) {
       resolvedStmt._resolution = resolution;
     }
-    
+
     // Mark as unresolved only if REF couldn't resolve subject or object
     if (subjectUnresolved || objectUnresolved) {
       (resolvedStmt as any)._unresolvedRef = true;
     }
-    
+
     return resolvedStmt;
   });
-  
+
   if (opts.verbose && resolutions.length > 0) {
     console.log(`[REF] Resolved ${resolutions.length} statement references:`);
     for (const r of resolutions) {
-      if (r.matchType === 'unresolved') {
-        console.log(`  ${r.field}: ${r.originalCgId} → UNRESOLVED (${r.unresolvedReason}, candidates: ${r.candidateCount ?? 0})`);
+      if (r.matchType === "unresolved") {
+        console.log(
+          `  ${r.field}: ${r.originalCgId} → UNRESOLVED (${r.unresolvedReason}, candidates: ${r.candidateCount ?? 0})`,
+        );
       } else {
-        console.log(`  ${r.field}: ${r.originalCgId} → ${r.resolvedCgId} (${r.matchType}, ${(r.confidence * 100).toFixed(0)}%)`);
+        console.log(
+          `  ${r.field}: ${r.originalCgId} → ${r.resolvedCgId} (${r.matchType}, ${(r.confidence * 100).toFixed(0)}%)`,
+        );
       }
     }
   }
-  
+
   return {
     statements: resolvedStatements,
     resolutions,
@@ -624,25 +669,41 @@ export function resolveStatementRefs(
 
 /**
  * Validate that all statement references point to existing entities
- * 
+ *
  * @returns List of unresolved references
  */
 export function validateStatementRefs(
   entities: Entity[],
-  statements: Statement[]
-): Array<{ statementIndex: number; field: 'subjectCgId' | 'objectCgId'; cgId: string }> {
-  const entityCgIds = new Set(entities.map(e => e.cgId));
-  const unresolved: Array<{ statementIndex: number; field: 'subjectCgId' | 'objectCgId'; cgId: string }> = [];
-  
+  statements: Statement[],
+): Array<{
+  statementIndex: number;
+  field: "subjectCgId" | "objectCgId";
+  cgId: string;
+}> {
+  const entityCgIds = new Set(entities.map((e) => e.cgId));
+  const unresolved: Array<{
+    statementIndex: number;
+    field: "subjectCgId" | "objectCgId";
+    cgId: string;
+  }> = [];
+
   statements.forEach((stmt, index) => {
     if (!entityCgIds.has(stmt.subjectCgId)) {
-      unresolved.push({ statementIndex: index, field: 'subjectCgId', cgId: stmt.subjectCgId });
+      unresolved.push({
+        statementIndex: index,
+        field: "subjectCgId",
+        cgId: stmt.subjectCgId,
+      });
     }
     if (stmt.objectCgId && !entityCgIds.has(stmt.objectCgId)) {
-      unresolved.push({ statementIndex: index, field: 'objectCgId', cgId: stmt.objectCgId });
+      unresolved.push({
+        statementIndex: index,
+        field: "objectCgId",
+        cgId: stmt.objectCgId,
+      });
     }
   });
-  
+
   return unresolved;
 }
 
@@ -665,7 +726,7 @@ export interface MxPreGateResult {
     /** Detailed unresolved references */
     details: Array<{
       predicate: string;
-      field: 'subjectCgId' | 'objectCgId';
+      field: "subjectCgId" | "objectCgId";
       cgId: string;
       statementIndex: number;
     }>;
@@ -676,61 +737,61 @@ export interface MxPreGateResult {
  * Predicates that require both subject and object to be resolvable for MX
  */
 const MX_REQUIRED_PREDICATES = [
-  'TRANSITIONS_TO',
-  'FROM_STATE',
-  'TO_STATE',
-  'HAS_STATE',
-  'TRIGGERS',
+  "TRANSITIONS_TO",
+  "FROM_STATE",
+  "TO_STATE",
+  "HAS_STATE",
+  "TRIGGERS",
 ] as const;
 
 /**
  * Pre-gate check before MX stage
- * 
+ *
  * Asserts that all required predicates have resolvable endpoints.
  * Use this to prevent silent "0 materialized" failures.
- * 
+ *
  * @param entities - Entities after REF resolution
  * @param statements - Statements after REF resolution
  * @returns Validation result with detailed unresolved stats
  */
 export function assertMxPreGate(
   entities: Entity[],
-  statements: Statement[]
+  statements: Statement[],
 ): MxPreGateResult {
-  const entityCgIds = new Set(entities.map(e => e.cgId));
-  
-  const unresolvedDetails: MxPreGateResult['unresolvedStats']['details'] = [];
+  const entityCgIds = new Set(entities.map((e) => e.cgId));
+
+  const unresolvedDetails: MxPreGateResult["unresolvedStats"]["details"] = [];
   const byPredicate: Record<string, number> = {};
-  
+
   statements.forEach((stmt, index) => {
     // Only check predicates that MX cares about
     if (!MX_REQUIRED_PREDICATES.includes(stmt.predicate as any)) {
       return;
     }
-    
+
     // Check subject
     if (!entityCgIds.has(stmt.subjectCgId)) {
       unresolvedDetails.push({
         predicate: stmt.predicate,
-        field: 'subjectCgId',
+        field: "subjectCgId",
         cgId: stmt.subjectCgId,
         statementIndex: index,
       });
       byPredicate[stmt.predicate] = (byPredicate[stmt.predicate] ?? 0) + 1;
     }
-    
+
     // Check object (if required for this predicate)
     if (stmt.objectCgId && !entityCgIds.has(stmt.objectCgId)) {
       unresolvedDetails.push({
         predicate: stmt.predicate,
-        field: 'objectCgId',
+        field: "objectCgId",
         cgId: stmt.objectCgId,
         statementIndex: index,
       });
       byPredicate[stmt.predicate] = (byPredicate[stmt.predicate] ?? 0) + 1;
     }
   });
-  
+
   return {
     valid: unresolvedDetails.length === 0,
     unresolvedStats: {
@@ -749,30 +810,33 @@ export function assertMxPreGate(
  * Predicate-specific type constraints
  * Defines which entity types are valid for subject and object positions
  */
-export const PREDICATE_CONSTRAINTS: Record<string, { subject: string[]; object: string[] }> = {
+export const PREDICATE_CONSTRAINTS: Record<
+  string,
+  { subject: string[]; object: string[] }
+> = {
   // State-to-state transitions
-  TRANSITIONS_TO: { 
-    subject: ['state'], 
-    object: ['state'] 
+  TRANSITIONS_TO: {
+    subject: ["state"],
+    object: ["state"],
   },
   // Resource owns states
-  HAS_STATE: { 
-    subject: ['resource', 'entity', 'component'], 
-    object: ['state'] 
+  HAS_STATE: {
+    subject: ["resource", "entity", "component"],
+    object: ["state"],
   },
   // Transition bindings
-  FROM_STATE: { 
-    subject: ['transition'], 
-    object: ['state'] 
+  FROM_STATE: {
+    subject: ["transition"],
+    object: ["state"],
   },
-  TO_STATE: { 
-    subject: ['transition'], 
-    object: ['state'] 
+  TO_STATE: {
+    subject: ["transition"],
+    object: ["state"],
   },
   // Role permissions
-  ROLE_CAN: { 
-    subject: ['role'], 
-    object: ['action'] 
+  ROLE_CAN: {
+    subject: ["role"],
+    object: ["action"],
   },
 };
 
@@ -785,7 +849,7 @@ export interface PredicateViolation {
   /** The predicate that was violated */
   predicate: string;
   /** Which field has the wrong type */
-  field: 'subject' | 'object';
+  field: "subject" | "object";
   /** The cgId of the entity */
   cgId: string;
   /** Actual entity type found */
@@ -813,42 +877,45 @@ export interface PredicateSchemaResult {
 
 /**
  * Validate that statements conform to predicate-specific type constraints
- * 
+ *
  * This enforces semantic correctness:
  * - TRANSITIONS_TO: subject and object must be states
  * - HAS_STATE: subject must be resource, object must be state
  * - etc.
- * 
+ *
  * @param entities - Entities to validate against
  * @param statements - Statements to validate
  * @returns Validation result with violations
  */
 export function validatePredicateSchema(
   entities: Entity[],
-  statements: Statement[]
+  statements: Statement[],
 ): PredicateSchemaResult {
   const entityMap = new Map<string, Entity>();
   for (const entity of entities) {
     entityMap.set(entity.cgId, entity);
   }
-  
+
   const violations: PredicateViolation[] = [];
   const byPredicate: Record<string, { valid: number; invalid: number }> = {};
   let checked = 0;
   let valid = 0;
-  
+
   statements.forEach((stmt, index) => {
     const constraints = PREDICATE_CONSTRAINTS[stmt.predicate];
     if (!constraints) {
       // No constraints defined for this predicate - skip
       return;
     }
-    
+
     checked++;
-    byPredicate[stmt.predicate] = byPredicate[stmt.predicate] ?? { valid: 0, invalid: 0 };
-    
+    byPredicate[stmt.predicate] = byPredicate[stmt.predicate] ?? {
+      valid: 0,
+      invalid: 0,
+    };
+
     let isValid = true;
-    
+
     // Check subject type
     const subjectEntity = entityMap.get(stmt.subjectCgId);
     if (subjectEntity) {
@@ -857,7 +924,7 @@ export function validatePredicateSchema(
         violations.push({
           statementIndex: index,
           predicate: stmt.predicate,
-          field: 'subject',
+          field: "subject",
           cgId: stmt.subjectCgId,
           actualType: subjectType,
           expectedTypes: constraints.subject,
@@ -865,7 +932,7 @@ export function validatePredicateSchema(
         isValid = false;
       }
     }
-    
+
     // Check object type
     if (stmt.objectCgId) {
       const objectEntity = entityMap.get(stmt.objectCgId);
@@ -875,7 +942,7 @@ export function validatePredicateSchema(
           violations.push({
             statementIndex: index,
             predicate: stmt.predicate,
-            field: 'object',
+            field: "object",
             cgId: stmt.objectCgId,
             actualType: objectType,
             expectedTypes: constraints.object,
@@ -884,7 +951,7 @@ export function validatePredicateSchema(
         }
       }
     }
-    
+
     if (isValid) {
       valid++;
       byPredicate[stmt.predicate].valid++;
@@ -892,7 +959,7 @@ export function validatePredicateSchema(
       byPredicate[stmt.predicate].invalid++;
     }
   });
-  
+
   return {
     valid: violations.length === 0,
     violations,
@@ -907,29 +974,29 @@ export function validatePredicateSchema(
 
 /**
  * Correct statements that violate predicate constraints
- * 
+ *
  * Strategy:
  * - For TRANSITIONS_TO with resource subject: Look for HAS_STATE to find actual state
  * - Demote to warning and log for manual review
- * 
+ *
  * @param entities - Entities to use for correction
  * @param statements - Statements to correct
  * @returns Corrected statements and correction events
  */
 export function correctPredicateViolations(
   entities: Entity[],
-  statements: Statement[]
+  statements: Statement[],
 ): { statements: Statement[]; corrections: ResolutionEvent[] } {
   const entityMap = new Map<string, Entity>();
   const statesByResource = new Map<string, Entity[]>();
-  
+
   for (const entity of entities) {
     entityMap.set(entity.cgId, entity);
   }
-  
+
   // Build resource → states mapping from HAS_STATE statements
   for (const stmt of statements) {
-    if (stmt.predicate === 'HAS_STATE' && stmt.objectCgId) {
+    if (stmt.predicate === "HAS_STATE" && stmt.objectCgId) {
       const resourceCgId = stmt.subjectCgId;
       const stateCgId = stmt.objectCgId;
       const stateEntity = entityMap.get(stateCgId);
@@ -940,38 +1007,38 @@ export function correctPredicateViolations(
       }
     }
   }
-  
+
   const corrections: ResolutionEvent[] = [];
-  
+
   const correctedStatements = statements.map((stmt, _index) => {
-    if (stmt.predicate !== 'TRANSITIONS_TO') {
+    if (stmt.predicate !== "TRANSITIONS_TO") {
       return stmt;
     }
-    
+
     // Check if subject is a resource (violation)
     const subjectEntity = entityMap.get(stmt.subjectCgId);
-    if (!subjectEntity || subjectEntity.type.toLowerCase() === 'state') {
+    if (!subjectEntity || subjectEntity.type.toLowerCase() === "state") {
       return stmt; // Already valid or can't determine
     }
-    
+
     // Subject is not a state (e.g., it's a resource)
     // Try to find a state associated with this resource
     // This is a heuristic - we're essentially saying "document TRANSITIONS_TO active"
     // should become "some-state TRANSITIONS_TO active" if we can find one
-    
+
     // For now, log as correction but don't actually correct
     // The LLM produced incorrect semantics that we should flag
     corrections.push({
       originalCgId: stmt.subjectCgId,
       resolvedCgId: stmt.subjectCgId, // Keep as-is
-      matchType: 'unresolved',
+      matchType: "unresolved",
       confidence: 0,
-      field: 'subjectCgId',
-      unresolvedReason: 'ambiguous', // Semantically wrong, flagged for review
+      field: "subjectCgId",
+      unresolvedReason: "ambiguous", // Semantically wrong, flagged for review
     });
-    
+
     return stmt;
   });
-  
+
   return { statements: correctedStatements, corrections };
 }

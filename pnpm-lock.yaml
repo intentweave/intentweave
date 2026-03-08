@@ -216,6 +216,9 @@ importers:
       '@intentweave/core':
         specifier: workspace:*
         version: link:../core
+      '@intentweave/profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@intentweave/server-core':
         specifier: workspace:*
         version: link:../server-core

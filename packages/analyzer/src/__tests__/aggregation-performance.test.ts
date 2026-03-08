@@ -3,22 +3,29 @@
 
 /**
  * Performance Baseline Test - Phase 3.6
- * 
+ *
  * Establishes performance baselines for the aggregation step.
  * These tests measure execution time and can be used to detect regressions.
- * 
+ *
  * Baseline targets:
  * - Small (10 artifacts, ~100 entities): < 50ms
  * - Medium (50 artifacts, ~500 entities): < 200ms
  * - Large (100 artifacts, ~1000 entities): < 500ms
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createMemoryStore, type MemoryStore } from '../stores/memoryStore.js';
-import { runAggregation, type AggregationInput } from '../pipeline/aggregation.js';
-import { createPipelineContext, type PipelineContext, NoopLogger } from '../pipeline/context.js';
-import type { PxStageOutput } from '../stages/px.js';
-import type { Entity, Statement, ArtifactRole } from '@intentweave/core';
+import { describe, it, expect, beforeEach } from "vitest";
+import { createMemoryStore, type MemoryStore } from "../stores/memoryStore.js";
+import {
+  runAggregation,
+  type AggregationInput,
+} from "../pipeline/aggregation.js";
+import {
+  createPipelineContext,
+  type PipelineContext,
+  NoopLogger,
+} from "../pipeline/context.js";
+import type { PxStageOutput } from "../stages/px.js";
+import type { Entity, Statement, ArtifactRole } from "@intentweave/core";
 
 // =============================================================================
 // Test Fixture Generators
@@ -31,9 +38,9 @@ function generateEntity(index: number, type: string): Entity {
   return {
     cgId: `entity-${type}-${index}`,
     name: `${type}_${index}`,
-    type: type as Entity['type'],
+    type: type as Entity["type"],
     kind: type,
-    labels: ['Staging'],
+    labels: ["Staging"],
     evidence: [],
     confidence: 0.85 + Math.random() * 0.15,
     description: `Generated ${type} entity #${index}`,
@@ -46,7 +53,7 @@ function generateEntity(index: number, type: string): Entity {
 function generateStatement(
   subjectIndex: number,
   objectIndex: number,
-  predicate: string
+  predicate: string,
 ): Statement {
   return {
     subjectCgId: `entity-state-${subjectIndex}`,
@@ -54,7 +61,7 @@ function generateStatement(
     objectCgId: `entity-state-${objectIndex}`,
     confidence: 0.8 + Math.random() * 0.2,
     evidence: [],
-    labels: ['Staging'],
+    labels: ["Staging"],
   } as Statement;
 }
 
@@ -65,13 +72,13 @@ function generatePxOutput(
   artifactIndex: number,
   entityCount: number,
   statementCount: number,
-  role: ArtifactRole = 'spec'
+  role: ArtifactRole = "spec",
 ): PxStageOutput {
   const entities: Entity[] = [];
   const statements: Statement[] = [];
 
   // Generate entities of various types
-  const types = ['state', 'action', 'role', 'event'];
+  const types = ["state", "action", "role", "event"];
   for (let i = 0; i < entityCount; i++) {
     const type = types[i % types.length];
     entities.push(generateEntity(artifactIndex * 100 + i, type));
@@ -81,13 +88,13 @@ function generatePxOutput(
   for (let i = 0; i < statementCount; i++) {
     const subjectIdx = artifactIndex * 100 + (i % entityCount);
     const objectIdx = artifactIndex * 100 + ((i + 1) % entityCount);
-    statements.push(generateStatement(subjectIdx, objectIdx, 'TRANSITIONS_TO'));
+    statements.push(generateStatement(subjectIdx, objectIdx, "TRANSITIONS_TO"));
   }
 
   return {
-    $schema: 'intentweave://schemas/px/v1',
-    schemaVersion: '0.1',
-    stage: 'PX',
+    $schema: "intentweave://schemas/px/v1",
+    schemaVersion: "0.1",
+    stage: "PX",
     processedAt: new Date().toISOString(),
     artifactId: `artifact-${artifactIndex}.md`,
     artifactRole: role,
@@ -111,11 +118,16 @@ function generatePxOutput(
 function generateArtifacts(
   artifactCount: number,
   entitiesPerArtifact: number,
-  statementsPerArtifact: number
+  statementsPerArtifact: number,
 ): PxStageOutput[] {
-  const roles: ArtifactRole[] = ['intent', 'spec', 'code', 'test', 'doc'];
+  const roles: ArtifactRole[] = ["intent", "spec", "code", "test", "doc"];
   return Array.from({ length: artifactCount }, (_, i) =>
-    generatePxOutput(i, entitiesPerArtifact, statementsPerArtifact, roles[i % roles.length])
+    generatePxOutput(
+      i,
+      entitiesPerArtifact,
+      statementsPerArtifact,
+      roles[i % roles.length],
+    ),
   );
 }
 
@@ -126,27 +138,36 @@ function generateArtifacts(
 /**
  * Create a test context with no-op logger for performance tests
  */
-function createPerfTestContext(store: MemoryStore, runId: string): PipelineContext {
+function createPerfTestContext(
+  store: MemoryStore,
+  runId: string,
+): PipelineContext {
   return createPipelineContext({
     workspace: {
-      key: 'perf-test-workspace',
-      id: 'perf-test-workspace-id',
-      name: 'Performance Test Workspace',
+      key: "perf-test-workspace",
+      id: "perf-test-workspace-id",
+      name: "Performance Test Workspace",
     },
     runId,
     store,
     profile: {
-      name: 'perf-test-profile',
-      version: '1.0',
-      kinds: ['state', 'action', 'role', 'event'],
-      predicates: ['TRANSITIONS_TO', 'ROLE_CAN', 'IMPLEMENTS'],
+      name: "perf-test-profile",
+      version: "1.0",
+      kinds: ["state", "action", "role", "event"],
+      predicates: ["TRANSITIONS_TO", "ROLE_CAN", "IMPLEMENTS"],
       shapes: [],
       artifactMappings: [],
     },
     providers: {
       llm: {
-        generateText: async () => ({ text: '', usage: { inputTokens: 0, outputTokens: 0 } }),
-        generateStructured: async () => ({ data: {}, usage: { inputTokens: 0, outputTokens: 0 } }),
+        generateText: async () => ({
+          text: "",
+          usage: { inputTokens: 0, outputTokens: 0 },
+        }),
+        generateStructured: async () => ({
+          data: {},
+          usage: { inputTokens: 0, outputTokens: 0 },
+        }),
       },
       extraction: {
         extractEntities: async () => ({ entities: [] }),
@@ -161,7 +182,7 @@ function createPerfTestContext(store: MemoryStore, runId: string): PipelineConte
 // Performance Tests
 // =============================================================================
 
-describe('Aggregation Performance', () => {
+describe("Aggregation Performance", () => {
   let store: MemoryStore;
 
   beforeEach(async () => {
@@ -169,14 +190,14 @@ describe('Aggregation Performance', () => {
     await store.init();
   });
 
-  describe('baseline measurements', () => {
-    it('small dataset: 10 artifacts, ~100 entities', async () => {
-      const ctx = createPerfTestContext(store, 'perf-small');
+  describe("baseline measurements", () => {
+    it("small dataset: 10 artifacts, ~100 entities", async () => {
+      const ctx = createPerfTestContext(store, "perf-small");
       const artifacts = generateArtifacts(10, 10, 5);
 
       const input: AggregationInput = {
         artifactOutputs: artifacts,
-        runId: 'perf-small',
+        runId: "perf-small",
       };
 
       const startTime = performance.now();
@@ -201,13 +222,13 @@ describe('Aggregation Performance', () => {
       expect(result.entities.length).toBe(100);
     });
 
-    it('medium dataset: 50 artifacts, ~500 entities', async () => {
-      const ctx = createPerfTestContext(store, 'perf-medium');
+    it("medium dataset: 50 artifacts, ~500 entities", async () => {
+      const ctx = createPerfTestContext(store, "perf-medium");
       const artifacts = generateArtifacts(50, 10, 5);
 
       const input: AggregationInput = {
         artifactOutputs: artifacts,
-        runId: 'perf-medium',
+        runId: "perf-medium",
       };
 
       const startTime = performance.now();
@@ -231,13 +252,13 @@ describe('Aggregation Performance', () => {
       expect(result.entities.length).toBe(500);
     });
 
-    it('large dataset: 100 artifacts, ~1000 entities', async () => {
-      const ctx = createPerfTestContext(store, 'perf-large');
+    it("large dataset: 100 artifacts, ~1000 entities", async () => {
+      const ctx = createPerfTestContext(store, "perf-large");
       const artifacts = generateArtifacts(100, 10, 5);
 
       const input: AggregationInput = {
         artifactOutputs: artifacts,
-        runId: 'perf-large',
+        runId: "perf-large",
       };
 
       const startTime = performance.now();
@@ -262,14 +283,14 @@ describe('Aggregation Performance', () => {
     });
   });
 
-  describe('component timing', () => {
-    it('measures LX proposal generation time', async () => {
-      const ctx = createPerfTestContext(store, 'perf-lx');
+  describe("component timing", () => {
+    it("measures LX proposal generation time", async () => {
+      const ctx = createPerfTestContext(store, "perf-lx");
       const artifacts = generateArtifacts(20, 20, 10);
 
       const input: AggregationInput = {
         artifactOutputs: artifacts,
-        runId: 'perf-lx',
+        runId: "perf-lx",
       };
 
       // Without LX
@@ -294,13 +315,13 @@ describe('Aggregation Performance', () => {
       expect(lxOverhead).toBeLessThan(200);
     });
 
-    it('measures validation time', async () => {
-      const ctx = createPerfTestContext(store, 'perf-validation');
+    it("measures validation time", async () => {
+      const ctx = createPerfTestContext(store, "perf-validation");
       const artifacts = generateArtifacts(20, 20, 10);
 
       const input: AggregationInput = {
         artifactOutputs: artifacts,
-        runId: 'perf-validation',
+        runId: "perf-validation",
       };
 
       // Without validation
@@ -327,8 +348,8 @@ describe('Aggregation Performance', () => {
     });
   });
 
-  describe('scaling characteristics', () => {
-    it('scales linearly with artifact count', async () => {
+  describe("scaling characteristics", () => {
+    it("scales linearly with artifact count", async () => {
       const measurements: Array<{ artifacts: number; durationMs: number }> = [];
 
       for (const artifactCount of [10, 20, 40, 80]) {
@@ -341,7 +362,7 @@ describe('Aggregation Performance', () => {
         };
 
         const start = performance.now();
-        await runAggregation(input, ctx, { 
+        await runAggregation(input, ctx, {
           generateLxProposals: false, // Disable LX for cleaner scaling measurement
           calculateCoverage: true,
           runValidation: true,
@@ -351,17 +372,22 @@ describe('Aggregation Performance', () => {
         measurements.push({ artifacts: artifactCount, durationMs: duration });
       }
 
-      console.log('Scaling measurements:', measurements);
+      console.log("Scaling measurements:", measurements);
 
       // Check that scaling is reasonable (not exponential)
       // Allow for some variance in measurements due to JIT warmup and GC
       for (let i = 1; i < measurements.length; i++) {
-        const ratio = measurements[i].durationMs / Math.max(measurements[i - 1].durationMs, 0.01);
-        const artifactRatio = measurements[i].artifacts / measurements[i - 1].artifacts;
-        
+        const ratio =
+          measurements[i].durationMs /
+          Math.max(measurements[i - 1].durationMs, 0.01);
+        const artifactRatio =
+          measurements[i].artifacts / measurements[i - 1].artifacts;
+
         // Time should not grow faster than O(n^3) at worst
         // This is a generous bound to avoid flaky tests
-        expect(ratio).toBeLessThan(artifactRatio * artifactRatio * artifactRatio);
+        expect(ratio).toBeLessThan(
+          artifactRatio * artifactRatio * artifactRatio,
+        );
       }
     });
   });

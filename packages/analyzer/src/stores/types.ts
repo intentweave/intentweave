@@ -3,24 +3,30 @@
 
 /**
  * Store Interfaces for IntentWeave
- * 
+ *
  * Defines the contracts for artifact and graph storage.
  * Implementations can be file-based, memory-based, or database-backed.
  */
 
-import type { StagingSnapshot, ArtifactMeta, RunMeta, Entity, Statement } from '@intentweave/core';
+import type {
+  StagingSnapshot,
+  ArtifactMeta,
+  RunMeta,
+  Entity,
+  Statement,
+} from "@intentweave/core";
 // Re-export RunMeta for convenience
-export type { RunMeta } from '@intentweave/core';
+export type { RunMeta } from "@intentweave/core";
 
 // ============================================================================
 // Stage Types
 // ============================================================================
 
 /** Pipeline stages */
-export type Stage = 'IN' | 'RX' | 'CX' | 'MX' | 'PX' | 'LX';
+export type Stage = "IN" | "RX" | "CX" | "MX" | "PX" | "LX";
 
 /** All stages in order */
-export const STAGES: Stage[] = ['IN', 'RX', 'CX', 'MX', 'PX', 'LX'];
+export const STAGES: Stage[] = ["IN", "RX", "CX", "MX", "PX", "LX"];
 
 // ============================================================================
 // Artifact Types
@@ -73,9 +79,14 @@ export interface LinkProposal {
   sourceCgId: string;
   targetArtifact: string;
   targetCgId: string;
-  predicate: 'REFINES' | 'DERIVED_FROM' | 'IMPLEMENTS' | 'DESCRIBES' | 'MAPS_TO';
+  predicate:
+    | "REFINES"
+    | "DERIVED_FROM"
+    | "IMPLEMENTS"
+    | "DESCRIBES"
+    | "MAPS_TO";
   confidence: number;
-  matchMethod: 'name' | 'alias' | 'structural' | 'profile' | 'semantic';
+  matchMethod: "name" | "alias" | "structural" | "profile" | "semantic";
   evidence: Array<{ text: string; artifactId: string }>;
 }
 
@@ -90,12 +101,15 @@ export interface CoverageReport {
   /** Run identifier */
   runId: string;
   /** Coverage by artifact pair */
-  coverage: Record<string, {
-    total: number;
-    linked: number;
-    percentage: number;
-    unlinked: Array<{ cgId: string; name: string }>;
-  }>;
+  coverage: Record<
+    string,
+    {
+      total: number;
+      linked: number;
+      percentage: number;
+      unlinked: Array<{ cgId: string; name: string }>;
+    }
+  >;
   /** Overall coverage */
   overall: {
     total: number;
@@ -114,7 +128,7 @@ export interface CoverageReport {
 export interface Finding {
   id: string;
   ruleId: string;
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   entityCgId?: string;
   statementId?: string;
   message: string;
@@ -179,22 +193,29 @@ export interface ArtifactStore {
    * Delete an artifact and its chunks
    */
   deleteArtifact(artifactId: string): Promise<void>;
-  
+
   /**
    * Write stage output for an artifact
    */
-  writeStageOutput(artifactId: string, stage: Stage, output: unknown): Promise<void>;
-  
+  writeStageOutput(
+    artifactId: string,
+    stage: Stage,
+    output: unknown,
+  ): Promise<void>;
+
   /**
    * Read stage output for an artifact
    */
-  readStageOutput<T = unknown>(artifactId: string, stage: Stage): Promise<T | null>;
-  
+  readStageOutput<T = unknown>(
+    artifactId: string,
+    stage: Stage,
+  ): Promise<T | null>;
+
   /**
    * Write run metadata
    */
   writeRunMeta(runId: string, meta: RunMeta): Promise<void>;
-  
+
   /**
    * Read run metadata
    */
@@ -222,12 +243,19 @@ export interface GraphStore {
   /**
    * Read a snapshot for an artifact at a specific stage
    */
-  readSnapshot(artifactId: string, stage: Stage): Promise<StagingSnapshot | null>;
+  readSnapshot(
+    artifactId: string,
+    stage: Stage,
+  ): Promise<StagingSnapshot | null>;
 
   /**
    * Write a snapshot for an artifact at a specific stage
    */
-  writeSnapshot(artifactId: string, stage: Stage, snapshot: StagingSnapshot): Promise<void>;
+  writeSnapshot(
+    artifactId: string,
+    stage: Stage,
+    snapshot: StagingSnapshot,
+  ): Promise<void>;
 
   /**
    * List all artifact IDs with snapshots
@@ -292,7 +320,10 @@ export interface RunStore {
   /**
    * Save aggregates for a run
    */
-  saveAggregates(runId: string, aggregates: Partial<RunAggregates>): Promise<void>;
+  saveAggregates(
+    runId: string,
+    aggregates: Partial<RunAggregates>,
+  ): Promise<void>;
 
   /**
    * Delete a run and all its data

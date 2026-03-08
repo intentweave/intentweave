@@ -20,7 +20,7 @@
  *   - Decision trail: DECIDED_FOR / DECIDED_AGAINST touching the subgraph
  */
 
-import type { Neo4jRunner } from '../context/index.js';
+import type { Neo4jRunner } from "../context/index.js";
 
 // =============================================================================
 // Types
@@ -31,7 +31,7 @@ export interface ImpactEntity {
   type: string;
   confidence: number;
   /** How this entity connects to the changed file */
-  via: 'direct' | 'ripple';
+  via: "direct" | "ripple";
   /** Hop distance from the directly-linked entity (0 = direct) */
   depth: number;
   /** Code ref details (only for direct entities) */
@@ -114,12 +114,14 @@ export async function analyzeImpact(
   } = options;
 
   // Normalize file paths: strip leading ./ and trailing /
-  const normalizedFiles = files.map(f => f.replace(/^\.\//, '').replace(/\/$/, ''));
+  const normalizedFiles = files.map((f) =>
+    f.replace(/^\.\//, "").replace(/\/$/, ""),
+  );
 
   log?.(`Analyzing impact for ${normalizedFiles.length} file(s)…`);
 
   // ── Step 1: Find direct Canon entities via CodeRef ──────────────────
-  log?.('Step 1: Finding directly linked entities…');
+  log?.("Step 1: Finding directly linked entities…");
 
   const directRows = await runner.run(
     `MATCH (c:Canon)-[r:REALIZED_BY]->(cr:CodeRef)
@@ -137,13 +139,13 @@ export async function analyzeImpact(
   for (const row of directRows) {
     const name = String(row.name);
     const existing = directMap.get(name);
-    const conf = typeof row.confidence === 'number' ? row.confidence : 1.0;
+    const conf = typeof row.confidence === "number" ? row.confidence : 1.0;
     if (!existing || conf > existing.confidence) {
       directMap.set(name, {
         name,
         type: String(row.type),
         confidence: conf,
-        via: 'direct',
+        via: "direct",
         depth: 0,
         codeRef: {
           filePath: String(row.filePath),
@@ -155,19 +157,21 @@ export async function analyzeImpact(
   }
 
   const directEntities = [...directMap.values()];
-  const directNames = directEntities.map(e => e.name);
+  const directNames = directEntities.map((e) => e.name);
 
   log?.(`  ${directEntities.length} directly-linked entities`);
 
   if (directEntities.length === 0) {
-    log?.('No entities linked to the specified file(s). Run `iw xlink` first to create cross-layer links.');
+    log?.(
+      "No entities linked to the specified file(s). Run `iw xlink` first to create cross-layer links.",
+    );
     return emptyResult(normalizedFiles, sessionId);
   }
 
   // ── Step 2: Expand ripple via CANON_REL ─────────────────────────────
   log?.(`Step 2: Expanding ${hops} hops via CANON_REL…`);
 
-  const hopRange = hops > 1 ? `1..${hops}` : '1';
+  const hopRange = hops > 1 ? `1..${hops}` : "1";
 
   const rippleRows = await runner.run(
     `MATCH (seed:Canon)
@@ -188,11 +192,11 @@ export async function analyzeImpact(
   );
 
   // Compute depth for ripple entities (BFS-like: query per hop level)
-  const rippleEntities: ImpactEntity[] = rippleRows.map(row => ({
+  const rippleEntities: ImpactEntity[] = rippleRows.map((row) => ({
     name: String(row.name),
     type: String(row.type),
-    confidence: typeof row.confidence === 'number' ? row.confidence : 1.0,
-    via: 'ripple' as const,
+    confidence: typeof row.confidence === "number" ? row.confidence : 1.0,
+    via: "ripple" as const,
     depth: 1, // We'll refine below
   }));
 
@@ -206,7 +210,7 @@ export async function analyzeImpact(
        RETURN DISTINCT neighbor.name AS name`,
       { sid: sessionId, seeds: directNames },
     );
-    const hop1Names = new Set(hop1Rows.map(r => String(r.name)));
+    const hop1Names = new Set(hop1Rows.map((r) => String(r.name)));
     for (const e of rippleEntities) {
       e.depth = hop1Names.has(e.name) ? 1 : 2;
     }
@@ -215,9 +219,9 @@ export async function analyzeImpact(
   log?.(`  ${rippleEntities.length} ripple entities`);
 
   // ── Step 3: Fetch relationships within the impact subgraph ──────────
-  log?.('Step 3: Fetching relationships in impact subgraph…');
+  log?.("Step 3: Fetching relationships in impact subgraph…");
 
-  const allNames = [...directNames, ...rippleEntities.map(e => e.name)];
+  const allNames = [...directNames, ...rippleEntities.map((e) => e.name)];
 
   const relRows = await runner.run(
     `MATCH (a:Canon)-[r:CANON_REL]->(b:Canon)
@@ -232,27 +236,34 @@ export async function analyzeImpact(
     { sid: sessionId, names: allNames },
   );
 
-  const relationships: ImpactRelationship[] = relRows.map(row => ({
+  const relationships: ImpactRelationship[] = relRows.map((row) => ({
     sourceName: String(row.sourceName),
     sourceType: String(row.sourceType),
     predicate: String(row.predicate),
     targetName: String(row.targetName),
     targetType: String(row.targetType),
-    confidence: typeof row.confidence === 'number' ? row.confidence : 1.0,
+    confidence: typeof row.confidence === "number" ? row.confidence : 1.0,
   }));
 
   // Enrich with rationales from raw triples (best effort)
-  await enrichRelationshipsWithRationales(runner, sessionId, relationships, allNames);
+  await enrichRelationshipsWithRationales(
+    runner,
+    sessionId,
+    relationships,
+    allNames,
+  );
 
   // ── Step 4: Extract decision trail + risks ──────────────────────────
   const decisions = relationships.filter(
-    r => r.predicate === 'DECIDED_FOR' || r.predicate === 'DECIDED_AGAINST',
+    (r) => r.predicate === "DECIDED_FOR" || r.predicate === "DECIDED_AGAINST",
   );
   const risks = relationships.filter(
-    r => r.predicate === 'RISKS' || r.predicate === 'BLOCKS',
+    (r) => r.predicate === "RISKS" || r.predicate === "BLOCKS",
   );
 
-  log?.(`  ${relationships.length} relationships, ${decisions.length} decisions, ${risks.length} risks`);
+  log?.(
+    `  ${relationships.length} relationships, ${decisions.length} decisions, ${risks.length} risks`,
+  );
 
   return {
     files: normalizedFiles,
@@ -297,13 +308,19 @@ async function enrichRelationshipsWithRationales(
 
   if (rawTriples.length === 0) return;
 
-  const rationaleMap = new Map<string, { rationale: string; confidence: number }>();
+  const rationaleMap = new Map<
+    string,
+    { rationale: string; confidence: number }
+  >();
   for (const rt of rawTriples) {
     const key = `${String(rt.subject).toLowerCase()}|${String(rt.object).toLowerCase()}`;
-    const conf = typeof rt.confidence === 'number' ? rt.confidence : 0.5;
+    const conf = typeof rt.confidence === "number" ? rt.confidence : 0.5;
     const existing = rationaleMap.get(key);
     if (!existing || conf > existing.confidence) {
-      rationaleMap.set(key, { rationale: String(rt.rationale), confidence: conf });
+      rationaleMap.set(key, {
+        rationale: String(rt.rationale),
+        confidence: conf,
+      });
     }
   }
 
@@ -327,29 +344,35 @@ export function formatImpactMarkdown(result: ImpactResult): string {
   const sections: string[] = [];
 
   // ── Header ──────────────────────────────────────────────────────────
-  const fileList = result.files.length <= 3
-    ? result.files.map(f => `\`${f}\``).join(', ')
-    : `${result.files.length} files`;
+  const fileList =
+    result.files.length <= 3
+      ? result.files.map((f) => `\`${f}\``).join(", ")
+      : `${result.files.length} files`;
   sections.push(`# Impact Analysis: ${fileList}`);
-  sections.push(`> Session: ${result.sessionId} | ${result.stats.directCount} direct, ${result.stats.rippleCount} ripple, ${result.stats.decisionCount} decisions, ${result.stats.riskCount} risks\n`);
+  sections.push(
+    `> Session: ${result.sessionId} | ${result.stats.directCount} direct, ${result.stats.rippleCount} ripple, ${result.stats.decisionCount} decisions, ${result.stats.riskCount} risks\n`,
+  );
 
   // ── Direct impacts ──────────────────────────────────────────────────
   if (result.directEntities.length > 0) {
-    const lines = ['## Direct Impact'];
-    lines.push('> Concepts implemented in the changed file(s)\n');
+    const lines = ["## Direct Impact"];
+    lines.push("> Concepts implemented in the changed file(s)\n");
     for (const e of result.directEntities) {
-      const confStr = e.confidence < 0.9 ? ` [${Math.round(e.confidence * 100)}%]` : '';
-      const refStr = e.codeRef ? ` — via ${e.codeRef.kind} (${e.codeRef.strategy})` : '';
+      const confStr =
+        e.confidence < 0.9 ? ` [${Math.round(e.confidence * 100)}%]` : "";
+      const refStr = e.codeRef
+        ? ` — via ${e.codeRef.kind} (${e.codeRef.strategy})`
+        : "";
       lines.push(`- **${e.name}** (${e.type})${confStr}${refStr}`);
     }
-    lines.push('');
-    sections.push(lines.join('\n'));
+    lines.push("");
+    sections.push(lines.join("\n"));
   }
 
   // ── Ripple impacts ──────────────────────────────────────────────────
   if (result.rippleEntities.length > 0) {
-    const lines = ['## Ripple Impact'];
-    lines.push('> Concepts connected to the directly-affected entities\n');
+    const lines = ["## Ripple Impact"];
+    lines.push("> Concepts connected to the directly-affected entities\n");
 
     // Group by depth
     const byDepth = new Map<number, ImpactEntity[]>();
@@ -358,58 +381,70 @@ export function formatImpactMarkdown(result: ImpactResult): string {
       byDepth.get(e.depth)!.push(e);
     }
 
-    for (const [depth, ents] of [...byDepth.entries()].sort((a, b) => a[0] - b[0])) {
-      lines.push(`### ${depth} hop${depth > 1 ? 's' : ''} away`);
+    for (const [depth, ents] of [...byDepth.entries()].sort(
+      (a, b) => a[0] - b[0],
+    )) {
+      lines.push(`### ${depth} hop${depth > 1 ? "s" : ""} away`);
       for (const e of ents.sort((a, b) => b.confidence - a.confidence)) {
-        const confStr = e.confidence < 0.9 ? ` [${Math.round(e.confidence * 100)}%]` : '';
+        const confStr =
+          e.confidence < 0.9 ? ` [${Math.round(e.confidence * 100)}%]` : "";
         lines.push(`- **${e.name}** (${e.type})${confStr}`);
       }
-      lines.push('');
+      lines.push("");
     }
-    sections.push(lines.join('\n'));
+    sections.push(lines.join("\n"));
   }
 
   // ── Decision Trail ──────────────────────────────────────────────────
   if (result.decisions.length > 0) {
-    const lines = ['## Affected Decisions'];
-    lines.push('> Design decisions that may need revisiting\n');
+    const lines = ["## Affected Decisions"];
+    lines.push("> Design decisions that may need revisiting\n");
     for (const d of result.decisions) {
-      const verb = d.predicate === 'DECIDED_FOR' ? '✅ chose' : '❌ rejected';
+      const verb = d.predicate === "DECIDED_FOR" ? "✅ chose" : "❌ rejected";
       const line = `- **${d.sourceName}** ${verb} **${d.targetName}**`;
       lines.push(d.rationale ? `${line}\n  > ${d.rationale}` : line);
     }
-    lines.push('');
-    sections.push(lines.join('\n'));
+    lines.push("");
+    sections.push(lines.join("\n"));
   }
 
   // ── Risks ───────────────────────────────────────────────────────────
   if (result.risks.length > 0) {
-    const lines = ['## Risks & Blockers'];
-    lines.push('> Potential issues from changing these files\n');
+    const lines = ["## Risks & Blockers"];
+    lines.push("> Potential issues from changing these files\n");
     for (const r of result.risks) {
-      const icon = r.predicate === 'BLOCKS' ? '🚫' : '⚠️';
+      const icon = r.predicate === "BLOCKS" ? "🚫" : "⚠️";
       const line = `- ${icon} **${r.sourceName}** ${r.predicate.toLowerCase()} **${r.targetName}**`;
       lines.push(r.rationale ? `${line}\n  > ${r.rationale}` : line);
     }
-    lines.push('');
-    sections.push(lines.join('\n'));
+    lines.push("");
+    sections.push(lines.join("\n"));
   }
 
   // ── Key Relationships ───────────────────────────────────────────────
   if (result.relationships.length > 0) {
     // Show top relationships (excluding already-shown decisions and risks)
-    const shownPreds = new Set(['DECIDED_FOR', 'DECIDED_AGAINST', 'RISKS', 'BLOCKS']);
-    const keyRels = result.relationships.filter(r => !shownPreds.has(r.predicate));
+    const shownPreds = new Set([
+      "DECIDED_FOR",
+      "DECIDED_AGAINST",
+      "RISKS",
+      "BLOCKS",
+    ]);
+    const keyRels = result.relationships.filter(
+      (r) => !shownPreds.has(r.predicate),
+    );
 
     if (keyRels.length > 0) {
-      const lines = ['## Key Relationships'];
+      const lines = ["## Key Relationships"];
       const byPred = new Map<string, ImpactRelationship[]>();
       for (const r of keyRels) {
         if (!byPred.has(r.predicate)) byPred.set(r.predicate, []);
         byPred.get(r.predicate)!.push(r);
       }
 
-      for (const [pred, rels] of [...byPred.entries()].sort((a, b) => b[1].length - a[1].length)) {
+      for (const [pred, rels] of [...byPred.entries()].sort(
+        (a, b) => b[1].length - a[1].length,
+      )) {
         lines.push(`### ${pred} (${rels.length})`);
         for (const r of rels.slice(0, 10)) {
           lines.push(`- ${r.sourceName} → ${r.targetName}`);
@@ -420,20 +455,22 @@ export function formatImpactMarkdown(result: ImpactResult): string {
         if (rels.length > 10) {
           lines.push(`- _(${rels.length - 10} more)_`);
         }
-        lines.push('');
+        lines.push("");
       }
-      sections.push(lines.join('\n'));
+      sections.push(lines.join("\n"));
     }
   }
 
   // ── No impact ───────────────────────────────────────────────────────
   if (result.directEntities.length === 0) {
-    sections.push('## No Impact Found');
-    sections.push('No semantic concepts are linked to the specified file(s).');
-    sections.push('Run `iw xlink --persist` to create cross-layer links first.\n');
+    sections.push("## No Impact Found");
+    sections.push("No semantic concepts are linked to the specified file(s).");
+    sections.push(
+      "Run `iw xlink --persist` to create cross-layer links first.\n",
+    );
   }
 
-  return sections.join('\n');
+  return sections.join("\n");
 }
 
 /**

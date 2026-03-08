@@ -3,49 +3,52 @@
 
 /**
  * Issue Registry
- * 
+ *
  * Manages persistent issue IDs across runs.
  * Stores fingerprint -> ID mappings per session.
  */
 
-import { existsSync } from 'fs';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { dirname, join } from 'path';
-import type { 
-  IssueRegistry, 
+import { existsSync } from "fs";
+import { readFile, writeFile, mkdir } from "fs/promises";
+import { dirname, join } from "path";
+import type {
+  IssueRegistry,
   IssueRegistryEntry,
   IssueKind,
   IssueFingerprint,
-} from './types.js';
-import { EMPTY_ISSUE_REGISTRY } from './types.js';
-import { computeFingerprintHash, getIssuePrefix } from './fingerprint.js';
+} from "./types.js";
+import { EMPTY_ISSUE_REGISTRY } from "./types.js";
+import { computeFingerprintHash, getIssuePrefix } from "./fingerprint.js";
 
 /**
  * Get the path to the issue registry for a session.
  */
-export function getIssueRegistryPath(iwDir: string, sessionKey: string): string {
+export function getIssueRegistryPath(
+  iwDir: string,
+  sessionKey: string,
+): string {
   // Sanitize session key for filesystem
-  const sanitized = sessionKey.replace(/[/:]/g, '_');
-  return join(iwDir, 'issues', `${sanitized}.json`);
+  const sanitized = sessionKey.replace(/[/:]/g, "_");
+  return join(iwDir, "issues", `${sanitized}.json`);
 }
 
 /**
  * Load issue registry for a session.
  */
 export async function loadIssueRegistry(
-  iwDir: string, 
-  sessionKey: string
+  iwDir: string,
+  sessionKey: string,
 ): Promise<IssueRegistry> {
   const path = getIssueRegistryPath(iwDir, sessionKey);
-  
+
   if (!existsSync(path)) {
     return { ...EMPTY_ISSUE_REGISTRY };
   }
-  
+
   try {
-    const content = await readFile(path, 'utf-8');
+    const content = await readFile(path, "utf-8");
     const data = JSON.parse(content) as IssueRegistry;
-    
+
     // Ensure all required fields exist
     return {
       fingerprints: data.fingerprints ?? {},
@@ -67,13 +70,13 @@ export async function loadIssueRegistry(
 export async function saveIssueRegistry(
   iwDir: string,
   sessionKey: string,
-  registry: IssueRegistry
+  registry: IssueRegistry,
 ): Promise<void> {
   const path = getIssueRegistryPath(iwDir, sessionKey);
   const dir = dirname(path);
-  
+
   await mkdir(dir, { recursive: true });
-  await writeFile(path, JSON.stringify(registry, null, 2), 'utf-8');
+  await writeFile(path, JSON.stringify(registry, null, 2), "utf-8");
 }
 
 /**
@@ -84,12 +87,12 @@ export interface IssueIdResult {
   issueKey: string;
   fingerprint: string;
   isNew: boolean;
-  previousStatus?: 'active' | 'resolved';
+  previousStatus?: "active" | "resolved";
 }
 
 /**
  * Look up or allocate an issue ID from the registry.
- * 
+ *
  * @param registry - The issue registry (will be mutated)
  * @param sessionKey - Session key for issueKey construction
  * @param runId - Current run ID
@@ -100,24 +103,24 @@ export function getOrAllocateIssueId(
   registry: IssueRegistry,
   sessionKey: string,
   runId: string,
-  fingerprintInputs: IssueFingerprint
+  fingerprintInputs: IssueFingerprint,
 ): IssueIdResult {
   const fingerprintHash = computeFingerprintHash(fingerprintInputs);
   const prefix = getIssuePrefix(fingerprintInputs.kind);
   const now = new Date().toISOString();
-  
+
   const existing = registry.fingerprints[fingerprintHash];
-  
+
   if (existing) {
     // Existing issue - update lastSeen
-    const previousStatus = existing.resolved ? 'resolved' : 'active';
-    
+    const previousStatus = existing.resolved ? "resolved" : "active";
+
     // If was resolved, it's now regressed
     if (existing.resolved) {
       delete existing.resolved;
     }
     existing.lastSeen = now;
-    
+
     return {
       id: existing.id,
       issueKey: `${sessionKey}#${existing.id}`,
@@ -126,20 +129,20 @@ export function getOrAllocateIssueId(
       previousStatus,
     };
   }
-  
+
   // New issue - allocate ID
   const num = registry.nextId[prefix];
   registry.nextId[prefix] = num + 1;
-  
+
   const id = `${prefix}-${num}`;
-  
+
   const entry: IssueRegistryEntry = {
     id,
     firstSeen: now,
     lastSeen: now,
   };
   registry.fingerprints[fingerprintHash] = entry;
-  
+
   return {
     id,
     issueKey: `${sessionKey}#${id}`,
@@ -150,25 +153,25 @@ export function getOrAllocateIssueId(
 
 /**
  * Mark issues as resolved if they weren't seen in the current run.
- * 
+ *
  * @param registry - The issue registry (will be mutated)
  * @param seenFingerprints - Set of fingerprints seen in current run
  * @returns Number of issues marked as resolved
  */
 export function markUnseenAsResolved(
   registry: IssueRegistry,
-  seenFingerprints: Set<string>
+  seenFingerprints: Set<string>,
 ): number {
   const now = new Date().toISOString();
   let resolved = 0;
-  
+
   for (const [fingerprint, entry] of Object.entries(registry.fingerprints)) {
     if (!seenFingerprints.has(fingerprint) && !entry.resolved) {
       entry.resolved = now;
       resolved++;
     }
   }
-  
+
   return resolved;
 }
 
@@ -184,22 +187,22 @@ export interface IssueTrendResult {
 
 export function computeIssueTrend(
   results: IssueIdResult[],
-  newlyResolved: number
+  newlyResolved: number,
 ): IssueTrendResult {
   let newIssues = 0;
   let recurringIssues = 0;
   let regressedIssues = 0;
-  
+
   for (const result of results) {
     if (result.isNew) {
       newIssues++;
-    } else if (result.previousStatus === 'resolved') {
+    } else if (result.previousStatus === "resolved") {
       regressedIssues++;
     } else {
       recurringIssues++;
     }
   }
-  
+
   return {
     newIssues,
     resolvedIssues: newlyResolved,

@@ -12,4 +12,4 @@ export {
   type ValidationFinding,
   type ValidationInput,
   type ValidationOutput,
-} from './coreRules.js';
+} from "./coreRules.js";

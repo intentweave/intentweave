@@ -4,7 +4,14 @@
   "title": "IntentWeave PX Stage Output",
   "description": "Presentation stage output - filtered entities and statements ready for UI/export",
   "type": "object",
-  "required": ["$schema", "schemaVersion", "stage", "artifactId", "entities", "statements"],
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "stage",
+    "artifactId",
+    "entities",
+    "statements"
+  ],
   "properties": {
     "$schema": {
       "type": "string",
@@ -78,7 +85,13 @@
           "kept": { "type": "boolean" },
           "reason": {
             "type": "string",
-            "enum": ["profile-match", "confidence-threshold", "kind-filter", "explicit-include", "explicit-exclude"]
+            "enum": [
+              "profile-match",
+              "confidence-threshold",
+              "kind-filter",
+              "explicit-include",
+              "explicit-exclude"
+            ]
           },
           "originalConfidence": { "type": "number" }
         },

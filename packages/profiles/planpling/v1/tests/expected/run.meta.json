@@ -5,18 +5,8 @@
   "workspaceKey": "tests",
   "status": "completed",
   "profile": "standard",
-  "stages": [
-    "AGG",
-    "CX",
-    "IN",
-    "MX",
-    "PX",
-    "RX"
-  ],
-  "artifacts": [
-    "prompt",
-    "spec"
-  ],
+  "stages": ["AGG", "CX", "IN", "MX", "PX", "RX"],
+  "artifacts": ["prompt", "spec"],
   "summary": {
     "entityCount": 44,
     "statementCount": 1,

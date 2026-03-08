@@ -5,49 +5,58 @@
  * status command - Show workspace status
  */
 
-import { Command } from 'commander';
-import { validateWorkspaceConfig } from '@intentweave/core';
-import chalk from 'chalk';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { IW_DIR, CLI_NAME } from '../constants.js';
+import { Command } from "commander";
+import { validateWorkspaceConfig } from "@intentweave/core";
+import chalk from "chalk";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { IW_DIR, CLI_NAME } from "../constants.js";
 
-export const statusCommand = new Command('status')
-  .description('Show workspace status')
-  .argument('[directory]', 'Workspace directory', '.')
-  .option('--json', 'Output as JSON')
+export const statusCommand = new Command("status")
+  .description("Show workspace status")
+  .argument("[directory]", "Workspace directory", ".")
+  .option("--json", "Output as JSON")
   .action(async (directory: string, options) => {
     const { json } = options;
-    
+
     const absoluteDir = path.resolve(directory);
-    const configPath = path.join(absoluteDir, IW_DIR, 'config.json');
-    
+    const configPath = path.join(absoluteDir, IW_DIR, "config.json");
+
     let config: Record<string, unknown> | null = null;
-    
+
     try {
-      const configContent = await fs.readFile(configPath, 'utf-8');
+      const configContent = await fs.readFile(configPath, "utf-8");
       config = JSON.parse(configContent);
     } catch {
       if (json) {
-        console.log(JSON.stringify({ initialized: false, error: 'No workspace found' }));
+        console.log(
+          JSON.stringify({ initialized: false, error: "No workspace found" }),
+        );
       } else {
-        console.log(chalk.yellow('No IntentWeave workspace found in this directory.'));
+        console.log(
+          chalk.yellow("No IntentWeave workspace found in this directory."),
+        );
         console.log(`Run ${chalk.blue(`${CLI_NAME} init`)} to create one.`);
       }
       return;
     }
-    
+
     if (!validateWorkspaceConfig(config)) {
       if (json) {
-        console.log(JSON.stringify({ initialized: false, error: 'Invalid configuration' }));
+        console.log(
+          JSON.stringify({
+            initialized: false,
+            error: "Invalid configuration",
+          }),
+        );
       } else {
-        console.error(chalk.red('Invalid workspace configuration'));
+        console.error(chalk.red("Invalid workspace configuration"));
       }
       return;
     }
-    
+
     // Count staged files
-    const stagingDir = path.join(absoluteDir, IW_DIR, 'staging');
+    const stagingDir = path.join(absoluteDir, IW_DIR, "staging");
     let stagedCount = 0;
     try {
       const stagedFiles = await fs.readdir(stagingDir);
@@ -55,9 +64,9 @@ export const statusCommand = new Command('status')
     } catch {
       // Staging directory doesn't exist
     }
-    
+
     // Count runs
-    const runsDir = path.join(absoluteDir, IW_DIR, 'runs');
+    const runsDir = path.join(absoluteDir, IW_DIR, "runs");
     let runsCount = 0;
     try {
       const runs = await fs.readdir(runsDir);
@@ -65,7 +74,7 @@ export const statusCommand = new Command('status')
     } catch {
       // Runs directory doesn't exist
     }
-    
+
     const status = {
       initialized: true,
       workspaceId: config.id,
@@ -76,18 +85,18 @@ export const statusCommand = new Command('status')
       stagedFiles: stagedCount,
       totalRuns: runsCount,
     };
-    
+
     if (json) {
       console.log(JSON.stringify(status, null, 2));
     } else {
-      console.log(chalk.green('IntentWeave Workspace Status'));
-      console.log('');
+      console.log(chalk.green("IntentWeave Workspace Status"));
+      console.log("");
       console.log(`  ID:           ${status.workspaceId}`);
       console.log(`  Name:         ${status.workspaceName}`);
       console.log(`  Root:         ${status.rootPath}`);
       console.log(`  Created:      ${status.createdAt}`);
       console.log(`  Updated:      ${status.updatedAt}`);
-      console.log('');
+      console.log("");
       console.log(`  Staged files: ${status.stagedFiles}`);
       console.log(`  Total runs:   ${status.totalRuns}`);
     }

@@ -15,15 +15,15 @@
  * Phase 2 only activates when Phase 1 exhausts all retries on a network error.
  */
 
-import type { LLMProvider, LLMRequest, LLMResponse } from '@intentweave/core';
-import { withRetry, type RetryOptions } from '@intentweave/core';
+import type { LLMProvider, LLMRequest, LLMResponse } from "@intentweave/core";
+import { withRetry, type RetryOptions } from "@intentweave/core";
 
 /**
  * Patterns in error messages that indicate a transient/retryable failure.
  */
 const RETRYABLE_PATTERNS = [
-  /\b429\b/,           // Rate limit
-  /\b5\d{2}\b/,        // Server errors (500, 502, 503, etc.)
+  /\b429\b/, // Rate limit
+  /\b5\d{2}\b/, // Server errors (500, 502, 503, etc.)
   /rate.?limit/i,
   /timeout/i,
   /timed?\s*out/i,
@@ -50,13 +50,13 @@ const NETWORK_ERROR_PATTERNS = [
 ];
 
 function isRetryableResponse(response: LLMResponse): boolean {
-  if (response.finishReason !== 'error') return false;
-  const msg = response.error ?? '';
-  return RETRYABLE_PATTERNS.some(p => p.test(msg));
+  if (response.finishReason !== "error") return false;
+  const msg = response.error ?? "";
+  return RETRYABLE_PATTERNS.some((p) => p.test(msg));
 }
 
 function isNetworkErrorMessage(msg: string): boolean {
-  return NETWORK_ERROR_PATTERNS.some(p => p.test(msg));
+  return NETWORK_ERROR_PATTERNS.some((p) => p.test(msg));
 }
 
 /**
@@ -80,7 +80,7 @@ export async function completeWithRetry(
   // Sentinel error to trigger retry
   class RetryableResponseError extends Error {
     constructor(public readonly response: LLMResponse) {
-      super(response.error ?? 'retryable LLM error');
+      super(response.error ?? "retryable LLM error");
     }
   }
 
@@ -121,19 +121,19 @@ export async function completeWithRetry(
   // ─── Phase 2: Network recovery retry (slow backoff) ──────────────────
   // Only enter Phase 2 if the final Phase 1 error was a network-level failure.
   // Rate limits and server errors do NOT escalate — they're already handled.
-  const errorMsg = phase1Response?.error ?? '';
+  const errorMsg = phase1Response?.error ?? "";
   if (!isNetworkErrorMessage(errorMsg)) {
     return phase1Response!;
   }
 
   const NETWORK_RETRIES = 3;
-  const NETWORK_INITIAL_DELAY_MS = 15_000;   // 15 seconds
+  const NETWORK_INITIAL_DELAY_MS = 15_000; // 15 seconds
   const NETWORK_BACKOFF = 2;
-  const NETWORK_MAX_DELAY_MS = 120_000;       // 2 minutes
+  const NETWORK_MAX_DELAY_MS = 120_000; // 2 minutes
 
   options?.logger?.warn(
     `Network error persists after ${maxRetries} retries. Entering network recovery mode ` +
-    `(${NETWORK_RETRIES} attempts, ${NETWORK_INITIAL_DELAY_MS / 1000}s–${NETWORK_MAX_DELAY_MS / 1000}s delays): ${errorMsg}`,
+      `(${NETWORK_RETRIES} attempts, ${NETWORK_INITIAL_DELAY_MS / 1000}s–${NETWORK_MAX_DELAY_MS / 1000}s delays): ${errorMsg}`,
   );
 
   try {

@@ -13,44 +13,44 @@
  *
  * Semantic matching (embeddings) is optional and requires external provider.
  */
-import type { Entity, LxStageOutput } from '@intentweave/core';
-import type { Profile } from '../pipeline/context.js';
-import type { PxStageOutput } from '../stages/px.js';
+import type { Entity, LxStageOutput } from "@intentweave/core";
+import type { Profile } from "../pipeline/context.js";
+import type { PxStageOutput } from "../stages/px.js";
 /**
  * Artifact entity input for linking
  */
 export interface LxArtifactInput {
-    /** Artifact ID */
-    artifactId: string;
-    /** Source file path */
-    filePath: string;
-    /** Artifact role (spec, impl, prompt, etc.) */
-    artifactRole: string;
-    /** Entities from this artifact */
-    entities: Entity[];
+  /** Artifact ID */
+  artifactId: string;
+  /** Source file path */
+  filePath: string;
+  /** Artifact role (spec, impl, prompt, etc.) */
+  artifactRole: string;
+  /** Entities from this artifact */
+  entities: Entity[];
 }
 /**
  * LX-Core options
  */
 export interface LxCoreOptions {
-    /** Workspace key */
-    workspaceKey: string;
-    /** Run ID */
-    runId: string;
-    /** Active profile */
-    profile: Profile;
-    /** Minimum confidence threshold for proposals */
-    minConfidence?: number;
-    /** Enable name matching */
-    enableNameMatching?: boolean;
-    /** Enable alias matching */
-    enableAliasMatching?: boolean;
-    /** Enable structural matching */
-    enableStructuralMatching?: boolean;
-    /** Enable profile-based matching */
-    enableProfileMatching?: boolean;
-    /** Maximum proposals per entity pair */
-    maxProposalsPerPair?: number;
+  /** Workspace key */
+  workspaceKey: string;
+  /** Run ID */
+  runId: string;
+  /** Active profile */
+  profile: Profile;
+  /** Minimum confidence threshold for proposals */
+  minConfidence?: number;
+  /** Enable name matching */
+  enableNameMatching?: boolean;
+  /** Enable alias matching */
+  enableAliasMatching?: boolean;
+  /** Enable structural matching */
+  enableStructuralMatching?: boolean;
+  /** Enable profile-based matching */
+  enableProfileMatching?: boolean;
+  /** Maximum proposals per entity pair */
+  maxProposalsPerPair?: number;
 }
 /**
  * Run LX-Core linking on all artifacts
@@ -59,13 +59,21 @@ export interface LxCoreOptions {
  * @param options - LX options
  * @returns LX stage output with link proposals
  */
-export declare function runLxCore(artifacts: LxArtifactInput[], options: LxCoreOptions): Promise<LxStageOutput>;
+export declare function runLxCore(
+  artifacts: LxArtifactInput[],
+  options: LxCoreOptions,
+): Promise<LxStageOutput>;
 /**
  * Convert PX outputs to LX inputs
  */
-export declare function pxOutputsToLxInputs(pxOutputs: PxStageOutput[]): LxArtifactInput[];
+export declare function pxOutputsToLxInputs(
+  pxOutputs: PxStageOutput[],
+): LxArtifactInput[];
 /**
  * Create empty LX output
  */
-export declare function createEmptyLxOutput(runId: string, workspaceKey: string): LxStageOutput;
+export declare function createEmptyLxOutput(
+  runId: string,
+  workspaceKey: string,
+): LxStageOutput;
 //# sourceMappingURL=lxCore.d.ts.map

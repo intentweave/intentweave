@@ -3,7 +3,7 @@
 
 /**
  * Transcript Module
- * 
+ *
  * Core infrastructure for chat/conversation as first-class artifacts.
  * Provides types, storage, hashing, heuristics, and rewrite detection.
  */
@@ -31,13 +31,13 @@ export type {
   ImportResult,
   HeuristicsResult,
   RoleStats,
-} from './types.js';
+} from "./types.js";
 
 export {
   HASH_WINDOW_SIZE,
   LOOKBACK_SIZE,
   HEURISTICS_VERSION,
-} from './types.js';
+} from "./types.js";
 
 // =============================================================================
 // Storage
@@ -60,7 +60,7 @@ export {
   listTranscriptSessions,
   listTranscriptSources,
   deleteTranscript,
-} from './storage.js';
+} from "./storage.js";
 
 // =============================================================================
 // Hash
@@ -81,7 +81,7 @@ export {
   sha256,
   computeTranscriptFingerprint,
   computeRolesHash,
-} from './hash.js';
+} from "./hash.js";
 
 // =============================================================================
 // Heuristics
@@ -94,7 +94,7 @@ export {
   speakerToMessageRole,
   stripInlineTags,
   extractInlineTag,
-} from './heuristics.js';
+} from "./heuristics.js";
 
 // =============================================================================
 // Rewrite Detection
@@ -106,7 +106,7 @@ export {
   buildImportStateHashes,
   createImportState,
   updateImportState,
-} from './rewrite-detection.js';
+} from "./rewrite-detection.js";
 
 // =============================================================================
 // SpecStory Parser
@@ -123,12 +123,10 @@ export {
   SPECSTORY_ADAPTER_VERSION,
   SPECSTORY_PARSER_VERSION,
   type SpecStoryParseResult,
-} from './specstory-parser.js';
+} from "./specstory-parser.js";
 
 // =============================================================================
 // SpecStory Adapter
 // =============================================================================
 
-export {
-  specstoryAdapter,
-} from './specstory-adapter.js';
+export { specstoryAdapter } from "./specstory-adapter.js";

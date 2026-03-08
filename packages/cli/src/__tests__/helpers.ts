@@ -8,9 +8,23 @@
  * and factory functions for building test data.
  */
 
-import type { Neo4jRunner, LLMCompleter, ContextEntity, ContextRelationship, ContextBundle } from '../context/contextBuilder.js';
-import type { ImpactResult, ImpactEntity, ImpactRelationship } from '../impact/impactAnalyzer.js';
-import type { CrossLink, XLinkResult, CodeRef } from '../linker/crossLayerLinker.js';
+import type {
+  Neo4jRunner,
+  LLMCompleter,
+  ContextEntity,
+  ContextRelationship,
+  ContextBundle,
+} from "../context/contextBuilder.js";
+import type {
+  ImpactResult,
+  ImpactEntity,
+  ImpactRelationship,
+} from "../impact/impactAnalyzer.js";
+import type {
+  CrossLink,
+  XLinkResult,
+  CodeRef,
+} from "../linker/crossLayerLinker.js";
 
 // =============================================================================
 // Mock Neo4j Runner
@@ -34,15 +48,21 @@ export interface CypherMock {
   rows: Record<string, unknown>[];
 }
 
-export function createMockRunner(mocks: CypherMock[] = []): Neo4jRunner & { calls: Array<{ cypher: string; params?: Record<string, unknown> }> } {
+export function createMockRunner(mocks: CypherMock[] = []): Neo4jRunner & {
+  calls: Array<{ cypher: string; params?: Record<string, unknown> }>;
+} {
   const calls: Array<{ cypher: string; params?: Record<string, unknown> }> = [];
 
   return {
     calls,
-    async run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> {
+    async run(
+      cypher: string,
+      params?: Record<string, unknown>,
+    ): Promise<Record<string, unknown>[]> {
       calls.push({ cypher, params });
       for (const mock of mocks) {
-        const pattern = typeof mock.match === 'string' ? new RegExp(mock.match) : mock.match;
+        const pattern =
+          typeof mock.match === "string" ? new RegExp(mock.match) : mock.match;
         if (pattern.test(cypher)) {
           return mock.rows;
         }
@@ -55,13 +75,20 @@ export function createMockRunner(mocks: CypherMock[] = []): Neo4jRunner & { call
 /**
  * Create sequential mock runner — returns rows from an array in order of calls.
  */
-export function createSequentialMockRunner(responses: Array<Record<string, unknown>[]>): Neo4jRunner & { calls: Array<{ cypher: string; params?: Record<string, unknown> }> } {
+export function createSequentialMockRunner(
+  responses: Array<Record<string, unknown>[]>,
+): Neo4jRunner & {
+  calls: Array<{ cypher: string; params?: Record<string, unknown> }>;
+} {
   let callIndex = 0;
   const calls: Array<{ cypher: string; params?: Record<string, unknown> }> = [];
 
   return {
     calls,
-    async run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> {
+    async run(
+      cypher: string,
+      params?: Record<string, unknown>,
+    ): Promise<Record<string, unknown>[]> {
       calls.push({ cypher, params });
       const rows = responses[callIndex] ?? [];
       callIndex++;
@@ -81,7 +108,7 @@ export function createMockLlm(response: string): LLMCompleter {
 export function createMockLlmSequential(responses: string[]): LLMCompleter {
   let callIndex = 0;
   return async () => {
-    const resp = responses[callIndex] ?? '';
+    const resp = responses[callIndex] ?? "";
     callIndex++;
     return resp;
   };
@@ -91,11 +118,13 @@ export function createMockLlmSequential(responses: string[]): LLMCompleter {
 // Factory Functions
 // =============================================================================
 
-export function createContextEntity(overrides: Partial<ContextEntity> = {}): ContextEntity {
+export function createContextEntity(
+  overrides: Partial<ContextEntity> = {},
+): ContextEntity {
   return {
-    canonId: 'test-entity',
-    name: 'Test Entity',
-    type: 'concept',
+    canonId: "test-entity",
+    name: "Test Entity",
+    type: "concept",
     aliases: [],
     confidence: 0.95,
     sources: [],
@@ -103,22 +132,26 @@ export function createContextEntity(overrides: Partial<ContextEntity> = {}): Con
   };
 }
 
-export function createContextRelationship(overrides: Partial<ContextRelationship> = {}): ContextRelationship {
+export function createContextRelationship(
+  overrides: Partial<ContextRelationship> = {},
+): ContextRelationship {
   return {
-    sourceName: 'Source Entity',
-    sourceType: 'concept',
-    predicate: 'DEPENDS_ON',
-    targetName: 'Target Entity',
-    targetType: 'technology',
+    sourceName: "Source Entity",
+    sourceType: "concept",
+    predicate: "DEPENDS_ON",
+    targetName: "Target Entity",
+    targetType: "technology",
     confidence: 0.9,
     ...overrides,
   };
 }
 
-export function createContextBundle(overrides: Partial<ContextBundle> = {}): ContextBundle {
+export function createContextBundle(
+  overrides: Partial<ContextBundle> = {},
+): ContextBundle {
   return {
-    topic: 'test topic',
-    sessionId: 'test-session',
+    topic: "test topic",
+    sessionId: "test-session",
     entities: [],
     relationships: [],
     stats: {
@@ -131,33 +164,39 @@ export function createContextBundle(overrides: Partial<ContextBundle> = {}): Con
   };
 }
 
-export function createImpactEntity(overrides: Partial<ImpactEntity> = {}): ImpactEntity {
+export function createImpactEntity(
+  overrides: Partial<ImpactEntity> = {},
+): ImpactEntity {
   return {
-    name: 'Test Entity',
-    type: 'concept',
+    name: "Test Entity",
+    type: "concept",
     confidence: 0.95,
-    via: 'direct',
+    via: "direct",
     depth: 0,
     ...overrides,
   };
 }
 
-export function createImpactRelationship(overrides: Partial<ImpactRelationship> = {}): ImpactRelationship {
+export function createImpactRelationship(
+  overrides: Partial<ImpactRelationship> = {},
+): ImpactRelationship {
   return {
-    sourceName: 'Source',
-    sourceType: 'concept',
-    predicate: 'DEPENDS_ON',
-    targetName: 'Target',
-    targetType: 'technology',
+    sourceName: "Source",
+    sourceType: "concept",
+    predicate: "DEPENDS_ON",
+    targetName: "Target",
+    targetType: "technology",
     confidence: 0.9,
     ...overrides,
   };
 }
 
-export function createImpactResult(overrides: Partial<ImpactResult> = {}): ImpactResult {
+export function createImpactResult(
+  overrides: Partial<ImpactResult> = {},
+): ImpactResult {
   return {
-    files: ['test.ts'],
-    sessionId: 'test-session',
+    files: ["test.ts"],
+    sessionId: "test-session",
     directEntities: [],
     rippleEntities: [],
     relationships: [],
@@ -177,22 +216,24 @@ export function createImpactResult(overrides: Partial<ImpactResult> = {}): Impac
 
 export function createCrossLink(overrides: Partial<CrossLink> = {}): CrossLink {
   return {
-    canonName: 'React',
-    canonType: 'technology',
-    canonId: 'react',
+    canonName: "React",
+    canonType: "technology",
+    canonId: "react",
     codeRef: {
-      filePath: 'package.json',
-      name: 'react',
-      kind: 'package-dep',
+      filePath: "package.json",
+      name: "react",
+      kind: "package-dep",
     },
-    strategy: 'dep',
+    strategy: "dep",
     confidence: 0.99,
-    detail: 'Found react in package.json dependencies',
+    detail: "Found react in package.json dependencies",
     ...overrides,
   };
 }
 
-export function createXLinkResult(overrides: Partial<XLinkResult> = {}): XLinkResult {
+export function createXLinkResult(
+  overrides: Partial<XLinkResult> = {},
+): XLinkResult {
   return {
     links: [],
     stats: {

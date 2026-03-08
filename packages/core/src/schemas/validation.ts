@@ -9,7 +9,7 @@
  * runtime validation with TypeScript type inference.
  */
 
-import { z } from 'zod';
+import { z } from "zod";
 
 // =============================================================================
 // LX Stage Validation Schemas
@@ -19,11 +19,11 @@ import { z } from 'zod';
  * Link predicate types - matches TypeScript LinkPredicate
  */
 export const LinkPredicateSchema = z.enum([
-  'REFINES',
-  'DERIVED_FROM',
-  'IMPLEMENTS',
-  'DESCRIBES',
-  'MAPS_TO',
+  "REFINES",
+  "DERIVED_FROM",
+  "IMPLEMENTS",
+  "DESCRIBES",
+  "MAPS_TO",
 ]);
 
 export type LinkPredicateValue = z.infer<typeof LinkPredicateSchema>;
@@ -32,11 +32,11 @@ export type LinkPredicateValue = z.infer<typeof LinkPredicateSchema>;
  * Link match method - matches TypeScript LinkMatchMethod
  */
 export const LinkMatchMethodSchema = z.enum([
-  'name',
-  'alias',
-  'structural',
-  'profile',
-  'semantic',
+  "name",
+  "alias",
+  "structural",
+  "profile",
+  "semantic",
 ]);
 
 export type LinkMatchMethodValue = z.infer<typeof LinkMatchMethodSchema>;
@@ -45,10 +45,10 @@ export type LinkMatchMethodValue = z.infer<typeof LinkMatchMethodSchema>;
  * Link evidence - matches TypeScript LinkEvidence
  */
 export const LinkEvidenceSchema = z.object({
-  text: z.string().describe('Text snippet supporting the link'),
-  artifactId: z.string().describe('Source artifact ID'),
-  sourceCgId: z.string().optional().describe('Source entity cgId'),
-  targetCgId: z.string().optional().describe('Target entity cgId'),
+  text: z.string().describe("Text snippet supporting the link"),
+  artifactId: z.string().describe("Source artifact ID"),
+  sourceCgId: z.string().optional().describe("Source entity cgId"),
+  targetCgId: z.string().optional().describe("Target entity cgId"),
 });
 
 export type LinkEvidenceValue = z.infer<typeof LinkEvidenceSchema>;
@@ -57,17 +57,23 @@ export type LinkEvidenceValue = z.infer<typeof LinkEvidenceSchema>;
  * Link proposal - matches TypeScript LinkProposal
  */
 export const LinkProposalSchema = z.object({
-  id: z.string().optional().describe('Unique proposal ID'),
-  sourceArtifact: z.string().describe('Source artifact ID'),
-  sourceCgId: z.string().describe('Source entity cgId'),
-  targetArtifact: z.string().describe('Target artifact ID'),
-  targetCgId: z.string().describe('Target entity cgId'),
-  predicate: LinkPredicateSchema.describe('Link predicate type'),
-  confidence: z.number().min(0).max(1).describe('Confidence score (0-1)'),
-  matchMethod: LinkMatchMethodSchema.describe('Method used for matching'),
-  evidence: z.array(LinkEvidenceSchema).describe('Supporting evidence'),
-  accepted: z.boolean().optional().describe('Whether proposal has been accepted'),
-  rejectionReason: z.string().optional().describe('Rejection reason if rejected'),
+  id: z.string().optional().describe("Unique proposal ID"),
+  sourceArtifact: z.string().describe("Source artifact ID"),
+  sourceCgId: z.string().describe("Source entity cgId"),
+  targetArtifact: z.string().describe("Target artifact ID"),
+  targetCgId: z.string().describe("Target entity cgId"),
+  predicate: LinkPredicateSchema.describe("Link predicate type"),
+  confidence: z.number().min(0).max(1).describe("Confidence score (0-1)"),
+  matchMethod: LinkMatchMethodSchema.describe("Method used for matching"),
+  evidence: z.array(LinkEvidenceSchema).describe("Supporting evidence"),
+  accepted: z
+    .boolean()
+    .optional()
+    .describe("Whether proposal has been accepted"),
+  rejectionReason: z
+    .string()
+    .optional()
+    .describe("Rejection reason if rejected"),
 });
 
 export type LinkProposalValue = z.infer<typeof LinkProposalSchema>;
@@ -75,20 +81,22 @@ export type LinkProposalValue = z.infer<typeof LinkProposalSchema>;
 /**
  * LX stage output metadata
  */
-export const LxMetaSchema = z.object({
-  entitiesAnalyzed: z.number().int().min(0).optional(),
-  proposalsGenerated: z.number().int().min(0).optional(),
-  processingTimeMs: z.number().int().min(0).optional(),
-  matchersUsed: z.array(z.string()).optional(),
-}).passthrough(); // Allow additional properties
+export const LxMetaSchema = z
+  .object({
+    entitiesAnalyzed: z.number().int().min(0).optional(),
+    proposalsGenerated: z.number().int().min(0).optional(),
+    processingTimeMs: z.number().int().min(0).optional(),
+    matchersUsed: z.array(z.string()).optional(),
+  })
+  .passthrough(); // Allow additional properties
 
 /**
  * LX stage output - matches TypeScript LxStageOutput
  */
 export const LxStageOutputSchema = z.object({
-  $schema: z.literal('intentweave://schemas/lx-proposals/v1'),
-  schemaVersion: z.literal('0.1'),
-  stage: z.literal('LX').optional(),
+  $schema: z.literal("intentweave://schemas/lx-proposals/v1"),
+  schemaVersion: z.literal("0.1"),
+  stage: z.literal("LX").optional(),
   runId: z.string(),
   workspaceKey: z.string().optional(),
   generatedAt: z.string().datetime().optional(),
@@ -108,14 +116,16 @@ export type LxStageOutputValue = z.infer<typeof LxStageOutputSchema>;
 export interface ValidationResult<T> {
   success: boolean;
   data?: T;
-  errors?: z.ZodError['errors'];
+  errors?: z.ZodError["errors"];
   errorMessage?: string;
 }
 
 /**
  * Validate a link proposal
  */
-export function validateLinkProposal(data: unknown): ValidationResult<LinkProposalValue> {
+export function validateLinkProposal(
+  data: unknown,
+): ValidationResult<LinkProposalValue> {
   const result = LinkProposalSchema.safeParse(data);
   if (result.success) {
     return { success: true, data: result.data };
@@ -130,10 +140,12 @@ export function validateLinkProposal(data: unknown): ValidationResult<LinkPropos
 /**
  * Validate an array of link proposals
  */
-export function validateLinkProposals(data: unknown[]): ValidationResult<LinkProposalValue[]> {
+export function validateLinkProposals(
+  data: unknown[],
+): ValidationResult<LinkProposalValue[]> {
   const validated: LinkProposalValue[] = [];
-  const errors: z.ZodError['errors'] = [];
-  
+  const errors: z.ZodError["errors"] = [];
+
   for (let i = 0; i < data.length; i++) {
     const result = LinkProposalSchema.safeParse(data[i]);
     if (result.success) {
@@ -148,7 +160,7 @@ export function validateLinkProposals(data: unknown[]): ValidationResult<LinkPro
       }
     }
   }
-  
+
   if (errors.length > 0) {
     return {
       success: false,
@@ -156,14 +168,16 @@ export function validateLinkProposals(data: unknown[]): ValidationResult<LinkPro
       errorMessage: `${errors.length} validation error(s) in proposals`,
     };
   }
-  
+
   return { success: true, data: validated };
 }
 
 /**
  * Validate LX stage output
  */
-export function validateLxOutput(data: unknown): ValidationResult<LxStageOutputValue> {
+export function validateLxOutput(
+  data: unknown,
+): ValidationResult<LxStageOutputValue> {
   const result = LxStageOutputSchema.safeParse(data);
   if (result.success) {
     return { success: true, data: result.data };
@@ -194,13 +208,17 @@ export function isValidLxOutput(data: unknown): data is LxStageOutputValue {
  * Fills in defaults and ensures required fields
  */
 export function normalizeLinkProposal(
-  proposal: Partial<LinkProposalValue> & Pick<LinkProposalValue, 'sourceArtifact' | 'sourceCgId' | 'targetArtifact' | 'targetCgId'>
+  proposal: Partial<LinkProposalValue> &
+    Pick<
+      LinkProposalValue,
+      "sourceArtifact" | "sourceCgId" | "targetArtifact" | "targetCgId"
+    >,
 ): LinkProposalValue {
   return {
     ...proposal,
-    predicate: proposal.predicate ?? 'MAPS_TO',
+    predicate: proposal.predicate ?? "MAPS_TO",
     confidence: proposal.confidence ?? 0.5,
-    matchMethod: proposal.matchMethod ?? 'name',
+    matchMethod: proposal.matchMethod ?? "name",
     evidence: proposal.evidence ?? [],
   };
 }

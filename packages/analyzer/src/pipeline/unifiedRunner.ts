@@ -13,17 +13,17 @@
  * when they want to choose which pipeline track to run.
  */
 
-import type { LLMProvider, ExtractionHooks } from '@intentweave/core';
-import type { PipelineContext } from './context.js';
+import type { LLMProvider, ExtractionHooks } from "@intentweave/core";
+import type { PipelineContext } from "./context.js";
 import type {
   ArtifactInput,
   OrchestratorOptions,
   PipelineRunResult,
   ArtifactPipelineOutput,
-} from './orchestrator.js';
-import { runPipeline } from './orchestrator.js';
-import type { OpenTrackResult, OpenTrackOptions } from './openTrack.js';
-import { runOpenTrack, runOpenTrackBatch } from './openTrack.js';
+} from "./orchestrator.js";
+import { runPipeline } from "./orchestrator.js";
+import type { OpenTrackResult, OpenTrackOptions } from "./openTrack.js";
+import { runOpenTrack, runOpenTrackBatch } from "./openTrack.js";
 
 // =============================================================================
 // Track Selection Types
@@ -32,7 +32,7 @@ import { runOpenTrack, runOpenTrackBatch } from './openTrack.js';
 /**
  * Which pipeline track to execute
  */
-export type PipelineTrack = 'main' | 'open' | 'both';
+export type PipelineTrack = "main" | "open" | "both";
 
 /**
  * Options for the unified pipeline runner
@@ -145,10 +145,13 @@ export async function runUnifiedPipeline(
   });
 
   // Validate options
-  if ((track === 'open' || track === 'both') && !options.openOptions?.llmProvider) {
+  if (
+    (track === "open" || track === "both") &&
+    !options.openOptions?.llmProvider
+  ) {
     throw new Error(
       `Open track requires openOptions.llmProvider. ` +
-      `Either provide it or use track='main'.`
+        `Either provide it or use track='main'.`,
     );
   }
 
@@ -157,14 +160,16 @@ export async function runUnifiedPipeline(
 
   // ─── Run tracks ───
 
-  if (track === 'main' || track === 'both') {
-    ctx.logger.info('[UnifiedPipeline] Running main track (IN → RX → CX → MX → PX → AGG)');
+  if (track === "main" || track === "both") {
+    ctx.logger.info(
+      "[UnifiedPipeline] Running main track (IN → RX → CX → MX → PX → AGG)",
+    );
     const mainResult = await runPipeline(artifacts, ctx, options.mainOptions);
     mainOutput = { result: mainResult };
   }
 
-  if (track === 'open' || track === 'both') {
-    ctx.logger.info('[UnifiedPipeline] Running open track (IN → FX → KX)');
+  if (track === "open" || track === "both") {
+    ctx.logger.info("[UnifiedPipeline] Running open track (IN → FX → KX)");
     const openOpts = options.openOptions!;
 
     const openTrackOpts: OpenTrackOptions = {
@@ -178,16 +183,20 @@ export async function runUnifiedPipeline(
 
     // Build aggregate metadata
     const totalRawTriples = openResults.reduce(
-      (sum, r) => sum + r.kx.rawTriples.length, 0
+      (sum, r) => sum + r.kx.rawTriples.length,
+      0,
     );
     const totalCanonTriples = openResults.reduce(
-      (sum, r) => sum + r.kx.canonTriples.length, 0
+      (sum, r) => sum + r.kx.canonTriples.length,
+      0,
     );
     const totalCanonEntities = openResults.reduce(
-      (sum, r) => sum + r.kx.canonEntities.length, 0
+      (sum, r) => sum + r.kx.canonEntities.length,
+      0,
     );
     const totalLatencyMs = openResults.reduce(
-      (sum, r) => sum + r.meta.totalLatencyMs, 0
+      (sum, r) => sum + r.meta.totalLatencyMs,
+      0,
     );
 
     openOutput = {

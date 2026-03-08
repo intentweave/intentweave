@@ -3,24 +3,24 @@
 
 /**
  * Strategy Factory
- * 
+ *
  * Creates ExtractionStrategy instances from configuration.
  * This is the main entry point for strategy selection.
- * 
+ *
  * Usage:
  * ```typescript
  * import { createStrategy, StrategyName } from '@intentweave/analyzer';
- * 
+ *
  * const strategy = createStrategy(llmProvider, 'two-pass', { temperature: 0.1 });
  * const result = await strategy.extract(chunks, schema, profile, context);
  * ```
  */
 
-import type { LLMProvider, ExtractionStrategy } from '@intentweave/core';
-import type { StrategyConfig } from './shared.js';
-import { createDefaultStrategyConfig } from './shared.js';
-import { SinglePassStrategy } from './singlePass.js';
-import { TwoPassStrategy } from './twoPass.js';
+import type { LLMProvider, ExtractionStrategy } from "@intentweave/core";
+import type { StrategyConfig } from "./shared.js";
+import { createDefaultStrategyConfig } from "./shared.js";
+import { SinglePassStrategy } from "./singlePass.js";
+import { TwoPassStrategy } from "./twoPass.js";
 
 // =============================================================================
 // Strategy Types
@@ -29,14 +29,14 @@ import { TwoPassStrategy } from './twoPass.js';
 /**
  * Available strategy names
  */
-export type StrategyName = 
-  | 'single-pass'    // One LLM call per chunk (entities + statements together)
-  | 'two-pass';      // Two LLM calls per chunk (entities first, then statements)
+export type StrategyName =
+  | "single-pass" // One LLM call per chunk (entities + statements together)
+  | "two-pass"; // Two LLM calls per chunk (entities first, then statements)
 
 /**
  * Default strategy to use when none specified
  */
-export const DEFAULT_STRATEGY_NAME: StrategyName = 'two-pass';
+export const DEFAULT_STRATEGY_NAME: StrategyName = "two-pass";
 
 // =============================================================================
 // Factory Function
@@ -44,17 +44,17 @@ export const DEFAULT_STRATEGY_NAME: StrategyName = 'two-pass';
 
 /**
  * Create an ExtractionStrategy from configuration
- * 
+ *
  * @param llmProvider - LLM provider for making extraction calls
  * @param strategyName - Name of strategy to create (default: 'two-pass')
  * @param configOverrides - Optional config overrides (temperature, etc.)
  * @returns Configured ExtractionStrategy instance
- * 
+ *
  * @example
  * ```typescript
  * // Use default two-pass strategy
  * const strategy = createStrategy(llmProvider);
- * 
+ *
  * // Use single-pass with custom temperature
  * const strategy = createStrategy(llmProvider, 'single-pass', { temperature: 0.2 });
  * ```
@@ -62,17 +62,17 @@ export const DEFAULT_STRATEGY_NAME: StrategyName = 'two-pass';
 export function createStrategy(
   llmProvider: LLMProvider,
   strategyName: StrategyName = DEFAULT_STRATEGY_NAME,
-  configOverrides?: Partial<StrategyConfig>
+  configOverrides?: Partial<StrategyConfig>,
 ): ExtractionStrategy {
   const config = createDefaultStrategyConfig(configOverrides);
-  
+
   switch (strategyName) {
-    case 'single-pass':
+    case "single-pass":
       return new SinglePassStrategy(llmProvider, config);
-    
-    case 'two-pass':
+
+    case "two-pass":
       return new TwoPassStrategy(llmProvider, config);
-    
+
     default:
       // Exhaustive check
       const _exhaustive: never = strategyName;
@@ -85,12 +85,12 @@ export function createStrategy(
  */
 export function getStrategyDescription(name: StrategyName): string {
   switch (name) {
-    case 'single-pass':
-      return 'Single-pass extraction: entities and statements in one LLM call';
-    case 'two-pass':
-      return 'Two-pass extraction: entities first, then statements';
+    case "single-pass":
+      return "Single-pass extraction: entities and statements in one LLM call";
+    case "two-pass":
+      return "Two-pass extraction: entities first, then statements";
     default:
-      return 'Unknown strategy';
+      return "Unknown strategy";
   }
 }
 
@@ -98,5 +98,5 @@ export function getStrategyDescription(name: StrategyName): string {
  * List all available strategy names
  */
 export function listStrategyNames(): readonly StrategyName[] {
-  return ['single-pass', 'two-pass'] as const;
+  return ["single-pass", "two-pass"] as const;
 }

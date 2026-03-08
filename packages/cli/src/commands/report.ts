@@ -5,9 +5,9 @@
  * report command - Generate reports from pipeline runs
  */
 
-import { Command } from 'commander';
-import chalk from 'chalk';
-import * as path from 'node:path';
+import { Command } from "commander";
+import chalk from "chalk";
+import * as path from "node:path";
 import {
   generateReport,
   saveReport,
@@ -18,10 +18,10 @@ import {
   extractProblemsReport,
   type ReportPolicy,
   DEFAULT_REPORT_POLICY,
-} from '@intentweave/core';
-import { IW_DIR } from '../constants.js';
+} from "@intentweave/core";
+import { IW_DIR } from "../constants.js";
 
-type ReportFormat = 'all' | 'json' | 'problems' | 'full';
+type ReportFormat = "all" | "json" | "problems" | "full";
 
 interface ReportOptions {
   run?: string;
@@ -31,26 +31,32 @@ interface ReportOptions {
   minConfidence?: string;
 }
 
-export const reportCommand = new Command('report')
-  .description('Generate reports from pipeline runs')
-  .option('--run <runId>', 'Generate report for specific run (default: latest)')
-  .option('--format <format>', 'Output format: all, json, problems, full', 'all')
-  .option('--stdout', 'Output to stdout instead of files', false)
-  .option('--compact', 'Apply compact mode limits', false)
-  .option('--min-confidence <value>', 'Minimum confidence threshold (0.0-1.0)')
+export const reportCommand = new Command("report")
+  .description("Generate reports from pipeline runs")
+  .option("--run <runId>", "Generate report for specific run (default: latest)")
+  .option(
+    "--format <format>",
+    "Output format: all, json, problems, full",
+    "all",
+  )
+  .option("--stdout", "Output to stdout instead of files", false)
+  .option("--compact", "Apply compact mode limits", false)
+  .option("--min-confidence <value>", "Minimum confidence threshold (0.0-1.0)")
   .action(async (options: ReportOptions) => {
     const iwDir = path.resolve(IW_DIR);
-    
+
     // Find run ID
     let runId: string | undefined = options.run;
     if (!runId) {
-      runId = await findLatestRunId(iwDir) ?? undefined;
+      runId = (await findLatestRunId(iwDir)) ?? undefined;
       if (!runId) {
-        console.error(chalk.red('No runs found. Run the pipeline first with `iw run`.'));
+        console.error(
+          chalk.red("No runs found. Run the pipeline first with `iw run`."),
+        );
         process.exit(1);
       }
     }
-    
+
     // Build policy
     const policy: Partial<ReportPolicy> = {};
     if (options.minConfidence) {
@@ -65,73 +71,85 @@ export const reportCommand = new Command('report')
       policy.maxEvidencePerIssue = 3;
       policy.maxExcerptChars = 200;
     }
-    
+
     try {
       console.log(chalk.blue(`Generating report for run: ${runId}`));
-      
+
       // Generate report
       const report = await generateReport({
         iwDir,
         runId,
         policy,
       });
-      
+
       // Format outputs
       const problemsMd = formatProblemsReport(report);
       const fullMd = formatFullReport(report);
-      
+
       if (options.stdout) {
         // Output to stdout
         switch (options.format) {
-          case 'json':
+          case "json":
             console.log(JSON.stringify(report, null, 2));
             break;
-          case 'problems':
+          case "problems":
             console.log(problemsMd);
             break;
-          case 'full':
+          case "full":
             console.log(fullMd);
             break;
-          case 'all':
+          case "all":
           default:
-            console.log('=== latest.problems.md ===\n');
+            console.log("=== latest.problems.md ===\n");
             console.log(problemsMd);
-            console.log('\n=== latest.json ===\n');
+            console.log("\n=== latest.json ===\n");
             console.log(JSON.stringify(report, null, 2));
             break;
         }
       } else {
         // Save to files
         await saveReport(iwDir, report, problemsMd, fullMd);
-        
-        const reportsDir = path.join(iwDir, 'reports');
-        console.log(chalk.green('✓ Reports generated successfully'));
-        console.log('');
-        console.log('  Files:');
-        console.log(`    ${chalk.cyan(path.join(reportsDir, 'latest.json'))}`);
-        console.log(`    ${chalk.cyan(path.join(reportsDir, 'latest.problems.md'))}`);
-        console.log(`    ${chalk.cyan(path.join(reportsDir, 'latest.full.md'))}`);
-        console.log('');
-        
+
+        const reportsDir = path.join(iwDir, "reports");
+        console.log(chalk.green("✓ Reports generated successfully"));
+        console.log("");
+        console.log("  Files:");
+        console.log(`    ${chalk.cyan(path.join(reportsDir, "latest.json"))}`);
+        console.log(
+          `    ${chalk.cyan(path.join(reportsDir, "latest.problems.md"))}`,
+        );
+        console.log(
+          `    ${chalk.cyan(path.join(reportsDir, "latest.full.md"))}`,
+        );
+        console.log("");
+
         // Summary
-        console.log('  Summary:');
+        console.log("  Summary:");
         console.log(`    Issues: ${report.issues.length} total`);
         if (report.summary.contradictions > 0) {
-          console.log(`      ${chalk.red('●')} ${report.summary.contradictions} contradictions`);
+          console.log(
+            `      ${chalk.red("●")} ${report.summary.contradictions} contradictions`,
+          );
         }
         if (report.summary.openEnds > 0) {
-          console.log(`      ${chalk.yellow('●')} ${report.summary.openEnds} open ends`);
+          console.log(
+            `      ${chalk.yellow("●")} ${report.summary.openEnds} open ends`,
+          );
         }
         if (report.summary.needsReview > 0) {
-          console.log(`      ${chalk.blue('●')} ${report.summary.needsReview} needs review`);
+          console.log(
+            `      ${chalk.blue("●")} ${report.summary.needsReview} needs review`,
+          );
         }
         if (report.summary.errors > 0) {
-          console.log(`      ${chalk.red('●')} ${report.summary.errors} errors`);
+          console.log(
+            `      ${chalk.red("●")} ${report.summary.errors} errors`,
+          );
         }
-        
+
         if (report.summary.trend) {
-          console.log('');
-          console.log('  Trend:');
+          console.log("");
+          console.log("  Trend:");
           if (report.summary.trend.newIssues > 0) {
             console.log(`    +${report.summary.trend.newIssues} new`);
           }
@@ -141,7 +159,7 @@ export const reportCommand = new Command('report')
         }
       }
     } catch (error) {
-      console.error(chalk.red('Failed to generate report:'), error);
+      console.error(chalk.red("Failed to generate report:"), error);
       process.exit(1);
     }
   });
@@ -149,35 +167,35 @@ export const reportCommand = new Command('report')
 /**
  * explain subcommand - Show detailed evidence for an issue
  */
-export const explainCommand = new Command('explain')
-  .description('Show detailed evidence for an issue')
-  .argument('<issueId>', 'Issue ID (e.g., C-1, O-2) or full issue key')
+export const explainCommand = new Command("explain")
+  .description("Show detailed evidence for an issue")
+  .argument("<issueId>", "Issue ID (e.g., C-1, O-2) or full issue key")
   .action(async (issueId: string) => {
     const iwDir = path.resolve(IW_DIR);
-    
+
     try {
       // Load latest report
       const report = await loadLatestReport(iwDir);
       if (!report) {
-        console.error(chalk.red('No report found. Run `iw report` first.'));
+        console.error(chalk.red("No report found. Run `iw report` first."));
         process.exit(1);
       }
-      
+
       // Find issue
-      let issue = report.issues.find(i => i.id === issueId);
+      let issue = report.issues.find((i) => i.id === issueId);
       if (!issue) {
         // Try matching by issueKey
-        issue = report.issues.find(i => i.issueKey === issueId);
+        issue = report.issues.find((i) => i.issueKey === issueId);
       }
       if (!issue) {
         // Try matching by partial issueKey
-        issue = report.issues.find(i => i.issueKey.endsWith(`#${issueId}`));
+        issue = report.issues.find((i) => i.issueKey.endsWith(`#${issueId}`));
       }
-      
+
       if (!issue) {
         console.error(chalk.red(`Issue not found: ${issueId}`));
-        console.log('');
-        console.log('Available issues:');
+        console.log("");
+        console.log("Available issues:");
         for (const i of report.issues.slice(0, 10)) {
           console.log(`  ${i.id}: ${i.title}`);
         }
@@ -186,20 +204,20 @@ export const explainCommand = new Command('explain')
         }
         process.exit(1);
       }
-      
+
       // Display issue details
       const severityColor = {
         blocker: chalk.red,
         warning: chalk.yellow,
         info: chalk.blue,
       }[issue.severity];
-      
-      console.log('');
+
+      console.log("");
       console.log(severityColor(`Issue ${issue.id}: ${issue.title}`));
-      console.log('');
-      
+      console.log("");
+
       // Metadata
-      console.log(chalk.dim('Metadata'));
+      console.log(chalk.dim("Metadata"));
       console.log(`  Issue Key:   ${issue.issueKey}`);
       console.log(`  Fingerprint: ${issue.fingerprint}`);
       console.log(`  Kind:        ${issue.kind}`);
@@ -211,18 +229,18 @@ export const explainCommand = new Command('explain')
       if (issue.resolvedAt) {
         console.log(`  Resolved:    ${issue.resolvedAt}`);
       }
-      console.log('');
-      
+      console.log("");
+
       // Description
       if (issue.description) {
-        console.log(chalk.dim('Description'));
+        console.log(chalk.dim("Description"));
         console.log(`  ${issue.description}`);
-        console.log('');
+        console.log("");
       }
-      
+
       // Evidence
       if (issue.evidence.length > 0) {
-        console.log(chalk.dim('Evidence'));
+        console.log(chalk.dim("Evidence"));
         for (let i = 0; i < issue.evidence.length; i++) {
           const ev = issue.evidence[i];
           console.log(`  ${i + 1}. [${ev.sourceKey}]`);
@@ -234,43 +252,44 @@ export const explainCommand = new Command('explain')
             console.log(`     File: ${ev.transcriptPath}`);
           }
         }
-        console.log('');
+        console.log("");
       }
-      
+
       // Graph refs
       if (issue.graphRefs && issue.graphRefs.length > 0) {
-        console.log(chalk.dim('Graph References'));
+        console.log(chalk.dim("Graph References"));
         for (const ref of issue.graphRefs) {
           const parts: string[] = [];
           if (ref.nodeId) parts.push(`Node: ${ref.nodeId}`);
           if (ref.edgeId) parts.push(`Edge: ${ref.edgeId}`);
           if (ref.predicate) parts.push(`Predicate: ${ref.predicate}`);
           if (ref.entityName) parts.push(`Entity: ${ref.entityName}`);
-          console.log(`  - ${parts.join(', ')}`);
+          console.log(`  - ${parts.join(", ")}`);
         }
-        console.log('');
+        console.log("");
       }
-      
+
       // Suggested actions
       if (issue.suggestedActions && issue.suggestedActions.length > 0) {
-        console.log(chalk.dim('Suggested Actions'));
+        console.log(chalk.dim("Suggested Actions"));
         for (const action of issue.suggestedActions) {
           console.log(`  - ${chalk.bold(action.type)}: ${action.description}`);
           if (action.command) {
             console.log(`    Command: ${chalk.cyan(action.command)}`);
           }
         }
-        console.log('');
+        console.log("");
       }
-      
+
       // Commands
-      console.log(chalk.dim('Commands'));
-      console.log(`  iw role set <sourceKey> <role>  # Override role for evidence message`);
+      console.log(chalk.dim("Commands"));
+      console.log(
+        `  iw role set <sourceKey> <role>  # Override role for evidence message`,
+      );
       console.log(`  iw open <sourceKey>             # View message context`);
-      console.log('');
-      
+      console.log("");
     } catch (error) {
-      console.error(chalk.red('Failed to load report:'), error);
+      console.error(chalk.red("Failed to load report:"), error);
       process.exit(1);
     }
   });

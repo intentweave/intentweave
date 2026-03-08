@@ -3,7 +3,7 @@
 
 /**
  * Graph Bundle Types
- * 
+ *
  * Defines the consolidated bundle format for run outputs.
  */
 
@@ -12,23 +12,23 @@
 // =============================================================================
 
 export interface RunOverview {
-  $schema: 'intentweave://schemas/run-overview/v1';
-  schemaVersion: '0.1';
-  
+  $schema: "intentweave://schemas/run-overview/v1";
+  schemaVersion: "0.1";
+
   runId: string;
   workspaceKey: string;
   sessionKey?: string;
-  
+
   // Timing
   startedAt: string;
   completedAt?: string;
   durationMs?: number;
-  
+
   // Status
-  status: 'running' | 'completed' | 'failed';
+  status: "running" | "completed" | "failed";
   profile: string;
   stages: string[];
-  
+
   // Counts
   counts: {
     artifacts: number;
@@ -37,13 +37,13 @@ export interface RunOverview {
     lxProposals: number;
     findings: number;
   };
-  
+
   // Entity type distribution
   entityTypes: Record<string, number>;
-  
+
   // Artifact role distribution
   artifactRoles: Record<string, number>;
-  
+
   // Top artifacts by entity count
   topArtifacts: Array<{
     id: string;
@@ -59,13 +59,13 @@ export interface RunOverview {
 // =============================================================================
 
 export interface GraphBundle {
-  $schema: 'intentweave://schemas/graph-bundle/v1';
-  schemaVersion: '0.1';
-  
+  $schema: "intentweave://schemas/graph-bundle/v1";
+  schemaVersion: "0.1";
+
   runId: string;
   sessionKey?: string;
   generatedAt: string;
-  
+
   artifacts: BundleArtifact[];
   entities: BundleEntity[];
   statements: BundleStatement[];
@@ -115,15 +115,15 @@ export interface BundleLinkProposal {
 // =============================================================================
 
 export interface EntityRecord extends BundleEntity {
-  _type: 'entity';
+  _type: "entity";
 }
 
 export interface StatementRecord extends BundleStatement {
-  _type: 'statement';
+  _type: "statement";
 }
 
 export interface LxRecord extends BundleLinkProposal {
-  _type: 'lx';
+  _type: "lx";
 }
 
 // =============================================================================

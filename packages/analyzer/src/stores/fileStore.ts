@@ -3,10 +3,10 @@
 
 /**
  * File-based Store Implementation
- * 
+ *
  * Persistent file-based store using JSON files.
  * Directory structure (workspace-scoped):
- * 
+ *
  * .iw/
  * └── workspaces/<workspaceKey>/
  *     └── runs/<runId>/
@@ -26,9 +26,9 @@
  *         └── run.meta.json
  */
 
-import { promises as fs } from 'node:fs';
-import * as path from 'node:path';
-import type { StagingSnapshot } from '@intentweave/core';
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+import type { StagingSnapshot } from "@intentweave/core";
 import type {
   Store,
   Artifact,
@@ -39,8 +39,8 @@ import type {
   LinkProposal,
   CoverageReport,
   FindingsReport,
-} from './types.js';
-import { STAGES } from './types.js';
+} from "./types.js";
+import { STAGES } from "./types.js";
 
 /**
  * Options for creating a FileStore
@@ -63,7 +63,7 @@ export class FileStore implements Store {
   private runId: string | null;
 
   constructor(options: FileStoreOptions = {}) {
-    this.rootDir = options.rootDir ?? '.iw';
+    this.rootDir = options.rootDir ?? ".iw";
     this.workspaceKey = options.workspaceKey ?? null;
     this.runId = options.runId ?? null;
   }
@@ -78,14 +78,14 @@ export class FileStore implements Store {
    */
   private workspaceDir(): string {
     if (this.workspaceKey) {
-      return path.join(this.rootDir, 'workspaces', this.workspaceKey);
+      return path.join(this.rootDir, "workspaces", this.workspaceKey);
     }
     // Legacy: direct under rootDir (backwards compatible)
     return this.rootDir;
   }
 
   private runsDir(): string {
-    return path.join(this.workspaceDir(), 'runs');
+    return path.join(this.workspaceDir(), "runs");
   }
 
   private runDir(runId: string): string {
@@ -93,22 +93,24 @@ export class FileStore implements Store {
   }
 
   private artifactsDir(runId: string): string {
-    return path.join(this.runDir(runId), 'artifacts');
+    return path.join(this.runDir(runId), "artifacts");
   }
 
   private artifactDir(runId: string, artifactId: string): string {
     // Sanitize artifact ID for filesystem
-    const safeId = artifactId.replace(/[/\\:*?"<>|]/g, '_');
+    const safeId = artifactId.replace(/[/\\:*?"<>|]/g, "_");
     return path.join(this.artifactsDir(runId), safeId);
   }
 
   private aggregateDir(runId: string): string {
-    return path.join(this.runDir(runId), 'aggregate');
+    return path.join(this.runDir(runId), "aggregate");
   }
 
   private getCurrentRunId(): string {
     if (!this.runId) {
-      throw new Error('No run ID set. Call setRunId() or pass runId to constructor.');
+      throw new Error(
+        "No run ID set. Call setRunId() or pass runId to constructor.",
+      );
     }
     return this.runId;
   }
@@ -145,7 +147,7 @@ export class FileStore implements Store {
   async init(): Promise<void> {
     // Create root directory structure
     await fs.mkdir(this.runsDir(), { recursive: true });
-    
+
     if (this.runId) {
       await fs.mkdir(this.artifactsDir(this.runId), { recursive: true });
       await fs.mkdir(this.aggregateDir(this.runId), { recursive: true });
@@ -162,10 +164,10 @@ export class FileStore implements Store {
 
   private async readJson<T>(filePath: string): Promise<T | null> {
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await fs.readFile(filePath, "utf-8");
       return JSON.parse(content) as T;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return null;
       }
       throw error;
@@ -175,7 +177,7 @@ export class FileStore implements Store {
   private async writeJson<T>(filePath: string, data: T): Promise<void> {
     const dir = path.dirname(filePath);
     await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
   }
 
   private async exists(filePath: string): Promise<boolean> {
@@ -190,9 +192,9 @@ export class FileStore implements Store {
   private async listDirs(dirPath: string): Promise<string[]> {
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      return entries.filter(e => e.isDirectory()).map(e => e.name);
+      return entries.filter((e) => e.isDirectory()).map((e) => e.name);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return [];
       }
       throw error;
@@ -205,13 +207,19 @@ export class FileStore implements Store {
 
   async readArtifact(artifactId: string): Promise<Artifact | null> {
     const runId = this.getCurrentRunId();
-    const filePath = path.join(this.artifactDir(runId, artifactId), 'artifact.json');
+    const filePath = path.join(
+      this.artifactDir(runId, artifactId),
+      "artifact.json",
+    );
     return this.readJson<Artifact>(filePath);
   }
 
   async writeArtifact(artifact: Artifact): Promise<void> {
     const runId = this.getCurrentRunId();
-    const filePath = path.join(this.artifactDir(runId, artifact.id), 'artifact.json');
+    const filePath = path.join(
+      this.artifactDir(runId, artifact.id),
+      "artifact.json",
+    );
     await this.writeJson(filePath, artifact);
   }
 
@@ -219,12 +227,12 @@ export class FileStore implements Store {
     const runId = this.getCurrentRunId();
     const artifactsPath = this.artifactsDir(runId);
     const dirs = await this.listDirs(artifactsPath);
-    
+
     // Return artifact IDs (read from artifact.json to get original ID)
     const ids: string[] = [];
     for (const dir of dirs) {
       const artifact = await this.readJson<Artifact>(
-        path.join(artifactsPath, dir, 'artifact.json')
+        path.join(artifactsPath, dir, "artifact.json"),
       );
       if (artifact) {
         ids.push(artifact.id);
@@ -235,13 +243,19 @@ export class FileStore implements Store {
 
   async readChunks(artifactId: string): Promise<Chunk[]> {
     const runId = this.getCurrentRunId();
-    const filePath = path.join(this.artifactDir(runId, artifactId), 'chunks.json');
+    const filePath = path.join(
+      this.artifactDir(runId, artifactId),
+      "chunks.json",
+    );
     return (await this.readJson<Chunk[]>(filePath)) ?? [];
   }
 
   async writeChunks(artifactId: string, chunks: Chunk[]): Promise<void> {
     const runId = this.getCurrentRunId();
-    const filePath = path.join(this.artifactDir(runId, artifactId), 'chunks.json');
+    const filePath = path.join(
+      this.artifactDir(runId, artifactId),
+      "chunks.json",
+    );
     await this.writeJson(filePath, chunks);
   }
 
@@ -251,37 +265,44 @@ export class FileStore implements Store {
     try {
       await fs.rm(dir, { recursive: true });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
       }
     }
   }
 
-  async writeStageOutput(artifactId: string, stage: Stage, output: unknown): Promise<void> {
+  async writeStageOutput(
+    artifactId: string,
+    stage: Stage,
+    output: unknown,
+  ): Promise<void> {
     const runId = this.getCurrentRunId();
     const filePath = path.join(
       this.artifactDir(runId, artifactId),
-      this.stageFileName(stage)
+      this.stageFileName(stage),
     );
     await this.writeJson(filePath, output);
   }
 
-  async readStageOutput<T = unknown>(artifactId: string, stage: Stage): Promise<T | null> {
+  async readStageOutput<T = unknown>(
+    artifactId: string,
+    stage: Stage,
+  ): Promise<T | null> {
     const runId = this.getCurrentRunId();
     const filePath = path.join(
       this.artifactDir(runId, artifactId),
-      this.stageFileName(stage)
+      this.stageFileName(stage),
     );
     return this.readJson<T>(filePath);
   }
 
   async writeRunMeta(runId: string, meta: RunMeta): Promise<void> {
-    const filePath = path.join(this.runDir(runId), 'run.meta.json');
+    const filePath = path.join(this.runDir(runId), "run.meta.json");
     await this.writeJson(filePath, meta);
   }
 
   async readRunMeta(runId: string): Promise<RunMeta | null> {
-    const filePath = path.join(this.runDir(runId), 'run.meta.json');
+    const filePath = path.join(this.runDir(runId), "run.meta.json");
     return this.readJson<RunMeta>(filePath);
   }
 
@@ -293,20 +314,27 @@ export class FileStore implements Store {
     return `${stage.toLowerCase()}.json`;
   }
 
-  async readSnapshot(artifactId: string, stage: Stage): Promise<StagingSnapshot | null> {
+  async readSnapshot(
+    artifactId: string,
+    stage: Stage,
+  ): Promise<StagingSnapshot | null> {
     const runId = this.getCurrentRunId();
     const filePath = path.join(
       this.artifactDir(runId, artifactId),
-      this.stageFileName(stage)
+      this.stageFileName(stage),
     );
     return this.readJson<StagingSnapshot>(filePath);
   }
 
-  async writeSnapshot(artifactId: string, stage: Stage, snapshot: StagingSnapshot): Promise<void> {
+  async writeSnapshot(
+    artifactId: string,
+    stage: Stage,
+    snapshot: StagingSnapshot,
+  ): Promise<void> {
     const runId = this.getCurrentRunId();
     const filePath = path.join(
       this.artifactDir(runId, artifactId),
-      this.stageFileName(stage)
+      this.stageFileName(stage),
     );
     await this.writeJson(filePath, snapshot);
   }
@@ -315,14 +343,14 @@ export class FileStore implements Store {
     const runId = this.getCurrentRunId();
     const dir = this.artifactDir(runId, artifactId);
     const stages: Stage[] = [];
-    
+
     for (const stage of STAGES) {
       const filePath = path.join(dir, this.stageFileName(stage));
       if (await this.exists(filePath)) {
         stages.push(stage);
       }
     }
-    
+
     return stages;
   }
 
@@ -331,12 +359,12 @@ export class FileStore implements Store {
   // ============================================================================
 
   async getRunMeta(runId: string): Promise<RunMeta | null> {
-    const filePath = path.join(this.runDir(runId), 'run.meta.json');
+    const filePath = path.join(this.runDir(runId), "run.meta.json");
     return this.readJson<RunMeta>(filePath);
   }
 
   async saveRunMeta(meta: RunMeta): Promise<void> {
-    const filePath = path.join(this.runDir(meta.runId), 'run.meta.json');
+    const filePath = path.join(this.runDir(meta.runId), "run.meta.json");
     await this.writeJson(filePath, meta);
   }
 
@@ -346,89 +374,94 @@ export class FileStore implements Store {
 
   async getAggregates(runId: string): Promise<RunAggregates> {
     const aggDir = this.aggregateDir(runId);
-    
+
     const [linkProposals, coverage, findings] = await Promise.all([
-      this.readJson<LinkProposal[]>(path.join(aggDir, 'lx.proposals.json')),
-      this.readJson<CoverageReport>(path.join(aggDir, 'coverage.json')),
-      this.readJson<FindingsReport>(path.join(aggDir, 'findings.json')),
+      this.readJson<LinkProposal[]>(path.join(aggDir, "lx.proposals.json")),
+      this.readJson<CoverageReport>(path.join(aggDir, "coverage.json")),
+      this.readJson<FindingsReport>(path.join(aggDir, "findings.json")),
     ]);
 
     const result: RunAggregates = {};
     if (linkProposals) result.linkProposals = linkProposals;
     if (coverage) result.coverage = coverage;
     if (findings) result.findings = findings;
-    
+
     return result;
   }
 
-  async saveAggregates(runId: string, aggregates: Partial<RunAggregates>): Promise<void> {
+  async saveAggregates(
+    runId: string,
+    aggregates: Partial<RunAggregates>,
+  ): Promise<void> {
     const aggDir = this.aggregateDir(runId);
-    
+
     const writes: Promise<void>[] = [];
-    
+
     if (aggregates.linkProposals) {
       // Wrap link proposals with schema
       const lxFile = {
-        $schema: 'intentweave://schemas/lx-proposals/v1',
-        schemaVersion: '0.1',
+        $schema: "intentweave://schemas/lx-proposals/v1",
+        schemaVersion: "0.1",
         proposals: aggregates.linkProposals,
         meta: {
           proposalCount: aggregates.linkProposals.length,
-          sameEntityCount: aggregates.linkProposals.filter(p => p.confidence >= 0.95).length,
-          relatedEntityCount: aggregates.linkProposals.filter(p => p.confidence < 0.95).length,
+          sameEntityCount: aggregates.linkProposals.filter(
+            (p) => p.confidence >= 0.95,
+          ).length,
+          relatedEntityCount: aggregates.linkProposals.filter(
+            (p) => p.confidence < 0.95,
+          ).length,
         },
       };
-      writes.push(this.writeJson(
-        path.join(aggDir, 'lx.proposals.json'),
-        lxFile
-      ));
+      writes.push(
+        this.writeJson(path.join(aggDir, "lx.proposals.json"), lxFile),
+      );
     }
-    
+
     if (aggregates.coverage) {
       // Add schema to simple coverage
       const coverageFile = {
-        $schema: 'intentweave://schemas/coverage/v1',
+        $schema: "intentweave://schemas/coverage/v1",
         ...aggregates.coverage,
       };
-      writes.push(this.writeJson(
-        path.join(aggDir, 'coverage.json'),
-        coverageFile
-      ));
+      writes.push(
+        this.writeJson(path.join(aggDir, "coverage.json"), coverageFile),
+      );
     }
-    
+
     if (aggregates.findings) {
       // Add schema to simple findings
       const findingsFile = {
-        $schema: 'intentweave://schemas/findings/v1',
+        $schema: "intentweave://schemas/findings/v1",
         ...aggregates.findings,
       };
-      writes.push(this.writeJson(
-        path.join(aggDir, 'findings.json'),
-        findingsFile
-      ));
+      writes.push(
+        this.writeJson(path.join(aggDir, "findings.json"), findingsFile),
+      );
     }
-    
+
     // Write rich coverage report if available (already has $schema)
     if (aggregates.richCoverage) {
-      writes.push(this.writeJson(
-        path.join(aggDir, 'coverage-report.json'),
-        aggregates.richCoverage
-      ));
+      writes.push(
+        this.writeJson(
+          path.join(aggDir, "coverage-report.json"),
+          aggregates.richCoverage,
+        ),
+      );
     }
-    
+
     // Write rich validation output if available
     if (aggregates.richValidation) {
       const validationFile = {
-        $schema: 'intentweave://schemas/validation/v1',
-        schemaVersion: '0.1',
+        $schema: "intentweave://schemas/validation/v1",
+        schemaVersion: "0.1",
         ...(aggregates.richValidation as object),
       };
-      writes.push(this.writeJson(
-        path.join(aggDir, 'validation.json'),
-        validationFile
-      ));
+      writes.push(
+        this.writeJson(path.join(aggDir, "validation.json"), validationFile),
+      );
     }
-    
+
     await Promise.all(writes);
   }
 
@@ -437,7 +470,7 @@ export class FileStore implements Store {
     try {
       await fs.rm(dir, { recursive: true });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
       }
     }

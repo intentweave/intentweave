@@ -1,8 +1,8 @@
 ---
 name: Bug Report
 about: Report a bug in IntentWeave
-title: '[Bug] '
-labels: ['bug']
+title: "[Bug] "
+labels: ["bug"]
 ---
 
 ## Describe the bug

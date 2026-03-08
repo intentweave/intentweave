@@ -12,32 +12,32 @@
  * 4. Integration patterns via mock runners (for context/impact delegation)
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 import {
   formatContextMarkdown,
   buildEntityContext,
   buildFullContext,
   buildTopicContext,
-} from '../../context/contextBuilder.js';
+} from "../../context/contextBuilder.js";
 import {
   analyzeImpact,
   formatImpactMarkdown,
-} from '../../impact/impactAnalyzer.js';
+} from "../../impact/impactAnalyzer.js";
 import {
   createMockRunner,
   createSequentialMockRunner,
   createMockLlm,
   createContextBundle,
   createContextEntity,
-} from '../helpers.js';
+} from "../helpers.js";
 
 // =============================================================================
 // toolSchema — returns static schema text
 // =============================================================================
 
-describe('MCP toolSchema', () => {
+describe("MCP toolSchema", () => {
   // The schema is a static constant. We test that the pattern works.
-  it('produces a non-empty schema string', () => {
+  it("produces a non-empty schema string", () => {
     // Replicate the static schema text from server.ts
     const schema = `Node labels:
 - :Canon:Entity — Canonical entities
@@ -49,10 +49,10 @@ Relationship types:
 - [:REALIZED_BY] — Links Canon entities to CodeRef nodes`;
 
     expect(schema.length).toBeGreaterThan(50);
-    expect(schema).toContain(':Canon:Entity');
-    expect(schema).toContain(':CANON_REL');
-    expect(schema).toContain(':CodeRef');
-    expect(schema).toContain(':REALIZED_BY');
+    expect(schema).toContain(":Canon:Entity");
+    expect(schema).toContain(":CANON_REL");
+    expect(schema).toContain(":CodeRef");
+    expect(schema).toContain(":REALIZED_BY");
   });
 });
 
@@ -60,14 +60,17 @@ Relationship types:
 // toolEntities — Cypher generation logic
 // =============================================================================
 
-describe('MCP toolEntities Cypher generation', () => {
+describe("MCP toolEntities Cypher generation", () => {
   function buildEntitiesCypher(args: {
     session_id: string;
     type?: string;
     search?: string;
     limit: number;
   }): { cypher: string; params: Record<string, unknown> } {
-    const params: Record<string, unknown> = { sid: args.session_id, lim: args.limit };
+    const params: Record<string, unknown> = {
+      sid: args.session_id,
+      lim: args.limit,
+    };
     let cypher: string;
 
     if (args.search) {
@@ -87,48 +90,48 @@ describe('MCP toolEntities Cypher generation', () => {
     return { cypher, params };
   }
 
-  it('builds basic query for all entities', () => {
+  it("builds basic query for all entities", () => {
     const { cypher, params } = buildEntitiesCypher({
-      session_id: 'planpling',
+      session_id: "planpling",
       limit: 100,
     });
-    expect(cypher).toContain('MATCH (n:Canon)');
-    expect(cypher).toContain('session_id = $sid');
-    expect(params.sid).toBe('planpling');
+    expect(cypher).toContain("MATCH (n:Canon)");
+    expect(cypher).toContain("session_id = $sid");
+    expect(params.sid).toBe("planpling");
     expect(params.lim).toBe(100);
   });
 
-  it('adds type filter', () => {
+  it("adds type filter", () => {
     const { cypher, params } = buildEntitiesCypher({
-      session_id: 'test',
-      type: 'technology',
+      session_id: "test",
+      type: "technology",
       limit: 50,
     });
-    expect(cypher).toContain('toLower(n.type) = toLower($type)');
-    expect(params.type).toBe('technology');
+    expect(cypher).toContain("toLower(n.type) = toLower($type)");
+    expect(params.type).toBe("technology");
   });
 
-  it('adds search filter', () => {
+  it("adds search filter", () => {
     const { cypher, params } = buildEntitiesCypher({
-      session_id: 'test',
-      search: 'React',
+      session_id: "test",
+      search: "React",
       limit: 50,
     });
-    expect(cypher).toContain('toLower(n.name) CONTAINS toLower($search)');
-    expect(params.search).toBe('React');
+    expect(cypher).toContain("toLower(n.name) CONTAINS toLower($search)");
+    expect(params.search).toBe("React");
   });
 
-  it('combines search + type filters', () => {
+  it("combines search + type filters", () => {
     const { cypher, params } = buildEntitiesCypher({
-      session_id: 'test',
-      search: 'React',
-      type: 'technology',
+      session_id: "test",
+      search: "React",
+      type: "technology",
       limit: 50,
     });
-    expect(cypher).toContain('CONTAINS toLower($search)');
-    expect(cypher).toContain('toLower(n.type) = toLower($type)');
-    expect(params.search).toBe('React');
-    expect(params.type).toBe('technology');
+    expect(cypher).toContain("CONTAINS toLower($search)");
+    expect(cypher).toContain("toLower(n.type) = toLower($type)");
+    expect(params.search).toBe("React");
+    expect(params.type).toBe("technology");
   });
 });
 
@@ -136,53 +139,80 @@ describe('MCP toolEntities Cypher generation', () => {
 // toolContext — delegation to shared context builder
 // =============================================================================
 
-describe('MCP toolContext delegation', () => {
-  it('builds entity context when entity arg provided', async () => {
+describe("MCP toolContext delegation", () => {
+  it("builds entity context when entity arg provided", async () => {
     const runner = createSequentialMockRunner([
-      [{ canonId: 'react', name: 'React', type: 'technology' }],
-      [{ canonId: 'react', name: 'React', type: 'technology', aliases: [], confidence: 0.99, sources: [] }],
+      [{ canonId: "react", name: "React", type: "technology" }],
+      [
+        {
+          canonId: "react",
+          name: "React",
+          type: "technology",
+          aliases: [],
+          confidence: 0.99,
+          sources: [],
+        },
+      ],
       [],
     ]);
 
-    const bundle = await buildEntityContext('React', {
+    const bundle = await buildEntityContext("React", {
       runner,
-      sessionId: 'test',
+      sessionId: "test",
     });
 
     expect(bundle.entities.length).toBeGreaterThanOrEqual(0);
-    expect(bundle.topic).toContain('React');
+    expect(bundle.topic).toContain("React");
   });
 
-  it('builds full context when neither topic nor entity provided', async () => {
+  it("builds full context when neither topic nor entity provided", async () => {
     const runner = createSequentialMockRunner([
-      [{ canonId: 'react', name: 'React', type: 'technology', aliases: [], confidence: 0.99, sources: [] }],
+      [
+        {
+          canonId: "react",
+          name: "React",
+          type: "technology",
+          aliases: [],
+          confidence: 0.99,
+          sources: [],
+        },
+      ],
       [],
     ]);
 
     const bundle = await buildFullContext({
       runner,
-      sessionId: 'test',
+      sessionId: "test",
     });
 
     expect(bundle.entities).toHaveLength(1);
   });
 
-  it('builds topic context when topic provided', async () => {
+  it("builds topic context when topic provided", async () => {
     const runner = createSequentialMockRunner([
-      [{ name: 'React', type: 'technology' }],
-      [{ canonId: 'react', name: 'React', type: 'technology' }],
-      [{ canonId: 'react', name: 'React', type: 'technology', aliases: [], confidence: 0.99, sources: [] }],
+      [{ name: "React", type: "technology" }],
+      [{ canonId: "react", name: "React", type: "technology" }],
+      [
+        {
+          canonId: "react",
+          name: "React",
+          type: "technology",
+          aliases: [],
+          confidence: 0.99,
+          sources: [],
+        },
+      ],
       [],
     ]);
     const llm = createMockLlm('["React"]');
 
-    const bundle = await buildTopicContext('frontend', {
+    const bundle = await buildTopicContext("frontend", {
       runner,
-      sessionId: 'test',
+      sessionId: "test",
       llm,
     });
 
-    expect(bundle.topic).toBe('frontend');
+    expect(bundle.topic).toBe("frontend");
   });
 });
 
@@ -190,35 +220,44 @@ describe('MCP toolContext delegation', () => {
 // toolImpact — delegation to shared impact analyzer
 // =============================================================================
 
-describe('MCP toolImpact delegation', () => {
-  it('returns formatted markdown when no CodeRefs found', async () => {
+describe("MCP toolImpact delegation", () => {
+  it("returns formatted markdown when no CodeRefs found", async () => {
     const runner = createMockRunner();
 
-    const result = await analyzeImpact(['missing.ts'], {
+    const result = await analyzeImpact(["missing.ts"], {
       runner,
-      sessionId: 'test',
+      sessionId: "test",
     });
     const md = formatImpactMarkdown(result);
 
-    expect(md).toContain('No Impact Found');
-    expect(md).toContain('iw xlink');
+    expect(md).toContain("No Impact Found");
+    expect(md).toContain("iw xlink");
   });
 
-  it('returns impact report for linked files', async () => {
+  it("returns impact report for linked files", async () => {
     const runner = createSequentialMockRunner([
-      [{ name: 'React', type: 'technology', confidence: 0.99, filePath: 'pkg.json', kind: 'dep', strategy: 'dep' }],
+      [
+        {
+          name: "React",
+          type: "technology",
+          confidence: 0.99,
+          filePath: "pkg.json",
+          kind: "dep",
+          strategy: "dep",
+        },
+      ],
       [],
       [],
     ]);
 
-    const result = await analyzeImpact(['pkg.json'], {
+    const result = await analyzeImpact(["pkg.json"], {
       runner,
-      sessionId: 'test',
+      sessionId: "test",
     });
     const md = formatImpactMarkdown(result);
 
-    expect(md).toContain('Direct Impact');
-    expect(md).toContain('React');
+    expect(md).toContain("Direct Impact");
+    expect(md).toContain("React");
   });
 });
 
@@ -226,22 +265,22 @@ describe('MCP toolImpact delegation', () => {
 // MCP helper: stringify
 // =============================================================================
 
-describe('MCP stringify helper', () => {
+describe("MCP stringify helper", () => {
   function stringify(v: unknown): string {
-    if (v === null || v === undefined) return '';
-    if (typeof v === 'string') return v;
-    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-    if (Array.isArray(v)) return v.map(stringify).join(', ');
+    if (v === null || v === undefined) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    if (Array.isArray(v)) return v.map(stringify).join(", ");
     return JSON.stringify(v);
   }
 
-  it('handles all value types', () => {
-    expect(stringify(null)).toBe('');
-    expect(stringify('text')).toBe('text');
-    expect(stringify(42)).toBe('42');
-    expect(stringify(true)).toBe('true');
-    expect(stringify([1, 2, 3])).toBe('1, 2, 3');
-    expect(stringify({ k: 'v' })).toBe('{"k":"v"}');
+  it("handles all value types", () => {
+    expect(stringify(null)).toBe("");
+    expect(stringify("text")).toBe("text");
+    expect(stringify(42)).toBe("42");
+    expect(stringify(true)).toBe("true");
+    expect(stringify([1, 2, 3])).toBe("1, 2, 3");
+    expect(stringify({ k: "v" })).toBe('{"k":"v"}');
   });
 });
 
@@ -249,29 +288,30 @@ describe('MCP stringify helper', () => {
 // MCP query — table formatting
 // =============================================================================
 
-describe('MCP query table formatting', () => {
-  it('formats rows as markdown table', () => {
+describe("MCP query table formatting", () => {
+  it("formats rows as markdown table", () => {
     const rows = [
-      { name: 'React', type: 'technology' },
-      { name: 'Vue', type: 'technology' },
+      { name: "React", type: "technology" },
+      { name: "Vue", type: "technology" },
     ];
     const columns = Object.keys(rows[0]);
-    const header = '| ' + columns.join(' | ') + ' |';
-    const sep = '| ' + columns.map(() => '---').join(' | ') + ' |';
-    const dataRows = rows.map(row =>
-      '| ' + columns.map(c => String((row as any)[c])).join(' | ') + ' |',
+    const header = "| " + columns.join(" | ") + " |";
+    const sep = "| " + columns.map(() => "---").join(" | ") + " |";
+    const dataRows = rows.map(
+      (row) =>
+        "| " + columns.map((c) => String((row as any)[c])).join(" | ") + " |",
     );
 
-    const table = [header, sep, ...dataRows].join('\n');
-    expect(table).toContain('| name | type |');
-    expect(table).toContain('| --- | --- |');
-    expect(table).toContain('| React | technology |');
-    expect(table).toContain('| Vue | technology |');
+    const table = [header, sep, ...dataRows].join("\n");
+    expect(table).toContain("| name | type |");
+    expect(table).toContain("| --- | --- |");
+    expect(table).toContain("| React | technology |");
+    expect(table).toContain("| Vue | technology |");
   });
 
-  it('handles empty results', () => {
+  it("handles empty results", () => {
     const rows: Record<string, unknown>[] = [];
-    const result = rows.length === 0 ? 'No results found.' : 'has results';
-    expect(result).toBe('No results found.');
+    const result = rows.length === 0 ? "No results found." : "has results";
+    expect(result).toBe("No results found.");
   });
 });

@@ -19,7 +19,12 @@
  *   NEO4J_PASSWORD (required)
  */
 
-import type { KxStageOutput, CanonEntity, CanonTriple, RawTriple } from '@intentweave/analyzer';
+import type {
+  KxStageOutput,
+  CanonEntity,
+  CanonTriple,
+  RawTriple,
+} from "@intentweave/analyzer";
 
 // =============================================================================
 // Types
@@ -41,7 +46,7 @@ export interface PersistOptions {
   /** Whether to use APOC for dynamic relationship types (default: true, falls back automatically) */
   useApoc?: boolean;
   /** Persist mode: 'full' = create all (legacy), 'delta' = diff against existing (default) */
-  mode?: 'full' | 'delta';
+  mode?: "full" | "delta";
   /** Log callback for verbose output */
   log?: (msg: string) => void;
 }
@@ -119,25 +124,32 @@ export async function persistKxToNeo4j(
   options: PersistOptions,
 ): Promise<PersistResult> {
   const startTime = Date.now();
-  const mode = options.mode ?? 'delta';
+  const mode = options.mode ?? "delta";
   const log = options.log ?? (() => {});
 
   // Dynamic import — only loads when --persist is used
-  const neo4j = await import('neo4j-driver');
+  const neo4j = await import("neo4j-driver");
 
-  const uri = options.uri ?? process.env.NEO4J_URI ?? 'bolt://localhost:7687';
-  const user = options.user ?? process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? 'neo4j';
+  const uri = options.uri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
+  const user =
+    options.user ??
+    process.env.NEO4J_USER ??
+    process.env.NEO4J_USERNAME ??
+    "neo4j";
   const password = options.password ?? process.env.NEO4J_PASSWORD;
 
   if (!password) {
     throw new Error(
-      'Neo4j password required. Set NEO4J_PASSWORD environment variable.\n' +
-      '  Example: export NEO4J_PASSWORD="your-password"\n' +
-      '  Or start Neo4j with: docker run -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:5',
+      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
+        '  Example: export NEO4J_PASSWORD="your-password"\n' +
+        "  Or start Neo4j with: docker run -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:5",
     );
   }
 
-  const driver = neo4j.default.driver(uri, neo4j.default.auth.basic(user, password));
+  const driver = neo4j.default.driver(
+    uri,
+    neo4j.default.auth.basic(user, password),
+  );
 
   try {
     // Verify connectivity
@@ -146,14 +158,20 @@ export async function persistKxToNeo4j(
     // Ensure schema
     await ensureSchema(driver, neo4j.default);
 
-    if (mode === 'delta') {
-      return await persistDelta(driver, neo4j.default, kxOutputs, options, startTime);
+    if (mode === "delta") {
+      return await persistDelta(
+        driver,
+        neo4j.default,
+        kxOutputs,
+        options,
+        startTime,
+      );
     }
 
     // ── Legacy full mode ────────────────────────────────────────────
 
     // Check APOC availability
-    const hasApoc = options.useApoc !== false && await checkApoc(driver);
+    const hasApoc = options.useApoc !== false && (await checkApoc(driver));
 
     let totalEntities = 0;
     let totalRelationships = 0;
@@ -162,20 +180,37 @@ export async function persistKxToNeo4j(
     for (const kxOutput of kxOutputs) {
       // Phase 1: Write canonical entities
       const entities = await writeCanonEntities(
-        driver, kxOutput.canonEntities, kxOutput.artifactId, options,
+        driver,
+        kxOutput.canonEntities,
+        kxOutput.artifactId,
+        options,
       );
       totalEntities += entities;
 
       // Phase 2: Write canonical relationships
       const rels = hasApoc
-        ? await writeCanonRelationshipsApoc(driver, kxOutput.canonTriples, kxOutput.artifactId, options)
-        : await writeCanonRelationshipsGeneric(driver, kxOutput.canonTriples, kxOutput.artifactId, options);
+        ? await writeCanonRelationshipsApoc(
+            driver,
+            kxOutput.canonTriples,
+            kxOutput.artifactId,
+            options,
+          )
+        : await writeCanonRelationshipsGeneric(
+            driver,
+            kxOutput.canonTriples,
+            kxOutput.artifactId,
+            options,
+          );
       totalRelationships += rels;
 
       // Phase 3: Write raw triples with links to canon entities
       const raws = await writeRawTriples(
-        driver, kxOutput.rawTriples, kxOutput.canonEntities,
-        kxOutput.entityResolutions, kxOutput.artifactId, options,
+        driver,
+        kxOutput.rawTriples,
+        kxOutput.canonEntities,
+        kxOutput.entityResolutions,
+        kxOutput.artifactId,
+        options,
         kxOutput.filePath,
       );
       totalRawTriples += raws;
@@ -199,7 +234,11 @@ export async function persistKxToNeo4j(
 /**
  * Relationship fingerprint key: "subjectCanonId|predicate|objectCanonId"
  */
-function relKey(subjectCanonId: string, predicate: string, objectCanonId: string): string {
+function relKey(
+  subjectCanonId: string,
+  predicate: string,
+  objectCanonId: string,
+): string {
   return `${subjectCanonId}|${predicate}|${objectCanonId}`;
 }
 
@@ -222,8 +261,11 @@ async function persistDelta(
   // ── 1. Collect all incoming data ────────────────────────────────────
   const incomingEntities = new Map<string, CanonEntity>();
   const incomingRels = new Map<string, CanonTriple & { artifactId: string }>();
-  const incomingRaws = new Map<string, RawTriple & { artifactId: string; idx: number }>();
-  const allEntityResolutions: KxStageOutput['entityResolutions'] = [];
+  const incomingRaws = new Map<
+    string,
+    RawTriple & { artifactId: string; idx: number }
+  >();
+  const allEntityResolutions: KxStageOutput["entityResolutions"] = [];
   const allCanonEntities: CanonEntity[] = [];
   /** Maps artifactId → original file path (for sourceFile on RawTriple) */
   const artifactFilePaths = new Map<string, string>();
@@ -247,7 +289,11 @@ async function persistDelta(
   for (const kx of kxOutputs) {
     for (const t of kx.canonTriples) {
       // Skip orphan rels whose subject or object entity doesn't exist
-      if (!incomingEntities.has(t.subjectCanonId) || !incomingEntities.has(t.objectCanonId)) continue;
+      if (
+        !incomingEntities.has(t.subjectCanonId) ||
+        !incomingEntities.has(t.objectCanonId)
+      )
+        continue;
       const key = relKey(t.subjectCanonId, t.predicate, t.objectCanonId);
       const existing = incomingRels.get(key);
       if (!existing || t.confidence > existing.confidence) {
@@ -257,21 +303,29 @@ async function persistDelta(
     for (const r of kx.rawTriples) {
       const key = rawKey(r.subject, r.predicate, r.object);
       if (!incomingRaws.has(key)) {
-        incomingRaws.set(key, { ...r, artifactId: kx.artifactId, idx: rawIdx++ });
+        incomingRaws.set(key, {
+          ...r,
+          artifactId: kx.artifactId,
+          idx: rawIdx++,
+        });
       }
     }
   }
 
-  log(`Incoming: ${incomingEntities.size} entities, ${incomingRels.size} rels, ${incomingRaws.size} raw triples`);
+  log(
+    `Incoming: ${incomingEntities.size} entities, ${incomingRels.size} rels, ${incomingRaws.size} raw triples`,
+  );
 
   // ── 2. Snapshot existing data ───────────────────────────────────────
-  log('Snapshotting existing graph…');
+  log("Snapshotting existing graph…");
 
   const existingEntities = await snapshotEntities(driver, sessionId);
   const existingRels = await snapshotRelationships(driver, sessionId);
   const existingRaws = await snapshotRawTriples(driver, sessionId);
 
-  log(`Existing: ${existingEntities.size} entities, ${existingRels.size} rels, ${existingRaws.size} raw triples`);
+  log(
+    `Existing: ${existingEntities.size} entities, ${existingRels.size} rels, ${existingRaws.size} raw triples`,
+  );
 
   // ── 3. Compute diffs ───────────────────────────────────────────────
 
@@ -289,7 +343,8 @@ async function persistDelta(
       entity.confidence !== existing.confidence ||
       entity.name !== existing.name ||
       entity.type !== existing.type ||
-      JSON.stringify([...entity.aliases].sort()) !== JSON.stringify([...existing.aliases].sort())
+      JSON.stringify([...entity.aliases].sort()) !==
+        JSON.stringify([...existing.aliases].sort())
     ) {
       entitiesToUpdate.push(entity);
     } else {
@@ -338,7 +393,9 @@ async function persistDelta(
     }
   }
 
-  log(`Delta: +${entitiesToAdd.length} ~${entitiesToUpdate.length} -${entityIdsToRemove.length} entities | +${relsToAdd.length} -${relKeysToRemove.length} rels | +${rawsToAdd.length} -${rawKeysToRemove.length} raws`);
+  log(
+    `Delta: +${entitiesToAdd.length} ~${entitiesToUpdate.length} -${entityIdsToRemove.length} entities | +${relsToAdd.length} -${relKeysToRemove.length} rels | +${rawsToAdd.length} -${rawKeysToRemove.length} raws`,
+  );
 
   // ── 4. Apply: Remove stale data ────────────────────────────────────
   if (entityIdsToRemove.length > 0) {
@@ -359,7 +416,7 @@ async function persistDelta(
   // ── 5. Apply: Add new entities ─────────────────────────────────────
   if (entitiesToAdd.length > 0) {
     log(`Adding ${entitiesToAdd.length} new entities…`);
-    await writeCanonEntities(driver, entitiesToAdd, '__delta__', options);
+    await writeCanonEntities(driver, entitiesToAdd, "__delta__", options);
   }
 
   // ── 6. Apply: Update changed entities ──────────────────────────────
@@ -394,7 +451,15 @@ async function persistDelta(
       byArtifact.set(r.artifactId, group);
     }
     for (const [artifactId, triples] of byArtifact) {
-      await writeRawTriples(driver, triples, allCanonEntities, allEntityResolutions, artifactId, options, artifactFilePaths.get(artifactId));
+      await writeRawTriples(
+        driver,
+        triples,
+        allCanonEntities,
+        allEntityResolutions,
+        artifactId,
+        options,
+        artifactFilePaths.get(artifactId),
+      );
     }
   }
 
@@ -454,13 +519,13 @@ async function snapshotEntities(
     );
     const map = new Map<string, ExistingEntity>();
     for (const rec of result.records) {
-      const canonId = rec.get('canonId');
+      const canonId = rec.get("canonId");
       map.set(canonId, {
         canonId,
-        name: rec.get('name'),
-        type: rec.get('type'),
-        confidence: toNumber(rec.get('confidence')) ?? 1.0,
-        aliases: (rec.get('aliases') ?? []) as string[],
+        name: rec.get("name"),
+        type: rec.get("type"),
+        confidence: toNumber(rec.get("confidence")) ?? 1.0,
+        aliases: (rec.get("aliases") ?? []) as string[],
       });
     }
     return map;
@@ -484,10 +549,10 @@ async function snapshotRelationships(
     );
     const map = new Map<string, { predicate: string; confidence: number }>();
     for (const rec of result.records) {
-      const key = relKey(rec.get('subj'), rec.get('pred'), rec.get('obj'));
+      const key = relKey(rec.get("subj"), rec.get("pred"), rec.get("obj"));
       map.set(key, {
-        predicate: rec.get('pred'),
-        confidence: toNumber(rec.get('confidence')) ?? 1.0,
+        predicate: rec.get("pred"),
+        confidence: toNumber(rec.get("confidence")) ?? 1.0,
       });
     }
     return map;
@@ -510,7 +575,7 @@ async function snapshotRawTriples(
     );
     const map = new Map<string, boolean>();
     for (const rec of result.records) {
-      const key = rawKey(rec.get('subj'), rec.get('pred'), rec.get('obj'));
+      const key = rawKey(rec.get("subj"), rec.get("pred"), rec.get("obj"));
       map.set(key, true);
     }
     return map;
@@ -553,7 +618,7 @@ async function mergeCanonRelationships(
          r.run_id = $runId
        RETURN count(r) AS written`,
       {
-        triples: triples.map(t => ({
+        triples: triples.map((t) => ({
           subjectCanonId: t.subjectCanonId,
           objectCanonId: t.objectCanonId,
           predicate: t.predicate,
@@ -566,7 +631,7 @@ async function mergeCanonRelationships(
         runId: options.runId,
       },
     );
-    return toNumber(result.records[0]?.get('written')) ?? 0;
+    return toNumber(result.records[0]?.get("written")) ?? 0;
   } finally {
     await session.close();
   }
@@ -590,7 +655,7 @@ async function updateCanonEntities(
            n.run_id = $runId,
            n.updated_at = datetime()`,
       {
-        entities: entities.map(e => ({
+        entities: entities.map((e) => ({
           canonId: e.canonId,
           name: e.name,
           type: e.type,
@@ -634,8 +699,8 @@ async function removeStaleRelationships(
   if (keys.length === 0) return;
 
   // Parse keys back into components
-  const parsed = keys.map(k => {
-    const parts = k.split('|');
+  const parsed = keys.map((k) => {
+    const parts = k.split("|");
     return { subj: parts[0], pred: parts[1], obj: parts[2] };
   });
 
@@ -664,8 +729,8 @@ async function removeStaleRawTriples(
   if (keys.length === 0) return;
 
   // Parse keys back into components
-  const parsed = keys.map(k => {
-    const parts = k.split('|');
+  const parsed = keys.map((k) => {
+    const parts = k.split("|");
     return { subj: parts[0], pred: parts[1], obj: parts[2] };
   });
 
@@ -697,20 +762,21 @@ async function ensureSchema(driver: any, neo4jModule: any): Promise<void> {
   const session = driver.session();
   try {
     // Run each statement separately (Neo4j doesn't support multi-statement in one call)
-    const statements = SCHEMA_CYPHER.split('\n')
-      .filter(l => !l.startsWith('//') && l.trim().length > 0);
+    const statements = SCHEMA_CYPHER.split("\n").filter(
+      (l) => !l.startsWith("//") && l.trim().length > 0,
+    );
 
     // Rejoin multi-line statements
-    let current = '';
+    let current = "";
     for (const line of statements) {
-      current += ' ' + line;
-      if (current.includes(';')) {
+      current += " " + line;
+      if (current.includes(";")) {
         try {
-          await session.run(current.replace(';', '').trim());
+          await session.run(current.replace(";", "").trim());
         } catch {
           // Constraint/index may already exist — safe to ignore
         }
-        current = '';
+        current = "";
       }
     }
   } finally {
@@ -721,7 +787,7 @@ async function ensureSchema(driver: any, neo4jModule: any): Promise<void> {
 async function checkApoc(driver: any): Promise<boolean> {
   const session = driver.session();
   try {
-    await session.run('RETURN apoc.version() AS v');
+    await session.run("RETURN apoc.version() AS v");
     return true;
   } catch {
     return false;
@@ -764,7 +830,7 @@ async function writeCanonEntities(
       RETURN count(n) AS written
       `,
       {
-        entities: entities.map(e => ({
+        entities: entities.map((e) => ({
           canonId: e.canonId,
           name: e.name,
           type: e.type,
@@ -774,11 +840,11 @@ async function writeCanonEntities(
         sessionId: options.sessionId,
         runId: options.runId,
         artifactId,
-        workspaceId: options.workspaceId ?? 'default',
+        workspaceId: options.workspaceId ?? "default",
       },
     );
 
-    return toNumber(result.records[0]?.get('written')) ?? entities.length;
+    return toNumber(result.records[0]?.get("written")) ?? entities.length;
   } finally {
     await session.close();
   }
@@ -821,7 +887,7 @@ async function writeCanonRelationshipsApoc(
         RETURN count(rel) AS written
         `,
         {
-          triples: group.map(t => ({
+          triples: group.map((t) => ({
             subjectCanonId: t.subjectCanonId,
             objectCanonId: t.objectCanonId,
             confidence: t.confidence,
@@ -835,7 +901,7 @@ async function writeCanonRelationshipsApoc(
         },
       );
 
-      written += toNumber(result.records[0]?.get('written')) ?? 0;
+      written += toNumber(result.records[0]?.get("written")) ?? 0;
     }
 
     return written;
@@ -871,7 +937,7 @@ async function writeCanonRelationshipsGeneric(
       RETURN count(r) AS written
       `,
       {
-        triples: triples.map(t => ({
+        triples: triples.map((t) => ({
           subjectCanonId: t.subjectCanonId,
           objectCanonId: t.objectCanonId,
           predicate: t.predicate,
@@ -885,7 +951,7 @@ async function writeCanonRelationshipsGeneric(
       },
     );
 
-    return toNumber(result.records[0]?.get('written')) ?? 0;
+    return toNumber(result.records[0]?.get("written")) ?? 0;
   } finally {
     await session.close();
   }
@@ -895,7 +961,7 @@ async function writeRawTriples(
   driver: any,
   rawTriples: RawTriple[],
   canonEntities: CanonEntity[],
-  entityResolutions: KxStageOutput['entityResolutions'],
+  entityResolutions: KxStageOutput["entityResolutions"],
   artifactId: string,
   options: PersistOptions,
   sourceFile?: string,
@@ -973,7 +1039,7 @@ async function writeRawTriples(
         },
       );
 
-      totalWritten += toNumber(result.records[0]?.get('written')) ?? 0;
+      totalWritten += toNumber(result.records[0]?.get("written")) ?? 0;
     } finally {
       await session.close();
     }
@@ -987,7 +1053,7 @@ async function writeRawTriples(
  */
 function toNumber(val: any): number | undefined {
   if (val == null) return undefined;
-  if (typeof val === 'number') return val;
-  if (typeof val.toNumber === 'function') return val.toNumber();
+  if (typeof val === "number") return val;
+  if (typeof val.toNumber === "function") return val.toNumber();
   return Number(val);
 }

@@ -3,13 +3,13 @@
 
 /**
  * Workspace - Types and utilities for IntentWeave workspace management
- * 
+ *
  * Workspace Identity Architecture:
  * - Every workspace has a unique `workspaceKey` (human-readable) and `workspaceId` (stable)
  * - The workspaceId is used in cgIds: intentweave|<workspaceId>|kg|entity/name
  * - The workspaceKey is used for CLI/UI: `iw workspace use my-project`
  * - All storage paths are scoped by workspaceKey
- * 
+ *
  * Directory Structure:
  * .iw/
  * └── workspaces/
@@ -19,8 +19,8 @@
  *             └── <runId>/...
  */
 
-import type { RunMeta } from '../types/index.js';
-import { generateWorkspaceId, isStableWorkspaceId } from '../cgId/index.js';
+import type { RunMeta } from "../types/index.js";
+import { generateWorkspaceId, isStableWorkspaceId } from "../cgId/index.js";
 
 // ============================================================================
 // Workspace Reference (Lightweight Reference)
@@ -28,17 +28,17 @@ import { generateWorkspaceId, isStableWorkspaceId } from '../cgId/index.js';
 
 /**
  * WorkspaceRef - Lightweight reference to a workspace
- * 
+ *
  * Used for passing workspace identity without full config.
  * Can be resolved to full WorkspaceManifest via WorkspaceRegistry.
  */
 export interface WorkspaceRef {
   /** Human-readable workspace key (e.g., "my-project", "acme-backend") */
   key: string;
-  
+
   /** Stable workspace ID used in cgIds (e.g., "ws_8f3a") */
   id: string;
-  
+
   /** Optional alias for quick access */
   alias?: string;
 }
@@ -49,7 +49,9 @@ export interface WorkspaceRef {
  */
 export function createWorkspaceRef(key: string, id?: string): WorkspaceRef {
   if (!isValidWorkspaceKey(key)) {
-    throw new Error(`Invalid workspace key: "${key}". Must be lowercase alphanumeric with hyphens, 2-64 chars.`);
+    throw new Error(
+      `Invalid workspace key: "${key}". Must be lowercase alphanumeric with hyphens, 2-64 chars.`,
+    );
   }
   return {
     key,
@@ -63,34 +65,34 @@ export function createWorkspaceRef(key: string, id?: string): WorkspaceRef {
 
 /**
  * WorkspaceManifest - Full workspace configuration stored in workspace.json
- * 
+ *
  * Schema version is required for forward compatibility.
  */
 export interface WorkspaceManifest {
   /** Schema version for this manifest */
-  schemaVersion: '0.1';
-  
+  schemaVersion: "0.1";
+
   /** Workspace reference (key + id) */
   workspace: WorkspaceRef;
-  
+
   /** Human-readable display name */
   displayName: string;
-  
+
   /** Optional description */
   description?: string;
-  
+
   /** Root directory path (absolute or relative to .iw) */
   rootPath: string;
-  
+
   /** Default profile pack to use */
   defaultProfile?: string;
-  
+
   /** Configuration overrides */
   config?: WorkspaceConfigOverrides;
-  
+
   /** Created timestamp */
   createdAt: string;
-  
+
   /** Last updated timestamp */
   updatedAt: string;
 }
@@ -101,16 +103,16 @@ export interface WorkspaceManifest {
 export interface WorkspaceConfigOverrides {
   /** Run retention count (default: 10) */
   runRetention?: number;
-  
+
   /** Auto-aggregate after PX completes */
   autoAggregate?: boolean;
-  
+
   /** Database URI for server mode */
   databaseUri?: string;
-  
+
   /** Extraction provider (openai, mock, ollama) */
   extractionProvider?: string;
-  
+
   /** Additional overrides */
   [key: string]: unknown;
 }
@@ -126,22 +128,22 @@ export interface WorkspaceConfigOverrides {
 export interface WorkspaceConfig {
   /** Unique workspace identifier */
   id: string;
-  
+
   /** Human-readable workspace name */
   name: string;
-  
+
   /** Root directory path */
   rootPath: string;
-  
+
   /** Database connection string or path */
   databaseUri?: string;
-  
+
   /** Configuration overrides */
   overrides?: Record<string, unknown>;
-  
+
   /** Created timestamp */
   createdAt: string;
-  
+
   /** Last updated timestamp */
   updatedAt: string;
 }
@@ -152,19 +154,19 @@ export interface WorkspaceConfig {
 export interface WorkspaceState {
   /** Current workspace config */
   config: WorkspaceConfig;
-  
+
   /** Is the workspace initialized */
   isInitialized: boolean;
-  
+
   /** Is the database connected */
   isConnected: boolean;
-  
+
   /** Current active run (if any) */
   activeRun?: RunMeta;
-  
+
   /** Entity count in staging */
   stagedEntityCount: number;
-  
+
   /** Statement count in staging */
   stagedStatementCount: number;
 }
@@ -175,16 +177,16 @@ export interface WorkspaceState {
 export interface WorkspaceSession {
   /** Session ID */
   sessionId: string;
-  
+
   /** Workspace ID */
   workspaceId: string;
-  
+
   /** Session start time */
   startedAt: string;
-  
+
   /** Current run ID */
   currentRunId?: string;
-  
+
   /** Files being processed */
   activeFiles: string[];
 }
@@ -195,22 +197,22 @@ export interface WorkspaceSession {
 export interface FileStatus {
   /** File path relative to workspace root */
   path: string;
-  
+
   /** Processing status */
-  status: 'pending' | 'processing' | 'parsed' | 'analyzed' | 'error';
-  
+  status: "pending" | "processing" | "parsed" | "analyzed" | "error";
+
   /** Error message if status is 'error' */
   error?: string;
-  
+
   /** Last modified time */
   lastModified: string;
-  
+
   /** Last processed time */
   lastProcessed?: string;
-  
+
   /** Entity count extracted from this file */
   entityCount?: number;
-  
+
   /** Statement count extracted from this file */
   statementCount?: number;
 }
@@ -221,19 +223,19 @@ export interface FileStatus {
 export interface WorkspaceStats {
   /** Total entity count */
   totalEntities: number;
-  
+
   /** Total statement count */
   totalStatements: number;
-  
+
   /** Entity count by type */
   entitiesByType: Record<string, number>;
-  
+
   /** Statement count by predicate */
   statementsByPredicate: Record<string, number>;
-  
+
   /** File count by status */
   filesByStatus: Record<string, number>;
-  
+
   /** Last analysis run time */
   lastAnalysisAt?: string;
 }
@@ -245,7 +247,7 @@ export function createWorkspaceConfig(
   id: string,
   name: string,
   rootPath: string,
-  options?: Partial<WorkspaceConfig>
+  options?: Partial<WorkspaceConfig>,
 ): WorkspaceConfig {
   const now = new Date().toISOString();
   return {
@@ -274,16 +276,18 @@ export function createInitialState(config: WorkspaceConfig): WorkspaceState {
 /**
  * Validate workspace config
  */
-export function validateWorkspaceConfig(config: unknown): config is WorkspaceConfig {
-  if (!config || typeof config !== 'object') return false;
-  
+export function validateWorkspaceConfig(
+  config: unknown,
+): config is WorkspaceConfig {
+  if (!config || typeof config !== "object") return false;
+
   const c = config as Record<string, unknown>;
   return (
-    typeof c.id === 'string' &&
-    typeof c.name === 'string' &&
-    typeof c.rootPath === 'string' &&
-    typeof c.createdAt === 'string' &&
-    typeof c.updatedAt === 'string'
+    typeof c.id === "string" &&
+    typeof c.name === "string" &&
+    typeof c.rootPath === "string" &&
+    typeof c.createdAt === "string" &&
+    typeof c.updatedAt === "string"
   );
 }
 
@@ -318,7 +322,9 @@ const WORKSPACE_KEY_PATTERN = /^[a-z][a-z0-9-]{1,63}$/;
  * Check if a string is a valid workspace key
  */
 export function isValidWorkspaceKey(key: string): boolean {
-  return WORKSPACE_KEY_PATTERN.test(key) && !key.includes('--') && !key.endsWith('-');
+  return (
+    WORKSPACE_KEY_PATTERN.test(key) && !key.includes("--") && !key.endsWith("-")
+  );
 }
 
 /**
@@ -328,20 +334,20 @@ export function sanitizeWorkspaceKey(input: string): string {
   const sanitized = input
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
     .slice(0, 64);
-  
+
   if (!sanitized || sanitized.length < 2) {
     throw new Error(`Cannot create valid workspace key from: "${input}"`);
   }
-  
+
   // Ensure starts with letter
   if (!/^[a-z]/.test(sanitized)) {
     return `ws-${sanitized}`.slice(0, 64);
   }
-  
+
   return sanitized;
 }
 
@@ -360,8 +366,11 @@ export interface WorkspacePathOptions {
 /**
  * Get the directory path for a workspace by key
  */
-export function getWorkspacePath(workspaceKey: string, options: WorkspacePathOptions = {}): string {
-  const baseDir = options.baseDir ?? '.iw';
+export function getWorkspacePath(
+  workspaceKey: string,
+  options: WorkspacePathOptions = {},
+): string {
+  const baseDir = options.baseDir ?? ".iw";
   if (!isValidWorkspaceKey(workspaceKey)) {
     throw new Error(`Invalid workspace key: "${workspaceKey}"`);
   }
@@ -371,28 +380,41 @@ export function getWorkspacePath(workspaceKey: string, options: WorkspacePathOpt
 /**
  * Get the manifest file path for a workspace
  */
-export function getManifestPath(workspaceKey: string, options: WorkspacePathOptions = {}): string {
+export function getManifestPath(
+  workspaceKey: string,
+  options: WorkspacePathOptions = {},
+): string {
   return `${getWorkspacePath(workspaceKey, options)}/workspace.json`;
 }
 
 /**
  * Get the runs directory for a workspace by key
  */
-export function getWorkspaceRunsPath(workspaceKey: string, options: WorkspacePathOptions = {}): string {
+export function getWorkspaceRunsPath(
+  workspaceKey: string,
+  options: WorkspacePathOptions = {},
+): string {
   return `${getWorkspacePath(workspaceKey, options)}/runs`;
 }
 
 /**
  * Get a specific run directory for a workspace
  */
-export function getRunPath(workspaceKey: string, runId: string, options: WorkspacePathOptions = {}): string {
+export function getRunPath(
+  workspaceKey: string,
+  runId: string,
+  options: WorkspacePathOptions = {},
+): string {
   return `${getWorkspaceRunsPath(workspaceKey, options)}/${runId}`;
 }
 
 /**
  * Get the curated directory for a workspace (persistent promotions)
  */
-export function getCuratedPath(workspaceKey: string, options: WorkspacePathOptions = {}): string {
+export function getCuratedPath(
+  workspaceKey: string,
+  options: WorkspacePathOptions = {},
+): string {
   return `${getWorkspacePath(workspaceKey, options)}/curated`;
 }
 
@@ -407,13 +429,18 @@ export function createWorkspaceManifest(
   key: string,
   displayName: string,
   rootPath: string,
-  options?: Partial<Omit<WorkspaceManifest, 'schemaVersion' | 'workspace' | 'createdAt' | 'updatedAt'>>
+  options?: Partial<
+    Omit<
+      WorkspaceManifest,
+      "schemaVersion" | "workspace" | "createdAt" | "updatedAt"
+    >
+  >,
 ): WorkspaceManifest {
   const now = new Date().toISOString();
   const ref = createWorkspaceRef(key);
-  
+
   return {
-    schemaVersion: '0.1',
+    schemaVersion: "0.1",
     workspace: ref,
     displayName,
     rootPath,
@@ -426,31 +453,35 @@ export function createWorkspaceManifest(
 /**
  * Validate a workspace manifest object
  */
-export function validateWorkspaceManifest(manifest: unknown): manifest is WorkspaceManifest {
-  if (!manifest || typeof manifest !== 'object') return false;
-  
+export function validateWorkspaceManifest(
+  manifest: unknown,
+): manifest is WorkspaceManifest {
+  if (!manifest || typeof manifest !== "object") return false;
+
   const m = manifest as Record<string, unknown>;
-  
+
   // Check required fields
-  if (m.schemaVersion !== '0.1') return false;
-  if (typeof m.displayName !== 'string') return false;
-  if (typeof m.rootPath !== 'string') return false;
-  if (typeof m.createdAt !== 'string') return false;
-  if (typeof m.updatedAt !== 'string') return false;
-  
+  if (m.schemaVersion !== "0.1") return false;
+  if (typeof m.displayName !== "string") return false;
+  if (typeof m.rootPath !== "string") return false;
+  if (typeof m.createdAt !== "string") return false;
+  if (typeof m.updatedAt !== "string") return false;
+
   // Check workspace ref
   const ws = m.workspace as Record<string, unknown> | undefined;
-  if (!ws || typeof ws !== 'object') return false;
-  if (typeof ws.key !== 'string' || !isValidWorkspaceKey(ws.key)) return false;
-  if (typeof ws.id !== 'string' || !isStableWorkspaceId(ws.id)) return false;
-  
+  if (!ws || typeof ws !== "object") return false;
+  if (typeof ws.key !== "string" || !isValidWorkspaceKey(ws.key)) return false;
+  if (typeof ws.id !== "string" || !isStableWorkspaceId(ws.id)) return false;
+
   return true;
 }
 
 /**
  * Get WorkspaceRef from a manifest
  */
-export function getWorkspaceRefFromManifest(manifest: WorkspaceManifest): WorkspaceRef {
+export function getWorkspaceRefFromManifest(
+  manifest: WorkspaceManifest,
+): WorkspaceRef {
   return manifest.workspace;
 }
 
@@ -464,16 +495,16 @@ export function getWorkspaceRefFromManifest(manifest: WorkspaceManifest): Worksp
 export interface WorkspaceRegistryEntry {
   /** Workspace key */
   key: string;
-  
+
   /** Workspace ID */
   id: string;
-  
+
   /** Path to workspace directory */
   path: string;
-  
+
   /** Optional alias */
   alias?: string;
-  
+
   /** Last accessed timestamp */
   lastAccessed?: string;
 }
@@ -482,11 +513,11 @@ export interface WorkspaceRegistryEntry {
  * Global workspace registry (stored in ~/.iw/workspaces.json)
  */
 export interface WorkspaceRegistry {
-  schemaVersion: '0.1';
-  
+  schemaVersion: "0.1";
+
   /** Default workspace key */
   defaultWorkspace?: string;
-  
+
   /** Registered workspaces */
   workspaces: WorkspaceRegistryEntry[];
 }
@@ -496,7 +527,7 @@ export interface WorkspaceRegistry {
  */
 export function createWorkspaceRegistry(): WorkspaceRegistry {
   return {
-    schemaVersion: '0.1',
+    schemaVersion: "0.1",
     workspaces: [],
   };
 }
@@ -506,10 +537,10 @@ export function createWorkspaceRegistry(): WorkspaceRegistry {
  */
 export function findWorkspaceInRegistry(
   registry: WorkspaceRegistry,
-  keyOrAlias: string
+  keyOrAlias: string,
 ): WorkspaceRegistryEntry | undefined {
   return registry.workspaces.find(
-    (ws) => ws.key === keyOrAlias || ws.alias === keyOrAlias
+    (ws) => ws.key === keyOrAlias || ws.alias === keyOrAlias,
   );
 }
 
@@ -518,17 +549,25 @@ export function findWorkspaceInRegistry(
  */
 export function upsertWorkspaceInRegistry(
   registry: WorkspaceRegistry,
-  entry: WorkspaceRegistryEntry
+  entry: WorkspaceRegistryEntry,
 ): WorkspaceRegistry {
-  const existingIndex = registry.workspaces.findIndex((ws) => ws.key === entry.key);
+  const existingIndex = registry.workspaces.findIndex(
+    (ws) => ws.key === entry.key,
+  );
   const updatedWorkspaces = [...registry.workspaces];
-  
+
   if (existingIndex >= 0) {
-    updatedWorkspaces[existingIndex] = { ...entry, lastAccessed: new Date().toISOString() };
+    updatedWorkspaces[existingIndex] = {
+      ...entry,
+      lastAccessed: new Date().toISOString(),
+    };
   } else {
-    updatedWorkspaces.push({ ...entry, lastAccessed: new Date().toISOString() });
+    updatedWorkspaces.push({
+      ...entry,
+      lastAccessed: new Date().toISOString(),
+    });
   }
-  
+
   return {
     ...registry,
     workspaces: updatedWorkspaces,
@@ -546,7 +585,7 @@ export function upsertWorkspaceInRegistry(
 export function generateRunId(): string {
   const now = new Date();
   const date = now.toISOString().slice(0, 10);
-  const time = now.toISOString().slice(11, 19).replace(/:/g, '');
+  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
   const random = Math.random().toString(36).slice(2, 6);
   return `run-${date}-${time}-${random}`;
 }
@@ -559,15 +598,15 @@ export function createRunMeta(
   options?: {
     runId?: string;
     profile?: string;
-  }
-): import('../types/index.js').RunMeta {
+  },
+): import("../types/index.js").RunMeta {
   return {
-    schemaVersion: '0.1',
+    schemaVersion: "0.1",
     runId: options?.runId ?? generateRunId(),
     workspaceId: workspace.id,
     workspaceKey: workspace.key,
     startedAt: new Date().toISOString(),
-    status: 'running',
+    status: "running",
     profile: options?.profile,
   };
 }
@@ -576,17 +615,17 @@ export function createRunMeta(
  * Update RunMeta to completed status
  */
 export function completeRunMeta(
-  meta: import('../types/index.js').RunMeta,
+  meta: import("../types/index.js").RunMeta,
   stats?: {
     entityCount?: number;
     statementCount?: number;
     artifactCount?: number;
-  }
-): import('../types/index.js').RunMeta {
+  },
+): import("../types/index.js").RunMeta {
   return {
     ...meta,
     completedAt: new Date().toISOString(),
-    status: 'completed',
+    status: "completed",
     ...stats,
   };
 }
@@ -595,13 +634,13 @@ export function completeRunMeta(
  * Update RunMeta to failed status
  */
 export function failRunMeta(
-  meta: import('../types/index.js').RunMeta,
-  error: string
-): import('../types/index.js').RunMeta {
+  meta: import("../types/index.js").RunMeta,
+  error: string,
+): import("../types/index.js").RunMeta {
   return {
     ...meta,
     completedAt: new Date().toISOString(),
-    status: 'failed',
+    status: "failed",
     error,
   };
 }

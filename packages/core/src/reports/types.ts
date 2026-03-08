@@ -3,10 +3,10 @@
 
 /**
  * Report Types
- * 
+ *
  * JSON schema types for IntentWeave reports.
  * See docs/REPORTING-SPEC.md for full specification.
- * 
+ *
  * Note: Some types are prefixed with "Report" to avoid collision
  * with existing core types (Evidence, ArtifactRole, ImportState).
  */
@@ -15,13 +15,31 @@
 // Core Types
 // =============================================================================
 
-export type IssueKind = 'contradiction' | 'open_end' | 'needs_review' | 'error';
-export type IssueSeverity = 'blocker' | 'warning' | 'info';
-export type IssueStatus = 'active' | 'resolved' | 'regressed';
-export type ReportArtifactRole = 'intent' | 'spec' | 'implementation' | 'runlog' | 'meta' | 'unknown';
-export type PipelineStage = 'IN' | 'RX' | 'CX' | 'MX' | 'PX' | 'AGG' | 'WX' | 'LX';
+export type IssueKind = "contradiction" | "open_end" | "needs_review" | "error";
+export type IssueSeverity = "blocker" | "warning" | "info";
+export type IssueStatus = "active" | "resolved" | "regressed";
+export type ReportArtifactRole =
+  | "intent"
+  | "spec"
+  | "implementation"
+  | "runlog"
+  | "meta"
+  | "unknown";
+export type PipelineStage =
+  | "IN"
+  | "RX"
+  | "CX"
+  | "MX"
+  | "PX"
+  | "AGG"
+  | "WX"
+  | "LX";
 
-export type SuggestedActionType = 'code_change' | 'spec_update' | 'role_override' | 'add_test';
+export type SuggestedActionType =
+  | "code_change"
+  | "spec_update"
+  | "role_override"
+  | "add_test";
 
 // =============================================================================
 // Report Policy
@@ -30,29 +48,29 @@ export type SuggestedActionType = 'code_change' | 'spec_update' | 'role_override
 export interface ReportPolicy {
   /** Minimum confidence to include issue (default: 0.5) */
   minConfidence: number;
-  
+
   /** Confidence threshold for blocker severity (default: 0.75) */
   blockerConfidence: number;
-  
+
   /** Confidence threshold for warning severity (default: 0.6) */
   warningConfidence: number;
-  
+
   /** Filter by issue kinds (default: all) */
   includeKinds: IssueKind[];
-  
+
   /** Filter by artifact roles (default: intent, spec, implementation) */
   includeRoles: ReportArtifactRole[];
-  
+
   // Compact mode limits
   /** Maximum issues to include (default: unlimited) */
   maxIssues?: number;
-  
+
   /** Maximum issues per kind (default: unlimited) */
   maxIssuesPerKind?: number;
-  
+
   /** Maximum evidence items per issue (default: 5) */
   maxEvidencePerIssue?: number;
-  
+
   /** Maximum characters per excerpt (default: 500) */
   maxExcerptChars?: number;
 }
@@ -61,8 +79,8 @@ export const DEFAULT_REPORT_POLICY: ReportPolicy = {
   minConfidence: 0.5,
   blockerConfidence: 0.75,
   warningConfidence: 0.6,
-  includeKinds: ['contradiction', 'open_end', 'needs_review', 'error'],
-  includeRoles: ['intent', 'spec', 'implementation'],
+  includeKinds: ["contradiction", "open_end", "needs_review", "error"],
+  includeRoles: ["intent", "spec", "implementation"],
   maxEvidencePerIssue: 5,
   maxExcerptChars: 500,
 };
@@ -80,25 +98,25 @@ export interface RawSourceLocation {
 export interface ReportEvidence {
   /** Source key: <source>:<sessionId>:m:<seq> */
   sourceKey: string;
-  
+
   /** Message sequence number (redundant but convenient) */
   seq: number;
-  
+
   /** Relevant text snippet */
   excerpt: string;
-  
+
   /** UTF-8 character offset start */
   charStart?: number;
-  
+
   /** UTF-8 character offset end */
   charEnd?: number;
-  
+
   /** Canonical reference: iw://message/<sourceKey> */
   ref: string;
-  
+
   /** Physical transcript path */
   transcriptPath?: string;
-  
+
   /** Raw source location (adapter-level detail) */
   rawSourceLoc?: RawSourceLocation;
 }
@@ -145,44 +163,44 @@ export interface SuggestedAction {
 export interface Issue {
   /** Short ID: C-1, O-2, N-3, E-4 */
   id: string;
-  
+
   /** Globally unique: chat:specstory:90dd218c#C-1 */
   issueKey: string;
-  
+
   /** SHA256 hash of semantic core for stability */
   fingerprint: string;
-  
+
   severity: IssueSeverity;
   kind: IssueKind;
-  
+
   /** One-line summary */
   title: string;
-  
+
   /** Detailed explanation */
   description?: string;
-  
+
   /** Confidence score 0.0-1.0 */
   confidence: number;
-  
+
   // Status tracking
   status: IssueStatus;
   firstSeenRunId: string;
   lastSeenRunId: string;
   resolvedAt?: string;
-  
+
   // Severity modifiers
   stage?: PipelineStage;
   /** True => blocker regardless of confidence */
   stageBreaking?: boolean;
   /** For "missing must-have ticket" open ends */
   mustHave?: boolean;
-  
+
   // Evidence
   evidence: ReportEvidence[];
-  
+
   // Graph references
   graphRefs?: GraphRef[];
-  
+
   // Suggested fixes (inline commands for assistants)
   suggestedActions?: IssueSuggestedAction[];
 }
@@ -192,7 +210,7 @@ export interface Issue {
 // =============================================================================
 
 export interface ContradictionFingerprint {
-  kind: 'contradiction';
+  kind: "contradiction";
   specClaimSourceKey: string;
   implObservationSourceKey: string;
   predicate?: string;
@@ -200,7 +218,7 @@ export interface ContradictionFingerprint {
 }
 
 export interface OpenEndFingerprint {
-  kind: 'open_end';
+  kind: "open_end";
   fromRole: ReportArtifactRole;
   toRole: ReportArtifactRole;
   entityName?: string;
@@ -208,23 +226,23 @@ export interface OpenEndFingerprint {
 }
 
 export interface NeedsReviewFingerprint {
-  kind: 'needs_review';
+  kind: "needs_review";
   ambiguityType: string;
   entityName?: string;
   predicate?: string;
 }
 
 export interface ErrorFingerprint {
-  kind: 'error';
+  kind: "error";
   errorCode: string;
   adapterName?: string;
   stage?: PipelineStage;
 }
 
-export type IssueFingerprint = 
-  | ContradictionFingerprint 
-  | OpenEndFingerprint 
-  | NeedsReviewFingerprint 
+export type IssueFingerprint =
+  | ContradictionFingerprint
+  | OpenEndFingerprint
+  | NeedsReviewFingerprint
   | ErrorFingerprint;
 
 // =============================================================================
@@ -261,7 +279,7 @@ export const EMPTY_ISSUE_REGISTRY: IssueRegistry = {
 
 export interface ReportArtifact {
   id: string;
-  type: 'chat' | 'file';
+  type: "chat" | "file";
   source: string;
   messageCount?: number;
 }
@@ -308,20 +326,20 @@ export interface ReportSummary {
   totalStatements: number;
   roleDistribution: Record<string, number>;
   filteredOutCounts?: FilteredOutCounts;
-  
+
   // Coverage metrics
   intentToSpecCoverage: number;
   specToImplCoverage: number;
-  
+
   // Issue counts
   contradictions: number;
   openEnds: number;
   needsReview: number;
   errors: number;
-  
+
   // Trend vs previous run
   trend?: IssueTrend;
-  
+
   // Top issue for TL;DR
   topIssue?: string;
 }
@@ -335,7 +353,7 @@ export interface CacheReuse {
 export interface RunIdentity {
   id: string;
   ts: string;
-  mode: 'full' | 'incremental';
+  mode: "full" | "incremental";
   durationMs: number;
   reuse?: CacheReuse;
 }
@@ -369,9 +387,9 @@ export interface GeneratorMetadata {
 }
 
 export interface RunReport {
-  $schema: 'intentweave://schemas/report/v1';
-  schemaVersion: '0.1';
-  
+  $schema: "intentweave://schemas/report/v1";
+  schemaVersion: "0.1";
+
   run: RunIdentity;
   inputs: ReportInputs;
   summary: ReportSummary;
@@ -387,8 +405,11 @@ export interface RunReport {
 // =============================================================================
 
 export interface ProblemsReport {
-  run: Pick<RunIdentity, 'id' | 'ts' | 'mode'>;
-  summary: Pick<ReportSummary, 'contradictions' | 'openEnds' | 'needsReview' | 'errors'>;
+  run: Pick<RunIdentity, "id" | "ts" | "mode">;
+  summary: Pick<
+    ReportSummary,
+    "contradictions" | "openEnds" | "needsReview" | "errors"
+  >;
   issues: Issue[];
   actions: SuggestedAction[];
 }

@@ -1,9 +1,9 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import fp from 'fastify-plugin';
-import neo4j, { type Driver } from 'neo4j-driver';
-import type { FastifyInstance } from 'fastify';
+import fp from "fastify-plugin";
+import neo4j, { type Driver } from "neo4j-driver";
+import type { FastifyInstance } from "fastify";
 
 export interface Neo4jPluginOptions {
   uri: string;
@@ -47,24 +47,24 @@ async function neo4jPluginFn(
     await driver.verifyConnectivity();
     fastify.log.info(`Neo4j connected: ${opts.uri}`);
   } catch (err) {
-    fastify.log.error({ err }, 'Failed to connect to Neo4j');
+    fastify.log.error({ err }, "Failed to connect to Neo4j");
     throw err;
   }
 
   // Decorate for access in routes
-  fastify.decorate('neo4j', driver);
+  fastify.decorate("neo4j", driver);
 
   // Also store the database name for session creation
-  fastify.decorate('neo4jDatabase', opts.database ?? 'neo4j');
+  fastify.decorate("neo4jDatabase", opts.database ?? "neo4j");
 
   // Clean shutdown
-  fastify.addHook('onClose', async () => {
-    fastify.log.info('Closing Neo4j driver...');
+  fastify.addHook("onClose", async () => {
+    fastify.log.info("Closing Neo4j driver...");
     await driver.close();
   });
 }
 
 export const neo4jPlugin = fp(neo4jPluginFn, {
-  name: 'iw-neo4j',
-  fastify: '5.x',
+  name: "iw-neo4j",
+  fastify: "5.x",
 });

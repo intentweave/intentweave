@@ -3,22 +3,28 @@
 
 /**
  * MX (Materialization) - Entity extraction and transition reification
- * 
+ *
  * Migrated from src/services/mxStandalone.ts
- * 
+ *
  * MX runs in-memory materialization of higher-level behavioral structures:
  * - Works purely on StagingSnapshot (no Neo4j dependency)
  * - Creates transition entities from TRANSITIONS_TO statements
  * - Generates FROM_STATE, TO_STATE statements
  * - Binds actions to transitions via naming heuristics
- * 
+ *
  * Architecture:
  * - Standalone: CLI analysis (open source)
  * - Server-side: Can be persisted to Neo4j after processing
  */
 
-import type { Entity, Statement, Evidence, StagingSnapshot, Origin } from '@intentweave/core';
-import { buildCgId } from '@intentweave/core';
+import type {
+  Entity,
+  Statement,
+  Evidence,
+  StagingSnapshot,
+  Origin,
+} from "@intentweave/core";
+import { buildCgId } from "@intentweave/core";
 
 // ============================================================================
 // Types
@@ -51,7 +57,7 @@ export interface TransitionCandidate {
   resource?: string;
   confidence: number;
   evidence: Evidence[];
-  discoverySource: 'heuristic' | 'llm' | 'explicit';
+  discoverySource: "heuristic" | "llm" | "explicit";
 }
 
 // ============================================================================
@@ -62,10 +68,29 @@ const DEFAULT_CONFIDENCE = 0.7;
 
 /** Action verbs that suggest state transitions */
 export const TRANSITION_ACTION_VERBS = [
-  'approve', 'reject', 'request', 'activate', 'deactivate',
-  'suspend', 'cancel', 'create', 'delete', 'enable', 'disable',
-  'lock', 'unlock', 'complete', 'start', 'finish', 'submit',
-  'review', 'verify', 'confirm', 'deny', 'grant', 'revoke'
+  "approve",
+  "reject",
+  "request",
+  "activate",
+  "deactivate",
+  "suspend",
+  "cancel",
+  "create",
+  "delete",
+  "enable",
+  "disable",
+  "lock",
+  "unlock",
+  "complete",
+  "start",
+  "finish",
+  "submit",
+  "review",
+  "verify",
+  "confirm",
+  "deny",
+  "grant",
+  "revoke",
 ];
 
 // ============================================================================
@@ -74,31 +99,31 @@ export const TRANSITION_ACTION_VERBS = [
 
 /**
  * Run MX (Materialization) stage on a StagingSnapshot
- * 
+ *
  * This is the standalone entry point that works in-memory.
  */
 export async function runMx(
   snapshot: StagingSnapshot,
-  options: MxOptions = {}
+  options: MxOptions = {},
 ): Promise<MxResult> {
   const { bindActions = true, minConfidence = 0.6 } = options;
 
   const result: MxResult = {
     snapshot: {
       entities: [...snapshot.entities],
-      statements: [...snapshot.statements]
+      statements: [...snapshot.statements],
     },
     stats: {
       transitionsCreated: 0,
       statementsCreated: 0,
       actionsBound: 0,
-      warnings: []
-    }
+      warnings: [],
+    },
   };
 
   // Step 1: Discover transition candidates from TRANSITIONS_TO statements
   const candidates = discoverTransitionCandidates(snapshot, minConfidence);
-  
+
   if (candidates.length === 0) {
     return result;
   }
@@ -106,13 +131,17 @@ export async function runMx(
   // Step 2: Reify transitions into entities
   for (const candidate of candidates) {
     const reified = reifyTransition(candidate);
-    
+
     // Add transition entity if new
-    if (!result.snapshot.entities.some(e => e.cgId === reified.transitionEntity.cgId)) {
+    if (
+      !result.snapshot.entities.some(
+        (e) => e.cgId === reified.transitionEntity.cgId,
+      )
+    ) {
       result.snapshot.entities.push(reified.transitionEntity);
       result.stats.transitionsCreated++;
     }
-    
+
     // Add FROM_STATE and TO_STATE statements
     for (const stmt of reified.statements) {
       if (!statementExists(result.snapshot.statements, stmt)) {
@@ -152,17 +181,17 @@ export const runMxStandalone = runMx;
  */
 export function discoverTransitionCandidates(
   snapshot: StagingSnapshot,
-  minConfidence: number
+  minConfidence: number,
 ): TransitionCandidate[] {
   const candidates: TransitionCandidate[] = [];
-  const entityMap = new Map(snapshot.entities.map(e => [e.cgId, e]));
+  const entityMap = new Map(snapshot.entities.map((e) => [e.cgId, e]));
 
   // Method 1: Look for explicit TRANSITIONS_TO statements
   for (const stmt of snapshot.statements) {
-    if (stmt.predicate === 'TRANSITIONS_TO' && stmt.objectCgId) {
+    if (stmt.predicate === "TRANSITIONS_TO" && stmt.objectCgId) {
       const fromState = entityMap.get(stmt.subjectCgId);
       const toState = entityMap.get(stmt.objectCgId);
-      
+
       if (fromState && toState && stmt.confidence >= minConfidence) {
         const resource = extractResourceFromState(fromState.cgId);
         candidates.push({
@@ -171,7 +200,7 @@ export function discoverTransitionCandidates(
           resource,
           confidence: stmt.confidence,
           evidence: stmt.evidence,
-          discoverySource: 'explicit'
+          discoverySource: "explicit",
         });
       }
     }
@@ -183,15 +212,16 @@ export function discoverTransitionCandidates(
     if (states.length >= 2) {
       const inferredTransitions = inferTransitionsFromStates(states);
       for (const inferred of inferredTransitions) {
-        const exists = candidates.some(c =>
-          c.fromState.cgId === inferred.fromState.cgId &&
-          c.toState.cgId === inferred.toState.cgId
+        const exists = candidates.some(
+          (c) =>
+            c.fromState.cgId === inferred.fromState.cgId &&
+            c.toState.cgId === inferred.toState.cgId,
         );
         if (!exists) {
           candidates.push({
             ...inferred,
             resource,
-            discoverySource: 'heuristic'
+            discoverySource: "heuristic",
           });
         }
       }
@@ -204,11 +234,13 @@ export function discoverTransitionCandidates(
 /**
  * Group state entities by their resource scope
  */
-export function groupStatesByResource(snapshot: StagingSnapshot): Map<string, Entity[]> {
+export function groupStatesByResource(
+  snapshot: StagingSnapshot,
+): Map<string, Entity[]> {
   const groups = new Map<string, Entity[]>();
-  
+
   for (const entity of snapshot.entities) {
-    if (entity.type === 'state' || isStateEntity(entity)) {
+    if (entity.type === "state" || isStateEntity(entity)) {
       const resource = extractResourceFromState(entity.cgId);
       if (resource) {
         const existing = groups.get(resource) || [];
@@ -217,7 +249,7 @@ export function groupStatesByResource(snapshot: StagingSnapshot): Map<string, En
       }
     }
   }
-  
+
   return groups;
 }
 
@@ -225,8 +257,8 @@ export function groupStatesByResource(snapshot: StagingSnapshot): Map<string, En
  * Check if entity appears to be a state
  */
 export function isStateEntity(entity: Entity): boolean {
-  if (entity.type === 'state') return true;
-  if (entity.cgId.includes('/state/') || entity.cgId.includes('|state/')) {
+  if (entity.type === "state") return true;
+  if (entity.cgId.includes("/state/") || entity.cgId.includes("|state/")) {
     return true;
   }
   return false;
@@ -236,18 +268,18 @@ export function isStateEntity(entity: Entity): boolean {
  * Extract resource name from state cgId
  */
 export function extractResourceFromState(cgId: string): string | undefined {
-  const parts = cgId.split('|');
+  const parts = cgId.split("|");
   const lastPart = parts[parts.length - 1];
-  const segments = lastPart.split('/');
-  
-  if (segments.length >= 3 && segments[0] === 'state') {
+  const segments = lastPart.split("/");
+
+  if (segments.length >= 3 && segments[0] === "state") {
     return segments[1];
   }
-  
+
   if (segments.length >= 2) {
     return segments[0];
   }
-  
+
   return undefined;
 }
 
@@ -255,30 +287,33 @@ export function extractResourceFromState(cgId: string): string | undefined {
  * Infer transitions from a list of states
  */
 export function inferTransitionsFromStates(
-  states: Entity[]
-): Omit<TransitionCandidate, 'resource' | 'discoverySource'>[] {
-  const transitions: Omit<TransitionCandidate, 'resource' | 'discoverySource'>[] = [];
-  
+  states: Entity[],
+): Omit<TransitionCandidate, "resource" | "discoverySource">[] {
+  const transitions: Omit<
+    TransitionCandidate,
+    "resource" | "discoverySource"
+  >[] = [];
+
   // Sort states by evidence order
   const sortedStates = [...states].sort((a, b) => {
     const aIndex = getFirstEvidenceIndex(a);
     const bIndex = getFirstEvidenceIndex(b);
     return aIndex - bIndex;
   });
-  
+
   // Create transitions between consecutive states
   for (let i = 0; i < sortedStates.length - 1; i++) {
     const fromState = sortedStates[i];
     const toState = sortedStates[i + 1];
-    
+
     transitions.push({
       fromState,
       toState,
       confidence: DEFAULT_CONFIDENCE,
-      evidence: mergeEvidence(fromState.evidence, toState.evidence)
+      evidence: mergeEvidence(fromState.evidence, toState.evidence),
     });
   }
-  
+
   return transitions;
 }
 
@@ -289,7 +324,7 @@ export function getFirstEvidenceIndex(entity: Entity): number {
   if (!entity.evidence || entity.evidence.length === 0) {
     return Infinity;
   }
-  return Math.min(...entity.evidence.map(e => e.turnIndex ?? Infinity));
+  return Math.min(...entity.evidence.map((e) => e.turnIndex ?? Infinity));
 }
 
 /**
@@ -298,7 +333,7 @@ export function getFirstEvidenceIndex(entity: Entity): number {
 export function mergeEvidence(a: Evidence[], b: Evidence[]): Evidence[] {
   const seen = new Set<string>();
   const merged: Evidence[] = [];
-  
+
   for (const ev of [...a, ...b]) {
     const key = `${ev.turnIndex}:${ev.text}`;
     if (!seen.has(key)) {
@@ -306,7 +341,7 @@ export function mergeEvidence(a: Evidence[], b: Evidence[]): Evidence[] {
       merged.push(ev);
     }
   }
-  
+
   return merged;
 }
 
@@ -322,57 +357,70 @@ interface ReifiedTransition {
 /**
  * Reify a transition candidate into an entity and statements
  */
-export function reifyTransition(candidate: TransitionCandidate): ReifiedTransition {
-  const { fromState, toState, resource, confidence, evidence, discoverySource } = candidate;
-  
+export function reifyTransition(
+  candidate: TransitionCandidate,
+): ReifiedTransition {
+  const {
+    fromState,
+    toState,
+    resource,
+    confidence,
+    evidence,
+    discoverySource,
+  } = candidate;
+
   const fromStateName = extractStateName(fromState.cgId, fromState.name);
   const toStateName = extractStateName(toState.cgId, toState.name);
-  
-  const resourcePart = resource || 'unknown';
-  const transitionCgId = buildCgId('transition', resourcePart, `${fromStateName}->${toStateName}`);
+
+  const resourcePart = resource || "unknown";
+  const transitionCgId = buildCgId(
+    "transition",
+    resourcePart,
+    `${fromStateName}->${toStateName}`,
+  );
 
   const transitionEntity: Entity = {
     cgId: transitionCgId,
-    type: 'transition',
+    type: "transition",
     name: `${fromStateName} → ${toStateName}`,
-    labels: ['Staging'],
+    labels: ["Staging"],
     evidence,
     confidence,
-    source: 'heuristic',
-    origin: 'heuristic' as Origin,
-    state: 'new',
+    source: "heuristic",
+    origin: "heuristic" as Origin,
+    state: "new",
     props: {
-      mx_rule: 'MX:standalone',
+      mx_rule: "MX:standalone",
       mx_discovered: discoverySource,
       resource: resourcePart,
       fromStateName,
-      toStateName
-    }
+      toStateName,
+    },
   };
 
   // Canonical semantics:
   // source_state --FROM_STATE--> Transition --TO_STATE--> target_state
   const statements: Statement[] = [
     {
-      subjectCgId: fromState.cgId,     // Source state is subject
-      predicate: 'FROM_STATE',
-      objectCgId: transitionCgId,      // Transition is object
+      subjectCgId: fromState.cgId, // Source state is subject
+      predicate: "FROM_STATE",
+      objectCgId: transitionCgId, // Transition is object
       confidence,
       evidence,
-      labels: ['Staging'],
-      state: 'new',
-      origin: 'heuristic' as Origin
+      labels: ["Staging"],
+      state: "new",
+      origin: "heuristic" as Origin,
     },
     {
-      subjectCgId: transitionCgId,     // Transition is subject
-      predicate: 'TO_STATE',
-      objectCgId: toState.cgId,        // State is object
+      subjectCgId: transitionCgId, // Transition is subject
+      predicate: "TO_STATE",
+      objectCgId: toState.cgId, // State is object
       confidence,
       evidence,
-      labels: ['Staging'],
-      state: 'new',
-      origin: 'heuristic' as Origin
-    }
+      labels: ["Staging"],
+      state: "new",
+      origin: "heuristic" as Origin,
+    },
   ];
 
   return { transitionEntity, statements };
@@ -382,14 +430,14 @@ export function reifyTransition(candidate: TransitionCandidate): ReifiedTransiti
  * Extract state name from cgId or entity name
  */
 export function extractStateName(cgId: string, fallbackName: string): string {
-  const parts = cgId.split('|');
+  const parts = cgId.split("|");
   const lastPart = parts[parts.length - 1];
-  const segments = lastPart.split('/');
-  
+  const segments = lastPart.split("/");
+
   if (segments.length >= 1) {
     return segments[segments.length - 1];
   }
-  
+
   return fallbackName;
 }
 
@@ -400,41 +448,44 @@ export function extractStateName(cgId: string, fallbackName: string): string {
 /**
  * Bind actions to transitions based on naming heuristics
  */
-export function bindActionsToTransitions(snapshot: StagingSnapshot): Statement[] {
+export function bindActionsToTransitions(
+  snapshot: StagingSnapshot,
+): Statement[] {
   const bindings: Statement[] = [];
-  
-  const transitions = snapshot.entities.filter(e => 
-    e.type === 'transition' || e.cgId.includes('/transition/')
+
+  const transitions = snapshot.entities.filter(
+    (e) => e.type === "transition" || e.cgId.includes("/transition/"),
   );
-  
-  const actions = snapshot.entities.filter(e =>
-    e.type === 'action' || isActionEntity(e)
+
+  const actions = snapshot.entities.filter(
+    (e) => e.type === "action" || isActionEntity(e),
   );
-  
+
   for (const transition of transitions) {
-    const toStateName = transition.props?.toStateName as string || 
-                        extractToStateFromTransition(transition);
-    
+    const toStateName =
+      (transition.props?.toStateName as string) ||
+      extractToStateFromTransition(transition);
+
     if (!toStateName) continue;
-    
+
     for (const action of actions) {
       const actionName = action.name.toLowerCase();
-      
+
       if (actionNameMatchesState(actionName, toStateName)) {
         bindings.push({
           subjectCgId: action.cgId,
-          predicate: 'TRIGGERS',
+          predicate: "TRIGGERS",
           objectCgId: transition.cgId,
           confidence: DEFAULT_CONFIDENCE,
           evidence: mergeEvidence(action.evidence, transition.evidence),
-          labels: ['Staging'],
-          state: 'new',
-          origin: 'heuristic' as Origin
+          labels: ["Staging"],
+          state: "new",
+          origin: "heuristic" as Origin,
         });
       }
     }
   }
-  
+
   return bindings;
 }
 
@@ -442,16 +493,18 @@ export function bindActionsToTransitions(snapshot: StagingSnapshot): Statement[]
  * Check if entity appears to be an action
  */
 export function isActionEntity(entity: Entity): boolean {
-  if (entity.type === 'action') return true;
-  
+  if (entity.type === "action") return true;
+
   const name = entity.name.toLowerCase();
-  return TRANSITION_ACTION_VERBS.some(verb => name.includes(verb));
+  return TRANSITION_ACTION_VERBS.some((verb) => name.includes(verb));
 }
 
 /**
  * Extract target state from transition name
  */
-export function extractToStateFromTransition(transition: Entity): string | undefined {
+export function extractToStateFromTransition(
+  transition: Entity,
+): string | undefined {
   const match = transition.name.match(/→\s*(.+)$/);
   if (match) {
     return match[1].toLowerCase().trim();
@@ -462,19 +515,22 @@ export function extractToStateFromTransition(transition: Entity): string | undef
 /**
  * Check if action name matches a target state
  */
-export function actionNameMatchesState(actionName: string, stateName: string): boolean {
+export function actionNameMatchesState(
+  actionName: string,
+  stateName: string,
+): boolean {
   const normalizedAction = actionName.toLowerCase();
   const normalizedState = stateName.toLowerCase();
-  
-  if (normalizedAction.includes(normalizedState.replace(/d$/, ''))) {
+
+  if (normalizedAction.includes(normalizedState.replace(/d$/, ""))) {
     return true;
   }
-  
-  const verbRoot = normalizedAction.replace(/(e|ed|ing|s)$/, '');
+
+  const verbRoot = normalizedAction.replace(/(e|ed|ing|s)$/, "");
   if (normalizedState.startsWith(verbRoot)) {
     return true;
   }
-  
+
   return false;
 }
 
@@ -487,21 +543,21 @@ export function actionNameMatchesState(actionName: string, stateName: string): b
  */
 export function validateMxLayer(snapshot: StagingSnapshot): string[] {
   const warnings: string[] = [];
-  const entityMap = new Map(snapshot.entities.map(e => [e.cgId, e]));
-  
-  const transitions = snapshot.entities.filter(e => 
-    e.type === 'transition' || e.cgId.includes('/transition/')
+  const entityMap = new Map(snapshot.entities.map((e) => [e.cgId, e]));
+
+  const transitions = snapshot.entities.filter(
+    (e) => e.type === "transition" || e.cgId.includes("/transition/"),
   );
-  
+
   for (const transition of transitions) {
     // Canonical: source_state --FROM_STATE--> transition --TO_STATE--> target_state
-    const hasFromState = snapshot.statements.some(s =>
-      s.predicate === 'FROM_STATE' && s.objectCgId === transition.cgId
+    const hasFromState = snapshot.statements.some(
+      (s) => s.predicate === "FROM_STATE" && s.objectCgId === transition.cgId,
     );
-    const hasToState = snapshot.statements.some(s =>
-      s.predicate === 'TO_STATE' && s.subjectCgId === transition.cgId
+    const hasToState = snapshot.statements.some(
+      (s) => s.predicate === "TO_STATE" && s.subjectCgId === transition.cgId,
     );
-    
+
     if (!hasFromState) {
       warnings.push(`Transition ${transition.cgId} has no FROM_STATE`);
     }
@@ -509,29 +565,37 @@ export function validateMxLayer(snapshot: StagingSnapshot): string[] {
       warnings.push(`Transition ${transition.cgId} has no TO_STATE`);
     }
   }
-  
+
   for (const stmt of snapshot.statements) {
-    if (stmt.predicate === 'FROM_STATE' || stmt.predicate === 'TO_STATE') {
+    if (stmt.predicate === "FROM_STATE" || stmt.predicate === "TO_STATE") {
       // FROM_STATE: subject=state, object=transition
       // TO_STATE: subject=transition, object=state
-      if (stmt.predicate === 'FROM_STATE') {
+      if (stmt.predicate === "FROM_STATE") {
         if (stmt.objectCgId && !entityMap.has(stmt.objectCgId)) {
-          warnings.push(`FROM_STATE references non-existent transition: ${stmt.objectCgId}`);
+          warnings.push(
+            `FROM_STATE references non-existent transition: ${stmt.objectCgId}`,
+          );
         }
         if (!entityMap.has(stmt.subjectCgId)) {
-          warnings.push(`FROM_STATE references non-existent state: ${stmt.subjectCgId}`);
+          warnings.push(
+            `FROM_STATE references non-existent state: ${stmt.subjectCgId}`,
+          );
         }
       } else {
         if (!entityMap.has(stmt.subjectCgId)) {
-          warnings.push(`TO_STATE references non-existent transition: ${stmt.subjectCgId}`);
+          warnings.push(
+            `TO_STATE references non-existent transition: ${stmt.subjectCgId}`,
+          );
         }
         if (stmt.objectCgId && !entityMap.has(stmt.objectCgId)) {
-          warnings.push(`TO_STATE references non-existent state: ${stmt.objectCgId}`);
+          warnings.push(
+            `TO_STATE references non-existent state: ${stmt.objectCgId}`,
+          );
         }
       }
     }
   }
-  
+
   return warnings;
 }
 
@@ -542,10 +606,14 @@ export function validateMxLayer(snapshot: StagingSnapshot): string[] {
 /**
  * Check if a statement already exists
  */
-export function statementExists(statements: Statement[], stmt: Statement): boolean {
-  return statements.some(s =>
-    s.subjectCgId === stmt.subjectCgId &&
-    s.predicate === stmt.predicate &&
-    s.objectCgId === stmt.objectCgId
+export function statementExists(
+  statements: Statement[],
+  stmt: Statement,
+): boolean {
+  return statements.some(
+    (s) =>
+      s.subjectCgId === stmt.subjectCgId &&
+      s.predicate === stmt.predicate &&
+      s.objectCgId === stmt.objectCgId,
   );
 }

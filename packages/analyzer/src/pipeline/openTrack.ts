@@ -19,21 +19,39 @@
  * same artifact metadata, just a different extraction strategy.
  */
 
-import type { ExtractionHooks, LLMProvider, TokenUsage } from '@intentweave/core';
-import { sumTokenUsage, zeroTokenUsage, AbortThresholdError } from '@intentweave/core';
-import type { PipelineContext } from './context.js';
-import type { ArtifactInput, PipelineStage } from './orchestrator.js';
-import { runInStage, type InStageInput } from '../stages/in.js';
-import { runFxStage, type FxStageInput, type FxStageOutput, FX_PROMPT_VERSION } from '../stages/fx.js';
-import { runKxStage, type KxStageInput, type KxStageOutput, KX_PROMPT_VERSION } from '../stages/kx.js';
-import { computeContentHash } from '../cache/registry.js';
-import type { OpenTrackCache } from '../cache/openTrackCache.js';
+import type {
+  ExtractionHooks,
+  LLMProvider,
+  TokenUsage,
+} from "@intentweave/core";
+import {
+  sumTokenUsage,
+  zeroTokenUsage,
+  AbortThresholdError,
+} from "@intentweave/core";
+import type { PipelineContext } from "./context.js";
+import type { ArtifactInput, PipelineStage } from "./orchestrator.js";
+import { runInStage, type InStageInput } from "../stages/in.js";
+import {
+  runFxStage,
+  type FxStageInput,
+  type FxStageOutput,
+  FX_PROMPT_VERSION,
+} from "../stages/fx.js";
+import {
+  runKxStage,
+  type KxStageInput,
+  type KxStageOutput,
+  KX_PROMPT_VERSION,
+} from "../stages/kx.js";
+import { computeContentHash } from "../cache/registry.js";
+import type { OpenTrackCache } from "../cache/openTrackCache.js";
 
 // =============================================================================
 // Open Track Types
 // =============================================================================
 
-export type OpenTrackStage = 'IN' | 'FX' | 'KX';
+export type OpenTrackStage = "IN" | "FX" | "KX";
 
 /**
  * Open track pipeline result (per artifact)
@@ -99,7 +117,10 @@ export async function runOpenTrack(
   options: OpenTrackOptions,
 ): Promise<OpenTrackResult> {
   const totalStart = Date.now();
-  const stageTimes: Record<OpenTrackStage, { latencyMs: number; cached?: boolean }> = {
+  const stageTimes: Record<
+    OpenTrackStage,
+    { latencyMs: number; cached?: boolean }
+  > = {
     IN: { latencyMs: 0 },
     FX: { latencyMs: 0 },
     KX: { latencyMs: 0 },
@@ -111,7 +132,7 @@ export async function runOpenTrack(
 
   // ─── Incremental cache check ────────────────────────────────────────────
   const cache = options.cache;
-  const contentHash = cache ? computeContentHash(artifact.content) : '';
+  const contentHash = cache ? computeContentHash(artifact.content) : "";
   const cacheCheck = cache
     ? await cache.check(
         artifact.artifactId,
@@ -125,13 +146,15 @@ export async function runOpenTrack(
     : { fxHit: false, kxHit: false };
 
   if (cache && cacheCheck.fxHit) {
-    ctx.logger.info(`[OpenTrack] Cache: FX ${cacheCheck.fxHit ? 'HIT' : 'miss'}, KX ${cacheCheck.kxHit ? 'HIT' : 'miss'} for ${artifact.artifactId}`);
+    ctx.logger.info(
+      `[OpenTrack] Cache: FX ${cacheCheck.fxHit ? "HIT" : "miss"}, KX ${cacheCheck.kxHit ? "HIT" : "miss"} for ${artifact.artifactId}`,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STAGE 1: IN (shared with main pipeline — same chunking)
   // ═══════════════════════════════════════════════════════════════════════════
-  options.onStage?.('IN');
+  options.onStage?.("IN");
   const inStart = Date.now();
 
   const inInput: InStageInput = {
@@ -145,20 +168,22 @@ export async function runOpenTrack(
   stageTimes.IN.latencyMs = Date.now() - inStart;
 
   if (options.writeOutputs) {
-    await ctx.store.writeStageOutput(artifact.artifactId, 'IN', inOutput);
+    await ctx.store.writeStageOutput(artifact.artifactId, "IN", inOutput);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STAGE 2: FX — Free Extraction (schema-free)
   // ═══════════════════════════════════════════════════════════════════════════
-  options.onStage?.('FX');
+  options.onStage?.("FX");
   let fxOutput: FxStageOutput;
 
   if (cacheCheck.fxHit && cache) {
     // Cache hit — reuse cached FX output
     fxOutput = (await cache.getFx<FxStageOutput>(artifact.artifactId))!;
     stageTimes.FX = { latencyMs: 0, cached: true };
-    ctx.logger.info(`[OpenTrack] FX cache hit for ${artifact.artifactId} (${fxOutput.triples.length} triples)`);
+    ctx.logger.info(
+      `[OpenTrack] FX cache hit for ${artifact.artifactId} (${fxOutput.triples.length} triples)`,
+    );
   } else {
     // Cache miss — run FX
     const fxStart = Date.now();
@@ -166,7 +191,7 @@ export async function runOpenTrack(
     const fxInput: FxStageInput = {
       artifactId: artifact.artifactId,
       filePath: artifact.filePath,
-      chunks: inOutput.chunks.map(chunk => ({
+      chunks: inOutput.chunks.map((chunk) => ({
         id: chunk.id,
         content: chunk.content,
         filePath: inOutput.filePath,
@@ -179,12 +204,16 @@ export async function runOpenTrack(
       },
     };
 
-    fxOutput = await runFxStage(fxInput, {
-      llmProvider: options.llmProvider,
-      documentContext: options.documentContext,
-      maxTriplesPerChunk: options.maxTriplesPerChunk,
-      concurrency: options.concurrency,
-    }, ctx);
+    fxOutput = await runFxStage(
+      fxInput,
+      {
+        llmProvider: options.llmProvider,
+        documentContext: options.documentContext,
+        maxTriplesPerChunk: options.maxTriplesPerChunk,
+        concurrency: options.concurrency,
+      },
+      ctx,
+    );
 
     stageTimes.FX.latencyMs = Date.now() - fxStart;
 
@@ -203,20 +232,26 @@ export async function runOpenTrack(
   }
 
   if (options.writeOutputs) {
-    await ctx.store.writeStageOutput(artifact.artifactId, 'FX' as any, fxOutput);
+    await ctx.store.writeStageOutput(
+      artifact.artifactId,
+      "FX" as any,
+      fxOutput,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STAGE 3: KX — Canonicalization
   // ═══════════════════════════════════════════════════════════════════════════
-  options.onStage?.('KX');
+  options.onStage?.("KX");
   let kxOutput: KxStageOutput;
 
   if (cacheCheck.kxHit && cache) {
     // Cache hit — reuse cached KX output
     kxOutput = (await cache.getKx<KxStageOutput>(artifact.artifactId))!;
     stageTimes.KX = { latencyMs: 0, cached: true };
-    ctx.logger.info(`[OpenTrack] KX cache hit for ${artifact.artifactId} (${kxOutput.canonEntities.length} entities, ${kxOutput.canonTriples.length} triples)`);
+    ctx.logger.info(
+      `[OpenTrack] KX cache hit for ${artifact.artifactId} (${kxOutput.canonEntities.length} entities, ${kxOutput.canonTriples.length} triples)`,
+    );
   } else {
     // Cache miss — run KX
     const kxStart = Date.now();
@@ -231,12 +266,21 @@ export async function runOpenTrack(
 
     // Persist into cache
     if (cache) {
-      await cache.putKx(artifact.artifactId, kxOutput, stageTimes.KX.latencyMs, KX_PROMPT_VERSION);
+      await cache.putKx(
+        artifact.artifactId,
+        kxOutput,
+        stageTimes.KX.latencyMs,
+        KX_PROMPT_VERSION,
+      );
     }
   }
 
   if (options.writeOutputs) {
-    await ctx.store.writeStageOutput(artifact.artifactId, 'KX' as any, kxOutput);
+    await ctx.store.writeStageOutput(
+      artifact.artifactId,
+      "KX" as any,
+      kxOutput,
+    );
   }
 
   const totalLatencyMs = Date.now() - totalStart;
@@ -252,11 +296,12 @@ export async function runOpenTrack(
 
   // Aggregate token usage from FX + KX (skip stages that were cached)
   const stageUsages: TokenUsage[] = [];
-  if (fxOutput.tokenUsage && !stageTimes.FX.cached) stageUsages.push(fxOutput.tokenUsage);
-  if (kxOutput.tokenUsage && !stageTimes.KX.cached) stageUsages.push(kxOutput.tokenUsage);
-  const tokenUsage = stageUsages.length > 0
-    ? sumTokenUsage(...stageUsages)
-    : undefined;
+  if (fxOutput.tokenUsage && !stageTimes.FX.cached)
+    stageUsages.push(fxOutput.tokenUsage);
+  if (kxOutput.tokenUsage && !stageTimes.KX.cached)
+    stageUsages.push(kxOutput.tokenUsage);
+  const tokenUsage =
+    stageUsages.length > 0 ? sumTokenUsage(...stageUsages) : undefined;
 
   return {
     artifactId: artifact.artifactId,
@@ -293,7 +338,8 @@ export async function runOpenTrackBatch(
 
   const MAX_CONSECUTIVE_FAILURES = 3;
   const NETWORK_COOLDOWN_MS = 30_000; // 30s pause after a network error
-  const NETWORK_ERROR_RE = /fetch failed|econnreset|econnrefused|etimedout|socket hang up|network/i;
+  const NETWORK_ERROR_RE =
+    /fetch failed|econnreset|econnrefused|etimedout|socket hang up|network/i;
 
   const results: OpenTrackResult[] = [];
   let cacheHits = 0;
@@ -314,21 +360,30 @@ export async function runOpenTrackBatch(
       } else {
         // 0 triples from a non-cached FX run — possible API issue
         consecutiveFailures++;
-        ctx.logger.warn(`[OpenTrack] ${artifact.artifactId}: 0 triples extracted (${consecutiveFailures} consecutive failures)`);
+        ctx.logger.warn(
+          `[OpenTrack] ${artifact.artifactId}: 0 triples extracted (${consecutiveFailures} consecutive failures)`,
+        );
       }
     } catch (err) {
       if (err instanceof AbortThresholdError) {
         consecutiveFailures++;
         const errMsg = err.message;
-        ctx.logger.warn(`[OpenTrack] ${artifact.artifactId}: stage aborted (${errMsg}), ${consecutiveFailures} consecutive failures`);
+        ctx.logger.warn(
+          `[OpenTrack] ${artifact.artifactId}: stage aborted (${errMsg}), ${consecutiveFailures} consecutive failures`,
+        );
 
         // Network error cooldown: if the failure looks like a network drop,
         // wait before hitting the next artifact to let the connection recover.
-        if (NETWORK_ERROR_RE.test(errMsg) && consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
+        if (
+          NETWORK_ERROR_RE.test(errMsg) &&
+          consecutiveFailures < MAX_CONSECUTIVE_FAILURES
+        ) {
           ctx.logger.warn(
             `[OpenTrack] Network error detected — pausing ${NETWORK_COOLDOWN_MS / 1000}s before next artifact…`,
           );
-          await new Promise(resolve => setTimeout(resolve, NETWORK_COOLDOWN_MS));
+          await new Promise((resolve) =>
+            setTimeout(resolve, NETWORK_COOLDOWN_MS),
+          );
         }
       } else {
         throw err;
@@ -339,15 +394,17 @@ export async function runOpenTrackBatch(
     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
       ctx.logger.error(
         `[OpenTrack] Aborting batch: ${MAX_CONSECUTIVE_FAILURES} consecutive artifacts failed. ` +
-        `Likely API quota exhaustion or sustained outage. ` +
-        `Processed ${results.length}/${artifacts.length} artifacts before abort.`
+          `Likely API quota exhaustion or sustained outage. ` +
+          `Processed ${results.length}/${artifacts.length} artifacts before abort.`,
       );
       break;
     }
   }
 
   if (options.cache && artifacts.length > 1) {
-    ctx.logger.info(`[OpenTrack] Batch complete: ${results.length}/${artifacts.length} processed, ${cacheHits} fully cached`);
+    ctx.logger.info(
+      `[OpenTrack] Batch complete: ${results.length}/${artifacts.length} processed, ${cacheHits} fully cached`,
+    );
   }
 
   return results;
@@ -362,7 +419,7 @@ export async function runOpenTrackBatch(
 export async function runKxFromFxOutput(
   fxOutput: FxStageOutput,
   ctx: PipelineContext,
-  options: Pick<OpenTrackOptions, 'llmProvider'>,
+  options: Pick<OpenTrackOptions, "llmProvider">,
 ): Promise<OpenTrackResult> {
   const totalStart = Date.now();
 

@@ -3,9 +3,9 @@
 
 /**
  * Graph Bundle V2 Generator
- * 
+ *
  * Generates consolidated bundle files with evidence and weave layers.
- * 
+ *
  * V2 adds:
  * - Evidence table with dual anchoring
  * - Raw layer (entities/statements as extracted)
@@ -13,9 +13,9 @@
  * - LX links with canonical references
  */
 
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import { existsSync, createWriteStream } from 'node:fs';
-import { join } from 'node:path';
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { existsSync, createWriteStream } from "node:fs";
+import { join } from "node:path";
 import type {
   GraphBundleV2,
   ArtifactSummary,
@@ -24,10 +24,14 @@ import type {
   EvidenceRecord,
   WeaveResult,
   LxLink,
-} from '../weave/types.js';
-import type { ArtifactRole } from '../weave/normalize.js';
-import { executeWeave } from '../weave/executor.js';
-import { loadRegistry, loadOverrides, createEmptyRegistry } from '../weave/registry.js';
+} from "../weave/types.js";
+import type { ArtifactRole } from "../weave/normalize.js";
+import { executeWeave } from "../weave/executor.js";
+import {
+  loadRegistry,
+  loadOverrides,
+  createEmptyRegistry,
+} from "../weave/registry.js";
 
 // =============================================================================
 // Types
@@ -63,7 +67,7 @@ const DEFAULT_OPTIONS: Required<BundleV2Options> = {
 export interface GenerateBundleV2Result {
   bundle: GraphBundleV2;
   bundlePath: string;
-  format: 'json' | 'jsonl';
+  format: "json" | "jsonl";
   stats: {
     artifactCount: number;
     rawEntityCount: number;
@@ -80,17 +84,18 @@ export interface GenerateBundleV2Result {
 // =============================================================================
 
 export async function generateBundleV2(
-  input: GenerateBundleV2Input
+  input: GenerateBundleV2Input,
 ): Promise<GenerateBundleV2Result> {
   const { runDir, iwDir } = input;
   const options = { ...DEFAULT_OPTIONS, ...input.options };
 
   // Load run metadata
-  const metaPath = join(runDir, 'run.meta.json');
-  const meta = JSON.parse(await readFile(metaPath, 'utf-8'));
+  const metaPath = join(runDir, "run.meta.json");
+  const meta = JSON.parse(await readFile(metaPath, "utf-8"));
 
   // Collect raw data from artifacts
-  const { artifacts, rawEntities, rawStatements, evidence } = await collectRawData(runDir);
+  const { artifacts, rawEntities, rawStatements, evidence } =
+    await collectRawData(runDir);
 
   // Run WX (weave) if enabled
   let weaveResult: WeaveResult | undefined;
@@ -106,7 +111,7 @@ export async function generateBundleV2(
         registry,
         overrides,
       },
-      { sameRoleOnly: true, warnOnConflict: true }
+      { sameRoleOnly: true, warnOnConflict: true },
     );
   }
 
@@ -118,8 +123,8 @@ export async function generateBundleV2(
 
   // Build bundle
   const bundle: GraphBundleV2 = {
-    $schema: 'intentweave://schemas/graph-bundle/v2',
-    schemaVersion: '0.2',
+    $schema: "intentweave://schemas/graph-bundle/v2",
+    schemaVersion: "0.2",
     runId: meta.runId,
     sessionKey: meta.sessionKey,
     generatedAt: new Date().toISOString(),
@@ -134,7 +139,7 @@ export async function generateBundleV2(
   };
 
   // Create bundle directory
-  const bundleDir = join(runDir, 'bundle');
+  const bundleDir = join(runDir, "bundle");
   await mkdir(bundleDir, { recursive: true });
 
   // Determine format and write
@@ -158,7 +163,7 @@ export async function generateBundleV2(
   return {
     bundle,
     bundlePath,
-    format: useJsonl ? 'jsonl' : 'json',
+    format: useJsonl ? "jsonl" : "json",
     stats: {
       artifactCount: artifacts.length,
       rawEntityCount: rawEntities.length,
@@ -189,7 +194,7 @@ async function collectRawData(runDir: string): Promise<CollectedData> {
   const evidence: EvidenceRecord[] = [];
   const evidenceIdSet = new Set<string>();
 
-  const artifactsDir = join(runDir, 'artifacts');
+  const artifactsDir = join(runDir, "artifacts");
   if (!existsSync(artifactsDir)) {
     return { artifacts, rawEntities, rawStatements, evidence };
   }
@@ -197,17 +202,17 @@ async function collectRawData(runDir: string): Promise<CollectedData> {
   const artifactDirs = await readdir(artifactsDir, { withFileTypes: true });
 
   for (const dir of artifactDirs.filter((d) => d.isDirectory())) {
-    const pxPath = join(artifactsDir, dir.name, 'px.json');
+    const pxPath = join(artifactsDir, dir.name, "px.json");
     if (!existsSync(pxPath)) continue;
 
     try {
-      const px = JSON.parse(await readFile(pxPath, 'utf-8'));
+      const px = JSON.parse(await readFile(pxPath, "utf-8"));
       const artifactId = dir.name;
-      const artifactRole = (px.artifactRole || 'unknown') as ArtifactRole;
+      const artifactRole = (px.artifactRole || "unknown") as ArtifactRole;
 
       artifacts.push({
         id: artifactId,
-        path: dir.name.replace(/_/g, '/'),
+        path: dir.name.replace(/_/g, "/"),
         role: artifactRole,
         versionId: px.versionId,
         entityCount: px.entities?.length || 0,
@@ -217,11 +222,15 @@ async function collectRawData(runDir: string): Promise<CollectedData> {
       // Convert entities to RawEntity format
       for (const e of px.entities || []) {
         const entityEvidenceIds: string[] = [];
-        
+
         // Extract evidence from entity if present
         if (e.evidence) {
           for (const ev of e.evidence) {
-            const evRecord = convertToEvidenceRecord(ev, artifactId, px.versionId);
+            const evRecord = convertToEvidenceRecord(
+              ev,
+              artifactId,
+              px.versionId,
+            );
             if (evRecord && !evidenceIdSet.has(evRecord.id)) {
               evidence.push(evRecord);
               evidenceIdSet.add(evRecord.id);
@@ -236,9 +245,10 @@ async function collectRawData(runDir: string): Promise<CollectedData> {
           cgId: e.cgId,
           artifactId,
           artifactRole,
-          type: e.type || 'unknown',
+          type: e.type || "unknown",
           name: e.name,
-          evidenceIds: entityEvidenceIds.length > 0 ? entityEvidenceIds : undefined,
+          evidenceIds:
+            entityEvidenceIds.length > 0 ? entityEvidenceIds : undefined,
           properties: e.properties,
         });
       }
@@ -250,7 +260,11 @@ async function collectRawData(runDir: string): Promise<CollectedData> {
         // Extract evidence from statement if present
         if (s.evidence) {
           for (const ev of s.evidence) {
-            const evRecord = convertToEvidenceRecord(ev, artifactId, px.versionId);
+            const evRecord = convertToEvidenceRecord(
+              ev,
+              artifactId,
+              px.versionId,
+            );
             if (evRecord && !evidenceIdSet.has(evRecord.id)) {
               evidence.push(evRecord);
               evidenceIdSet.add(evRecord.id);
@@ -284,28 +298,28 @@ async function collectRawData(runDir: string): Promise<CollectedData> {
 function convertToEvidenceRecord(
   ev: unknown,
   artifactId: string,
-  versionId?: string
+  versionId?: string,
 ): EvidenceRecord | null {
-  if (!ev || typeof ev !== 'object') return null;
+  if (!ev || typeof ev !== "object") return null;
 
   const legacy = ev as Record<string, unknown>;
   const sourceKey = legacy.sourceKey as string | undefined;
-  const excerpt = (legacy.excerpt as string | undefined) ?? '';
+  const excerpt = (legacy.excerpt as string | undefined) ?? "";
 
   if (!sourceKey && !excerpt) return null;
 
   // Generate a simple evidence ID
   const idInput = [
     artifactId,
-    versionId ?? 'unknown',
-    sourceKey ?? '',
+    versionId ?? "unknown",
+    sourceKey ?? "",
     excerpt.slice(0, 50),
-  ].join('|');
-  
+  ].join("|");
+
   const id = `ev_${simpleHash(idInput)}`;
 
   // Generate logical key from content
-  const logicalKey = simpleHash([artifactId, excerpt].join('|'));
+  const logicalKey = simpleHash([artifactId, excerpt].join("|"));
 
   // Generate excerpt hash
   const excerptHash = simpleHash(excerpt);
@@ -313,16 +327,19 @@ function convertToEvidenceRecord(
   return {
     id,
     logicalKey,
-    kind: 'file',
+    kind: "file",
     ref: {
       artifactId,
       artifactVersionId: versionId,
       uri: sourceKey ?? artifactId,
     },
-    locator: legacy.lineStart !== undefined ? {
-      lineStart: legacy.lineStart as number,
-      lineEnd: legacy.lineEnd as number,
-    } : undefined,
+    locator:
+      legacy.lineStart !== undefined
+        ? {
+            lineStart: legacy.lineStart as number,
+            lineEnd: legacy.lineEnd as number,
+          }
+        : undefined,
     excerpt: excerpt.slice(0, 200),
     excerptHash,
   };
@@ -335,10 +352,10 @@ function simpleHash(input: string): string {
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash;
   }
-  return Math.abs(hash).toString(16).padStart(8, '0');
+  return Math.abs(hash).toString(16).padStart(8, "0");
 }
 
 // =============================================================================
@@ -347,17 +364,17 @@ function simpleHash(input: string): string {
 
 async function loadLxLinks(
   runDir: string,
-  weaveResult?: WeaveResult
+  weaveResult?: WeaveResult,
 ): Promise<LxLink[]> {
   const links: LxLink[] = [];
-  const lxPath = join(runDir, 'aggregate', 'lx.proposals.json');
+  const lxPath = join(runDir, "aggregate", "lx.proposals.json");
 
   if (!existsSync(lxPath)) {
     return links;
   }
 
   try {
-    const lxData = JSON.parse(await readFile(lxPath, 'utf-8'));
+    const lxData = JSON.parse(await readFile(lxPath, "utf-8"));
 
     // Build cgId -> canonicalId map if weave result exists
     const cgIdToCanonical = new Map<string, string>();
@@ -400,9 +417,9 @@ async function loadLxLinks(
 async function writeJsonBundle(
   bundleDir: string,
   bundle: GraphBundleV2,
-  prettyPrint: boolean
+  prettyPrint: boolean,
 ): Promise<string> {
-  const bundlePath = join(bundleDir, 'graph.v2.json');
+  const bundlePath = join(bundleDir, "graph.v2.json");
   const content = prettyPrint
     ? JSON.stringify(bundle, null, 2)
     : JSON.stringify(bundle);
@@ -412,10 +429,10 @@ async function writeJsonBundle(
 
 async function writeJsonlBundle(
   bundleDir: string,
-  bundle: GraphBundleV2
+  bundle: GraphBundleV2,
 ): Promise<string> {
   // Write meta
-  const metaPath = join(bundleDir, 'meta.v2.json');
+  const metaPath = join(bundleDir, "meta.v2.json");
   await writeFile(
     metaPath,
     JSON.stringify(
@@ -436,55 +453,65 @@ async function writeJsonlBundle(
         },
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   // Write artifacts (small, use JSON)
   await writeFile(
-    join(bundleDir, 'artifacts.v2.json'),
-    JSON.stringify(bundle.artifacts, null, 2)
+    join(bundleDir, "artifacts.v2.json"),
+    JSON.stringify(bundle.artifacts, null, 2),
   );
 
   // Write evidence JSONL
-  const evidenceStream = createWriteStream(join(bundleDir, 'evidence.v2.jsonl'));
+  const evidenceStream = createWriteStream(
+    join(bundleDir, "evidence.v2.jsonl"),
+  );
   for (const ev of bundle.evidence) {
-    evidenceStream.write(JSON.stringify({ _type: 'evidence', ...ev }) + '\n');
+    evidenceStream.write(JSON.stringify({ _type: "evidence", ...ev }) + "\n");
   }
   evidenceStream.end();
 
   // Write raw entities JSONL
-  const rawEntitiesStream = createWriteStream(join(bundleDir, 'raw.entities.v2.jsonl'));
+  const rawEntitiesStream = createWriteStream(
+    join(bundleDir, "raw.entities.v2.jsonl"),
+  );
   for (const e of bundle.raw.entities) {
-    rawEntitiesStream.write(JSON.stringify({ _type: 'raw_entity', ...e }) + '\n');
+    rawEntitiesStream.write(
+      JSON.stringify({ _type: "raw_entity", ...e }) + "\n",
+    );
   }
   rawEntitiesStream.end();
 
   // Write raw statements JSONL
-  const rawStatementsStream = createWriteStream(join(bundleDir, 'raw.statements.v2.jsonl'));
+  const rawStatementsStream = createWriteStream(
+    join(bundleDir, "raw.statements.v2.jsonl"),
+  );
   for (const s of bundle.raw.statements) {
-    rawStatementsStream.write(JSON.stringify({ _type: 'raw_statement', ...s }) + '\n');
+    rawStatementsStream.write(
+      JSON.stringify({ _type: "raw_statement", ...s }) + "\n",
+    );
   }
   rawStatementsStream.end();
 
   // Write canonical entities JSONL (if weave exists)
   if (bundle.weave) {
     const canonicalEntitiesStream = createWriteStream(
-      join(bundleDir, 'canonical.entities.v2.jsonl')
+      join(bundleDir, "canonical.entities.v2.jsonl"),
     );
     for (const e of bundle.weave.entities) {
       canonicalEntitiesStream.write(
-        JSON.stringify({ _type: 'canonical_entity', ...e }) + '\n'
+        JSON.stringify({ _type: "canonical_entity", ...e }) + "\n",
       );
     }
     canonicalEntitiesStream.end();
 
     const canonicalStatementsStream = createWriteStream(
-      join(bundleDir, 'canonical.statements.v2.jsonl')
+      join(bundleDir, "canonical.statements.v2.jsonl"),
     );
     for (const s of bundle.weave.statements) {
       canonicalStatementsStream.write(
-        JSON.stringify({ _type: 'canonical_statement', ...s }) + '\n'
+        JSON.stringify({ _type: "canonical_statement", ...s }) + "\n",
       );
     }
     canonicalStatementsStream.end();
@@ -492,9 +519,9 @@ async function writeJsonlBundle(
 
   // Write LX links JSONL
   if (bundle.lx) {
-    const lxStream = createWriteStream(join(bundleDir, 'lx.v2.jsonl'));
+    const lxStream = createWriteStream(join(bundleDir, "lx.v2.jsonl"));
     for (const l of bundle.lx.links) {
-      lxStream.write(JSON.stringify({ _type: 'lx_link', ...l }) + '\n');
+      lxStream.write(JSON.stringify({ _type: "lx_link", ...l }) + "\n");
     }
     lxStream.end();
   }
@@ -508,60 +535,69 @@ async function writeJsonlBundle(
 
 export interface LoadBundleV2Result {
   bundle: GraphBundleV2;
-  format: 'json' | 'jsonl';
+  format: "json" | "jsonl";
 }
 
-export async function loadBundleV2(runDir: string): Promise<LoadBundleV2Result | null> {
-  const bundleDir = join(runDir, 'bundle');
+export async function loadBundleV2(
+  runDir: string,
+): Promise<LoadBundleV2Result | null> {
+  const bundleDir = join(runDir, "bundle");
 
   // Try v2 JSON format
-  const jsonPath = join(bundleDir, 'graph.v2.json');
+  const jsonPath = join(bundleDir, "graph.v2.json");
   if (existsSync(jsonPath)) {
-    const bundle = JSON.parse(await readFile(jsonPath, 'utf-8')) as GraphBundleV2;
-    return { bundle, format: 'json' };
+    const bundle = JSON.parse(
+      await readFile(jsonPath, "utf-8"),
+    ) as GraphBundleV2;
+    return { bundle, format: "json" };
   }
 
   // Try v2 JSONL format
-  const metaPath = join(bundleDir, 'meta.v2.json');
+  const metaPath = join(bundleDir, "meta.v2.json");
   if (existsSync(metaPath)) {
     const bundle = await loadJsonlBundle(bundleDir);
-    return { bundle, format: 'jsonl' };
+    return { bundle, format: "jsonl" };
   }
 
   return null;
 }
 
 async function loadJsonlBundle(bundleDir: string): Promise<GraphBundleV2> {
-  const meta = JSON.parse(await readFile(join(bundleDir, 'meta.v2.json'), 'utf-8'));
+  const meta = JSON.parse(
+    await readFile(join(bundleDir, "meta.v2.json"), "utf-8"),
+  );
   const artifacts = JSON.parse(
-    await readFile(join(bundleDir, 'artifacts.v2.json'), 'utf-8')
+    await readFile(join(bundleDir, "artifacts.v2.json"), "utf-8"),
   ) as ArtifactSummary[];
 
   // Load JSONL files
   const evidence = await loadJsonlFile<EvidenceRecord>(
-    join(bundleDir, 'evidence.v2.jsonl')
+    join(bundleDir, "evidence.v2.jsonl"),
   );
   const rawEntities = await loadJsonlFile<RawEntity>(
-    join(bundleDir, 'raw.entities.v2.jsonl')
+    join(bundleDir, "raw.entities.v2.jsonl"),
   );
   const rawStatements = await loadJsonlFile<RawStatement>(
-    join(bundleDir, 'raw.statements.v2.jsonl')
+    join(bundleDir, "raw.statements.v2.jsonl"),
   );
 
   // Load canonical (optional)
-  const canonicalEntitiesPath = join(bundleDir, 'canonical.entities.v2.jsonl');
-  const canonicalStatementsPath = join(bundleDir, 'canonical.statements.v2.jsonl');
-  
+  const canonicalEntitiesPath = join(bundleDir, "canonical.entities.v2.jsonl");
+  const canonicalStatementsPath = join(
+    bundleDir,
+    "canonical.statements.v2.jsonl",
+  );
+
   let weave: WeaveResult | undefined;
   if (existsSync(canonicalEntitiesPath)) {
     const entities = await loadJsonlFile(canonicalEntitiesPath);
     const statements = existsSync(canonicalStatementsPath)
       ? await loadJsonlFile(canonicalStatementsPath)
       : [];
-    
+
     weave = {
-      entities: entities as WeaveResult['entities'],
-      statements: statements as WeaveResult['statements'],
+      entities: entities as WeaveResult["entities"],
+      statements: statements as WeaveResult["statements"],
       evidence: [],
       conflicts: [],
       stats: meta.stats ?? {
@@ -576,10 +612,8 @@ async function loadJsonlBundle(bundleDir: string): Promise<GraphBundleV2> {
   }
 
   // Load LX (optional)
-  const lxPath = join(bundleDir, 'lx.v2.jsonl');
-  const lxLinks = existsSync(lxPath)
-    ? await loadJsonlFile<LxLink>(lxPath)
-    : [];
+  const lxPath = join(bundleDir, "lx.v2.jsonl");
+  const lxLinks = existsSync(lxPath) ? await loadJsonlFile<LxLink>(lxPath) : [];
 
   return {
     $schema: meta.$schema,
@@ -601,8 +635,8 @@ async function loadJsonlBundle(bundleDir: string): Promise<GraphBundleV2> {
 async function loadJsonlFile<T>(filePath: string): Promise<T[]> {
   if (!existsSync(filePath)) return [];
 
-  const content = await readFile(filePath, 'utf-8');
-  const lines = content.split('\n').filter((line) => line.trim());
+  const content = await readFile(filePath, "utf-8");
+  const lines = content.split("\n").filter((line) => line.trim());
 
   return lines.map((line) => {
     const record = JSON.parse(line);

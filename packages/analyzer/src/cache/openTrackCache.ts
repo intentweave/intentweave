@@ -20,15 +20,15 @@
  *       meta.json         – hashes & timestamps
  */
 
-import { promises as fs } from 'node:fs';
-import * as path from 'node:path';
-import { computeContentHash, hashContent } from './registry.js';
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+import { computeContentHash, hashContent } from "./registry.js";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export type OpenTrackStageId = 'FX' | 'KX';
+export type OpenTrackStageId = "FX" | "KX";
 
 /**
  * Per-artifact metadata stored alongside cached stage outputs.
@@ -47,11 +47,16 @@ export interface OpenTrackArtifactMeta {
   /** Model used (e.g. 'gpt-5-mini', 'gpt-4o') */
   model?: string;
   /** Timestamps & misc */
-  stages: Partial<Record<OpenTrackStageId, {
-    cachedAt: string;
-    latencyMs: number;
-    outputHash: string;
-  }>>;
+  stages: Partial<
+    Record<
+      OpenTrackStageId,
+      {
+        cachedAt: string;
+        latencyMs: number;
+        outputHash: string;
+      }
+    >
+  >;
 }
 
 /**
@@ -63,9 +68,21 @@ export interface OpenTrackCacheCheck {
   /** KX cache hit — output can be reused */
   kxHit: boolean;
   /** Reason for FX miss */
-  fxMissReason?: 'not-cached' | 'content-changed' | 'fx-prompt-changed' | 'provider-changed' | 'forced';
+  fxMissReason?:
+    | "not-cached"
+    | "content-changed"
+    | "fx-prompt-changed"
+    | "provider-changed"
+    | "forced";
   /** Reason for KX miss */
-  kxMissReason?: 'not-cached' | 'content-changed' | 'fx-changed' | 'fx-prompt-changed' | 'kx-prompt-changed' | 'provider-changed' | 'forced';
+  kxMissReason?:
+    | "not-cached"
+    | "content-changed"
+    | "fx-changed"
+    | "fx-prompt-changed"
+    | "kx-prompt-changed"
+    | "provider-changed"
+    | "forced";
 }
 
 // =============================================================================
@@ -74,9 +91,9 @@ export interface OpenTrackCacheCheck {
 
 function sanitizeKey(key: string): string {
   return key
-    .replace(/:/g, '__')
-    .replace(/\//g, '_')
-    .replace(/[<>"|?*]/g, '_');
+    .replace(/:/g, "__")
+    .replace(/\//g, "_")
+    .replace(/[<>"|?*]/g, "_");
 }
 
 // =============================================================================
@@ -87,7 +104,7 @@ export class OpenTrackCache {
   private readonly baseDir: string;
 
   constructor(projectRoot: string) {
-    this.baseDir = path.join(projectRoot, '.iw', 'cache', 'open-track');
+    this.baseDir = path.join(projectRoot, ".iw", "cache", "open-track");
   }
 
   /** Ensure cache directory exists */
@@ -106,24 +123,24 @@ export class OpenTrackCache {
   }
 
   private metaPath(artifactKey: string): string {
-    return path.join(this.artifactDir(artifactKey), 'meta.json');
+    return path.join(this.artifactDir(artifactKey), "meta.json");
   }
 
   // ─── Low-level I/O ────────────────────────────────────────────────────────
 
   private async readJson<T>(filePath: string): Promise<T | null> {
     try {
-      const raw = await fs.readFile(filePath, 'utf-8');
+      const raw = await fs.readFile(filePath, "utf-8");
       return JSON.parse(raw) as T;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw err;
     }
   }
 
   private async writeJson<T>(filePath: string, data: T): Promise<void> {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
   }
 
   // ─── Cache check ──────────────────────────────────────────────────────────
@@ -150,18 +167,20 @@ export class OpenTrackCache {
       return {
         fxHit: false,
         kxHit: false,
-        fxMissReason: 'forced',
-        kxMissReason: 'forced',
+        fxMissReason: "forced",
+        kxMissReason: "forced",
       };
     }
 
-    const meta = await this.readJson<OpenTrackArtifactMeta>(this.metaPath(artifactKey));
+    const meta = await this.readJson<OpenTrackArtifactMeta>(
+      this.metaPath(artifactKey),
+    );
     if (!meta) {
       return {
         fxHit: false,
         kxHit: false,
-        fxMissReason: 'not-cached',
-        kxMissReason: 'not-cached',
+        fxMissReason: "not-cached",
+        kxMissReason: "not-cached",
       };
     }
 
@@ -170,8 +189,8 @@ export class OpenTrackCache {
       return {
         fxHit: false,
         kxHit: false,
-        fxMissReason: 'content-changed',
-        kxMissReason: 'content-changed',
+        fxMissReason: "content-changed",
+        kxMissReason: "content-changed",
       };
     }
 
@@ -180,8 +199,8 @@ export class OpenTrackCache {
       return {
         fxHit: false,
         kxHit: false,
-        fxMissReason: 'fx-prompt-changed',
-        kxMissReason: 'fx-prompt-changed',
+        fxMissReason: "fx-prompt-changed",
+        kxMissReason: "fx-prompt-changed",
       };
     }
 
@@ -191,16 +210,16 @@ export class OpenTrackCache {
       return {
         fxHit: false,
         kxHit: false,
-        fxMissReason: 'provider-changed',
-        kxMissReason: 'provider-changed',
+        fxMissReason: "provider-changed",
+        kxMissReason: "provider-changed",
       };
     }
     if (model && meta.model && meta.model !== model) {
       return {
         fxHit: false,
         kxHit: false,
-        fxMissReason: 'provider-changed',
-        kxMissReason: 'provider-changed',
+        fxMissReason: "provider-changed",
+        kxMissReason: "provider-changed",
       };
     }
 
@@ -210,8 +229,8 @@ export class OpenTrackCache {
       return {
         fxHit: false,
         kxHit: false,
-        fxMissReason: 'not-cached',
-        kxMissReason: 'not-cached',
+        fxMissReason: "not-cached",
+        kxMissReason: "not-cached",
       };
     }
 
@@ -223,14 +242,14 @@ export class OpenTrackCache {
       return {
         fxHit: true,
         kxHit: false,
-        kxMissReason: 'kx-prompt-changed',
+        kxMissReason: "kx-prompt-changed",
       };
     }
 
     return {
       fxHit: true,
       kxHit: kxExists,
-      kxMissReason: kxExists ? undefined : 'not-cached',
+      kxMissReason: kxExists ? undefined : "not-cached",
     };
   }
 
@@ -238,12 +257,12 @@ export class OpenTrackCache {
 
   /** Retrieve cached FX output */
   async getFx<T = unknown>(artifactKey: string): Promise<T | null> {
-    return this.readJson<T>(this.stagePath(artifactKey, 'FX'));
+    return this.readJson<T>(this.stagePath(artifactKey, "FX"));
   }
 
   /** Retrieve cached KX output */
   async getKx<T = unknown>(artifactKey: string): Promise<T | null> {
-    return this.readJson<T>(this.stagePath(artifactKey, 'KX'));
+    return this.readJson<T>(this.stagePath(artifactKey, "KX"));
   }
 
   /** Store FX output and update metadata */
@@ -256,10 +275,12 @@ export class OpenTrackCache {
     provider?: string,
     model?: string,
   ): Promise<void> {
-    await this.writeJson(this.stagePath(artifactKey, 'FX'), data);
+    await this.writeJson(this.stagePath(artifactKey, "FX"), data);
 
     const fxOutputHash = hashContent(JSON.stringify(data));
-    const meta = await this.readJson<OpenTrackArtifactMeta>(this.metaPath(artifactKey)) ?? {
+    const meta = (await this.readJson<OpenTrackArtifactMeta>(
+      this.metaPath(artifactKey),
+    )) ?? {
       contentHash,
       stages: {},
     };
@@ -287,9 +308,11 @@ export class OpenTrackCache {
     latencyMs: number,
     kxPromptVersion?: string,
   ): Promise<void> {
-    await this.writeJson(this.stagePath(artifactKey, 'KX'), data);
+    await this.writeJson(this.stagePath(artifactKey, "KX"), data);
 
-    const meta = await this.readJson<OpenTrackArtifactMeta>(this.metaPath(artifactKey));
+    const meta = await this.readJson<OpenTrackArtifactMeta>(
+      this.metaPath(artifactKey),
+    );
     if (!meta) return; // Should not happen — FX must be cached first
 
     const kxOutputHash = hashContent(JSON.stringify(data));
@@ -332,8 +355,8 @@ export class OpenTrackCache {
     try {
       const entries = await fs.readdir(this.baseDir, { withFileTypes: true });
       return entries
-        .filter(e => e.isDirectory())
-        .map(e => e.name.replace(/__/g, ':').replace(/_/g, '/'));
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name.replace(/__/g, ":").replace(/_/g, "/"));
     } catch {
       return [];
     }

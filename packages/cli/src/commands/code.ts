@@ -3,28 +3,28 @@
 
 /**
  * code command - Extract code symbols and link to spec entities
- * 
+ *
  * Runs AX stage (AST extraction) on TypeScript/JavaScript codebase
  * and optionally links extracted symbols to spec entities.
- * 
+ *
  * Usage:
  *   iw code ./src                    # Extract symbols from ./src
  *   iw code ./src --link .iw/rx.json # Extract and link to spec entities
  *   iw code ./src --coverage         # Show implementation coverage report
  */
 
-import { Command } from 'commander';
-import chalk from 'chalk';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { 
-  runAxStage, 
+import { Command } from "commander";
+import chalk from "chalk";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import {
+  runAxStage,
   runAxStageIncremental,
-  loadAxOutput, 
+  loadAxOutput,
   saveAxOutput,
   type AxOutput,
-  type AxStageOptions
-} from '@intentweave/analyzer';
+  type AxStageOptions,
+} from "@intentweave/analyzer";
 
 // ============================================================================
 // Code Linker Types (inline to avoid src/ import issues)
@@ -36,7 +36,7 @@ interface AxSymbol {
   name: string;
   container?: string;
   filePath: string;
-  export: 'exported' | 'internal';
+  export: "exported" | "internal";
 }
 
 interface CodeLinkCandidate {
@@ -55,7 +55,11 @@ interface CodeLinkCandidate {
 
 interface CodeLinkerResult {
   candidates: CodeLinkCandidate[];
-  unmatched: Array<{ entityId: string; entityName: string; entityKind: string }>;
+  unmatched: Array<{
+    entityId: string;
+    entityName: string;
+    entityKind: string;
+  }>;
   stats: {
     totalSpecEntities: number;
     totalCodeSymbols: number;
@@ -72,21 +76,21 @@ interface CodeLinkerResult {
 
 function normalizeToSlug(name: string): string {
   return name
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]/g, ' ')
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]/g, " ")
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\s/g, '');
+    .replace(/\s+/g, " ")
+    .replace(/\s/g, "");
 }
 
 function tokenize(name: string): string[] {
   return name
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]/g, ' ')
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]/g, " ")
     .toLowerCase()
     .split(/\s+/)
-    .filter(t => t.length > 0);
+    .filter((t) => t.length > 0);
 }
 
 function tokenOverlapScore(tokens1: string[], tokens2: string[]): number {
@@ -107,22 +111,40 @@ interface Entity {
 function linkSpecToCode(
   specEntities: Entity[],
   codeOutput: AxOutput,
-  options?: { minConfidence?: number; includeInternal?: boolean; specKinds?: string[]; codeKinds?: string[] }
+  options?: {
+    minConfidence?: number;
+    includeInternal?: boolean;
+    specKinds?: string[];
+    codeKinds?: string[];
+  },
 ): CodeLinkerResult {
   const opts = {
     minConfidence: options?.minConfidence ?? 0.5,
     includeInternal: options?.includeInternal ?? false,
-    specKinds: options?.specKinds ?? ['action', 'resource', 'service', 'endpoint', 'function'],
-    codeKinds: options?.codeKinds ?? ['function', 'class', 'method', 'interface'],
+    specKinds: options?.specKinds ?? [
+      "action",
+      "resource",
+      "service",
+      "endpoint",
+      "function",
+    ],
+    codeKinds: options?.codeKinds ?? [
+      "function",
+      "class",
+      "method",
+      "interface",
+    ],
   };
 
-  const relevantSpec = specEntities.filter(e => opts.specKinds.includes(e.type));
-  
+  const relevantSpec = specEntities.filter((e) =>
+    opts.specKinds.includes(e.type),
+  );
+
   const codeSymbols: AxSymbol[] = [];
   for (const file of codeOutput.files) {
     for (const symbol of file.symbols) {
       if (!opts.codeKinds.includes(symbol.kind)) continue;
-      if (!opts.includeInternal && symbol.export === 'internal') continue;
+      if (!opts.includeInternal && symbol.export === "internal") continue;
       codeSymbols.push(symbol);
     }
   }
@@ -153,7 +175,7 @@ function linkSpecToCode(
           codeSymbolKind: symbol.kind,
           codeContainer: symbol.container,
           codeFilePath: symbol.filePath,
-          matchType: 'exact-name',
+          matchType: "exact-name",
           confidence: 0.95,
           rationale: `Exact name match: "${entity.name}" = "${symbol.name}"`,
         };
@@ -176,7 +198,7 @@ function linkSpecToCode(
           codeSymbolKind: symbol.kind,
           codeContainer: symbol.container,
           codeFilePath: symbol.filePath,
-          matchType: 'alias-match',
+          matchType: "alias-match",
           confidence: 0.85,
           rationale: `Alias match: "${specSlug}" = "${codeSlug}"`,
         };
@@ -192,7 +214,7 @@ function linkSpecToCode(
       if (symbol.container) codeTokens.push(...tokenize(symbol.container));
       const overlap = tokenOverlapScore(specTokens, codeTokens);
       if (overlap >= 0.5) {
-        const confidence = 0.6 + (overlap * 0.2);
+        const confidence = 0.6 + overlap * 0.2;
         if (confidence >= opts.minConfidence) {
           const candidate: CodeLinkCandidate = {
             specEntityId: entity.cgId,
@@ -203,9 +225,9 @@ function linkSpecToCode(
             codeSymbolKind: symbol.kind,
             codeContainer: symbol.container,
             codeFilePath: symbol.filePath,
-            matchType: 'path-hint',
+            matchType: "path-hint",
             confidence,
-            rationale: `Token overlap: "${entity.name}" ↔ "${symbol.container ? symbol.container + '.' : ''}${symbol.name}"`,
+            rationale: `Token overlap: "${entity.name}" ↔ "${symbol.container ? symbol.container + "." : ""}${symbol.name}"`,
           };
           if (!bestMatch || candidate.confidence > bestMatch.confidence) {
             bestMatch = candidate;
@@ -218,16 +240,22 @@ function linkSpecToCode(
       candidates.push(bestMatch);
       matchedSpec.add(entity.cgId);
       switch (bestMatch.matchType) {
-        case 'exact-name': stats.matchedByExact++; break;
-        case 'alias-match': stats.matchedByAlias++; break;
-        case 'path-hint': stats.matchedByPathHint++; break;
+        case "exact-name":
+          stats.matchedByExact++;
+          break;
+        case "alias-match":
+          stats.matchedByAlias++;
+          break;
+        case "path-hint":
+          stats.matchedByPathHint++;
+          break;
       }
     }
   }
 
   const unmatched = relevantSpec
-    .filter(e => !matchedSpec.has(e.cgId))
-    .map(e => ({ entityId: e.cgId, entityName: e.name, entityKind: e.type }));
+    .filter((e) => !matchedSpec.has(e.cgId))
+    .map((e) => ({ entityId: e.cgId, entityName: e.name, entityKind: e.type }));
 
   stats.unmatchedSpec = unmatched.length;
 
@@ -238,22 +266,22 @@ function linkSpecToCode(
 // Command Implementation
 // ============================================================================
 
-export const codeCommand = new Command('code')
-  .description('Extract code symbols and link to spec entities')
-  .argument('<directory>', 'Directory containing TypeScript/JavaScript code')
-  .option('-o, --output <path>', 'Output AX file path', '.iw/ax.json')
-  .option('-l, --link <spec-file>', 'Link to spec entities from RX/CX output')
-  .option('-c, --coverage', 'Show implementation coverage report')
-  .option('--incremental', 'Only re-extract changed files')
-  .option('--include-internal', 'Include non-exported symbols')
-  .option('-v, --verbose', 'Verbose output')
-  .option('--include <patterns...>', 'File patterns to include')
-  .option('--exclude <patterns...>', 'File patterns to exclude')
+export const codeCommand = new Command("code")
+  .description("Extract code symbols and link to spec entities")
+  .argument("<directory>", "Directory containing TypeScript/JavaScript code")
+  .option("-o, --output <path>", "Output AX file path", ".iw/ax.json")
+  .option("-l, --link <spec-file>", "Link to spec entities from RX/CX output")
+  .option("-c, --coverage", "Show implementation coverage report")
+  .option("--incremental", "Only re-extract changed files")
+  .option("--include-internal", "Include non-exported symbols")
+  .option("-v, --verbose", "Verbose output")
+  .option("--include <patterns...>", "File patterns to include")
+  .option("--exclude <patterns...>", "File patterns to exclude")
   .action(async (directory: string, options) => {
-    const { 
-      output, 
-      link: specFile, 
-      coverage: showCoverage, 
+    const {
+      output,
+      link: specFile,
+      coverage: showCoverage,
       incremental,
       includeInternal,
       verbose,
@@ -262,7 +290,7 @@ export const codeCommand = new Command('code')
     } = options;
 
     const workspaceRoot = path.resolve(directory);
-    
+
     // Check directory exists
     try {
       const stat = await fs.stat(workspaceRoot);
@@ -275,7 +303,9 @@ export const codeCommand = new Command('code')
       process.exit(1);
     }
 
-    console.log(chalk.blue(`\n📦 Extracting code symbols from: ${workspaceRoot}\n`));
+    console.log(
+      chalk.blue(`\n📦 Extracting code symbols from: ${workspaceRoot}\n`),
+    );
 
     // Prepare options
     const axOptions: AxStageOptions = {
@@ -292,23 +322,30 @@ export const codeCommand = new Command('code')
     if (incremental) {
       previousOutput = await loadAxOutput(path.resolve(output));
       if (previousOutput) {
-        console.log(chalk.gray(`  Incremental mode: reusing ${previousOutput.totalFiles} cached files`));
+        console.log(
+          chalk.gray(
+            `  Incremental mode: reusing ${previousOutput.totalFiles} cached files`,
+          ),
+        );
       }
     }
 
     // Run AX stage
     const startTime = Date.now();
-    const axOutput = incremental && previousOutput
-      ? await runAxStageIncremental(axOptions, previousOutput)
-      : await runAxStage(axOptions);
+    const axOutput =
+      incremental && previousOutput
+        ? await runAxStageIncremental(axOptions, previousOutput)
+        : await runAxStage(axOptions);
     const duration = Date.now() - startTime;
 
     // Display results
     console.log(chalk.green(`✓ Extraction complete (${duration}ms)\n`));
     console.log(`  Files:   ${axOutput.totalFiles}`);
     console.log(`  Symbols: ${axOutput.totalSymbols}`);
-    console.log(`  Exported: ${axOutput.stats.exported} | Internal: ${axOutput.stats.internal}`);
-    
+    console.log(
+      `  Exported: ${axOutput.stats.exported} | Internal: ${axOutput.stats.internal}`,
+    );
+
     if (verbose) {
       console.log(chalk.gray(`\n  By kind:`));
       for (const [kind, count] of Object.entries(axOutput.stats.byKind)) {
@@ -324,12 +361,14 @@ export const codeCommand = new Command('code')
 
     // Link to spec entities if requested
     if (specFile) {
-      console.log(chalk.blue(`\n🔗 Linking to spec entities from: ${specFile}\n`));
-      
+      console.log(
+        chalk.blue(`\n🔗 Linking to spec entities from: ${specFile}\n`),
+      );
+
       try {
-        const specContent = await fs.readFile(path.resolve(specFile), 'utf-8');
+        const specContent = await fs.readFile(path.resolve(specFile), "utf-8");
         const specData = JSON.parse(specContent);
-        
+
         // Extract entities from various possible formats
         let specEntities: Entity[] = [];
         if (Array.isArray(specData.entities)) {
@@ -346,10 +385,12 @@ export const codeCommand = new Command('code')
         }
 
         if (specEntities.length === 0) {
-          console.log(chalk.yellow('  No spec entities found in file'));
+          console.log(chalk.yellow("  No spec entities found in file"));
         } else {
-          const linkResult = linkSpecToCode(specEntities, axOutput, { includeInternal });
-          
+          const linkResult = linkSpecToCode(specEntities, axOutput, {
+            includeInternal,
+          });
+
           console.log(chalk.green(`✓ Linking complete\n`));
           console.log(`  Spec entities: ${linkResult.stats.totalSpecEntities}`);
           console.log(`  Code symbols:  ${linkResult.stats.totalCodeSymbols}`);
@@ -364,23 +405,38 @@ export const codeCommand = new Command('code')
             console.log(chalk.gray(`\n  Top matches:`));
             const topMatches = linkResult.candidates.slice(0, 10);
             for (const m of topMatches) {
-              const container = m.codeContainer ? `${m.codeContainer}.` : '';
-              console.log(chalk.gray(`    ${m.specEntityKind}:${m.specEntityName} → ${container}${m.codeSymbolName} (${m.codeFilePath})`));
+              const container = m.codeContainer ? `${m.codeContainer}.` : "";
+              console.log(
+                chalk.gray(
+                  `    ${m.specEntityKind}:${m.specEntityName} → ${container}${m.codeSymbolName} (${m.codeFilePath})`,
+                ),
+              );
             }
             if (linkResult.candidates.length > 10) {
-              console.log(chalk.gray(`    ... and ${linkResult.candidates.length - 10} more`));
+              console.log(
+                chalk.gray(
+                  `    ... and ${linkResult.candidates.length - 10} more`,
+                ),
+              );
             }
           }
 
           // Save link results
-          const linkOutputPath = outputPath.replace('.json', '-links.json');
-          await fs.writeFile(linkOutputPath, JSON.stringify({
-            version: '1.0',
-            specFile,
-            axFile: output,
-            linkedAt: new Date().toISOString(),
-            ...linkResult,
-          }, null, 2));
+          const linkOutputPath = outputPath.replace(".json", "-links.json");
+          await fs.writeFile(
+            linkOutputPath,
+            JSON.stringify(
+              {
+                version: "1.0",
+                specFile,
+                axFile: output,
+                linkedAt: new Date().toISOString(),
+                ...linkResult,
+              },
+              null,
+              2,
+            ),
+          );
           console.log(chalk.green(`\n  Links: ${linkOutputPath}`));
 
           // Show coverage if requested
@@ -390,10 +446,12 @@ export const codeCommand = new Command('code')
           }
         }
       } catch (err) {
-        console.error(chalk.red(`Failed to read spec file: ${(err as Error).message}`));
+        console.error(
+          chalk.red(`Failed to read spec file: ${(err as Error).message}`),
+        );
       }
     } else if (showCoverage) {
-      console.log(chalk.yellow('\n--coverage requires --link <spec-file>'));
+      console.log(chalk.yellow("\n--coverage requires --link <spec-file>"));
     }
   });
 
@@ -409,10 +467,16 @@ interface CoverageReport {
   unimplemented: string[];
 }
 
-function calculateCoverage(result: CodeLinkerResult, specEntities: Entity[]): CoverageReport {
-  const byKind: Record<string, { total: number; covered: number; percent: number }> = {};
-  const matchedIds = new Set(result.candidates.map(c => c.specEntityId));
-  
+function calculateCoverage(
+  result: CodeLinkerResult,
+  specEntities: Entity[],
+): CoverageReport {
+  const byKind: Record<
+    string,
+    { total: number; covered: number; percent: number }
+  > = {};
+  const matchedIds = new Set(result.candidates.map((c) => c.specEntityId));
+
   for (const entity of specEntities) {
     if (!byKind[entity.type]) {
       byKind[entity.type] = { total: 0, covered: 0, percent: 0 };
@@ -434,42 +498,57 @@ function calculateCoverage(result: CodeLinkerResult, specEntities: Entity[]): Co
   return {
     totalSpec,
     covered,
-    coveragePercent: totalSpec > 0 ? Math.round((covered / totalSpec) * 100) : 0,
+    coveragePercent:
+      totalSpec > 0 ? Math.round((covered / totalSpec) * 100) : 0,
     byKind,
-    unimplemented: result.unmatched.map(u => u.entityName),
+    unimplemented: result.unmatched.map((u) => u.entityName),
   };
 }
 
 function printCoverageReport(coverage: CoverageReport): void {
   console.log(chalk.blue(`\n📊 Implementation Coverage Report\n`));
-  
+
   // Overall coverage with bar
   const bar = renderBar(coverage.coveragePercent);
-  const color = coverage.coveragePercent >= 80 ? chalk.green 
-    : coverage.coveragePercent >= 50 ? chalk.yellow 
-    : chalk.red;
-  console.log(`  Overall: ${bar} ${color(`${coverage.coveragePercent}%`)} (${coverage.covered}/${coverage.totalSpec})`);
-  
+  const color =
+    coverage.coveragePercent >= 80
+      ? chalk.green
+      : coverage.coveragePercent >= 50
+        ? chalk.yellow
+        : chalk.red;
+  console.log(
+    `  Overall: ${bar} ${color(`${coverage.coveragePercent}%`)} (${coverage.covered}/${coverage.totalSpec})`,
+  );
+
   // By kind
   console.log(chalk.gray(`\n  By kind:`));
   for (const [kind, stats] of Object.entries(coverage.byKind)) {
     if (stats.total === 0) continue;
     const kindBar = renderBar(stats.percent, 20);
-    const kindColor = stats.percent >= 80 ? chalk.green 
-      : stats.percent >= 50 ? chalk.yellow 
-      : chalk.red;
-    console.log(`    ${kind.padEnd(12)} ${kindBar} ${kindColor(`${stats.percent}%`)} (${stats.covered}/${stats.total})`);
+    const kindColor =
+      stats.percent >= 80
+        ? chalk.green
+        : stats.percent >= 50
+          ? chalk.yellow
+          : chalk.red;
+    console.log(
+      `    ${kind.padEnd(12)} ${kindBar} ${kindColor(`${stats.percent}%`)} (${stats.covered}/${stats.total})`,
+    );
   }
 
   // Unimplemented
   if (coverage.unimplemented.length > 0) {
-    console.log(chalk.yellow(`\n  Unimplemented (${coverage.unimplemented.length}):`));
+    console.log(
+      chalk.yellow(`\n  Unimplemented (${coverage.unimplemented.length}):`),
+    );
     const toShow = coverage.unimplemented.slice(0, 10);
     for (const name of toShow) {
       console.log(chalk.gray(`    - ${name}`));
     }
     if (coverage.unimplemented.length > 10) {
-      console.log(chalk.gray(`    ... and ${coverage.unimplemented.length - 10} more`));
+      console.log(
+        chalk.gray(`    ... and ${coverage.unimplemented.length - 10} more`),
+      );
     }
   }
 }
@@ -477,5 +556,5 @@ function printCoverageReport(coverage: CoverageReport): void {
 function renderBar(percent: number, width = 30): string {
   const filled = Math.round((percent / 100) * width);
   const empty = width - filled;
-  return chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
+  return chalk.green("█".repeat(filled)) + chalk.gray("░".repeat(empty));
 }

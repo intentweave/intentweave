@@ -4,7 +4,15 @@
   "title": "IntentWeave Findings Report",
   "description": "Aggregated findings from the analysis pipeline",
   "type": "object",
-  "required": ["$schema", "schemaVersion", "stage", "runId", "workspaceKey", "summary", "findings"],
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "stage",
+    "runId",
+    "workspaceKey",
+    "summary",
+    "findings"
+  ],
   "properties": {
     "$schema": {
       "type": "string",
@@ -36,7 +44,12 @@
     },
     "summary": {
       "type": "object",
-      "required": ["totalFindings", "criticalCount", "warningCount", "infoCount"],
+      "required": [
+        "totalFindings",
+        "criticalCount",
+        "warningCount",
+        "infoCount"
+      ],
       "properties": {
         "totalFindings": {
           "type": "integer",

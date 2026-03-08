@@ -2,7 +2,7 @@
 
 First of all: **thank you for considering contributing to IntentWeave** ❤️
 
-IntentWeave is an **OSS‑first project** with the goal of turning *human intent* (text, specs, conversations, code, signals) into a **coherent, inspectable graph**. Contributions of all kinds are welcome: ideas, discussions, bug reports, docs, code, tests, profiles, and experiments.
+IntentWeave is an **OSS‑first project** with the goal of turning _human intent_ (text, specs, conversations, code, signals) into a **coherent, inspectable graph**. Contributions of all kinds are welcome: ideas, discussions, bug reports, docs, code, tests, profiles, and experiments.
 
 ---
 
@@ -20,7 +20,7 @@ Before contributing, it helps to understand the guiding principles:
    Ingestion → Extraction → Materialization → Projection are explicit phases.
 
 4. **Profiles over forks**
-   Domain‑specific behavior should live in *profiles*, not hard‑coded logic.
+   Domain‑specific behavior should live in _profiles_, not hard‑coded logic.
 
 5. **CLI is a first‑class interface**
    Everything should be automatable and CI‑friendly.
@@ -31,10 +31,10 @@ Before contributing, it helps to understand the guiding principles:
 
 ### 1. Discussions & Ideas
 
-* Architecture feedback
-* Naming & semantics
-* Graph modeling discussions
-* LLM robustness and failure modes
+- Architecture feedback
+- Naming & semantics
+- Graph modeling discussions
+- LLM robustness and failure modes
 
 ➡️ Use **GitHub Discussions** (preferred) or open an issue if actionable.
 
@@ -44,10 +44,10 @@ Before contributing, it helps to understand the guiding principles:
 
 Please include:
 
-* IntentWeave version / commit
-* CLI command used
-* Expected vs actual behavior
-* Minimal reproducible input (if possible)
+- IntentWeave version / commit
+- CLI command used
+- Expected vs actual behavior
+- Minimal reproducible input (if possible)
 
 ➡️ Open a **GitHub Issue** with label `bug`.
 
@@ -57,10 +57,10 @@ Please include:
 
 Docs are as important as code:
 
-* README improvements
-* Architecture explanations
-* Stage specs (MX, PX, CX, …)
-* Examples & tutorials
+- README improvements
+- Architecture explanations
+- Stage specs (MX, PX, CX, …)
+- Examples & tutorials
 
 ➡️ PRs welcome, even for small fixes.
 
@@ -70,32 +70,31 @@ Docs are as important as code:
 
 Typical contribution areas:
 
-* CLI commands
-* Graph schema & semantics
-* Extraction heuristics
-* LLM adapters (local models preferred)
-* Profile system
-* Validation & diffing
-* Visualization / export layers
+- CLI commands
+- Graph schema & semantics
+- Extraction heuristics
+- LLM adapters (local models preferred)
+- Profile system
+- Validation & diffing
+- Visualization / export layers
 
 ---
-
 
 ## 🧩 Contribution Scope Guidelines
 
 ### ✔️ Good candidates
 
-* Generic mechanisms
-* Clear semantics
-* Testable behavior
-* Profile‑driven extensions
+- Generic mechanisms
+- Clear semantics
+- Testable behavior
+- Profile‑driven extensions
 
 ### ❌ Avoid
 
-* Hard‑coding domain assumptions
-* SaaS‑only dependencies
-* "Magic" behavior without traceability
-* One‑off hacks without tests
+- Hard‑coding domain assumptions
+- SaaS‑only dependencies
+- "Magic" behavior without traceability
+- One‑off hacks without tests
 
 ---
 
@@ -122,9 +121,9 @@ Typical contribution areas:
 
 ## 🧪 Tests
 
-* New features **should include tests** where reasonable
-* Bug fixes **must include regression tests** if feasible
-* Snapshot tests are allowed for graph outputs
+- New features **should include tests** where reasonable
+- Bug fixes **must include regression tests** if feasible
+- Snapshot tests are allowed for graph outputs
 
 ```bash
 npm test
@@ -136,10 +135,10 @@ npm test
 
 Special care is required:
 
-* Prompts must be deterministic and documented
-* Prefer *small, local, specialized* models
-* Always provide a non‑LLM fallback or failure mode
-* Extraction results must carry provenance metadata
+- Prompts must be deterministic and documented
+- Prefer _small, local, specialized_ models
+- Always provide a non‑LLM fallback or failure mode
+- Extraction results must carry provenance metadata
 
 If unsure: open a discussion **before** implementing.
 
@@ -151,16 +150,16 @@ Profiles are the preferred extension mechanism.
 
 Examples:
 
-* `software-architecture`
-* `sysml`
-* `requirements-engineering`
+- `software-architecture`
+- `sysml`
+- `requirements-engineering`
 
 A profile typically defines:
 
-* Entity types
-* Relation semantics
-* Validation rules
-* Optional extraction hints
+- Entity types
+- Relation semantics
+- Validation rules
+- Optional extraction hints
 
 ➡️ New profiles should live in `profiles/`.
 
@@ -180,10 +179,10 @@ PRs may be squashed before merge.
 
 ## 📐 Style & Conventions
 
-* TypeScript preferred
-* Explicit types over `any`
-* Clear naming > clever naming
-* Favor readability over micro‑optimizations
+- TypeScript preferred
+- Explicit types over `any`
+- Clear naming > clever naming
+- Favor readability over micro‑optimizations
 
 ---
 

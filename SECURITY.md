@@ -27,18 +27,20 @@ GitHub's "Report a vulnerability" feature on this repository.)
 ### Scope
 
 This policy covers:
+
 - All code in the `intentweave/intentweave` repository
 - Published `@intentweave/*` npm packages
 - The IntentWeave server (`apps/server`)
 
 Out of scope:
+
 - Third-party dependencies (report to their maintainers directly)
 - The Neo4j database itself
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
+| Version | Supported              |
+| ------- | ---------------------- |
 | 0.x.x   | ✅ Current development |
 
 Thank you for helping keep IntentWeave secure.

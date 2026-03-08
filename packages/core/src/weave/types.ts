@@ -3,14 +3,14 @@
 
 /**
  * Weave Types
- * 
+ *
  * Type definitions for the WX (Weave/Canonicalization) stage.
  * Implements the two-layer identity model:
  * - cgId = provenance identity (artifact-scoped, stable across re-extractions)
  * - canonicalId = workspace identity (role-scoped, unified across artifacts)
  */
 
-import type { ArtifactRole, EntityType } from './normalize.js';
+import type { ArtifactRole, EntityType } from "./normalize.js";
 
 // =============================================================================
 // Evidence Types (First-Class)
@@ -24,13 +24,13 @@ import type { ArtifactRole, EntityType } from './normalize.js';
 export interface EvidenceRecord {
   /** Physical ID: sha256(artifactVersionId|uri|byteStart|byteEnd|excerptHash) */
   id: string;
-  
+
   /** Logical key: sha256(artifactId|normalize(excerpt)) - stable across byte shifts */
   logicalKey: string;
-  
+
   /** Evidence source kind */
-  kind: 'iw' | 'file';
-  
+  kind: "iw" | "file";
+
   /** Reference details */
   ref: {
     /** Full URI: iw://artifact/... or file path */
@@ -40,12 +40,12 @@ export interface EvidenceRecord {
     /** Artifact version (git SHA or content hash) for physical stability */
     artifactVersionId?: string;
   };
-  
+
   /** For transcript evidence */
   sourceKey?: string;
   /** Message sequence number (transcripts) */
   seq?: number;
-  
+
   /** Physical location (best-effort, may shift with edits) */
   locator?: {
     byteStart?: number;
@@ -53,7 +53,7 @@ export interface EvidenceRecord {
     lineStart?: number;
     lineEnd?: number;
   };
-  
+
   /** Excerpt text (truncated per policy) */
   excerpt: string;
   /** Hash of full excerpt for deduplication */
@@ -89,28 +89,28 @@ export const DEFAULT_EVIDENCE_POLICY: EvidencePolicy = {
 export interface RawEntity {
   /** Stable artifact-scoped ID: sha256(artifactId|role|type|normName) */
   cgId: string;
-  
+
   /** Display name as extracted */
   name: string;
-  
+
   /** Entity type */
   type: EntityType;
-  
+
   /** Source artifact */
   artifactId: string;
-  
+
   /** Artifact role (for WX scoping) */
   artifactRole: ArtifactRole;
-  
+
   /** Extraction confidence */
   confidence?: number;
-  
+
   /** Evidence references */
   evidenceIds?: string[];
-  
+
   /** Assigned by WX: canonical identity */
   canonicalId?: string;
-  
+
   /** Additional properties */
   properties?: Record<string, unknown>;
 }
@@ -121,19 +121,19 @@ export interface RawEntity {
 export interface RawStatement {
   /** Statement ID (stable hash) */
   id: string;
-  
+
   /** Subject entity cgId */
   subjectCgId: string;
-  
+
   /** Predicate (will be normalized by WX) */
   predicate: string;
-  
+
   /** Object entity cgId (for entity-to-entity statements) */
   objectCgId?: string;
-  
+
   /** Literal value (for entity-to-literal statements) */
   objectLiteral?: string;
-  
+
   /** Evidence references */
   evidenceIds?: string[];
 }
@@ -149,25 +149,25 @@ export interface RawStatement {
 export interface CanonicalEntity {
   /** Deterministic ID: ce_<hash(canonicalKey)> */
   canonicalId: string;
-  
+
   /** Canonical key: <version>|<role>|<type>|<normName> */
   key: string;
-  
+
   /** Entity type */
   type: EntityType;
-  
+
   /** Artifact role scope (Phase 1: canonicalization is per-role) */
   artifactRole: ArtifactRole;
-  
+
   /** Preferred display name */
   displayName: string;
-  
+
   /** Raw entity cgIds that map to this canonical */
   memberCgIds: string[];
-  
+
   /** Union of member evidence (deduplicated by logicalKey) */
   evidenceIds?: string[];
-  
+
   /** Merged properties from member entities */
   properties?: Record<string, unknown>;
 }
@@ -178,22 +178,22 @@ export interface CanonicalEntity {
 export interface CanonicalStatement {
   /** Deterministic ID: cs_<hash(subj|pred|obj)> */
   canonicalId: string;
-  
+
   /** Canonical subject ID */
   subjectCanonicalId: string;
-  
+
   /** Normalized predicate */
   predicate: string;
-  
+
   /** Canonical object ID (for entity-to-entity) */
   objectCanonicalId?: string;
-  
+
   /** Literal value (for entity-to-literal) */
   objectLiteral?: string;
-  
+
   /** Raw statement IDs that contribute to this canonical */
   memberStmtIds: string[];
-  
+
   /** Union of member evidence */
   evidenceIds?: string[];
 }
@@ -223,17 +223,17 @@ export interface StatementMapping {
  */
 export interface WeaveConflict {
   /** Type of conflict */
-  kind: 'type-mismatch' | 'literal-contradiction' | 'manual-block';
-  
+  kind: "type-mismatch" | "literal-contradiction" | "manual-block";
+
   /** Canonical key for the conflicting group */
   canonicalKey: string;
-  
+
   /** Member cgIds involved in the conflict */
   cgIds: string[];
-  
+
   /** Human-readable description */
   description: string;
-  
+
   /** Conflicting values (for type mismatch or literal contradiction) */
   values?: string[];
 }
@@ -244,45 +244,45 @@ export interface WeaveConflict {
 export interface WeaveStats {
   /** Total raw entities input */
   rawEntityCount: number;
-  
+
   /** Total raw statements input */
   rawStatementCount: number;
-  
+
   /** Total canonical entities created */
   canonicalEntityCount: number;
-  
+
   /** Total canonical statements created */
   canonicalStatementCount: number;
-  
+
   /** Number of entity merge groups */
   mergedEntityGroups: number;
-  
+
   /** Conflicts detected */
   conflictCount: number;
-  
+
   // === Enhanced Debug Stats ===
-  
+
   /** Singletons: entities with no merge (group of 1) */
   singletonCount?: number;
-  
+
   /** Cluster size distribution: { size: count } */
   clusterSizeDistribution?: Record<number, number>;
-  
+
   /** Average members per cluster */
   avgMemberCount?: number;
-  
+
   /** Largest cluster size */
   largestClusterSize?: number;
-  
+
   /** Largest cluster entities (for inspection) */
   largestClusterMembers?: string[];
-  
+
   /** Role distribution in raw entities */
   roleDistribution?: Record<string, number>;
-  
+
   /** Type distribution in raw entities */
   typeDistribution?: Record<string, number>;
-  
+
   /** Merge candidates rejected (for debugging false negatives) */
   rejectedMergeCandidates?: number;
 }
@@ -297,22 +297,22 @@ export interface WeaveStats {
 export interface WeaveResult {
   /** Canonical entities */
   entities: CanonicalEntity[];
-  
+
   /** Canonical statements */
   statements: CanonicalStatement[];
-  
+
   /** Deduplicated evidence */
   evidence: EvidenceRecord[];
-  
+
   /** Detected conflicts */
   conflicts: WeaveConflict[];
-  
+
   /** Processing statistics */
   stats: WeaveStats;
-  
+
   /** Warnings (non-fatal issues) */
   warnings?: string[];
-  
+
   /** Debug information (if requested) */
   debug?: WeaveDebugInfo;
 }
@@ -323,10 +323,10 @@ export interface WeaveResult {
 export interface WeaveDebugInfo {
   /** Map of canonicalId -> merge explanation */
   mergeExplanations?: Record<string, MergeExplanation>;
-  
+
   /** Potential merge candidates that didn't merge (for false negative analysis) */
   potentialMergePairs?: PotentialMergePair[];
-  
+
   /** Normalization trace (name -> normalized) */
   normalizationTrace?: Record<string, string>;
 }
@@ -337,30 +337,30 @@ export interface WeaveDebugInfo {
 export interface MergeExplanation {
   /** The canonical ID */
   canonicalId: string;
-  
+
   /** The canonical key used for grouping */
   canonicalKey: string;
-  
+
   /** Role scope */
   role: string;
-  
+
   /** Entity type */
   type: string;
-  
+
   /** The normalized name used in the key */
   normalizedName: string;
-  
+
   /** Raw entity IDs that were merged */
   memberCgIds: string[];
-  
+
   /** Original names before normalization */
   originalNames: string[];
-  
+
   /** Artifacts these came from */
   artifactIds: string[];
-  
+
   /** Reason code for the merge */
-  reason: 'same_key' | 'alias_match' | 'override';
+  reason: "same_key" | "alias_match" | "override";
 }
 
 /**
@@ -381,7 +381,11 @@ export interface PotentialMergePair {
   /** Entity B normalized name */
   normalizedNameB: string;
   /** Why they didn't merge */
-  blockingReason: 'different_key' | 'different_role' | 'different_type' | 'threshold';
+  blockingReason:
+    | "different_key"
+    | "different_role"
+    | "different_type"
+    | "threshold";
   /** Key A */
   keyA: string;
   /** Key B */
@@ -400,30 +404,33 @@ export interface PotentialMergePair {
  */
 export interface WeaveRegistry {
   /** Schema version */
-  version: '0.1';
-  
+  version: "0.1";
+
   /** Normalization version in use */
   normalizationVersion: string;
-  
+
   /**
    * Canonical key aliases.
    * Maps old/variant keys to current canonical key.
-   * 
+   *
    * When an entity is renamed, add an alias from old key → new key.
    * The canonicalId is derived from the resolved key.
    */
   aliases: Record<string, string>;
-  
+
   /**
    * Deprecated canonical entities.
    * Used when an entity is split or permanently removed.
    */
-  deprecated: Record<string, {
-    reason: 'split' | 'merged' | 'removed';
-    replacedBy?: string[];
-    deprecatedAt: string;
-  }>;
-  
+  deprecated: Record<
+    string,
+    {
+      reason: "split" | "merged" | "removed";
+      replacedBy?: string[];
+      deprecatedAt: string;
+    }
+  >;
+
   /** Last updated timestamp */
   lastUpdated: string;
 }
@@ -439,13 +446,13 @@ export interface WeaveOverrides {
     canonicalKey: string;
     reason: string;
   }>;
-  
+
   /** Block specific cgIds from merging */
   forceSplit: Array<{
     cgIds: string[];
     reason: string;
   }>;
-  
+
   /** Manual aliases (key → key) */
   aliases: Array<{
     fromKey: string;
@@ -462,28 +469,28 @@ export interface WeaveOverrides {
  * Extended Graph Bundle with evidence and weave layers.
  */
 export interface GraphBundleV2 {
-  $schema: 'intentweave://schemas/graph-bundle/v2';
-  schemaVersion: '0.2';
-  
+  $schema: "intentweave://schemas/graph-bundle/v2";
+  schemaVersion: "0.2";
+
   runId: string;
   sessionKey?: string;
   generatedAt: string;
-  
+
   /** Artifact summaries */
   artifacts: ArtifactSummary[];
-  
+
   /** Evidence table (deduplicated) */
   evidence: EvidenceRecord[];
-  
+
   /** Raw layer (as extracted) */
   raw: {
     entities: RawEntity[];
     statements: RawStatement[];
   };
-  
+
   /** Weave layer (canonicalized) - optional if WX hasn't run */
   weave?: WeaveResult;
-  
+
   /** LX links (should reference canonicalIds when weave exists) */
   lx?: {
     links: LxLink[];
@@ -507,24 +514,24 @@ export interface ArtifactSummary {
  */
 export interface LxLink {
   id: string;
-  
+
   /** Source: canonical or raw ID */
   sourceId: string;
   sourceIsCanonical: boolean;
-  
+
   /** Target: canonical or raw ID */
   targetId: string;
   targetIsCanonical: boolean;
-  
+
   /** Link predicate */
   predicate: string;
-  
+
   /** Match confidence */
   confidence: number;
-  
+
   /** How the match was made */
   matchMethod: string;
-  
+
   /** Evidence for this link */
   evidenceIds?: string[];
 }

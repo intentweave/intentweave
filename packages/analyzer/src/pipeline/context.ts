@@ -3,7 +3,7 @@
 
 /**
  * Pipeline Context
- * 
+ *
  * Provides a unified context object for all pipeline stages.
  * This avoids parameter explosion and ensures consistent access to:
  * - Workspace identity
@@ -13,14 +13,14 @@
  * - Logging and timing utilities
  */
 
-import type { 
-  LLMProvider, 
+import type {
+  LLMProvider,
   ExtractionProvider,
   Chunk,
   ExtractionConfig,
-} from '@intentweave/core';
-import type { WorkspaceRef } from '@intentweave/core';
-import type { ArtifactStore } from '../stores/types.js';
+} from "@intentweave/core";
+import type { WorkspaceRef } from "@intentweave/core";
+import type { ArtifactStore } from "../stores/types.js";
 
 // =============================================================================
 // Profile Types (minimal for Phase 2)
@@ -64,7 +64,7 @@ export interface ShapeRule {
   /** Predicate to check participation in */
   participatesIn: string[];
   /** Position in relationship (subject or object) */
-  position?: 'subject' | 'object' | 'any';
+  position?: "subject" | "object" | "any";
   /** Resulting kind if rule matches */
   inferredKind: string;
 }
@@ -131,22 +131,22 @@ export interface PipelineLogger {
  * Console-based logger implementation
  */
 export class ConsoleLogger implements PipelineLogger {
-  constructor(private prefix: string = '[Pipeline]') {}
-  
+  constructor(private prefix: string = "[Pipeline]") {}
+
   debug(message: string, meta?: Record<string, unknown>): void {
-    console.debug(`${this.prefix} ${message}`, meta ?? '');
+    console.debug(`${this.prefix} ${message}`, meta ?? "");
   }
-  
+
   info(message: string, meta?: Record<string, unknown>): void {
-    console.info(`${this.prefix} ${message}`, meta ?? '');
+    console.info(`${this.prefix} ${message}`, meta ?? "");
   }
-  
+
   warn(message: string, meta?: Record<string, unknown>): void {
-    console.warn(`${this.prefix} ${message}`, meta ?? '');
+    console.warn(`${this.prefix} ${message}`, meta ?? "");
   }
-  
+
   error(message: string, meta?: Record<string, unknown>): void {
-    console.error(`${this.prefix} ${message}`, meta ?? '');
+    console.error(`${this.prefix} ${message}`, meta ?? "");
   }
 }
 
@@ -196,7 +196,7 @@ export interface PipelineContextOptions {
 
 /**
  * Pipeline Context
- * 
+ *
  * Immutable context object passed to all pipeline stages.
  * Contains everything needed to process artifacts.
  */
@@ -222,7 +222,9 @@ export interface PipelineContext {
 /**
  * Create a pipeline context from options
  */
-export function createPipelineContext(options: PipelineContextOptions): PipelineContext {
+export function createPipelineContext(
+  options: PipelineContextOptions,
+): PipelineContext {
   const {
     workspace,
     runId,
@@ -232,7 +234,7 @@ export function createPipelineContext(options: PipelineContextOptions): Pipeline
     logger = new ConsoleLogger(),
     clock = () => new Date(),
   } = options;
-  
+
   return {
     workspace,
     runId,
@@ -251,14 +253,14 @@ export function createPipelineContext(options: PipelineContextOptions): Pipeline
 
 /**
  * Run metadata structure (stored in run.meta.json)
- * 
+ *
  * Uses ExtractionConfig from @intentweave/core for contract compatibility.
  */
 export interface PipelineRunMeta {
   /** JSON Schema URI */
   $schema: string;
   /** Schema version */
-  schemaVersion: '0.1';
+  schemaVersion: "0.1";
   /** Processing timestamp */
   processedAt?: string;
   /** Run ID */
@@ -274,7 +276,7 @@ export interface PipelineRunMeta {
   /** Run duration in ms */
   durationMs?: number;
   /** Run status */
-  status: 'running' | 'completed' | 'failed';
+  status: "running" | "completed" | "failed";
   /** Profile used */
   profile: string;
   /** Stages completed */
@@ -298,13 +300,13 @@ export interface PipelineRunMeta {
  */
 export function createRunMeta(ctx: PipelineContext): PipelineRunMeta {
   return {
-    $schema: 'intentweave://schemas/run-meta/v1',
-    schemaVersion: '0.1',
+    $schema: "intentweave://schemas/run-meta/v1",
+    schemaVersion: "0.1",
     runId: ctx.runId,
     workspaceKey: ctx.workspace.key,
     workspaceId: ctx.workspace.id,
     startedAt: ctx.timestamp(),
-    status: 'running',
+    status: "running",
     profile: ctx.profile.name,
     stages: [],
     artifacts: [],
@@ -315,18 +317,18 @@ export function createRunMeta(ctx: PipelineContext): PipelineRunMeta {
  * Update run metadata at completion
  */
 export function completeRunMeta(
-  meta: PipelineRunMeta, 
-  summary: PipelineRunMeta['summary'],
-  completedAt: string
+  meta: PipelineRunMeta,
+  summary: PipelineRunMeta["summary"],
+  completedAt: string,
 ): PipelineRunMeta {
   const startTime = new Date(meta.startedAt).getTime();
   const endTime = new Date(completedAt).getTime();
-  
+
   return {
     ...meta,
     completedAt,
     durationMs: endTime - startTime,
-    status: 'completed',
+    status: "completed",
     summary,
   };
 }
@@ -335,18 +337,18 @@ export function completeRunMeta(
  * Mark run as failed
  */
 export function failRunMeta(
-  meta: PipelineRunMeta, 
+  meta: PipelineRunMeta,
   error: string,
-  failedAt: string
+  failedAt: string,
 ): PipelineRunMeta {
   const startTime = new Date(meta.startedAt).getTime();
   const endTime = new Date(failedAt).getTime();
-  
+
   return {
     ...meta,
     completedAt: failedAt,
     durationMs: endTime - startTime,
-    status: 'failed',
+    status: "failed",
     error,
   };
 }
@@ -359,66 +361,66 @@ export function failRunMeta(
  * Default starter profile (minimal for Phase 2)
  */
 export const DEFAULT_PROFILE: Profile = {
-  name: 'starter',
-  version: '0.1.0',
+  name: "starter",
+  version: "0.1.0",
   kinds: [
-    'role',
-    'action', 
-    'resource',
-    'state',
-    'transition',
-    'requirement',
-    'component',
+    "role",
+    "action",
+    "resource",
+    "state",
+    "transition",
+    "requirement",
+    "component",
   ],
   predicates: [
-    'ROLE_CAN',
-    'HAS_STATE',
-    'TRANSITIONS_TO',
-    'REQUIRES',
-    'CONTAINS',
-    'IMPLEMENTS',
-    'TRIGGERS',
-    'GUARDS',
-    'FROM_STATE',
-    'TO_STATE',
+    "ROLE_CAN",
+    "HAS_STATE",
+    "TRANSITIONS_TO",
+    "REQUIRES",
+    "CONTAINS",
+    "IMPLEMENTS",
+    "TRIGGERS",
+    "GUARDS",
+    "FROM_STATE",
+    "TO_STATE",
   ],
   shapes: [
     {
-      participatesIn: ['ROLE_CAN', 'REQUIRES_ROLE'],
-      position: 'subject',
-      inferredKind: 'role',
+      participatesIn: ["ROLE_CAN", "REQUIRES_ROLE"],
+      position: "subject",
+      inferredKind: "role",
     },
     {
-      participatesIn: ['HAS_STATE'],
-      position: 'object',
-      inferredKind: 'state',
+      participatesIn: ["HAS_STATE"],
+      position: "object",
+      inferredKind: "state",
     },
     {
-      participatesIn: ['TRANSITIONS_TO'],
-      position: 'any',
-      inferredKind: 'state',
+      participatesIn: ["TRANSITIONS_TO"],
+      position: "any",
+      inferredKind: "state",
     },
     {
-      participatesIn: ['TRIGGERS'],
-      position: 'subject',
-      inferredKind: 'action',
+      participatesIn: ["TRIGGERS"],
+      position: "subject",
+      inferredKind: "action",
     },
   ],
   artifactMappings: [
     {
-      role: 'prompt',
-      kinds: ['requirement', 'concept', 'question'],
-      patterns: ['**/prompt*.md', '**/intent*.md'],
+      role: "prompt",
+      kinds: ["requirement", "concept", "question"],
+      patterns: ["**/prompt*.md", "**/intent*.md"],
     },
     {
-      role: 'spec',
-      kinds: ['requirement', 'component', 'role', 'action'],
-      patterns: ['**/spec*.md', '**/design*.md'],
+      role: "spec",
+      kinds: ["requirement", "component", "role", "action"],
+      patterns: ["**/spec*.md", "**/design*.md"],
     },
     {
-      role: 'impl',
-      kinds: ['function', 'class', 'module', 'interface'],
-      patterns: ['**/*.ts', '**/*.js', '**/*.py'],
+      role: "impl",
+      kinds: ["function", "class", "module", "interface"],
+      patterns: ["**/*.ts", "**/*.js", "**/*.py"],
     },
   ],
   confidenceThreshold: 0.5,

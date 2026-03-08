@@ -9,9 +9,11 @@ The system implements a **hierarchical role-based access control (RBAC)** model 
 ### Entities
 
 #### Role
+
 Represents a named collection of permissions at a specific scope.
 
 **Properties:**
+
 - `id` (string, UUID): Unique identifier
 - `name` (string): Human-readable name (e.g., "workspace:owner")
 - `scope` (enum): `workspace` | `project` | `resource`
@@ -19,26 +21,32 @@ Represents a named collection of permissions at a specific scope.
 - `permissions` (Permission[]): Granted permissions
 
 **Constraints:**
+
 - Name must follow pattern: `{scope}:{role-name}`
 - Cannot inherit from roles at lower scope levels
 - No circular inheritance chains
 
 #### Permission
+
 Represents an allowed action on a resource type.
 
 **Properties:**
+
 - `action` (enum): `read` | `write` | `delete` | `admin`
 - `resourceType` (string): Type of resource (e.g., "project", "document")
-- `resourcePattern` (string): Path pattern (e.g., "/workspace/*/project/*")
+- `resourcePattern` (string): Path pattern (e.g., "/workspace/_/project/_")
 
 **Constraints:**
+
 - Action must be specific (no wildcards)
 - Resource patterns must be valid path expressions
 
 #### Assignment
+
 Links a user/group to a role within a specific context.
 
 **Properties:**
+
 - `userId` (string): User identifier
 - `roleId` (string): Role identifier
 - `contextId` (string): Workspace/project/resource ID
@@ -52,6 +60,7 @@ Links a user/group to a role within a specific context.
 **Rule**: Child roles inherit all permissions from parent roles.
 
 **Algorithm**:
+
 ```
 function getEffectivePermissions(role):
   permissions = role.permissions.copy()
@@ -61,6 +70,7 @@ function getEffectivePermissions(role):
 ```
 
 **Example**:
+
 - `workspace:member` inherits from `project:viewer`
 - If user has `workspace:member`, they automatically have `project:viewer` permissions
 
@@ -69,6 +79,7 @@ function getEffectivePermissions(role):
 **Rule**: User has permission if ANY of their roles grants it.
 
 **Algorithm**:
+
 ```
 function hasPermission(user, action, resource):
   assignments = getAssignments(user, resource.context)
@@ -84,6 +95,7 @@ function hasPermission(user, action, resource):
 **Rule**: Users can only delegate roles they have `admin` permission for.
 
 **Constraints**:
+
 - `workspace:owner` can delegate any workspace-level role
 - `workspace:admin` can delegate `workspace:member` but not `workspace:owner`
 - `project:maintainer` can delegate `project:contributor` and `project:viewer`
@@ -91,6 +103,7 @@ function hasPermission(user, action, resource):
 ## API Contract
 
 ### Check Permission
+
 ```
 POST /api/iam/check
 Body: {
@@ -106,6 +119,7 @@ Response: {
 ```
 
 ### Assign Role
+
 ```
 POST /api/iam/assign
 Body: {
@@ -120,6 +134,7 @@ Response: {
 ```
 
 ### List User Roles
+
 ```
 GET /api/iam/users/{userId}/roles
 Response: {
@@ -133,6 +148,7 @@ Response: {
 ### Database Schema
 
 **roles** table:
+
 - id (PK)
 - name (unique)
 - scope (enum)
@@ -140,6 +156,7 @@ Response: {
 - updated_at
 
 **permissions** table:
+
 - id (PK)
 - role_id (FK)
 - action (enum)
@@ -147,11 +164,13 @@ Response: {
 - resource_pattern
 
 **role_inheritance** table:
+
 - parent_role_id (FK)
 - child_role_id (FK)
 - PRIMARY KEY (parent_role_id, child_role_id)
 
 **role_assignments** table:
+
 - id (PK)
 - user_id
 - role_id (FK)
@@ -170,11 +189,13 @@ Response: {
 ## Security Considerations
 
 ### Privilege Escalation Prevention
+
 - Users cannot assign roles they don't have
 - Cannot modify own role assignments
 - Audit all role changes
 
 ### Performance Optimization
+
 - Cache effective permissions per user/context
 - Invalidate cache on role/assignment changes
 - Use graph database for inheritance traversal (optional)
@@ -182,11 +203,13 @@ Response: {
 ## Testing Requirements
 
 ### Unit Tests
+
 - Role inheritance calculation
 - Permission evaluation logic
 - Delegation authorization checks
 
 ### Integration Tests
+
 - Full permission check flow
 - Role assignment workflow
 - Circular inheritance detection
@@ -194,6 +217,7 @@ Response: {
 ### Example Test Cases
 
 **Test 1**: Workspace owner can assign project maintainer
+
 ```
 Given: Alice has workspace:owner role
 When: Alice assigns project:maintainer to Bob
@@ -202,6 +226,7 @@ And: Bob gains project:maintainer permissions
 ```
 
 **Test 2**: Project contributor cannot assign roles
+
 ```
 Given: Bob has project:contributor role
 When: Bob attempts to assign project:viewer to Carol
@@ -209,6 +234,7 @@ Then: Assignment fails (403 Forbidden)
 ```
 
 **Test 3**: Circular inheritance is prevented
+
 ```
 Given: Role A inherits from B, B inherits from C
 When: Attempting to add inheritance C -> A

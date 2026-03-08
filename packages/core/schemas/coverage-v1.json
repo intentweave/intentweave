@@ -4,7 +4,14 @@
   "title": "IntentWeave Coverage Report",
   "description": "Coverage analysis results from the aggregation stage",
   "type": "object",
-  "required": ["$schema", "schemaVersion", "stage", "runId", "workspaceKey", "coverage"],
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "stage",
+    "runId",
+    "workspaceKey",
+    "coverage"
+  ],
   "properties": {
     "$schema": {
       "type": "string",

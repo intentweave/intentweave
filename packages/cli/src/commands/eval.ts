@@ -5,10 +5,10 @@
  * eval command - Evaluate pipeline runs with regression testing
  */
 
-import { Command } from 'commander';
-import chalk from 'chalk';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import { Command } from "commander";
+import chalk from "chalk";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 // ============================================================================
 // Configuration
@@ -44,16 +44,16 @@ const THRESHOLDS: EvaluationThresholds = {
   proposalCountMin: 10,
   statementCountMin: 0,
   crossArtifactLinksMin: 5,
-  entityOverlapMin: 0.70,
-  proposalOverlapMin: 0.60,
+  entityOverlapMin: 0.7,
+  proposalOverlapMin: 0.6,
   confidenceMin: 0.5,
   findingsMaxCritical: 2,
-  coverageMin: 0.80,
+  coverageMin: 0.8,
 };
 
 const WEIGHTS: EvaluationWeights = {
-  entityCount: 0.20,
-  proposalCount: 0.20,
+  entityCount: 0.2,
+  proposalCount: 0.2,
   crossArtifactLinks: 0.15,
   entityOverlap: 0.15,
   proposalOverlap: 0.15,
@@ -110,22 +110,28 @@ async function checkHardContracts(runDir: string): Promise<ContractResult> {
 
   // Check run.meta.json
   try {
-    const metaPath = path.join(runDir, 'run.meta.json');
-    const meta = JSON.parse(await fs.readFile(metaPath, 'utf8'));
+    const metaPath = path.join(runDir, "run.meta.json");
+    const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
 
-    if (!meta.$schema) errors.push('Missing $schema in run.meta.json');
-    if (!meta.schemaVersion) errors.push('Missing schemaVersion in run.meta.json');
-    if (meta.status !== 'completed') errors.push(`Run status is ${meta.status}, expected 'completed'`);
+    if (!meta.$schema) errors.push("Missing $schema in run.meta.json");
+    if (!meta.schemaVersion)
+      errors.push("Missing schemaVersion in run.meta.json");
+    if (meta.status !== "completed")
+      errors.push(`Run status is ${meta.status}, expected 'completed'`);
   } catch (err) {
     errors.push(`Cannot read run.meta.json: ${(err as Error).message}`);
   }
 
   // Check aggregate files exist
-  const aggregateFiles = ['lx.proposals.json', 'coverage.json', 'findings.json'];
+  const aggregateFiles = [
+    "lx.proposals.json",
+    "coverage.json",
+    "findings.json",
+  ];
   for (const file of aggregateFiles) {
     try {
-      const filePath = path.join(runDir, 'aggregate', file);
-      const data = JSON.parse(await fs.readFile(filePath, 'utf8'));
+      const filePath = path.join(runDir, "aggregate", file);
+      const data = JSON.parse(await fs.readFile(filePath, "utf8"));
       if (!data.$schema) errors.push(`Missing $schema in ${file}`);
       if (!data.schemaVersion) errors.push(`Missing schemaVersion in ${file}`);
     } catch (err) {
@@ -134,7 +140,7 @@ async function checkHardContracts(runDir: string): Promise<ContractResult> {
   }
 
   // Check artifact stage files
-  const artifactsDir = path.join(runDir, 'artifacts');
+  const artifactsDir = path.join(runDir, "artifacts");
   try {
     const artifacts = await fs.readdir(artifactsDir);
     for (const artifact of artifacts) {
@@ -142,7 +148,7 @@ async function checkHardContracts(runDir: string): Promise<ContractResult> {
       const stat = await fs.stat(artifactDir);
       if (!stat.isDirectory()) continue;
 
-      const stages = ['in.json', 'rx.json', 'cx.json', 'mx.json', 'px.json'];
+      const stages = ["in.json", "rx.json", "cx.json", "mx.json", "px.json"];
       for (const stage of stages) {
         const stagePath = path.join(artifactDir, stage);
         try {
@@ -165,11 +171,13 @@ async function checkHardContracts(runDir: string): Promise<ContractResult> {
 
 async function evaluateSemantics(
   runDir: string,
-  baselineDir: string | null
+  baselineDir: string | null,
 ): Promise<SemanticScores> {
-  const meta = JSON.parse(await fs.readFile(path.join(runDir, 'run.meta.json'), 'utf8'));
+  const meta = JSON.parse(
+    await fs.readFile(path.join(runDir, "run.meta.json"), "utf8"),
+  );
   const proposals = JSON.parse(
-    await fs.readFile(path.join(runDir, 'aggregate/lx.proposals.json'), 'utf8')
+    await fs.readFile(path.join(runDir, "aggregate/lx.proposals.json"), "utf8"),
   );
 
   const entityCount = meta.summary.entityCount;
@@ -177,11 +185,18 @@ async function evaluateSemantics(
 
   // Cross-artifact links
   const crossLinks = proposals.proposals.filter(
-    (p: any) => p.sourceArtifact && p.targetArtifact && p.sourceArtifact !== p.targetArtifact
+    (p: any) =>
+      p.sourceArtifact &&
+      p.targetArtifact &&
+      p.sourceArtifact !== p.targetArtifact,
   ).length;
 
   const scores: SemanticScores = {
-    entityCount: scoreRange(entityCount, THRESHOLDS.entityCountMin, THRESHOLDS.entityCountMax),
+    entityCount: scoreRange(
+      entityCount,
+      THRESHOLDS.entityCountMin,
+      THRESHOLDS.entityCountMax,
+    ),
     entityCountRaw: entityCount,
     proposalCount: scoreMin(proposalCount, THRESHOLDS.proposalCountMin),
     proposalCountRaw: proposalCount,
@@ -194,10 +209,13 @@ async function evaluateSemantics(
   // Overlap scores (if baseline provided)
   if (baselineDir) {
     const baselineMeta = JSON.parse(
-      await fs.readFile(path.join(baselineDir, 'run.meta.json'), 'utf8')
+      await fs.readFile(path.join(baselineDir, "run.meta.json"), "utf8"),
     );
     const baselineProposals = JSON.parse(
-      await fs.readFile(path.join(baselineDir, 'aggregate/lx.proposals.json'), 'utf8')
+      await fs.readFile(
+        path.join(baselineDir, "aggregate/lx.proposals.json"),
+        "utf8",
+      ),
     );
 
     // Entity overlap (by count approximation)
@@ -210,15 +228,17 @@ async function evaluateSemantics(
     // Proposal overlap (Jaccard by predicate+artifacts)
     const currentSet = new Set(
       proposals.proposals.map(
-        (p: any) => `${p.predicate}:${p.sourceArtifact}:${p.targetArtifact}`
-      )
+        (p: any) => `${p.predicate}:${p.sourceArtifact}:${p.targetArtifact}`,
+      ),
     );
     const baselineSet = new Set(
       baselineProposals.proposals.map(
-        (p: any) => `${p.predicate}:${p.sourceArtifact}:${p.targetArtifact}`
-      )
+        (p: any) => `${p.predicate}:${p.sourceArtifact}:${p.targetArtifact}`,
+      ),
     );
-    const intersection = [...currentSet].filter((x) => baselineSet.has(x)).length;
+    const intersection = [...currentSet].filter((x) =>
+      baselineSet.has(x),
+    ).length;
     const union = new Set([...currentSet, ...baselineSet]).size;
     scores.proposalOverlap = union > 0 ? intersection / union : 0;
   }
@@ -232,13 +252,13 @@ async function evaluateSemantics(
 
 async function evaluateQuality(runDir: string): Promise<QualityScores> {
   const proposals = JSON.parse(
-    await fs.readFile(path.join(runDir, 'aggregate/lx.proposals.json'), 'utf8')
+    await fs.readFile(path.join(runDir, "aggregate/lx.proposals.json"), "utf8"),
   );
   const coverage = JSON.parse(
-    await fs.readFile(path.join(runDir, 'aggregate/coverage.json'), 'utf8')
+    await fs.readFile(path.join(runDir, "aggregate/coverage.json"), "utf8"),
   );
   const findings = JSON.parse(
-    await fs.readFile(path.join(runDir, 'aggregate/findings.json'), 'utf8')
+    await fs.readFile(path.join(runDir, "aggregate/findings.json"), "utf8"),
   );
 
   const scores: QualityScores = {
@@ -254,16 +274,21 @@ async function evaluateQuality(runDir: string): Promise<QualityScores> {
   // Average confidence score
   if (proposals.proposals.length > 0) {
     const avgConfidence =
-      proposals.proposals.reduce((sum: number, p: any) => sum + (p.confidence ?? 0.5), 0) /
-      proposals.proposals.length;
+      proposals.proposals.reduce(
+        (sum: number, p: any) => sum + (p.confidence ?? 0.5),
+        0,
+      ) / proposals.proposals.length;
     scores.avgConfidence = scoreMin(avgConfidence, THRESHOLDS.confidenceMin);
     scores.avgConfidenceRaw = avgConfidence;
   }
 
   // Findings score
-  const criticalFindings = findings.findings.filter((f: any) => f.severity === 'critical').length;
+  const criticalFindings = findings.findings.filter(
+    (f: any) => f.severity === "critical",
+  ).length;
   scores.criticalFindingsRaw = criticalFindings;
-  scores.findingsScore = criticalFindings <= THRESHOLDS.findingsMaxCritical ? 1.0 : 0.5;
+  scores.findingsScore =
+    criticalFindings <= THRESHOLDS.findingsMaxCritical ? 1.0 : 0.5;
 
   // Coverage score
   const totalConcepts = coverage.summary.totalConcepts ?? 0;
@@ -293,12 +318,13 @@ function scoreRange(value: number, min: number, max: number): number {
 
 function calculateTotalScore(
   semanticScores: SemanticScores,
-  qualityScores: QualityScores
+  qualityScores: QualityScores,
 ): { scores: Record<string, number>; total: number } {
   const scores = {
     entityCount: semanticScores.entityCount * WEIGHTS.entityCount,
     proposalCount: semanticScores.proposalCount * WEIGHTS.proposalCount,
-    crossArtifactLinks: semanticScores.crossArtifactLinks * WEIGHTS.crossArtifactLinks,
+    crossArtifactLinks:
+      semanticScores.crossArtifactLinks * WEIGHTS.crossArtifactLinks,
     entityOverlap: semanticScores.entityOverlap * WEIGHTS.entityOverlap,
     proposalOverlap: semanticScores.proposalOverlap * WEIGHTS.proposalOverlap,
     avgConfidence: qualityScores.avgConfidence * WEIGHTS.avgConfidence,
@@ -318,34 +344,40 @@ function calculateTotalScore(
 export async function evaluateRun(
   runDir: string,
   baselineDir: string | null,
-  options: { quiet?: boolean; json?: boolean } = {}
+  options: { quiet?: boolean; json?: boolean } = {},
 ): Promise<EvaluationResult> {
   const { quiet = false, json = false } = options;
 
   if (!quiet && !json) {
-    console.log(chalk.blue('🔬 LLM Regression Testing Evaluation'));
-    console.log(chalk.blue('═══════════════════════════════════════\n'));
+    console.log(chalk.blue("🔬 LLM Regression Testing Evaluation"));
+    console.log(chalk.blue("═══════════════════════════════════════\n"));
     console.log(`Run: ${chalk.cyan(runDir)}`);
     if (baselineDir) {
       console.log(`Baseline: ${chalk.cyan(baselineDir)}`);
     }
-    console.log('');
+    console.log("");
   }
 
   // Layer 1: Hard Contracts
   if (!quiet && !json) {
-    console.log(chalk.bold('📋 Layer 1: Hard Contracts'));
+    console.log(chalk.bold("📋 Layer 1: Hard Contracts"));
   }
   const contracts = await checkHardContracts(runDir);
   if (contracts.passed) {
     if (!quiet && !json) {
-      console.log(chalk.green('   ✅ All contracts passed\n'));
+      console.log(chalk.green("   ✅ All contracts passed\n"));
     }
   } else {
     if (!quiet && !json) {
-      console.log(chalk.red('   ❌ Contract violations:'));
-      contracts.errors.forEach((err) => console.log(chalk.red(`      - ${err}`)));
-      console.log(chalk.yellow('\n   ⚠️  Cannot proceed with scoring - fix contracts first\n'));
+      console.log(chalk.red("   ❌ Contract violations:"));
+      contracts.errors.forEach((err) =>
+        console.log(chalk.red(`      - ${err}`)),
+      );
+      console.log(
+        chalk.yellow(
+          "\n   ⚠️  Cannot proceed with scoring - fix contracts first\n",
+        ),
+      );
     }
     return {
       passed: false,
@@ -359,42 +391,46 @@ export async function evaluateRun(
 
   // Layer 2: Semantic Similarity
   if (!quiet && !json) {
-    console.log(chalk.bold('🔍 Layer 2: Semantic Similarity'));
+    console.log(chalk.bold("🔍 Layer 2: Semantic Similarity"));
   }
   const semantics = await evaluateSemantics(runDir, baselineDir);
   if (!quiet && !json) {
     console.log(
-      `   Entities: ${chalk.cyan(semantics.entityCountRaw)} (score: ${chalk.yellow((semantics.entityCount * 100).toFixed(1) + '%')})`
+      `   Entities: ${chalk.cyan(semantics.entityCountRaw)} (score: ${chalk.yellow((semantics.entityCount * 100).toFixed(1) + "%")})`,
     );
     console.log(
-      `   Proposals: ${chalk.cyan(semantics.proposalCountRaw)} (score: ${chalk.yellow((semantics.proposalCount * 100).toFixed(1) + '%')})`
+      `   Proposals: ${chalk.cyan(semantics.proposalCountRaw)} (score: ${chalk.yellow((semantics.proposalCount * 100).toFixed(1) + "%")})`,
     );
     console.log(
-      `   Cross-artifact links: ${chalk.cyan(semantics.crossArtifactLinksRaw)} (score: ${chalk.yellow((semantics.crossArtifactLinks * 100).toFixed(1) + '%')})`
+      `   Cross-artifact links: ${chalk.cyan(semantics.crossArtifactLinksRaw)} (score: ${chalk.yellow((semantics.crossArtifactLinks * 100).toFixed(1) + "%")})`,
     );
     if (baselineDir) {
-      console.log(`   Entity overlap: ${chalk.yellow((semantics.entityOverlap * 100).toFixed(1) + '%')}`);
-      console.log(`   Proposal overlap: ${chalk.yellow((semantics.proposalOverlap * 100).toFixed(1) + '%')}`);
+      console.log(
+        `   Entity overlap: ${chalk.yellow((semantics.entityOverlap * 100).toFixed(1) + "%")}`,
+      );
+      console.log(
+        `   Proposal overlap: ${chalk.yellow((semantics.proposalOverlap * 100).toFixed(1) + "%")}`,
+      );
     }
-    console.log('');
+    console.log("");
   }
 
   // Layer 3: Quality Rubrics
   if (!quiet && !json) {
-    console.log(chalk.bold('⭐ Layer 3: Quality Rubrics'));
+    console.log(chalk.bold("⭐ Layer 3: Quality Rubrics"));
   }
   const quality = await evaluateQuality(runDir);
   if (!quiet && !json) {
     console.log(
-      `   Avg confidence: ${chalk.cyan(quality.avgConfidenceRaw.toFixed(2))} (score: ${chalk.yellow((quality.avgConfidence * 100).toFixed(1) + '%')})`
+      `   Avg confidence: ${chalk.cyan(quality.avgConfidenceRaw.toFixed(2))} (score: ${chalk.yellow((quality.avgConfidence * 100).toFixed(1) + "%")})`,
     );
     console.log(
-      `   Findings: ${chalk.cyan(quality.findingsCountRaw)} total, ${chalk.cyan(quality.criticalFindingsRaw)} critical (score: ${chalk.yellow((quality.findingsScore * 100).toFixed(1) + '%')})`
+      `   Findings: ${chalk.cyan(quality.findingsCountRaw)} total, ${chalk.cyan(quality.criticalFindingsRaw)} critical (score: ${chalk.yellow((quality.findingsScore * 100).toFixed(1) + "%")})`,
     );
     console.log(
-      `   Coverage: ${chalk.cyan(quality.coverageRaw)} concepts (score: ${chalk.yellow((quality.coverageScore * 100).toFixed(1) + '%')})`
+      `   Coverage: ${chalk.cyan(quality.coverageRaw)} concepts (score: ${chalk.yellow((quality.coverageScore * 100).toFixed(1) + "%")})`,
     );
-    console.log('');
+    console.log("");
   }
 
   // Calculate total score
@@ -404,26 +440,29 @@ export async function evaluateRun(
   const passed = result.total >= passThreshold;
 
   if (!quiet && !json) {
-    console.log(chalk.blue('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+    console.log(chalk.blue("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
     const scoreColor = passed ? chalk.green : chalk.red;
     console.log(
       scoreColor.bold(`📊 REGRESSION RATING: ${result.total}/1.00`) +
-        chalk.gray(` (${(result.total * 100).toFixed(1)}%)`)
+        chalk.gray(` (${(result.total * 100).toFixed(1)}%)`),
     );
-    console.log(chalk.blue('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'));
+    console.log(chalk.blue("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"));
 
-    console.log('Component scores:');
+    console.log("Component scores:");
     Object.entries(result.scores).forEach(([key, score]) => {
-      const percent = (score * 100).toFixed(1) + '%';
+      const percent = (score * 100).toFixed(1) + "%";
       console.log(`  ${key.padEnd(20)} ${chalk.yellow(percent)}`);
     });
-    console.log('');
+    console.log("");
 
     if (passed) {
-      console.log(chalk.green(`✅ PASS`) + chalk.gray(` (threshold: ${passThreshold})\n`));
+      console.log(
+        chalk.green(`✅ PASS`) + chalk.gray(` (threshold: ${passThreshold})\n`),
+      );
     } else {
       console.log(
-        chalk.red(`❌ FAIL`) + chalk.gray(` (threshold: ${passThreshold}, got: ${result.total})\n`)
+        chalk.red(`❌ FAIL`) +
+          chalk.gray(` (threshold: ${passThreshold}, got: ${result.total})\n`),
       );
     }
   }
@@ -442,13 +481,13 @@ export async function evaluateRun(
 // CLI Command
 // ============================================================================
 
-export const evalCommand = new Command('eval')
-  .description('Evaluate pipeline run with regression testing')
-  .argument('<run-dir>', 'Run directory to evaluate (.iw/runs/<run-id>)')
-  .option('--baseline <dir>', 'Baseline run directory for comparison')
-  .option('--json', 'Output as JSON')
-  .option('-q, --quiet', 'Suppress progress output')
-  .option('--threshold <number>', 'Pass threshold (default: 0.7)', '0.7')
+export const evalCommand = new Command("eval")
+  .description("Evaluate pipeline run with regression testing")
+  .argument("<run-dir>", "Run directory to evaluate (.iw/runs/<run-id>)")
+  .option("--baseline <dir>", "Baseline run directory for comparison")
+  .option("--json", "Output as JSON")
+  .option("-q, --quiet", "Suppress progress output")
+  .option("--threshold <number>", "Pass threshold (default: 0.7)", "0.7")
   .action(async (runDir: string, options) => {
     try {
       const result = await evaluateRun(runDir, options.baseline || null, {
@@ -462,7 +501,7 @@ export const evalCommand = new Command('eval')
 
       process.exit(result.passed ? 0 : 1);
     } catch (err) {
-      console.error(chalk.red('❌ Evaluation failed:'), (err as Error).message);
+      console.error(chalk.red("❌ Evaluation failed:"), (err as Error).message);
       if (process.env.DEBUG) {
         console.error((err as Error).stack);
       }

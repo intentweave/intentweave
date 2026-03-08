@@ -16,9 +16,9 @@
  *   OPENAI_API_KEY (required for natural-language mode)
  */
 
-import { Command } from 'commander';
-import chalk from 'chalk';
-import { writeFileSync } from 'node:fs';
+import { Command } from "commander";
+import chalk from "chalk";
+import { writeFileSync } from "node:fs";
 
 // =============================================================================
 // Graph schema description (fed to the LLM for Cypher generation)
@@ -99,7 +99,7 @@ Canonical predicates (stored in r.predicate):
 function buildSystemPrompt(sessionId?: string): string {
   const sessionClause = sessionId
     ? `\nThe current session_id is "${sessionId}". Always include \`WHERE ... session_id = "${sessionId}"\` unless the user explicitly asks for cross-session results.`
-    : '';
+    : "";
 
   return `You are a Cypher query generator for a Neo4j knowledge graph.
 
@@ -141,20 +141,27 @@ async function connectNeo4j(opts: {
   user?: string;
   password?: string;
 }): Promise<Neo4jConnection> {
-  const neo4j = await import('neo4j-driver');
+  const neo4j = await import("neo4j-driver");
 
-  const uri = opts.uri ?? process.env.NEO4J_URI ?? 'bolt://localhost:7687';
-  const user = opts.user ?? process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? 'neo4j';
+  const uri = opts.uri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
+  const user =
+    opts.user ??
+    process.env.NEO4J_USER ??
+    process.env.NEO4J_USERNAME ??
+    "neo4j";
   const password = opts.password ?? process.env.NEO4J_PASSWORD;
 
   if (!password) {
     throw new Error(
-      'Neo4j password required. Set NEO4J_PASSWORD environment variable.\n' +
-      'Example: export NEO4J_PASSWORD=codegraph',
+      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
+        "Example: export NEO4J_PASSWORD=codegraph",
     );
   }
 
-  const driver = neo4j.default.driver(uri, neo4j.default.auth.basic(user, password));
+  const driver = neo4j.default.driver(
+    uri,
+    neo4j.default.auth.basic(user, password),
+  );
   await driver.verifyConnectivity();
   const session = driver.session();
 
@@ -172,21 +179,37 @@ async function connectNeo4j(opts: {
 function toPlainValue(v: unknown): unknown {
   if (v === null || v === undefined) return v;
   // Neo4j integer
-  if (typeof v === 'object' && v !== null && 'toNumber' in v && typeof (v as any).toNumber === 'function') {
+  if (
+    typeof v === "object" &&
+    v !== null &&
+    "toNumber" in v &&
+    typeof (v as any).toNumber === "function"
+  ) {
     return (v as any).toNumber();
   }
   // Neo4j Node
-  if (typeof v === 'object' && v !== null && 'properties' in v && 'labels' in v) {
+  if (
+    typeof v === "object" &&
+    v !== null &&
+    "properties" in v &&
+    "labels" in v
+  ) {
     const node = v as any;
     return { _labels: node.labels, ...plainProps(node.properties) };
   }
   // Neo4j Relationship
-  if (typeof v === 'object' && v !== null && 'properties' in v && 'type' in v && 'start' in v) {
+  if (
+    typeof v === "object" &&
+    v !== null &&
+    "properties" in v &&
+    "type" in v &&
+    "start" in v
+  ) {
     const rel = v as any;
     return { _type: rel.type, ...plainProps(rel.properties) };
   }
   // Neo4j Path
-  if (typeof v === 'object' && v !== null && 'segments' in v) {
+  if (typeof v === "object" && v !== null && "segments" in v) {
     const path = v as any;
     return {
       _path: path.segments.map((s: any) => ({
@@ -214,7 +237,8 @@ async function executeCypher(
   cypher: string,
 ): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
   const result = await conn.session.run(cypher);
-  const columns = result.records.length > 0 ? result.records[0].keys as string[] : [];
+  const columns =
+    result.records.length > 0 ? (result.records[0].keys as string[]) : [];
   const rows = result.records.map((rec: any) => {
     const row: Record<string, unknown> = {};
     for (const key of rec.keys) {
@@ -235,29 +259,29 @@ async function llmComplete(opts: {
   model?: string;
   apiKey?: string;
 }): Promise<string> {
-  const { OpenAILLMProvider } = await import('@intentweave/analyzer/llm');
+  const { OpenAILLMProvider } = await import("@intentweave/analyzer/llm");
   const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
-      'OpenAI API key required for natural-language queries.\n' +
-      'Set OPENAI_API_KEY environment variable or use --cypher for raw Cypher.',
+      "OpenAI API key required for natural-language queries.\n" +
+        "Set OPENAI_API_KEY environment variable or use --cypher for raw Cypher.",
     );
   }
 
   const provider = new OpenAILLMProvider({
     apiKey,
-    model: opts.model ?? 'gpt-4o-mini',
+    model: opts.model ?? "gpt-4o-mini",
     timeoutMs: 30_000,
   });
 
   const response = await provider.complete({
     system: opts.system,
-    messages: [{ role: 'user', content: opts.userMessage }],
+    messages: [{ role: "user", content: opts.userMessage }],
     temperature: 0,
     maxTokens: 2048,
   });
 
-  if (response.finishReason === 'error') {
+  if (response.finishReason === "error") {
     throw new Error(`LLM error: ${response.error}`);
   }
   return response.content.trim();
@@ -267,8 +291,11 @@ async function llmComplete(opts: {
 // Result formatting
 // =============================================================================
 
-function formatTable(columns: string[], rows: Record<string, unknown>[]): string {
-  if (rows.length === 0) return chalk.yellow('(no results)');
+function formatTable(
+  columns: string[],
+  rows: Record<string, unknown>[],
+): string {
+  if (rows.length === 0) return chalk.yellow("(no results)");
 
   // Calculate column widths
   const widths: Record<string, number> = {};
@@ -283,24 +310,20 @@ function formatTable(columns: string[], rows: Record<string, unknown>[]): string
   }
 
   // Header
-  const header = columns.map(c => c.padEnd(widths[c])).join(' │ ');
-  const separator = columns.map(c => '─'.repeat(widths[c])).join('─┼─');
-  const dataRows = rows.map(row =>
-    columns.map(c => stringify(row[c]).padEnd(widths[c])).join(' │ '),
+  const header = columns.map((c) => c.padEnd(widths[c])).join(" │ ");
+  const separator = columns.map((c) => "─".repeat(widths[c])).join("─┼─");
+  const dataRows = rows.map((row) =>
+    columns.map((c) => stringify(row[c]).padEnd(widths[c])).join(" │ "),
   );
 
-  return [
-    chalk.bold(header),
-    separator,
-    ...dataRows,
-  ].join('\n');
+  return [chalk.bold(header), separator, ...dataRows].join("\n");
 }
 
 function stringify(v: unknown): string {
-  if (v === null || v === undefined) return '';
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  if (Array.isArray(v)) return v.map(stringify).join(', ');
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.map(stringify).join(", ");
   return JSON.stringify(v);
 }
 
@@ -312,18 +335,29 @@ function formatJson(rows: Record<string, unknown>[]): string {
 // Command definition
 // =============================================================================
 
-export const queryCommand = new Command('query')
-  .description('Query the knowledge graph (natural language or raw Cypher)')
-  .argument('<query>', 'Natural-language question or Cypher query (with --cypher)')
-  .option('--cypher', 'Interpret <query> as raw Cypher (skip LLM)')
-  .option('--limit <n>', 'Max rows to return', '50')
-  .option('-o, --output <path>', 'Write results to file (JSON)')
-  .option('-f, --format <fmt>', 'Output format: table | json | summary', 'summary')
-  .option('-s, --session <id>', 'Session ID to scope queries to')
-  .option('-v, --verbose', 'Show generated Cypher before execution')
-  .option('--model <model>', 'LLM model for NL→Cypher translation', 'gpt-4o-mini')
-  .option('--neo4j-uri <uri>', 'Neo4j connection URI')
-  .option('--api-key <key>', 'OpenAI API key override')
+export const queryCommand = new Command("query")
+  .description("Query the knowledge graph (natural language or raw Cypher)")
+  .argument(
+    "<query>",
+    "Natural-language question or Cypher query (with --cypher)",
+  )
+  .option("--cypher", "Interpret <query> as raw Cypher (skip LLM)")
+  .option("--limit <n>", "Max rows to return", "50")
+  .option("-o, --output <path>", "Write results to file (JSON)")
+  .option(
+    "-f, --format <fmt>",
+    "Output format: table | json | summary",
+    "summary",
+  )
+  .option("-s, --session <id>", "Session ID to scope queries to")
+  .option("-v, --verbose", "Show generated Cypher before execution")
+  .option(
+    "--model <model>",
+    "LLM model for NL→Cypher translation",
+    "gpt-4o-mini",
+  )
+  .option("--neo4j-uri <uri>", "Neo4j connection URI")
+  .option("--api-key <key>", "OpenAI API key override")
   .action(async (queryArg: string, options) => {
     const {
       cypher: rawCypherMode,
@@ -344,7 +378,7 @@ export const queryCommand = new Command('query')
       // ── Connect to Neo4j ──────────────────────────────────────────────
       conn = await connectNeo4j({ uri: options.neo4jUri ?? options.neoUri });
       if (verbose) {
-        console.log(chalk.blue('Connected to Neo4j'));
+        console.log(chalk.blue("Connected to Neo4j"));
       }
 
       let cypherQuery: string;
@@ -353,12 +387,12 @@ export const queryCommand = new Command('query')
         // ── Raw Cypher mode ─────────────────────────────────────────────
         cypherQuery = queryArg;
         if (verbose) {
-          console.log(chalk.blue('Mode:'), 'raw Cypher');
+          console.log(chalk.blue("Mode:"), "raw Cypher");
         }
       } else {
         // ── NL → Cypher mode ────────────────────────────────────────────
         if (verbose) {
-          console.log(chalk.blue('Translating question to Cypher…'));
+          console.log(chalk.blue("Translating question to Cypher…"));
         }
         const systemPrompt = buildSystemPrompt(sessionId);
         const userPrompt = `Question: ${queryArg}\nLimit: ${limitN}`;
@@ -371,19 +405,19 @@ export const queryCommand = new Command('query')
 
         // Strip markdown code fences if the LLM wraps them anyway
         cypherQuery = cypherQuery
-          .replace(/^```(?:cypher)?\s*\n?/i, '')
-          .replace(/\n?```\s*$/i, '')
+          .replace(/^```(?:cypher)?\s*\n?/i, "")
+          .replace(/\n?```\s*$/i, "")
           .trim();
 
         // Safety: if the LLM returned a comment instead of a query
-        if (cypherQuery.startsWith('//')) {
+        if (cypherQuery.startsWith("//")) {
           console.log(chalk.yellow(cypherQuery));
           return;
         }
       }
 
       if (verbose) {
-        console.log(chalk.blue('\nCypher:'));
+        console.log(chalk.blue("\nCypher:"));
         console.log(chalk.gray(cypherQuery));
         console.log();
       }
@@ -395,21 +429,24 @@ export const queryCommand = new Command('query')
       } catch (execErr: any) {
         const errMsg = execErr?.message ?? String(execErr);
         // If this was an NL-generated query and it's a syntax/semantic error, retry
-        if (!rawCypherMode && /SyntaxError|Invalid|unexpected|not supported/i.test(errMsg)) {
+        if (
+          !rawCypherMode &&
+          /SyntaxError|Invalid|unexpected|not supported/i.test(errMsg)
+        ) {
           if (verbose) {
-            console.log(chalk.yellow('Cypher error, asking LLM to fix…'));
+            console.log(chalk.yellow("Cypher error, asking LLM to fix…"));
           }
           const fixPrompt = [
             `The following Cypher query failed with an error:`,
-            '',
-            '```cypher',
+            "",
+            "```cypher",
             cypherQuery,
-            '```',
-            '',
+            "```",
+            "",
             `Error: ${errMsg}`,
-            '',
+            "",
             `Please fix the query and output ONLY the corrected Cypher.`,
-          ].join('\n');
+          ].join("\n");
 
           cypherQuery = await llmComplete({
             system: buildSystemPrompt(sessionId),
@@ -418,12 +455,12 @@ export const queryCommand = new Command('query')
             apiKey,
           });
           cypherQuery = cypherQuery
-            .replace(/^```(?:cypher)?\s*\n?/i, '')
-            .replace(/\n?```\s*$/i, '')
+            .replace(/^```(?:cypher)?\s*\n?/i, "")
+            .replace(/\n?```\s*$/i, "")
             .trim();
 
           if (verbose) {
-            console.log(chalk.blue('Retried Cypher:'));
+            console.log(chalk.blue("Retried Cypher:"));
             console.log(chalk.gray(cypherQuery));
             console.log();
           }
@@ -440,17 +477,17 @@ export const queryCommand = new Command('query')
       }
 
       // ── Format output ─────────────────────────────────────────────
-      if (format === 'json') {
+      if (format === "json") {
         const jsonOut = formatJson(rows);
         console.log(jsonOut);
         if (output) {
-          writeFileSync(output, jsonOut, 'utf-8');
+          writeFileSync(output, jsonOut, "utf-8");
           console.log(chalk.green(`\nWritten to ${output}`));
         }
-      } else if (format === 'table') {
+      } else if (format === "table") {
         console.log(formatTable(columns, rows));
         if (output) {
-          writeFileSync(output, formatJson(rows), 'utf-8');
+          writeFileSync(output, formatJson(rows), "utf-8");
           console.log(chalk.green(`\nJSON written to ${output}`));
         }
       } else {
@@ -459,13 +496,13 @@ export const queryCommand = new Command('query')
 
         if (!rawCypherMode && rows.length > 0) {
           console.log();
-          if (verbose) console.log(chalk.blue('Generating summary…'));
+          if (verbose) console.log(chalk.blue("Generating summary…"));
           const summaryPrompt = [
             `User question: ${queryArg}`,
-            '',
+            "",
             `Query results (${rows.length} rows):`,
-            JSON.stringify(rows.slice(0, 100), null, 2),  // cap at 100 rows for prompt
-          ].join('\n');
+            JSON.stringify(rows.slice(0, 100), null, 2), // cap at 100 rows for prompt
+          ].join("\n");
 
           const summary = await llmComplete({
             system: SUMMARISE_SYSTEM,
@@ -474,17 +511,17 @@ export const queryCommand = new Command('query')
             apiKey,
           });
 
-          console.log(chalk.green('─── Summary ───'));
+          console.log(chalk.green("─── Summary ───"));
           console.log(summary);
         }
 
         if (output) {
-          writeFileSync(output, formatJson(rows), 'utf-8');
+          writeFileSync(output, formatJson(rows), "utf-8");
           console.log(chalk.green(`\nJSON written to ${output}`));
         }
       }
     } catch (err: any) {
-      console.error(chalk.red('Error:'), err.message ?? err);
+      console.error(chalk.red("Error:"), err.message ?? err);
       process.exit(1);
     } finally {
       if (conn) await conn.close();

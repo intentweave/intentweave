@@ -123,7 +123,13 @@
               "description": "Provider name (openai, mock, smart-mock)"
             }
           },
-          "required": ["model", "temperature", "maxOutputTokens", "extractionMode", "provider"]
+          "required": [
+            "model",
+            "temperature",
+            "maxOutputTokens",
+            "extractionMode",
+            "provider"
+          ]
         },
         "effective": {
           "type": "object",

@@ -3,12 +3,12 @@
 
 /**
  * Reports Module
- * 
+ *
  * Types and utilities for IntentWeave reporting.
  */
 
 // Types
-export * from './types.js';
+export * from "./types.js";
 
 // Fingerprint utilities
 export {
@@ -18,7 +18,7 @@ export {
   createOpenEndFingerprint,
   createNeedsReviewFingerprint,
   createErrorFingerprint,
-} from './fingerprint.js';
+} from "./fingerprint.js";
 
 // Issue registry
 export {
@@ -30,7 +30,7 @@ export {
   computeIssueTrend,
   type IssueIdResult,
   type IssueTrendResult,
-} from './registry.js';
+} from "./registry.js";
 
 // Severity and scoring
 export {
@@ -38,7 +38,7 @@ export {
   parseEffort,
   computeActionScore,
   rankActions,
-} from './severity.js';
+} from "./severity.js";
 
 // Generator
 export {
@@ -52,11 +52,7 @@ export {
   type Finding,
   type FindingsFile,
   type CoverageFile,
-} from './generator.js';
+} from "./generator.js";
 
 // Formatters
-export {
-  formatProblemsReport,
-  formatFullReport,
-} from './formatters/index.js';
-
+export { formatProblemsReport, formatFullReport } from "./formatters/index.js";

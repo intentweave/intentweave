@@ -3,18 +3,18 @@
 
 /**
  * Rewrite Detection for Incremental Import
- * 
+ *
  * Detects when a source file has been rewritten/edited vs appended.
  * Uses prefix, suffix, and anchor window hashes.
  */
 
-import * as fs from 'node:fs/promises';
-import type { ImportState, RewriteCheck, UpdateCheck } from './types.js';
+import * as fs from "node:fs/promises";
+import type { ImportState, RewriteCheck, UpdateCheck } from "./types.js";
 import {
   computePrefixHash,
   computeSuffixHash,
   computeAnchorWindowHash,
-} from './hash.js';
+} from "./hash.js";
 
 // =============================================================================
 // Rewrite Detection
@@ -22,34 +22,34 @@ import {
 
 /**
  * Detect if a file has been rewritten since last import.
- * 
+ *
  * Rewrite signals:
  * 1. File size decreased
  * 2. Prefix hash changed (beginning of file modified)
  * 3. Anchor window hash changed (middle of file modified)
- * 
+ *
  * @param filePath - Path to source file
  * @param state - Previous import state
  * @returns Rewrite check result
  */
 export async function detectRewrite(
   filePath: string,
-  state: ImportState
+  state: ImportState,
 ): Promise<RewriteCheck> {
   // Read file
   const buffer = await fs.readFile(filePath);
   const currentSize = buffer.length;
-  
+
   // Compute current hashes
   const currentPrefixHash = computePrefixHash(buffer);
   const currentSuffixHash = computeSuffixHash(buffer);
   const currentAnchorHash = computeAnchorWindowHash(buffer);
-  
+
   // Check 1: File size decreased
   if (currentSize < state.lastSize) {
     return {
-      mode: 'rewrite',
-      reason: 'size_decreased',
+      mode: "rewrite",
+      reason: "size_decreased",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -57,12 +57,12 @@ export async function detectRewrite(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // Check 2: Prefix hash changed
   if (currentPrefixHash !== state.prefixHash64k) {
     return {
-      mode: 'rewrite',
-      reason: 'prefix_changed',
+      mode: "rewrite",
+      reason: "prefix_changed",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -70,7 +70,7 @@ export async function detectRewrite(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // Check 3: Anchor window hash changed (if available)
   if (
     state.anchorWindowHash &&
@@ -78,8 +78,8 @@ export async function detectRewrite(
     currentAnchorHash !== state.anchorWindowHash
   ) {
     return {
-      mode: 'rewrite',
-      reason: 'anchor_changed',
+      mode: "rewrite",
+      reason: "anchor_changed",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -87,11 +87,11 @@ export async function detectRewrite(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // Check if file is unchanged
   if (currentSize === state.lastSize) {
     return {
-      mode: 'unchanged',
+      mode: "unchanged",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -99,10 +99,10 @@ export async function detectRewrite(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // File grew - append mode
   return {
-    mode: 'append',
+    mode: "append",
     previousSize: state.lastSize,
     currentSize,
     prefixHash: currentPrefixHash,
@@ -114,19 +114,19 @@ export async function detectRewrite(
 /**
  * Check if file has updates since last import.
  * Implements the UpdateCheck interface from types.
- * 
+ *
  * @param filePath - Path to source file
  * @param state - Previous import state (null for first import)
  * @returns Update check result
  */
 export async function checkForUpdates(
   filePath: string,
-  state: ImportState | null
+  state: ImportState | null,
 ): Promise<UpdateCheck> {
   // Read file stats
   const stats = await fs.stat(filePath);
   const currentSize = stats.size;
-  
+
   // First import - everything is new
   if (state === null) {
     return {
@@ -135,7 +135,7 @@ export async function checkForUpdates(
       newBytes: currentSize,
     };
   }
-  
+
   // Check if file is unchanged (size and mtime)
   if (currentSize === state.lastSize && stats.mtimeMs === state.lastMtimeMs) {
     return {
@@ -144,12 +144,12 @@ export async function checkForUpdates(
       newBytes: 0,
     };
   }
-  
+
   // Need to read file and check hashes
   const buffer = await fs.readFile(filePath);
   const rewriteCheck = detectRewriteFromBuffer(buffer, state);
-  
-  if (rewriteCheck.mode === 'rewrite') {
+
+  if (rewriteCheck.mode === "rewrite") {
     return {
       hasUpdates: true,
       wasRewritten: true,
@@ -157,15 +157,15 @@ export async function checkForUpdates(
       newBytes: currentSize,
     };
   }
-  
-  if (rewriteCheck.mode === 'unchanged') {
+
+  if (rewriteCheck.mode === "unchanged") {
     return {
       hasUpdates: false,
       wasRewritten: false,
       newBytes: 0,
     };
   }
-  
+
   // Append mode - only new bytes
   return {
     hasUpdates: true,
@@ -179,20 +179,20 @@ export async function checkForUpdates(
  */
 function detectRewriteFromBuffer(
   buffer: Buffer,
-  state: ImportState
+  state: ImportState,
 ): RewriteCheck {
   const currentSize = buffer.length;
-  
+
   // Compute current hashes
   const currentPrefixHash = computePrefixHash(buffer);
   const currentSuffixHash = computeSuffixHash(buffer);
   const currentAnchorHash = computeAnchorWindowHash(buffer);
-  
+
   // Check 1: File size decreased
   if (currentSize < state.lastSize) {
     return {
-      mode: 'rewrite',
-      reason: 'size_decreased',
+      mode: "rewrite",
+      reason: "size_decreased",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -200,12 +200,12 @@ function detectRewriteFromBuffer(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // Check 2: Prefix hash changed
   if (currentPrefixHash !== state.prefixHash64k) {
     return {
-      mode: 'rewrite',
-      reason: 'prefix_changed',
+      mode: "rewrite",
+      reason: "prefix_changed",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -213,7 +213,7 @@ function detectRewriteFromBuffer(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // Check 3: Anchor window hash changed (if available)
   if (
     state.anchorWindowHash &&
@@ -221,8 +221,8 @@ function detectRewriteFromBuffer(
     currentAnchorHash !== state.anchorWindowHash
   ) {
     return {
-      mode: 'rewrite',
-      reason: 'anchor_changed',
+      mode: "rewrite",
+      reason: "anchor_changed",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -230,11 +230,11 @@ function detectRewriteFromBuffer(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // Check if file is unchanged
   if (currentSize === state.lastSize) {
     return {
-      mode: 'unchanged',
+      mode: "unchanged",
       previousSize: state.lastSize,
       currentSize,
       prefixHash: currentPrefixHash,
@@ -242,10 +242,10 @@ function detectRewriteFromBuffer(
       anchorWindowHash: currentAnchorHash,
     };
   }
-  
+
   // File grew - append mode
   return {
-    mode: 'append',
+    mode: "append",
     previousSize: state.lastSize,
     currentSize,
     prefixHash: currentPrefixHash,
@@ -261,24 +261,24 @@ function detectRewriteFromBuffer(
 /**
  * Build partial import state from a file buffer.
  * Used when creating initial state for new files.
- * 
+ *
  * @param buffer - File content buffer
  * @returns Partial import state with hash fields
  */
 export function buildImportStateHashes(
-  buffer: Buffer
-): Pick<ImportState, 'prefixHash64k' | 'suffixHash64k' | 'anchorWindowHash'> {
+  buffer: Buffer,
+): Pick<ImportState, "prefixHash64k" | "suffixHash64k" | "anchorWindowHash"> {
   const anchorHash = computeAnchorWindowHash(buffer);
   return {
     prefixHash64k: computePrefixHash(buffer),
     suffixHash64k: computeSuffixHash(buffer),
-    anchorWindowHash: anchorHash ?? '',
+    anchorWindowHash: anchorHash ?? "",
   };
 }
 
 /**
  * Create a new import state for a fresh import.
- * 
+ *
  * @param sourcePath - Source file path
  * @param sessionId - Session identifier
  * @param buffer - File content buffer
@@ -293,11 +293,11 @@ export function createImportState(
   buffer: Buffer,
   messageCount: number,
   adapterVersion: string,
-  lastHeaderOffset: number = 0
+  lastHeaderOffset: number = 0,
 ): ImportState {
   const hashes = buildImportStateHashes(buffer);
   const now = new Date().toISOString();
-  
+
   return {
     sourcePath,
     sessionId,
@@ -318,7 +318,7 @@ export function createImportState(
 
 /**
  * Update import state after incremental append.
- * 
+ *
  * @param state - Previous import state
  * @param buffer - New full file buffer
  * @param newMessageCount - Number of new messages imported
@@ -329,11 +329,11 @@ export function updateImportState(
   state: ImportState,
   buffer: Buffer,
   newMessageCount: number,
-  lastHeaderOffset: number
+  lastHeaderOffset: number,
 ): ImportState {
   const hashes = buildImportStateHashes(buffer);
   const now = new Date().toISOString();
-  
+
   return {
     ...state,
     lastSize: buffer.length,
@@ -354,4 +354,4 @@ export function updateImportState(
 // Type Exports
 // =============================================================================
 
-export type { RewriteCheck, UpdateCheck } from './types.js';
+export type { RewriteCheck, UpdateCheck } from "./types.js";
