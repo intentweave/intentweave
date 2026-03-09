@@ -9,8 +9,12 @@ export type {
   InsightConnection,
   InsightRawTriple,
   DecisionTreeData,
+  ImpactGraphData,
   InsightResponse,
 } from "./types.js";
 
 export { buildDecisionTree } from "./decision-tree.js";
 export type { BuildDecisionTreeOpts } from "./decision-tree.js";
+
+export { buildImpactGraph } from "./impact-graph.js";
+export type { BuildImpactGraphOpts } from "./impact-graph.js";

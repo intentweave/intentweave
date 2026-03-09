@@ -130,6 +130,35 @@ export function NodeDetail({ node, onClose, onNavigate }: NodeDetailProps) {
           </Section>
         )}
 
+        {/* Impact depth (for impact-graph nodes) */}
+        {node.depth != null && (
+          <Section label="Impact Distance">
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold"
+                style={{
+                  backgroundColor:
+                    node.depth === 0
+                      ? "#ec4899"
+                      : node.depth === 1
+                        ? "#6366f1"
+                        : "#475569",
+                  color: "#fff",
+                }}
+              >
+                {node.depth}
+              </span>
+              <span className="text-slate-400 text-[11px]">
+                {node.depth === 0
+                  ? "Center — directly queried"
+                  : node.depth === 1
+                    ? "Direct impact (1 hop)"
+                    : `Ripple effect (${node.depth} hops)`}
+              </span>
+            </div>
+          </Section>
+        )}
+
         {/* Timestamps */}
         {(node.createdAt || node.updatedAt) && (
           <Section label="Timeline">

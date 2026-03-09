@@ -5,11 +5,19 @@ import { useCallback, useEffect, useState } from "react";
 import { QueryBar } from "./components/QueryBar.js";
 import { DecisionTree } from "./components/DecisionTree.js";
 import { DecisionTimeline } from "./components/DecisionTimeline.js";
+import { ImpactGraph } from "./components/ImpactGraph.js";
 import { Legend } from "./components/Legend.js";
 import { MetaBar } from "./components/MetaBar.js";
 import { NodeDetail } from "./components/NodeDetail.js";
 import { fetchInsight, checkHealth } from "./api/insight.js";
-import type { InsightResponse, InsightNode, NodeKind } from "./types.js";
+import type {
+  InsightResponse,
+  InsightNode,
+  NodeKind,
+  VizType,
+  DecisionTreeData,
+  ImpactGraphData,
+} from "./types.js";
 
 type ViewMode = "graph" | "timeline";
 
@@ -20,35 +28,48 @@ export function App() {
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const [selectedNode, setSelectedNode] = useState<InsightNode | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("graph");
+  const [vizType, setVizType] = useState<VizType>("decision-tree");
 
   // Check backend health on mount
   useEffect(() => {
     checkHealth().then(setBackendUp);
   }, []);
 
-  const handleQuery = useCallback(async (question: string) => {
-    setLoading(true);
-    setError(null);
-    setSelectedNode(null);
+  const handleQuery = useCallback(
+    async (question: string, overrideVizType?: VizType) => {
+      const activeViz = overrideVizType ?? vizType;
+      setLoading(true);
+      setError(null);
+      setSelectedNode(null);
+      if (overrideVizType) setVizType(overrideVizType);
+      // Reset to graph view when switching
+      setViewMode("graph");
 
-    try {
-      const result = await fetchInsight({
-        question,
-        vizType: "decision-tree",
-      });
-      setInsight(result);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setInsight(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      try {
+        const result = await fetchInsight({
+          question,
+          vizType: activeViz,
+        });
+        setInsight(result);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+        setInsight(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [vizType],
+  );
 
   // Active node kinds for legend filtering
   const activeKinds = insight
     ? (new Set(insight.data.nodes.map((n) => n.kind)) as Set<NodeKind>)
     : undefined;
+
+  /** Is the current response a decision tree? */
+  const isDecisionTree = insight?.vizType === "decision-tree";
+  /** Is the current response an impact graph? */
+  const isImpactGraph = insight?.vizType === "impact-graph";
 
   /** Navigate to a node by ID (from connection links in the detail panel). */
   const handleNavigate = useCallback(
@@ -74,7 +95,32 @@ export function App() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {insight && insight.data.nodes.length > 1 && (
+          {/* VizType selector */}
+          <div className="flex items-center bg-slate-800 rounded-lg p-0.5">
+            <button
+              onClick={() => setVizType("decision-tree")}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                vizType === "decision-tree"
+                  ? "bg-violet-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Decisions
+            </button>
+            <button
+              onClick={() => setVizType("impact-graph")}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                vizType === "impact-graph"
+                  ? "bg-pink-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Impact
+            </button>
+          </div>
+
+          {/* View mode toggle (only for decision-tree) */}
+          {isDecisionTree && insight && insight.data.nodes.length > 1 && (
             <div className="flex items-center bg-slate-800 rounded-lg p-0.5">
               <button
                 onClick={() => setViewMode("graph")}
@@ -110,7 +156,7 @@ export function App() {
       </header>
 
       {/* Query bar */}
-      <QueryBar onSubmit={handleQuery} loading={loading} />
+      <QueryBar onSubmit={handleQuery} loading={loading} vizType={vizType} />
 
       {/* Meta bar (shown when we have results) */}
       {insight && <MetaBar meta={insight.meta} title={insight.title} />}
@@ -143,7 +189,10 @@ export function App() {
                 own.
               </p>
               <div className="grid grid-cols-2 gap-3 text-left text-xs text-slate-600">
-                <div className="bg-slate-900 rounded-lg p-3 border border-slate-800">
+                <div
+                  className="bg-slate-900 rounded-lg p-3 border border-slate-800 cursor-pointer hover:border-violet-800 transition-colors"
+                  onClick={() => setVizType("decision-tree")}
+                >
                   <span className="text-violet-400 font-medium">
                     Decision Trees
                   </span>
@@ -151,11 +200,16 @@ export function App() {
                     Explore decisions, options, and rationale
                   </p>
                 </div>
-                <div className="bg-slate-900 rounded-lg p-3 border border-slate-800 opacity-50">
-                  <span className="text-cyan-400 font-medium">
+                <div
+                  className="bg-slate-900 rounded-lg p-3 border border-slate-800 cursor-pointer hover:border-pink-800 transition-colors"
+                  onClick={() => setVizType("impact-graph")}
+                >
+                  <span className="text-pink-400 font-medium">
                     Impact Graphs
                   </span>
-                  <p className="mt-1">Coming soon</p>
+                  <p className="mt-1">
+                    Visualize blast radius and ripple effects
+                  </p>
                 </div>
                 <div className="bg-slate-900 rounded-lg p-3 border border-slate-800 opacity-50">
                   <span className="text-emerald-400 font-medium">
@@ -185,16 +239,29 @@ export function App() {
         )}
 
         {/* Visualization */}
-        {insight && insight.data.nodes.length > 1 && viewMode === "graph" && (
-          <DecisionTree
-            data={insight.data}
-            selectedNodeId={selectedNode?.id}
-            onNodeClick={setSelectedNode}
-          />
-        )}
-        {insight && insight.data.nodes.length > 1 && viewMode === "timeline" && (
-          <DecisionTimeline
-            data={insight.data}
+        {isDecisionTree &&
+          insight &&
+          insight.data.nodes.length > 1 &&
+          viewMode === "graph" && (
+            <DecisionTree
+              data={insight.data as DecisionTreeData}
+              selectedNodeId={selectedNode?.id}
+              onNodeClick={setSelectedNode}
+            />
+          )}
+        {isDecisionTree &&
+          insight &&
+          insight.data.nodes.length > 1 &&
+          viewMode === "timeline" && (
+            <DecisionTimeline
+              data={insight.data as DecisionTreeData}
+              selectedNodeId={selectedNode?.id}
+              onNodeClick={setSelectedNode}
+            />
+          )}
+        {isImpactGraph && insight && insight.data.nodes.length > 1 && (
+          <ImpactGraph
+            data={insight.data as ImpactGraphData}
             selectedNodeId={selectedNode?.id}
             onNodeClick={setSelectedNode}
           />
@@ -215,7 +282,9 @@ export function App() {
             <div className="text-center">
               <div className="text-4xl mb-3">🤷</div>
               <p className="text-slate-400 text-sm">
-                No decisions found in the knowledge graph.
+                {isImpactGraph
+                  ? "No matching entities found in the knowledge graph."
+                  : "No decisions found in the knowledge graph."}
               </p>
               <p className="text-slate-600 text-xs mt-1">
                 Run{" "}

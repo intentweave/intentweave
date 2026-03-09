@@ -28,6 +28,8 @@ const DEPTH: Record<NodeKind, number> = {
   concept: 3,
   rationale: 3,
   risk: 3,
+  center: 0,
+  affected: 2,
 };
 
 const BAND_HEIGHT = 160;

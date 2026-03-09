@@ -32,7 +32,9 @@ export type NodeKind =
   | "option"
   | "concept"
   | "rationale"
-  | "risk";
+  | "risk"
+  | "center"
+  | "affected";
 
 export interface InsightNode {
   id: string;
@@ -56,6 +58,8 @@ export interface InsightNode {
   updatedAt?: string;
   /** Raw triples (subject → predicate → object) mentioning this entity. */
   rawTriples?: InsightRawTriple[];
+  /** Hop distance from the center node (0 = center, 1 = direct, 2+ = ripple). */
+  depth?: number;
   /** Connections to other nodes (populated for detail panel). */
   connections?: InsightConnection[];
 }
@@ -90,13 +94,26 @@ export interface DecisionTreeData {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Impact graph data
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ImpactGraphData {
+  nodes: InsightNode[];
+  edges: InsightEdge[];
+  /** The center entity from which impact radiates outward. */
+  centerId: string;
+  /** Maximum hop distance reached during expansion. */
+  maxDepth: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Response envelope
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface InsightResponse {
   vizType: VizType;
   title: string;
-  data: DecisionTreeData; // union with other data types later
+  data: DecisionTreeData | ImpactGraphData;
   meta: {
     session: string;
     entityCount: number;

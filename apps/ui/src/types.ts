@@ -20,7 +20,9 @@ export type NodeKind =
   | "option"
   | "concept"
   | "rationale"
-  | "risk";
+  | "risk"
+  | "center"
+  | "affected";
 
 export interface InsightNode {
   id: string;
@@ -41,6 +43,8 @@ export interface InsightNode {
   updatedAt?: string;
   /** Raw triples (subject → predicate → object) mentioning this entity. */
   rawTriples?: InsightRawTriple[];
+  /** Hop distance from center (impact graph: 0 = center, 1 = direct, 2+ = ripple). */
+  depth?: number;
   connections?: InsightConnection[];
 }
 
@@ -69,6 +73,13 @@ export interface DecisionTreeData {
   rootId: string;
 }
 
+export interface ImpactGraphData {
+  nodes: InsightNode[];
+  edges: InsightEdge[];
+  centerId: string;
+  maxDepth: number;
+}
+
 export interface InsightMeta {
   session: string;
   entityCount: number;
@@ -79,7 +90,7 @@ export interface InsightMeta {
 export interface InsightResponse {
   vizType: VizType;
   title: string;
-  data: DecisionTreeData;
+  data: DecisionTreeData | ImpactGraphData;
   meta: InsightMeta;
 }
 
@@ -93,6 +104,8 @@ export const NODE_COLORS: Record<NodeKind, string> = {
   concept: "#06b6d4",
   rationale: "#f59e0b",
   risk: "#f97316",
+  center: "#ec4899",
+  affected: "#a78bfa",
 };
 
 /** Human-readable labels for node kinds. */
@@ -105,6 +118,8 @@ export const NODE_KIND_LABELS: Record<NodeKind, string> = {
   concept: "Concept",
   rationale: "Rationale",
   risk: "Risk",
+  center: "Center",
+  affected: "Affected",
 };
 
 /** Human-readable predicate labels. */

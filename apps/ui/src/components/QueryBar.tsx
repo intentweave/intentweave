@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, type FormEvent } from "react";
+import type { VizType } from "../types.js";
 
-/** Preset queries for quick exploration. */
-const PRESETS = [
+/** Preset queries for decision-tree exploration. */
+const DECISION_PRESETS = [
   { label: "All decisions", question: "Show all decisions" },
   { label: "Architecture", question: "What architecture decisions were made?" },
   { label: "Technology", question: "What technology choices were made?" },
@@ -14,13 +15,29 @@ const PRESETS = [
   },
 ];
 
+/** Preset queries for impact-graph exploration. */
+const IMPACT_PRESETS = [
+  { label: "Authentication", question: "authentication" },
+  { label: "Database", question: "database" },
+  { label: "API", question: "API" },
+  { label: "Security", question: "security" },
+];
+
 interface QueryBarProps {
-  onSubmit: (question: string) => void;
+  onSubmit: (question: string, vizType?: VizType) => void;
   loading: boolean;
+  vizType: VizType;
 }
 
-export function QueryBar({ onSubmit, loading }: QueryBarProps) {
+export function QueryBar({ onSubmit, loading, vizType }: QueryBarProps) {
   const [value, setValue] = useState("");
+
+  const presets =
+    vizType === "impact-graph" ? IMPACT_PRESETS : DECISION_PRESETS;
+  const placeholder =
+    vizType === "impact-graph"
+      ? "Enter an entity name to analyze impact…"
+      : "Ask a question about your knowledge graph…";
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -40,7 +57,7 @@ export function QueryBar({ onSubmit, loading }: QueryBarProps) {
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Ask a question about your knowledge graph…"
+          placeholder={placeholder}
           className="flex-1 rounded-lg bg-slate-800 px-4 py-2.5 text-sm text-slate-100
                      placeholder-slate-500 border border-slate-700
                      focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500
@@ -67,7 +84,7 @@ export function QueryBar({ onSubmit, loading }: QueryBarProps) {
 
       {/* Preset buttons */}
       <div className="mt-3 flex flex-wrap gap-2">
-        {PRESETS.map((p) => (
+        {presets.map((p) => (
           <button
             key={p.label}
             onClick={() => handlePreset(p.question)}

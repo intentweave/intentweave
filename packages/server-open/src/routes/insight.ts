@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import type { Driver } from "neo4j-driver";
 import type { ServerConfig } from "@intentweave/server-core";
 import { createRunnerFromDriver } from "../helpers/index.js";
-import { buildDecisionTree } from "../insight/index.js";
+import { buildDecisionTree, buildImpactGraph } from "../insight/index.js";
 
 /**
  * POST /api/insight — Generate a purpose-built visualization from the knowledge graph.
@@ -57,6 +57,14 @@ export async function registerInsightRoutes(
               type: "integer",
               default: 30,
               description: "Maximum decision nodes to include",
+            },
+            hops: {
+              type: "integer",
+              default: 2,
+              minimum: 1,
+              maximum: 3,
+              description:
+                "Impact graph expansion hops (1-3, default 2)",
             },
           },
         },
@@ -137,9 +145,20 @@ export async function registerInsightRoutes(
           return result;
         }
 
+        case "impact-graph": {
+          const result = await buildImpactGraph({
+            runner,
+            sessionId,
+            question: body.question,
+            hops: (body as any).hops ?? 2,
+            maxNodes: body.maxNodes ?? 60,
+          });
+          return result;
+        }
+
         default:
           return (reply as any).status(400).send({
-            error: `Unsupported vizType: ${vizType}. Supported: decision-tree`,
+            error: `Unsupported vizType: ${vizType}. Supported: decision-tree, impact-graph`,
           });
       }
     },
