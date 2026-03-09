@@ -4,8 +4,8 @@
 /**
  * AX Stage - AST Extraction
  *
- * Extracts code symbols from TypeScript/JavaScript files using tree-sitter.
- * Produces deterministic, per-file symbol tables for spec↔code linking.
+ * Extracts code symbols from TypeScript/JavaScript and Swift files using tree-sitter.
+ * Produces deterministic, per-file symbol tables for spec-code linking.
  *
  * Design principles:
  * - Per-file processing (stable provenance, incremental updates)
@@ -26,6 +26,12 @@ import {
   type ExtractedSymbol,
   type ExtractionOptions,
 } from "@intentweave/ast-extractor";
+
+import {
+  createSwiftExtractor,
+  type SwiftSymbol,
+  type SwiftFileResult,
+} from "@intentweave/swift-parser";
 
 // ============================================================================
 // AX Output Types
@@ -56,7 +62,11 @@ export interface AxSymbol {
     | "type"
     | "enum"
     | "method"
-    | "property";
+    | "property"
+    | "struct"
+    | "protocol"
+    | "extension"
+    | "initializer";
 
   /** Symbol name */
   name: string;
@@ -94,7 +104,7 @@ export interface AxFileResult {
   contentHash: string;
 
   /** Detected language */
-  language: "typescript" | "javascript" | "tsx" | "jsx";
+  language: "typescript" | "javascript" | "tsx" | "jsx" | "swift";
 
   /** Symbols in this file */
   symbols: AxSymbol[];
@@ -266,21 +276,108 @@ function convertSymbol(
 }
 
 // ============================================================================
+// Swift Symbol Mapping
+// ============================================================================
+
+/**
+ * Map Swift SymbolKind to AX SymbolKind
+ */
+function mapSwiftSymbolKind(
+  kind: SwiftSymbol["kind"],
+): AxSymbol["kind"] | null {
+  switch (kind) {
+    case "function":
+      return "function";
+    case "class":
+      return "class";
+    case "struct":
+      return "struct";
+    case "protocol":
+      return "protocol";
+    case "enum":
+      return "enum";
+    case "method":
+      return "method";
+    case "property":
+      return "property";
+    case "initializer":
+      return "initializer";
+    case "extension":
+      return "extension";
+    case "typealias":
+    case "associatedtype":
+      return "type";
+    // Skip these for now
+    case "variable":
+    case "operator":
+    case "macro":
+    case "subscript":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Convert Swift symbol to AX symbol
+ */
+function convertSwiftSymbol(
+  symbol: SwiftSymbol,
+  filePath: string,
+): AxSymbol | null {
+  const kind = mapSwiftSymbolKind(symbol.kind);
+  if (!kind) return null;
+
+  return {
+    id: generateSymbolId(
+      filePath,
+      kind,
+      symbol.name,
+      symbol.parent,
+      symbol.signature,
+    ),
+    kind,
+    name: symbol.name,
+    container: symbol.parent,
+    signature: symbol.signature,
+    filePath,
+    span: {
+      startLine: symbol.range.startLine,
+      startCol: symbol.range.startColumn,
+      endLine: symbol.range.endLine,
+      endCol: symbol.range.endColumn,
+    },
+    export: symbol.isExported ? "exported" : "internal",
+    parameters: symbol.parameters,
+    docSummary: symbol.docSummary,
+  };
+}
+
+// ============================================================================
 // File Discovery
 // ============================================================================
 
 /**
- * Find TypeScript/JavaScript files in workspace
+ * Find source files in workspace (TypeScript, JavaScript, Swift)
  */
 async function discoverFiles(
   workspaceRoot: string,
-  include: string[] = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
+  include: string[] = [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.swift",
+  ],
   exclude: string[] = [
     "**/node_modules/**",
     "**/dist/**",
     "**/*.d.ts",
     "**/*.test.ts",
     "**/*.spec.ts",
+    "**/.build/**",
+    "**/Pods/**",
+    "**/DerivedData/**",
   ],
 ): Promise<string[]> {
   const { glob } = await import("glob");
@@ -341,6 +438,49 @@ async function processFile(
 }
 
 /**
+ * Check whether a file path looks like a Swift source file
+ */
+function isSwiftFile(filePath: string): boolean {
+  return filePath.endsWith(".swift");
+}
+
+/**
+ * Process a single Swift file
+ */
+async function processSwiftFile(
+  swiftExtractor: ReturnType<typeof createSwiftExtractor>,
+  workspaceRoot: string,
+  relativePath: string,
+): Promise<AxFileResult> {
+  const absolutePath = path.join(workspaceRoot, relativePath);
+
+  // Read file content for hash
+  const content = await fs.promises.readFile(absolutePath, "utf-8");
+  const contentHash = hashFileContent(content);
+
+  // Extract symbols
+  const result = await swiftExtractor.extractFile(absolutePath);
+
+  // Convert symbols
+  const symbols: AxSymbol[] = [];
+  for (const symbol of result.symbols) {
+    const axSymbol = convertSwiftSymbol(symbol, relativePath);
+    if (axSymbol) {
+      symbols.push(axSymbol);
+    }
+  }
+
+  return {
+    filePath: relativePath,
+    contentHash,
+    language: "swift",
+    symbols,
+    extractedAt: Date.now(),
+    errors: result.errors,
+  };
+}
+
+/**
  * Run AX stage on workspace
  */
 export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
@@ -353,8 +493,8 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
     maxDepth = 2,
   } = options;
 
-  // Create extractor
-  const extractor = createExtractor(workspaceRoot, {
+  // Create TS/JS extractor
+  const tsExtractor = createExtractor(workspaceRoot, {
     includePrivate,
     includeMembers,
     maxDepth,
@@ -362,8 +502,15 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
     includeParameters: true,
   });
 
+  // Create Swift extractor (lazy — only if Swift files are found)
+  let swiftExtractor: ReturnType<typeof createSwiftExtractor> | null = null;
+
   // Discover files
   const files = await discoverFiles(workspaceRoot, include, exclude);
+
+  // Split files by language
+  const swiftFiles = files.filter(isSwiftFile);
+  const tsFiles = files.filter((f) => !isSwiftFile(f));
 
   // Process files
   const fileResults: AxFileResult[] = [];
@@ -372,8 +519,9 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
   let exported = 0;
   let internal = 0;
 
-  for (const file of files) {
-    const result = await processFile(extractor, workspaceRoot, file);
+  // Process TS/JS files
+  for (const file of tsFiles) {
+    const result = await processFile(tsExtractor, workspaceRoot, file);
     fileResults.push(result);
 
     for (const symbol of result.symbols) {
@@ -383,6 +531,36 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
         exported++;
       } else {
         internal++;
+      }
+    }
+  }
+
+  // Process Swift files
+  if (swiftFiles.length > 0) {
+    swiftExtractor = createSwiftExtractor(workspaceRoot, {
+      includePrivate,
+      includeMembers,
+      maxDepth,
+      includeDocSummary: true,
+      includeParameters: true,
+    });
+
+    for (const file of swiftFiles) {
+      const result = await processSwiftFile(
+        swiftExtractor,
+        workspaceRoot,
+        file,
+      );
+      fileResults.push(result);
+
+      for (const symbol of result.symbols) {
+        totalSymbols++;
+        byKind[symbol.kind] = (byKind[symbol.kind] || 0) + 1;
+        if (symbol.export === "exported") {
+          exported++;
+        } else {
+          internal++;
+        }
       }
     }
   }
@@ -452,8 +630,8 @@ export async function runAxStageIncremental(
     previousHashes.set(file.filePath, file.contentHash);
   }
 
-  // Create extractor
-  const extractor = createExtractor(workspaceRoot, {
+  // Create TS/JS extractor
+  const tsExtractor = createExtractor(workspaceRoot, {
     includePrivate,
     includeMembers,
     maxDepth,
@@ -461,9 +639,23 @@ export async function runAxStageIncremental(
     includeParameters: true,
   });
 
+  // Create Swift extractor (lazy)
+  let swiftExt: ReturnType<typeof createSwiftExtractor> | null = null;
+  function getSwiftExtractor() {
+    if (!swiftExt) {
+      swiftExt = createSwiftExtractor(workspaceRoot, {
+        includePrivate,
+        includeMembers,
+        maxDepth,
+        includeDocSummary: true,
+        includeParameters: true,
+      });
+    }
+    return swiftExt;
+  }
+
   // Discover current files
   const currentFiles = await discoverFiles(workspaceRoot, include, exclude);
-  const currentFilesSet = new Set(currentFiles);
 
   // Determine what to process
   const fileResults: AxFileResult[] = [];
@@ -489,12 +681,26 @@ export async function runAxStageIncremental(
       );
       if (previousFile) {
         result = previousFile;
+      } else if (isSwiftFile(file)) {
+        result = await processSwiftFile(
+          getSwiftExtractor(),
+          workspaceRoot,
+          file,
+        );
       } else {
-        result = await processFile(extractor, workspaceRoot, file);
+        result = await processFile(tsExtractor, workspaceRoot, file);
       }
     } else {
       // File changed - re-extract
-      result = await processFile(extractor, workspaceRoot, file);
+      if (isSwiftFile(file)) {
+        result = await processSwiftFile(
+          getSwiftExtractor(),
+          workspaceRoot,
+          file,
+        );
+      } else {
+        result = await processFile(tsExtractor, workspaceRoot, file);
+      }
     }
 
     fileResults.push(result);

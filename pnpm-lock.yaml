@@ -94,6 +94,9 @@ importers:
       '@intentweave/profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@intentweave/swift-parser':
+        specifier: workspace:*
+        version: link:../swift-parser
       beautiful-mermaid:
         specifier: ^1.1.3
         version: 1.1.3
@@ -278,6 +281,22 @@ importers:
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.37
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+
+  packages/swift-parser:
+    dependencies:
+      tree-sitter:
+        specifier: ^0.21.1
+        version: 0.21.1
+      tree-sitter-swift:
+        specifier: ^0.7.1
+        version: 0.7.1(tree-sitter@0.21.1)
+    devDependencies:
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -2405,6 +2424,20 @@ packages:
   toidentifier@1.0.1:
     resolution: {integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==}
     engines: {node: '>=0.6'}
+
+  tree-sitter-cli@0.23.2:
+    resolution: {integrity: sha512-kPPXprOqREX+C/FgUp2Qpt9jd0vSwn+hOgjzVv/7hapdoWpa+VeWId53rf4oNNd29ikheF12BYtGD/W90feMbA==}
+    engines: {node: '>=12.0.0'}
+    hasBin: true
+
+  tree-sitter-swift@0.7.1:
+    resolution: {integrity: sha512-pneKVTuGamaBsqqqfB9BvNQjktzh/0IVPR54jLB5Fq/JTDQwYHd0Wo6pVyZ5jAYpbztzq+rJ/rpL9ruxTmSoKw==}
+    peerDependencies:
+      tree-sitter: ^0.22.1
+      tree_sitter: '*'
+    peerDependenciesMeta:
+      tree_sitter:
+        optional: true
 
   tree-sitter-typescript@0.21.2:
     resolution: {integrity: sha512-/RyNK41ZpkA8PuPZimR6pGLvNR1p0ibRUJwwQn4qAjyyLEIQD/BNlwS3NSxWtGsAWZe9gZ44VK1mWx2+eQVldg==}
@@ -4624,6 +4657,16 @@ snapshots:
   toad-cache@3.7.0: {}
 
   toidentifier@1.0.1: {}
+
+  tree-sitter-cli@0.23.2: {}
+
+  tree-sitter-swift@0.7.1(tree-sitter@0.21.1):
+    dependencies:
+      node-addon-api: 8.6.0
+      node-gyp-build: 4.8.4
+      tree-sitter: 0.21.1
+      tree-sitter-cli: 0.23.2
+      which: 2.0.2
 
   tree-sitter-typescript@0.21.2(tree-sitter@0.21.1):
     dependencies:
