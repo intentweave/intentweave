@@ -6,6 +6,7 @@ import { QueryBar } from "./components/QueryBar.js";
 import { DecisionTree } from "./components/DecisionTree.js";
 import { DecisionTimeline } from "./components/DecisionTimeline.js";
 import { ImpactGraph } from "./components/ImpactGraph.js";
+import { ImpactSummary } from "./components/ImpactSummary.js";
 import { Legend } from "./components/Legend.js";
 import { MetaBar } from "./components/MetaBar.js";
 import { NodeDetail } from "./components/NodeDetail.js";
@@ -260,11 +261,18 @@ export function App() {
             />
           )}
         {isImpactGraph && insight && insight.data.nodes.length > 1 && (
-          <ImpactGraph
-            data={insight.data as ImpactGraphData}
-            selectedNodeId={selectedNode?.id}
-            onNodeClick={setSelectedNode}
-          />
+          <>
+            <ImpactGraph
+              data={insight.data as ImpactGraphData}
+              selectedNodeId={selectedNode?.id}
+              onNodeClick={setSelectedNode}
+            />
+            {(insight.data as ImpactGraphData).summary && (
+              <ImpactSummary
+                summary={(insight.data as ImpactGraphData).summary}
+              />
+            )}
+          </>
         )}
 
         {/* Node detail side panel */}
@@ -304,7 +312,7 @@ export function App() {
 
       {/* Legend */}
       {insight && insight.data.nodes.length > 1 && (
-        <Legend activeKinds={activeKinds} />
+        <Legend activeKinds={activeKinds} showSeverity={isImpactGraph} />
       )}
     </div>
   );

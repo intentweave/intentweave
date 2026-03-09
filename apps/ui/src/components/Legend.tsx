@@ -1,7 +1,7 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import { NODE_COLORS, NODE_KIND_LABELS, type NodeKind } from "../types.js";
+import { NODE_COLORS, NODE_KIND_LABELS, EDGE_SEVERITY_COLORS, type NodeKind } from "../types.js";
 
 const KINDS: NodeKind[] = [
   "topic",
@@ -12,14 +12,25 @@ const KINDS: NodeKind[] = [
   "concept",
   "rationale",
   "risk",
+  "center",
+  "affected",
+];
+
+/** Severity items shown only for impact-graph views. */
+const SEVERITY_ITEMS: { label: string; color: string }[] = [
+  { label: "Critical", color: EDGE_SEVERITY_COLORS.critical },
+  { label: "Warning", color: EDGE_SEVERITY_COLORS.warning },
+  { label: "Info", color: EDGE_SEVERITY_COLORS.info },
 ];
 
 interface LegendProps {
   /** Only show kinds that are actually present in the data. */
   activeKinds?: Set<NodeKind>;
+  /** When true, also shows edge severity legend. */
+  showSeverity?: boolean;
 }
 
-export function Legend({ activeKinds }: LegendProps) {
+export function Legend({ activeKinds, showSeverity }: LegendProps) {
   const items = activeKinds ? KINDS.filter((k) => activeKinds.has(k)) : KINDS;
 
   return (
@@ -36,6 +47,23 @@ export function Legend({ activeKinds }: LegendProps) {
           {NODE_KIND_LABELS[kind]}
         </div>
       ))}
+      {showSeverity && (
+        <>
+          <div className="w-px bg-slate-700 mx-1 self-stretch" />
+          {SEVERITY_ITEMS.map((s) => (
+            <div
+              key={s.label}
+              className="flex items-center gap-2 text-xs text-slate-400"
+            >
+              <span
+                className="inline-block w-6 h-0.5 rounded"
+                style={{ backgroundColor: s.color }}
+              />
+              {s.label}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }

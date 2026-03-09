@@ -20,6 +20,8 @@ import type {
   InsightEdge,
   InsightConnection,
   InsightRawTriple,
+  ImpactSummary,
+  ImpactChain,
   NodeKind,
 } from "./types.js";
 
@@ -30,6 +32,25 @@ const RISK_PREDICATES = new Set(["RISKS", "BLOCKS"]);
 
 /** Predicates that signal decisions. */
 const DECISION_PREDICATES = new Set(["DECIDED_FOR", "DECIDED_AGAINST"]);
+
+/** Predicates that signal dependency relationships. */
+const DEPENDENCY_PREDICATES = new Set([
+  "DEPENDS_ON",
+  "ENABLES",
+  "CONTAINS",
+  "USES",
+  "CALLS",
+]);
+
+/** Classify a predicate into a severity level. */
+function predicateSeverity(
+  pred: string,
+): "critical" | "warning" | "info" {
+  if (RISK_PREDICATES.has(pred)) return "critical";
+  if (DEPENDENCY_PREDICATES.has(pred) || pred === "DECIDED_AGAINST")
+    return "warning";
+  return "info";
+}
 
 /** Map KG entity type → NodeKind. */
 const TYPE_TO_KIND: Record<string, NodeKind> = {
@@ -256,6 +277,14 @@ export async function buildImpactGraph(
         edges: [],
         centerId: "__empty__",
         maxDepth: 0,
+        summary: {
+          headline: "No entities found matching the query.",
+          stats: { directCount: 0, rippleCount: 0, riskCount: 0, decisionCount: 0, totalRelationships: 0 },
+          riskChains: [],
+          decisionChains: [],
+          dependencyChains: [],
+          contextLines: [],
+        },
       },
       meta: {
         session: sessionId,
@@ -455,6 +484,16 @@ export async function buildImpactGraph(
     ? `Impact: ${seedName}`
     : `Impact: ${seedName}`;
 
+  // ── Step 7: Build impact summary ─────────────────────────────────────────
+  const summary = buildImpactSummary(
+    seedName,
+    seedRow.type as string,
+    Array.from(nodeMap.values()),
+    dedupedEdges,
+    depthMap,
+    nodeMap,
+  );
+
   return {
     vizType: "impact-graph",
     title,
@@ -463,6 +502,7 @@ export async function buildImpactGraph(
       edges: dedupedEdges,
       centerId: seedId,
       maxDepth: actualMaxDepth,
+      summary,
     },
     meta: {
       session: sessionId,
@@ -470,5 +510,139 @@ export async function buildImpactGraph(
       edgeCount: dedupedEdges.length,
       queryTimeMs: Date.now() - t0,
     },
+  };
+}
+
+// ── Summary builder ──────────────────────────────────────────────────────────
+
+function buildImpactSummary(
+  seedName: string,
+  seedType: string,
+  nodes: InsightNode[],
+  edges: InsightEdge[],
+  depthMap: Map<string, number>,
+  nodeMap: Map<string, InsightNode>,
+): ImpactSummary {
+  const directNodes = nodes.filter((n) => n.depth === 1);
+  const rippleNodes = nodes.filter((n) => (n.depth ?? 0) >= 2);
+  const riskNodes = nodes.filter(
+    (n) => n.kind === "risk" || n.entityType === "risk",
+  );
+  const decisionNodes = nodes.filter(
+    (n) => n.kind === "decision" || n.entityType === "decision",
+  );
+
+  // Classify edges into chains
+  const riskChains: ImpactChain[] = [];
+  const decisionChains: ImpactChain[] = [];
+  const dependencyChains: ImpactChain[] = [];
+
+  for (const edge of edges) {
+    const sourceNode = nodeMap.get(edge.source);
+    const targetNode = nodeMap.get(edge.target);
+    if (!sourceNode || !targetNode) continue;
+
+    const pred = edge.label;
+    const severity = predicateSeverity(pred);
+    const humanPred = pred.toLowerCase().replace(/_/g, " ");
+    const chain: ImpactChain = {
+      path: `${sourceNode.label} → ${humanPred} → ${targetNode.label}`,
+      severity,
+      predicate: pred,
+      entities: [sourceNode.label, targetNode.label],
+    };
+
+    if (RISK_PREDICATES.has(pred)) {
+      riskChains.push(chain);
+    } else if (DECISION_PREDICATES.has(pred)) {
+      decisionChains.push(chain);
+    } else if (DEPENDENCY_PREDICATES.has(pred)) {
+      dependencyChains.push(chain);
+    }
+  }
+
+  // Build headline
+  const parts: string[] = [];
+  parts.push(
+    `Changing **${seedName}** (${seedType}) directly affects **${directNodes.length}** entit${directNodes.length === 1 ? "y" : "ies"}`,
+  );
+  if (rippleNodes.length > 0) {
+    parts.push(`and ripples to **${rippleNodes.length}** more`);
+  }
+  const headline = parts.join(" ") + ".";
+
+  // Build context lines (RAG-quality structured text)
+  const contextLines: string[] = [];
+
+  contextLines.push(
+    `## Impact Analysis: ${seedName}`,
+  );
+  contextLines.push("");
+  contextLines.push(
+    `Center entity: ${seedName} (type: ${seedType})`,
+  );
+  contextLines.push(
+    `Blast radius: ${directNodes.length} direct + ${rippleNodes.length} ripple = ${nodes.length - 1} total affected entities`,
+  );
+  contextLines.push("");
+
+  if (riskChains.length > 0) {
+    contextLines.push("### Risks & Blockers");
+    for (const c of riskChains) {
+      contextLines.push(`- [${c.severity.toUpperCase()}] ${c.path}`);
+    }
+    contextLines.push("");
+  }
+
+  if (decisionChains.length > 0) {
+    contextLines.push("### Related Decisions");
+    for (const c of decisionChains) {
+      contextLines.push(`- ${c.path}`);
+    }
+    contextLines.push("");
+  }
+
+  if (dependencyChains.length > 0) {
+    contextLines.push("### Dependencies");
+    for (const c of dependencyChains) {
+      contextLines.push(`- [${c.severity.toUpperCase()}] ${c.path}`);
+    }
+    contextLines.push("");
+  }
+
+  // List affected entities by depth
+  if (directNodes.length > 0) {
+    contextLines.push("### Direct Impact (1 hop)");
+    for (const n of directNodes) {
+      const typeTag = n.entityType ? ` (${n.entityType})` : "";
+      const confTag =
+        n.confidence != null ? ` [conf: ${(n.confidence * 100).toFixed(0)}%]` : "";
+      contextLines.push(`- ${n.label}${typeTag}${confTag}`);
+    }
+    contextLines.push("");
+  }
+
+  if (rippleNodes.length > 0) {
+    contextLines.push("### Ripple Effect (2+ hops)");
+    for (const n of rippleNodes) {
+      const typeTag = n.entityType ? ` (${n.entityType})` : "";
+      contextLines.push(`- ${n.label}${typeTag}`);
+    }
+    contextLines.push("");
+  }
+
+  return {
+    headline,
+    stats: {
+      directCount: directNodes.length,
+      rippleCount: rippleNodes.length,
+      riskCount: riskChains.length,
+      decisionCount: decisionChains.length,
+      totalRelationships: edges.length,
+    },
+    riskChains,
+    decisionChains,
+    dependencyChains,
+    contextLines,
   };
 }

@@ -35,6 +35,11 @@ describe("buildImpactGraph", () => {
     expect(data.centerId).toBe("__empty__");
     expect(data.maxDepth).toBe(0);
     expect(result.meta.entityCount).toBe(0);
+
+    // Summary present even in empty state
+    expect(data.summary).toBeDefined();
+    expect(data.summary.stats.directCount).toBe(0);
+    expect(data.summary.contextLines).toHaveLength(0);
   });
 
   it("builds impact graph from seed + neighbors", async () => {
@@ -180,6 +185,26 @@ describe("buildImpactGraph", () => {
     expect(center?.rawTriples).toBeDefined();
     expect(center!.rawTriples).toHaveLength(1);
     expect(center!.rawTriples![0].subject).toBe("Authentication");
+
+    // Impact summary
+    expect(data.summary).toBeDefined();
+    expect(data.summary.headline).toContain("Authentication");
+    expect(data.summary.stats.directCount).toBe(2); // jwt + sec_risk
+    expect(data.summary.stats.rippleCount).toBe(1); // session
+    expect(data.summary.stats.riskCount).toBeGreaterThanOrEqual(1); // RISKS edge
+    expect(data.summary.stats.totalRelationships).toBe(3);
+
+    // Risk chains should include the RISKS edge
+    expect(data.summary.riskChains.length).toBeGreaterThanOrEqual(1);
+    expect(data.summary.riskChains[0].predicate).toBe("RISKS");
+    expect(data.summary.riskChains[0].severity).toBe("critical");
+
+    // Dependency chains should include DEPENDS_ON + ENABLES
+    expect(data.summary.dependencyChains.length).toBeGreaterThanOrEqual(1);
+
+    // Context lines should be populated
+    expect(data.summary.contextLines.length).toBeGreaterThan(0);
+    expect(data.summary.contextLines.some((l: string) => l.includes("Authentication"))).toBe(true);
   });
 
   it("falls back to most-connected entity when no keyword match", async () => {

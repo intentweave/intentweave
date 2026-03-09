@@ -78,6 +78,31 @@ export interface ImpactGraphData {
   edges: InsightEdge[];
   centerId: string;
   maxDepth: number;
+  summary: ImpactSummary;
+}
+
+export type ImpactSeverity = "critical" | "warning" | "info";
+
+export interface ImpactChain {
+  path: string;
+  severity: ImpactSeverity;
+  predicate: string;
+  entities: string[];
+}
+
+export interface ImpactSummary {
+  headline: string;
+  stats: {
+    directCount: number;
+    rippleCount: number;
+    riskCount: number;
+    decisionCount: number;
+    totalRelationships: number;
+  };
+  riskChains: ImpactChain[];
+  decisionChains: ImpactChain[];
+  dependencyChains: ImpactChain[];
+  contextLines: string[];
 }
 
 export interface InsightMeta {
@@ -136,3 +161,22 @@ export const PREDICATE_LABELS: Record<string, string> = {
   CONTAINS: "contains",
   RELATED_TO: "related to",
 };
+
+/** Edge stroke colors by predicate severity. */
+export const EDGE_SEVERITY_COLORS: Record<ImpactSeverity, string> = {
+  critical: "#ef4444", // red-500
+  warning: "#f59e0b",  // amber-500
+  info: "#64748b",     // slate-500
+};
+
+/** Map predicates to their severity level. */
+export function predicateSeverity(pred: string): ImpactSeverity {
+  if (pred === "RISKS" || pred === "BLOCKS") return "critical";
+  if (
+    pred === "DEPENDS_ON" ||
+    pred === "DECIDED_AGAINST" ||
+    pred === "REQUIRES"
+  )
+    return "warning";
+  return "info";
+}

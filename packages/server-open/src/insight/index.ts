@@ -10,6 +10,8 @@ export type {
   InsightRawTriple,
   DecisionTreeData,
   ImpactGraphData,
+  ImpactSummary,
+  ImpactChain,
   InsightResponse,
 } from "./types.js";
 

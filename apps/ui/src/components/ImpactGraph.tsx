@@ -17,7 +17,7 @@
 import { useEffect, useRef } from "react";
 import * as d3 from "d3";
 import type { ImpactGraphData, InsightNode, NodeKind } from "../types.js";
-import { NODE_COLORS, PREDICATE_LABELS } from "../types.js";
+import { NODE_COLORS, PREDICATE_LABELS, EDGE_SEVERITY_COLORS, predicateSeverity } from "../types.js";
 
 // ── Layout constants ─────────────────────────────────────────────────────────
 
@@ -150,20 +150,22 @@ export function ImpactGraph({
         .text(d === 1 ? "Direct impact" : `${d}-hop ripple`);
     }
 
-    // ── Arrow marker ───────────────────────────────────────────────────────
-    svg
-      .append("defs")
-      .append("marker")
-      .attr("id", "impact-arrow")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 22)
-      .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#475569");
+    // ── Arrow markers (one per severity) ──────────────────────────────────
+    const defs = svg.append("defs");
+    for (const [sev, color] of Object.entries(EDGE_SEVERITY_COLORS)) {
+      defs
+        .append("marker")
+        .attr("id", `impact-arrow-${sev}`)
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 22)
+        .attr("refY", 0)
+        .attr("markerWidth", 6)
+        .attr("markerHeight", 6)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("d", "M0,-5L10,0L0,5")
+        .attr("fill", color);
+    }
 
     // ── Edges ──────────────────────────────────────────────────────────────
     const linkGroup = g.append("g").attr("class", "links");
@@ -172,11 +174,20 @@ export function ImpactGraph({
       .selectAll<SVGPathElement, SimLink>("path")
       .data(simLinks)
       .join("path")
-      .attr("stroke", "#475569")
-      .attr("stroke-width", 1.2)
+      .attr("stroke", (d) => {
+        const sev = predicateSeverity(d.label);
+        return EDGE_SEVERITY_COLORS[sev];
+      })
+      .attr("stroke-width", (d) => {
+        const sev = predicateSeverity(d.label);
+        return sev === "critical" ? 2.0 : sev === "warning" ? 1.5 : 1.2;
+      })
       .attr("fill", "none")
-      .attr("marker-end", "url(#impact-arrow)")
-      .attr("opacity", 0.6);
+      .attr("marker-end", (d) => `url(#impact-arrow-${predicateSeverity(d.label)})`)
+      .attr("opacity", (d) => {
+        const sev = predicateSeverity(d.label);
+        return sev === "critical" ? 0.9 : sev === "warning" ? 0.7 : 0.5;
+      });
 
     // Edge labels
     const edgeLabelSel = linkGroup
@@ -184,7 +195,10 @@ export function ImpactGraph({
       .data(simLinks)
       .join("text")
       .attr("font-size", 9)
-      .attr("fill", "#64748b")
+      .attr("fill", (d) => {
+        const sev = predicateSeverity(d.label);
+        return sev === "critical" ? "#fca5a5" : sev === "warning" ? "#fcd34d" : "#64748b";
+      })
       .attr("text-anchor", "middle")
       .attr("dy", -4)
       .text((d) => d.label);

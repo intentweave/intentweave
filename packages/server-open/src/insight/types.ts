@@ -97,6 +97,40 @@ export interface DecisionTreeData {
 // Impact graph data
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** A relationship chain showing a path of impact. */
+export interface ImpactChain {
+  /** Human-readable path description (e.g. "Auth → DEPENDS_ON → JWT → RISKS → Expiry"). */
+  path: string;
+  /** Severity: critical (RISKS/BLOCKS), warning (DEPENDS_ON/DECIDED_AGAINST), info (other). */
+  severity: "critical" | "warning" | "info";
+  /** The predicate that determines severity (the most severe in the chain). */
+  predicate: string;
+  /** Entity names along the chain. */
+  entities: string[];
+}
+
+/** Structured impact summary for RAG consumption and human interpretation. */
+export interface ImpactSummary {
+  /** One-sentence overview: "Changing X directly affects N entities and ripples to M more." */
+  headline: string;
+  /** Breakdown counts by category. */
+  stats: {
+    directCount: number;
+    rippleCount: number;
+    riskCount: number;
+    decisionCount: number;
+    totalRelationships: number;
+  };
+  /** Risk chains (RISKS / BLOCKS relationships). */
+  riskChains: ImpactChain[];
+  /** Decision chains (DECIDED_FOR / DECIDED_AGAINST). */
+  decisionChains: ImpactChain[];
+  /** Dependency chains (DEPENDS_ON / ENABLES / CONTAINS). */
+  dependencyChains: ImpactChain[];
+  /** Plain-text context list suitable for RAG / agent consumption. */
+  contextLines: string[];
+}
+
 export interface ImpactGraphData {
   nodes: InsightNode[];
   edges: InsightEdge[];
@@ -104,6 +138,8 @@ export interface ImpactGraphData {
   centerId: string;
   /** Maximum hop distance reached during expansion. */
   maxDepth: number;
+  /** Structured impact summary with stats, chains, and RAG context. */
+  summary: ImpactSummary;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
