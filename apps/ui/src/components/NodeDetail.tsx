@@ -15,6 +15,23 @@ import {
   PREDICATE_LABELS,
 } from "../types.js";
 
+/** Format an ISO/Neo4j datetime string to a human-readable form. */
+function formatTimestamp(ts: string): string {
+  try {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+}
+
 interface NodeDetailProps {
   node: InsightNode;
   onClose: () => void;
@@ -66,6 +83,11 @@ export function NodeDetail({ node, onClose, onNavigate }: NodeDetailProps) {
               />
               {kindLabel}
             </span>
+            {node.entityType && node.entityType !== node.kind && (
+              <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">
+                {node.entityType}
+              </span>
+            )}
           </div>
         </div>
         <button
@@ -108,6 +130,32 @@ export function NodeDetail({ node, onClose, onNavigate }: NodeDetailProps) {
           </Section>
         )}
 
+        {/* Timestamps */}
+        {(node.createdAt || node.updatedAt) && (
+          <Section label="Timeline">
+            <div className="space-y-0.5">
+              {node.createdAt && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-emerald-500 text-[10px]">●</span>
+                  <span className="text-slate-500 text-[10px]">Created</span>
+                  <span className="text-slate-300 text-[11px]">
+                    {formatTimestamp(node.createdAt)}
+                  </span>
+                </div>
+              )}
+              {node.updatedAt && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-amber-500 text-[10px]">●</span>
+                  <span className="text-slate-500 text-[10px]">Updated</span>
+                  <span className="text-slate-300 text-[11px]">
+                    {formatTimestamp(node.updatedAt)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </Section>
+        )}
+
         {/* Run ID — temporal indicator */}
         {node.runId && (
           <Section label="Run ID">
@@ -147,6 +195,26 @@ export function NodeDetail({ node, onClose, onNavigate }: NodeDetailProps) {
                 >
                   {alias}
                 </span>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* Raw Triples (provenance) */}
+        {node.rawTriples && node.rawTriples.length > 0 && (
+          <Section label={`Provenance (${node.rawTriples.length} triples)`}>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {node.rawTriples.map((t, i) => (
+                <div
+                  key={i}
+                  className="bg-slate-800/50 rounded px-2 py-1 text-[10px] leading-relaxed"
+                >
+                  <span className="text-cyan-400">{t.subject}</span>
+                  <span className="text-slate-500 mx-1">→</span>
+                  <span className="text-amber-400">{t.predicate}</span>
+                  <span className="text-slate-500 mx-1">→</span>
+                  <span className="text-emerald-400">{t.object}</span>
+                </div>
               ))}
             </div>
           </Section>

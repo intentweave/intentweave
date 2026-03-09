@@ -164,7 +164,7 @@ describe("buildDecisionTree", () => {
     expect(result.data.edges).toHaveLength(2);
   });
 
-  it("populates enrichment fields (aliases, connections, temporalOrder)", async () => {
+  it("populates enrichment fields (aliases, connections, temporalOrder, timestamps, rawTriples)", async () => {
     const decisions = [
       {
         id: "d1",
@@ -174,6 +174,8 @@ describe("buildDecisionTree", () => {
         aliases: ["authentication", "login"],
         runId: "run-002",
         artifactId: "docs/auth.md",
+        createdAt: "2025-06-15T10:30:00Z",
+        updatedAt: "2025-07-01T14:00:00Z",
       },
       {
         id: "d2",
@@ -183,6 +185,8 @@ describe("buildDecisionTree", () => {
         aliases: null,
         runId: "run-001",
         artifactId: "docs/db.md",
+        createdAt: "2025-06-10T08:00:00Z",
+        updatedAt: null,
       },
     ];
 
@@ -195,6 +199,8 @@ describe("buildDecisionTree", () => {
         sourceAliases: ["authentication", "login"],
         sourceRunId: "run-002",
         sourceArtifactId: "docs/auth.md",
+        sourceCreatedAt: "2025-06-15T10:30:00Z",
+        sourceUpdatedAt: "2025-07-01T14:00:00Z",
         predicate: "DECIDED_FOR",
         targetId: "jwt",
         targetName: "JWT Tokens",
@@ -203,10 +209,27 @@ describe("buildDecisionTree", () => {
         targetAliases: ["JSON Web Tokens"],
         targetRunId: "run-002",
         targetArtifactId: "docs/auth.md",
+        targetCreatedAt: "2025-06-15T10:30:00Z",
+        targetUpdatedAt: null,
       },
     ];
 
-    const runner = mockRunner([decisions, edges]);
+    const rawTriples = [
+      {
+        canonId: "d1",
+        subject: "Auth Method",
+        predicate: "DECIDED_FOR",
+        object: "JWT Tokens",
+      },
+      {
+        canonId: "d1",
+        subject: "project",
+        predicate: "USES",
+        object: "Auth Method",
+      },
+    ];
+
+    const runner = mockRunner([decisions, edges, rawTriples]);
     const result = await buildDecisionTree({ runner, sessionId: "test" });
 
     // Check aliases populated
@@ -215,10 +238,16 @@ describe("buildDecisionTree", () => {
     expect(d1?.sourceDoc).toBe("docs/auth.md");
     expect(d1?.runId).toBe("run-002");
 
+    // Check timestamps
+    expect(d1?.createdAt).toBe("2025-06-15T10:30:00Z");
+    expect(d1?.updatedAt).toBe("2025-07-01T14:00:00Z");
+    expect(d1?.entityType).toBe("decision");
+
     // Check temporalOrder: run-001 < run-002, so d2=1, d1=2
     expect(d1?.temporalOrder).toBe(2);
     const d2 = result.data.nodes.find((n) => n.id === "d2");
     expect(d2?.temporalOrder).toBe(1);
+    expect(d2?.createdAt).toBe("2025-06-10T08:00:00Z");
 
     // Check connections populated
     expect(d1?.connections).toBeDefined();
@@ -232,5 +261,12 @@ describe("buildDecisionTree", () => {
     expect(jwt?.aliases).toEqual(["JSON Web Tokens"]);
     const incoming = jwt?.connections?.find((c) => c.direction === "incoming");
     expect(incoming?.targetLabel).toBe("Auth Method");
+
+    // Check raw triples populated
+    expect(d1?.rawTriples).toBeDefined();
+    expect(d1!.rawTriples).toHaveLength(2);
+    expect(d1!.rawTriples![0].subject).toBe("Auth Method");
+    expect(d1!.rawTriples![0].predicate).toBe("DECIDED_FOR");
+    expect(d1!.rawTriples![0].object).toBe("JWT Tokens");
   });
 });

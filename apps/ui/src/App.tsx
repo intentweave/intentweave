@@ -4,11 +4,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { QueryBar } from "./components/QueryBar.js";
 import { DecisionTree } from "./components/DecisionTree.js";
+import { DecisionTimeline } from "./components/DecisionTimeline.js";
 import { Legend } from "./components/Legend.js";
 import { MetaBar } from "./components/MetaBar.js";
 import { NodeDetail } from "./components/NodeDetail.js";
 import { fetchInsight, checkHealth } from "./api/insight.js";
 import type { InsightResponse, InsightNode, NodeKind } from "./types.js";
+
+type ViewMode = "graph" | "timeline";
 
 export function App() {
   const [insight, setInsight] = useState<InsightResponse | null>(null);
@@ -16,6 +19,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const [selectedNode, setSelectedNode] = useState<InsightNode | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("graph");
 
   // Check backend health on mount
   useEffect(() => {
@@ -70,6 +74,30 @@ export function App() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {insight && insight.data.nodes.length > 1 && (
+            <div className="flex items-center bg-slate-800 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode("graph")}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  viewMode === "graph"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Graph
+              </button>
+              <button
+                onClick={() => setViewMode("timeline")}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  viewMode === "timeline"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Timeline
+              </button>
+            </div>
+          )}
           {backendUp === false && (
             <span className="text-xs text-red-400">
               ⚠ Backend not reachable
@@ -157,8 +185,15 @@ export function App() {
         )}
 
         {/* Visualization */}
-        {insight && insight.data.nodes.length > 1 && (
+        {insight && insight.data.nodes.length > 1 && viewMode === "graph" && (
           <DecisionTree
+            data={insight.data}
+            selectedNodeId={selectedNode?.id}
+            onNodeClick={setSelectedNode}
+          />
+        )}
+        {insight && insight.data.nodes.length > 1 && viewMode === "timeline" && (
+          <DecisionTimeline
             data={insight.data}
             selectedNodeId={selectedNode?.id}
             onNodeClick={setSelectedNode}

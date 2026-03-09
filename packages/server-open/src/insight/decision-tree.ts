@@ -20,6 +20,7 @@ import type {
   InsightNode,
   InsightEdge,
   InsightConnection,
+  InsightRawTriple,
   NodeKind,
 } from "./types.js";
 
@@ -171,7 +172,8 @@ export async function buildDecisionTree(
     WHERE d.type = 'decision'
     ${topicFilter}
     RETURN d.canonId AS id, d.name AS name, d.type AS type, d.confidence AS confidence,
-           d.aliases AS aliases, d.run_id AS runId, d.artifactId AS artifactId
+           d.aliases AS aliases, d.run_id AS runId, d.artifactId AS artifactId,
+           toString(d.created_at) AS createdAt, toString(d.updated_at) AS updatedAt
     LIMIT ${maxDecisions}
   `);
 
@@ -182,7 +184,8 @@ export async function buildDecisionTree(
       MATCH (d:Canon:Entity {session_id: "${sid}"})
       WHERE d.type = 'decision'
       RETURN d.canonId AS id, d.name AS name, d.type AS type, d.confidence AS confidence,
-             d.aliases AS aliases, d.run_id AS runId, d.artifactId AS artifactId
+             d.aliases AS aliases, d.run_id AS runId, d.artifactId AS artifactId,
+             toString(d.created_at) AS createdAt, toString(d.updated_at) AS updatedAt
       LIMIT ${maxDecisions}
     `);
   }
@@ -220,9 +223,11 @@ export async function buildDecisionTree(
     AND r.predicate IN [${predList}]
     RETURN a.canonId  AS sourceId,   a.name  AS sourceName, a.type  AS sourceType, a.confidence AS sourceConf,
            a.aliases AS sourceAliases, a.run_id AS sourceRunId, a.artifactId AS sourceArtifactId,
+           toString(a.created_at) AS sourceCreatedAt, toString(a.updated_at) AS sourceUpdatedAt,
            r.predicate AS predicate,
            b.canonId  AS targetId,   b.name  AS targetName, b.type  AS targetType, b.confidence AS targetConf,
-           b.aliases AS targetAliases, b.run_id AS targetRunId, b.artifactId AS targetArtifactId
+           b.aliases AS targetAliases, b.run_id AS targetRunId, b.artifactId AS targetArtifactId,
+           toString(b.created_at) AS targetCreatedAt, toString(b.updated_at) AS targetUpdatedAt
     LIMIT ${maxEdges}
   `);
 
@@ -250,6 +255,9 @@ export async function buildDecisionTree(
         aliases: asStringArray(d.aliases),
         sourceDoc: d.artifactId as string | undefined,
         runId: d.runId as string | undefined,
+        entityType: d.type as string | undefined,
+        createdAt: d.createdAt as string | undefined,
+        updatedAt: d.updatedAt as string | undefined,
       });
     }
     edges.push({ source: rootId, target: id, label: "" });
@@ -276,6 +284,9 @@ export async function buildDecisionTree(
         aliases: asStringArray(row.sourceAliases),
         sourceDoc: row.sourceArtifactId as string | undefined,
         runId: row.sourceRunId as string | undefined,
+        entityType: row.sourceType as string | undefined,
+        createdAt: row.sourceCreatedAt as string | undefined,
+        updatedAt: row.sourceUpdatedAt as string | undefined,
       });
     }
 
@@ -294,6 +305,9 @@ export async function buildDecisionTree(
         aliases: asStringArray(row.targetAliases),
         sourceDoc: row.targetArtifactId as string | undefined,
         runId: row.targetRunId as string | undefined,
+        entityType: row.targetType as string | undefined,
+        createdAt: row.targetCreatedAt as string | undefined,
+        updatedAt: row.targetUpdatedAt as string | undefined,
       });
     }
 
@@ -332,6 +346,42 @@ export async function buildDecisionTree(
     const runIdRank = new Map(uniqueRunIds.map((id, i) => [id, i + 1]));
     for (const node of decisionNodes) {
       node.temporalOrder = runIdRank.get(node.runId!);
+    }
+  }
+
+  // ── Step 5: Fetch raw triples for provenance ────────────────────────────
+  // Query RawTriple nodes that were CANONICALIZED_FROM any of our Canon entities.
+  const allNodeIds = Array.from(nodeMap.keys()).filter((id) => id !== rootId);
+  if (allNodeIds.length > 0) {
+    const nodeIdList = allNodeIds.map((id) => `"${escapeStr(id)}"`).join(", ");
+    const rawTripleRows = await runner.run(`
+      MATCH (rt:RawTriple)-[:CANONICALIZED_FROM]->(c:Canon:Entity {session_id: "${sid}"})
+      WHERE c.canonId IN [${nodeIdList}]
+      RETURN c.canonId AS canonId, rt.subject AS subject, rt.predicate AS predicate, rt.object AS object
+      LIMIT 500
+    `);
+
+    // Group raw triples by canonId
+    const tripleMap = new Map<string, InsightRawTriple[]>();
+    for (const row of rawTripleRows) {
+      const cId = row.canonId as string;
+      const triple: InsightRawTriple = {
+        subject: row.subject as string,
+        predicate: row.predicate as string,
+        object: row.object as string,
+      };
+      let list = tripleMap.get(cId);
+      if (!list) {
+        list = [];
+        tripleMap.set(cId, list);
+      }
+      list.push(triple);
+    }
+
+    // Attach to nodes
+    for (const [canonId, triples] of tripleMap) {
+      const node = nodeMap.get(canonId);
+      if (node) node.rawTriples = triples;
     }
   }
 

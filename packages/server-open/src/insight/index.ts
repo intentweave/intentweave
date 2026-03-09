@@ -7,6 +7,7 @@ export type {
   InsightNode,
   InsightEdge,
   InsightConnection,
+  InsightRawTriple,
   DecisionTreeData,
   InsightResponse,
 } from "./types.js";

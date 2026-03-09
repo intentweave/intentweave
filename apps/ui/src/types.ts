@@ -33,7 +33,21 @@ export interface InsightNode {
   runId?: string;
   /** 1-based temporal sequence among decisions (1 = earliest run). */
   temporalOrder?: number;
+  /** Raw KG entity type (e.g. 'decision', 'option', 'technology'). */
+  entityType?: string;
+  /** ISO timestamp when the entity was first persisted. */
+  createdAt?: string;
+  /** ISO timestamp when the entity was last updated. */
+  updatedAt?: string;
+  /** Raw triples (subject → predicate → object) mentioning this entity. */
+  rawTriples?: InsightRawTriple[];
   connections?: InsightConnection[];
+}
+
+export interface InsightRawTriple {
+  subject: string;
+  predicate: string;
+  object: string;
 }
 
 export interface InsightConnection {
