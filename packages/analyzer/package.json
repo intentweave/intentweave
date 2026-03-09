@@ -39,11 +39,14 @@
       "import": "./dist/viz/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -71,6 +74,9 @@
   "intentweave": {
     "tier": "oss",
     "description": "Pipeline engine (IN→FX→KX→GX) — core extraction, must stay open-source"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "license": "Apache-2.0",
   "repository": {

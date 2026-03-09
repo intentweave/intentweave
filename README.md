@@ -12,14 +12,26 @@ REST API, and a React UI.
 
 ## Quick Start
 
-```bash
-# Install
-git clone https://github.com/intentweave/intentweave.git
-cd intentweave
-pnpm install
+### Install from npm
 
-# Build all packages
-pnpm build
+```bash
+npm install -g @intentweave/cli
+iw --help
+```
+
+Or use `npx` without installing:
+
+```bash
+npx @intentweave/cli run docs/*.md --track open -i -v
+```
+
+### First project setup
+
+```bash
+cd /path/to/your/project
+
+# Initialize workspace
+iw init
 
 # Start Neo4j (requires Docker)
 docker run -d --name neo4j \
@@ -30,10 +42,23 @@ docker run -d --name neo4j \
 # Run the extraction pipeline on your docs
 export NEO4J_PASSWORD=codegraph
 export OPENAI_API_KEY=sk-...
-./iw.sh run docs/*.md --track open --provider openai -i --persist -v
+iw run docs/*.md --track open --provider openai -i --persist -v
 
 # Query the knowledge graph
-./iw.sh query "What are the main components?"
+iw query "What are the main components?"
+```
+
+> **Full CLI documentation:** [docs/CLI-USAGE.md](docs/CLI-USAGE.md)
+
+### From source (development)
+
+```bash
+git clone https://github.com/intentweave/intentweave.git
+cd intentweave
+pnpm install && pnpm build
+
+# Use the dev wrapper (no build needed for changes)
+./iw.sh run docs/*.md --track open -i -v
 ```
 
 ### Start the Server
@@ -194,32 +219,34 @@ Returns canonical predicates, entity types, and relationship documentation.
 
 ```bash
 # Run extraction pipeline
-./iw.sh run docs/*.md --track open --provider openai -i -v
+iw run docs/*.md --track open --provider openai -i -v
 
 # Query the knowledge graph (natural language)
-./iw.sh query "What are the main components?"
+iw query "What are the main components?"
 
 # Query with raw Cypher
-./iw.sh query --cypher "MATCH (n:Canon:Entity) RETURN n.name, n.type LIMIT 20"
+iw query --cypher "MATCH (n:Canon:Entity) RETURN n.name, n.type LIMIT 20"
 
 # Build RAG context
-./iw.sh context "authentication architecture" -s my-project
+iw context "authentication architecture" -s my-project
 
 # Entity-seeded context
-./iw.sh context -e "React" --hops 3 -s my-project
+iw context -e "React" --hops 3 -s my-project
 
 # Impact analysis
-./iw.sh impact src/auth.ts -s my-project
+iw impact src/auth.ts -s my-project
 
 # Documentation health check
-./iw.sh doc-health docs/ -s my-project
+iw doc-health docs/ -s my-project
 
 # Cross-layer code linking
-./iw.sh xlink . --session my-project --persist
+iw xlink . --session my-project --persist
 
 # Persist to Neo4j
-./iw.sh persist --latest -v
+iw persist --latest -v
 ```
+
+> See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
 
 ### MCP (GitHub Copilot Integration)
 
@@ -237,10 +264,21 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 Start the MCP server:
 
 ```bash
-./iw.sh mcp --session my-project -v
+iw mcp --session my-project -v
 ```
 
-VS Code auto-discovers via `.vscode/mcp.json`.
+VS Code auto-discovers via `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "intentweave-kg": {
+      "command": "npx",
+      "args": ["@intentweave/cli", "mcp", "--session", "my-project", "-v"]
+    }
+  }
+}
+```
 
 ---
 
@@ -257,7 +295,8 @@ packages/
   server-core/          → @intentweave/server-core — Fastify + Neo4j + middleware
   server-open/          → @intentweave/server-open — open track API routes
   profiles/             → @intentweave/profiles — extraction profile packs
-  ast-extractor/        → @intentweave/ast-extractor — tree-sitter code extraction
+  ast-extractor/        → @intentweave/ast-extractor — tree-sitter TS/JS extraction
+  swift-parser/         → @intentweave/swift-parser — tree-sitter Swift extraction
 ```
 
 ### Server Plugin Architecture
@@ -338,18 +377,33 @@ Schema-free knowledge extraction:
 ```bash
 pnpm install          # Install all packages
 pnpm build            # Build all (uses Turbo)
-pnpm test             # Run all tests (669+ tests)
+pnpm test             # Run all tests (710+ tests)
 pnpm dev              # Dev mode with hot reload
 pnpm typecheck        # Type check all packages
 pnpm format           # Format with Prettier
 pnpm format:check     # Verify formatting
 ```
 
+### Publishing
+
+All `@intentweave/*` packages are publishable to npm:
+
+```bash
+# Build everything first
+pnpm build
+
+# Publish all packages (pnpm resolves workspace:* → real versions)
+pnpm -r publish --access public
+
+# Or publish individual packages
+pnpm --filter @intentweave/cli publish --access public
+```
+
 ### Project Stats
 
-- **8 packages** + 1 app
-- **669+ tests**, all passing
-- **TypeScript 5.9**, ESM, strict mode
+- **9 packages** + 1 app
+- **710+ tests**, all passing
+- **TypeScript 5.6**, ESM, strict mode
 - **Fastify 5**, Neo4j 5, Turbo, pnpm workspaces
 
 ---

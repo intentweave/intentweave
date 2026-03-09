@@ -42,12 +42,15 @@
       "import": "./schemas/*.json"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
-    "src",
     "schemas"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc && cp -r schemas dist/",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -65,6 +68,9 @@
   "intentweave": {
     "tier": "oss",
     "description": "Core types, predicates, and interfaces — always open-source"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "license": "Apache-2.0",
   "repository": {

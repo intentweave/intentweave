@@ -39,11 +39,15 @@
       "import": "./dist/commands/persist-neo4j.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "README.md"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -59,11 +63,11 @@
     "chokidar": "^5.0.0",
     "commander": "^12.1.0",
     "glob": "^11.0.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "neo4j-driver": "^5.27.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },

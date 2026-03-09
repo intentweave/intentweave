@@ -11,12 +11,14 @@
       "import": "./dist/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
-    "dist",
-    "src",
-    "queries"
+    "dist"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc",
     "test": "vitest run",
     "test:unit": "vitest run",
@@ -43,6 +45,6 @@
     "directory": "packages/swift-parser"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

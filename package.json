@@ -23,7 +23,9 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write '**/*.{ts,tsx,json,md}'",
-    "format:check": "prettier --check '**/*.{ts,tsx,json,md}'"
+    "format:check": "prettier --check '**/*.{ts,tsx,json,md}'",
+    "publish:all": "pnpm build && pnpm -r publish --access public",
+    "publish:dry": "pnpm build && pnpm -r publish --access public --dry-run"
   },
   "devDependencies": {
     "@types/node": "^20.19.37",
