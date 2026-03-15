@@ -40,7 +40,10 @@ import {
 import {
   analyzeDocHealth,
   formatDocHealthMarkdown,
+  formatDocHealthForAgent,
   type DocHealthOptions,
+  preflightDocHealth,
+  formatPreflightForAgent,
 } from "../doc-health/index.js";
 
 // =============================================================================
@@ -417,7 +420,18 @@ function toolSchema(): string {
 async function toolDocHealth(args: {
   session_id: string;
   files?: string[];
+  lite?: boolean;
 }): Promise<string> {
+  // Lightweight mode: no Neo4j, no LLM — keyword-only
+  if (args.lite) {
+    const cwd = process.cwd();
+    const targets =
+      args.files && args.files.length > 0 ? args.files : [cwd];
+    const result = await preflightDocHealth({ files: targets, cwd });
+    return formatPreflightForAgent(result);
+  }
+
+  // Full mode: requires Neo4j
   const runner = createMcpRunner();
 
   const opts: DocHealthOptions = {
@@ -429,7 +443,7 @@ async function toolDocHealth(args: {
   };
 
   const result = await analyzeDocHealth(opts);
-  return formatDocHealthMarkdown(result);
+  return formatDocHealthForAgent(result);
 }
 
 async function toolImpact(args: {
@@ -657,7 +671,17 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
   // ── Tool: kg_doc_health ─────────────────────────────────────────────
   server.tool(
     "kg_doc_health",
-    "Analyze documentation freshness. Detects stale references (entities that were decided against or superseded), structural drift (new relationships not reflected in docs), contradictions, and undocumented entities.",
+    `Analyze documentation freshness and grounding. Returns a human-readable report PLUS structured JSON for agent reasoning.
+
+Detects:
+- **stale**: entities decided against or superseded
+- **drift**: new relationships not reflected in docs
+- **contradiction**: doc claims conflict with graph state
+- **orphaned**: entities with no code references, no cross-doc mentions, and low KG connectivity
+  - Each orphaned entity has a \`likelyStatus\` heuristic: "stale" (outdated), "planned" (aspirational), or "unknown"
+- **undocumented**: graph entities with no doc provenance
+
+The structured JSON block at the end contains per-document grounding details. Use it to decide whether to remove stale references, leave planned items, or investigate unknowns with \`kg_context\`.`,
     {
       files: z
         .array(z.string())
@@ -665,13 +689,24 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
         .describe(
           "Document file path(s) to analyze (omit to scan all session documents)",
         ),
+      lite: z
+        .boolean()
+        .optional()
+        .describe(
+          "Lightweight keyword-only mode. No Neo4j or LLM required. " +
+            "Extracts entity names from markdown structure (headings, bold, code spans) " +
+            "and checks if they appear in source files. Fast pre-flight check.",
+        ),
     },
     async (args) => {
-      log(`kg_doc_health: files=${JSON.stringify(args.files ?? "all")}`);
+      log(
+        `kg_doc_health: files=${JSON.stringify(args.files ?? "all")} lite=${args.lite ?? false}`,
+      );
       try {
         const result = await toolDocHealth({
           files: args.files,
           session_id: sessionId,
+          lite: args.lite,
         });
         return { content: [{ type: "text", text: result }] };
       } catch (err: any) {

@@ -23,6 +23,7 @@ import type {
   InsightRawTriple,
   NodeKind,
 } from "./types.js";
+import { enrichNodeDescriptions } from "./describe.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -386,6 +387,9 @@ export async function buildDecisionTree(
   }
 
   const dedupedEdges = deduplicateEdges(edges);
+
+  // ── Step 6: Synthesize descriptions from raw triples ────────────────────
+  enrichNodeDescriptions(nodeMap.values());
 
   return {
     vizType: "decision-tree",

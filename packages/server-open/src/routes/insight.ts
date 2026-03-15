@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import type { Driver } from "neo4j-driver";
 import type { ServerConfig } from "@intentweave/server-core";
 import { createRunnerFromDriver } from "../helpers/index.js";
-import { buildDecisionTree, buildImpactGraph } from "../insight/index.js";
+import { buildDecisionTree, buildImpactGraph, buildKnowledgeGraph, buildKwgGraph, buildLineage } from "../insight/index.js";
 
 /**
  * POST /api/insight — Generate a purpose-built visualization from the knowledge graph.
@@ -42,6 +42,8 @@ export async function registerInsightRoutes(
               enum: [
                 "decision-tree",
                 "impact-graph",
+                "knowledge-graph",
+                "kwg",
                 "architecture",
                 "heatmap",
               ],
@@ -156,11 +158,76 @@ export async function registerInsightRoutes(
           return result;
         }
 
+        case "knowledge-graph": {
+          const result = await buildKnowledgeGraph({
+            runner,
+            sessionId,
+            question: body.question,
+            maxNodes: body.maxNodes ?? 200,
+          });
+          return result;
+        }
+
+        case "kwg": {
+          const result = await buildKwgGraph({
+            runner,
+            sessionId,
+            question: body.question,
+            maxNodes: body.maxNodes ?? 200,
+          });
+          return result;
+        }
+
         default:
           return (reply as any).status(400).send({
-            error: `Unsupported vizType: ${vizType}. Supported: decision-tree, impact-graph`,
+            error: `Unsupported vizType: ${vizType}. Supported: decision-tree, impact-graph, knowledge-graph, kwg`,
           });
       }
+    },
+  );
+
+  // ── GET /api/insight/lineage/:canonId — trace an entity back to sources ──
+  fastify.get(
+    "/api/insight/lineage/:canonId",
+    {
+      schema: {
+        tags: ["insight"],
+        description:
+          "Trace a Canon entity back through raw triples to original source documents",
+        params: {
+          type: "object",
+          properties: {
+            canonId: {
+              type: "string",
+              description: "The canonId of the entity to trace",
+            },
+          },
+          required: ["canonId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            session: {
+              type: "string",
+              description: "Session ID to scope the query",
+            },
+          },
+        },
+      },
+    },
+    async (request, _reply) => {
+      const { canonId } = request.params as { canonId: string };
+      const { session } = (request.query as { session?: string }) ?? {};
+      const ctx = (request as any).ctx as { sessionId: string };
+      const sessionId = session ?? ctx.sessionId;
+
+      const driver: Driver = (fastify as any).neo4j;
+      const runner = createRunnerFromDriver(
+        driver,
+        (fastify as any).neo4jDatabase,
+      );
+
+      return buildLineage({ runner, sessionId, canonId });
     },
   );
 }

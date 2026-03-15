@@ -12,6 +12,7 @@ export type {
   ImpactGraphData,
   ImpactSummary,
   ImpactChain,
+  KnowledgeGraphData,
   InsightResponse,
 } from "./types.js";
 
@@ -20,3 +21,18 @@ export type { BuildDecisionTreeOpts } from "./decision-tree.js";
 
 export { buildImpactGraph } from "./impact-graph.js";
 export type { BuildImpactGraphOpts } from "./impact-graph.js";
+
+export { buildKnowledgeGraph } from "./knowledge-graph.js";
+export type { BuildKnowledgeGraphOpts } from "./knowledge-graph.js";
+
+export { buildKwgGraph } from "./kwg-graph.js";
+export type { BuildKwgGraphOpts } from "./kwg-graph.js";
+
+export { buildLineage } from "./lineage.js";
+export type {
+  BuildLineageOpts,
+  LineageResponse,
+  LineageTriple,
+  LineageSource,
+  LineageRelation,
+} from "./lineage.js";

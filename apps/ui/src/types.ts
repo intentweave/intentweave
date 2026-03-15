@@ -9,6 +9,8 @@
 export type VizType =
   | "decision-tree"
   | "impact-graph"
+  | "knowledge-graph"
+  | "kwg"
   | "architecture"
   | "heatmap";
 
@@ -81,6 +83,13 @@ export interface ImpactGraphData {
   summary: ImpactSummary;
 }
 
+export interface KnowledgeGraphData {
+  nodes: InsightNode[];
+  edges: InsightEdge[];
+  totalEntities: number;
+  totalRelationships: number;
+}
+
 export type ImpactSeverity = "critical" | "warning" | "info";
 
 export interface ImpactChain {
@@ -115,7 +124,7 @@ export interface InsightMeta {
 export interface InsightResponse {
   vizType: VizType;
   title: string;
-  data: DecisionTreeData | ImpactGraphData;
+  data: DecisionTreeData | ImpactGraphData | KnowledgeGraphData;
   meta: InsightMeta;
 }
 
@@ -179,4 +188,55 @@ export function predicateSeverity(pred: string): ImpactSeverity {
   )
     return "warning";
   return "info";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Lineage (entity provenance chain)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** A raw triple from the KG, with provenance back to source document. */
+export interface LineageTriple {
+  subject: string;
+  predicate: string;
+  object: string;
+  role: "subject" | "object";
+  confidence: number | null;
+  rationale: string | null;
+  subjectKind: string | null;
+  objectKind: string | null;
+  sourceFile: string | null;
+  artifactId: string | null;
+  runId: string | null;
+}
+
+/** A unique source document contributing knowledge about an entity. */
+export interface LineageSource {
+  sourceFile: string;
+  artifactId: string;
+  tripleCount: number;
+  predicates: string[];
+}
+
+/** A canonical relationship with raw predicate provenance. */
+export interface LineageRelation {
+  direction: "outgoing" | "incoming";
+  predicate: string;
+  rawPredicate: string | null;
+  otherName: string;
+  otherCanonId: string;
+  otherType: string | null;
+  artifactId: string | null;
+  confidence: number | null;
+}
+
+/** Full lineage response for a single entity. */
+export interface LineageResponse {
+  canonId: string;
+  name: string;
+  type: string;
+  sessionId: string;
+  triples: LineageTriple[];
+  sources: LineageSource[];
+  canonRelations: LineageRelation[];
+  queryTimeMs: number;
 }

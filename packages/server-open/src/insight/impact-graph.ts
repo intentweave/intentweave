@@ -24,6 +24,7 @@ import type {
   ImpactChain,
   NodeKind,
 } from "./types.js";
+import { enrichNodeDescriptions } from "./describe.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -484,7 +485,10 @@ export async function buildImpactGraph(
     ? `Impact: ${seedName}`
     : `Impact: ${seedName}`;
 
-  // ── Step 7: Build impact summary ─────────────────────────────────────────
+  // ── Step 7: Synthesize descriptions from raw triples ─────────────────────
+  enrichNodeDescriptions(nodeMap.values());
+
+  // ── Step 8: Build impact summary ─────────────────────────────────────────
   const summary = buildImpactSummary(
     seedName,
     seedRow.type as string,

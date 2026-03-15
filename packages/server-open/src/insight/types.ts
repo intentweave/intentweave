@@ -17,6 +17,7 @@
 export type VizType =
   | "decision-tree"
   | "impact-graph"
+  | "knowledge-graph"
   | "architecture"
   | "heatmap";
 
@@ -143,13 +144,26 @@ export interface ImpactGraphData {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Knowledge graph data (full session graph)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface KnowledgeGraphData {
+  nodes: InsightNode[];
+  edges: InsightEdge[];
+  /** Total entity count in session (may exceed returned nodes). */
+  totalEntities: number;
+  /** Total relationship count in session. */
+  totalRelationships: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Response envelope
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface InsightResponse {
   vizType: VizType;
   title: string;
-  data: DecisionTreeData | ImpactGraphData;
+  data: DecisionTreeData | ImpactGraphData | KnowledgeGraphData;
   meta: {
     session: string;
     entityCount: number;

@@ -60,16 +60,29 @@ interface DecisionTreeProps {
   data: DecisionTreeData;
   selectedNodeId?: string;
   onNodeClick?: (node: InsightNode) => void;
+  /** When set, dims everything except these node IDs (lineage highlighting). */
+  highlightedNodeIds?: Set<string>;
 }
 
 export function DecisionTree({
   data,
   selectedNodeId,
   onNodeClick,
+  highlightedNodeIds,
 }: DecisionTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
+  // Stable refs for volatile props — avoids full D3 rebuild on select/highlight
+  const onNodeClickRef = useRef(onNodeClick);
+  onNodeClickRef.current = onNodeClick;
+  const selectedIdRef = useRef(selectedNodeId);
+  selectedIdRef.current = selectedNodeId;
+  const highlightIdsRef = useRef(highlightedNodeIds);
+  highlightIdsRef.current = highlightedNodeIds;
+  const applyStylesRef = useRef<(() => void) | null>(null);
+
+  // ── Heavy D3 setup — only re-runs when data changes ─────────────────────
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || !data.nodes.length) return;
 
@@ -122,8 +135,8 @@ export function DecisionTree({
     svg.call(zoom);
 
     // ── Arrow marker ───────────────────────────────────────────────────────
-    svg
-      .append("defs")
+    const defs = svg.append("defs");
+    defs
       .append("marker")
       .attr("id", "arrow")
       .attr("viewBox", "0 -5 10 10")
@@ -135,6 +148,17 @@ export function DecisionTree({
       .append("path")
       .attr("d", "M0,-4L10,0L0,4")
       .attr("fill", "#475569");
+
+    // Glow filter (always present — referenced dynamically by applyStyles)
+    defs
+      .append("filter")
+      .attr("id", "lineage-glow-dt")
+      .append("feDropShadow")
+      .attr("dx", 0)
+      .attr("dy", 0)
+      .attr("stdDeviation", 4)
+      .attr("flood-color", "#818cf8")
+      .attr("flood-opacity", 0.7);
 
     // ── Force simulation ───────────────────────────────────────────────────
     const simulation = d3
@@ -170,7 +194,7 @@ export function DecisionTree({
       .join("path")
       .attr("stroke", "#475569")
       .attr("stroke-width", 1.5)
-      .attr("stroke-opacity", 0.5)
+      .attr("stroke-opacity", 0.5) // set by applyStyles
       .attr("fill", "none")
       .attr("marker-end", "url(#arrow)");
 
@@ -214,12 +238,12 @@ export function DecisionTree({
 
     // Click handler for node selection
     nodeGroup.on("click", (_event, d) => {
-      const orig = data.nodes.find((n) => n.id === d.id);
-      if (orig && onNodeClick) onNodeClick(orig);
+      const orig = nodeById.get(d.id);
+      if (orig && onNodeClickRef.current) onNodeClickRef.current(orig);
     });
     nodeGroup.style("cursor", "pointer");
 
-    // Rect background
+    // Rect background (fill / stroke / filter set by applyStyles)
     nodeGroup
       .append("rect")
       .attr("rx", NODE_RX)
@@ -227,18 +251,9 @@ export function DecisionTree({
       .attr("width", (d) => d.w)
       .attr("height", NODE_HEIGHT)
       .attr("x", (d) => -d.w / 2)
-      .attr("y", -NODE_HEIGHT / 2)
-      .attr("fill", (d) => NODE_COLORS[d.kind] + "1A") // ~10% opacity
-      .attr("stroke", (d) => NODE_COLORS[d.kind])
-      .attr("stroke-width", (d) => (d.id === selectedNodeId ? 3.5 : 2));
+      .attr("y", -NODE_HEIGHT / 2);
 
-    // Selection glow filter
-    if (selectedNodeId) {
-      const selNode = nodeGroup.filter((d) => d.id === selectedNodeId);
-      selNode
-        .select("rect")
-        .attr("filter", "drop-shadow(0 0 6px rgba(99,102,241,0.6))");
-    }
+    // Selection glow — handled by applyStyles
 
     // Kind indicator dot
     nodeGroup
@@ -248,14 +263,14 @@ export function DecisionTree({
       .attr("r", 4)
       .attr("fill", (d) => NODE_COLORS[d.kind]);
 
-    // Label text
+    // Label text (fill set by applyStyles)
     nodeGroup
       .append("text")
       .text((d) => d.label)
+      .attr("class", "dt-label")
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "central")
       .attr("x", 4) // shift right slightly to account for dot
-      .attr("fill", (d) => NODE_COLORS[d.kind])
       .attr("font-size", FONT_SIZE)
       .attr("font-weight", 500);
 
@@ -337,10 +352,69 @@ export function DecisionTree({
         .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
     });
 
+    // ── Style-update function (called on selection / highlight change) ────
+    function applyStyles() {
+      const sel = selectedIdRef.current;
+      const hlIds = highlightIdsRef.current;
+      const hasHl = hlIds != null && hlIds.size > 0;
+      const isHl = (id: string) => !hasHl || hlIds!.has(id);
+      const isEdgeHl = (s: string, t: string) =>
+        !hasHl || (hlIds!.has(s) && hlIds!.has(t));
+
+      // Rect fill / stroke / filter
+      nodeGroup
+        .select("rect")
+        .attr("fill", (d) => {
+          const base = NODE_COLORS[d.kind] + "1A";
+          return isHl(d.id) ? base : NODE_COLORS[d.kind] + "08";
+        })
+        .attr("stroke", (d) => {
+          if (hasHl && isHl(d.id)) return "#818cf8";
+          return NODE_COLORS[d.kind];
+        })
+        .attr("stroke-width", (d) => {
+          if (d.id === sel) return 3.5;
+          if (hasHl && isHl(d.id)) return 2.5;
+          return 2;
+        })
+        .attr("opacity", (d) => (isHl(d.id) ? 1 : 0.25))
+        .attr("filter", (d) => {
+          if (d.id === sel) return "drop-shadow(0 0 6px rgba(99,102,241,0.6))";
+          if (hasHl && isHl(d.id)) return "url(#lineage-glow-dt)";
+          return null;
+        });
+
+      // Label fill
+      nodeGroup
+        .select(".dt-label")
+        .attr("fill", (d) => (isHl(d.id) ? NODE_COLORS[d.kind] : "#334155"));
+
+      // Edge opacity
+      linkPaths.attr("stroke-opacity", (d) => {
+        const sId = typeof d.source === "string" ? d.source : (d.source as SimNode).id;
+        const tId = typeof d.target === "string" ? d.target : (d.target as SimNode).id;
+        return isEdgeHl(sId, tId) ? 0.5 : 0.08;
+      });
+
+      linkLabels.attr("opacity", (d) => {
+        const sId = typeof d.source === "string" ? d.source : (d.source as SimNode).id;
+        const tId = typeof d.target === "string" ? d.target : (d.target as SimNode).id;
+        return isEdgeHl(sId, tId) ? 1 : 0.08;
+      });
+    }
+
+    applyStylesRef.current = applyStyles;
+    applyStyles();
+
     return () => {
       simulation.stop();
     };
-  }, [data, selectedNodeId, onNodeClick]);
+  }, [data]);
+
+  // ── Lightweight style update on selection / highlight change ──────────
+  useEffect(() => {
+    applyStylesRef.current?.();
+  }, [selectedNodeId, highlightedNodeIds]);
 
   return (
     <div ref={containerRef} className="insight-canvas w-full h-full">

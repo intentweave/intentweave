@@ -23,6 +23,9 @@ import {
   formatDocHealthMarkdown,
   formatDocHealthJson,
   type DocHealthOptions,
+  preflightDocHealth,
+  formatPreflightMarkdown,
+  formatPreflightForAgent,
 } from "../doc-health/index.js";
 import type { Neo4jRunner } from "../context/index.js";
 
@@ -143,6 +146,10 @@ export const docHealthCommand = new Command("doc-health")
   .option("-o, --output <path>", "Write output to file")
   .option("-v, --verbose", "Show progress on stderr")
   .option("--neo4j-uri <uri>", "Neo4j connection URI")
+  .option(
+    "--lite",
+    "Lightweight keyword-only mode — no Neo4j or LLM required",
+  )
   .action(async (files: string[], options) => {
     const {
       session: sessionId,
@@ -150,7 +157,56 @@ export const docHealthCommand = new Command("doc-health")
       format,
       output,
       verbose,
+      lite,
     } = options;
+
+    // ── Lite mode: zero-infrastructure preflight ──────────────────────
+    if (lite) {
+      try {
+        const cwd = process.cwd();
+        const targets = files.length > 0 ? files : [cwd];
+        const log = verbose
+          ? (msg: string) => console.error(chalk.blue(msg))
+          : undefined;
+
+        const result = await preflightDocHealth({
+          files: targets,
+          cwd,
+          log,
+        });
+
+        const formatted =
+          format === "json"
+            ? JSON.stringify(result, null, 2)
+            : formatPreflightMarkdown(result);
+
+        if (output) {
+          writeFileSync(output, formatted, "utf-8");
+          console.error(
+            chalk.green(`Preflight doc health report written to ${output}`),
+          );
+        } else {
+          console.log(formatted);
+        }
+
+        if (verbose) {
+          const s = result.stats;
+          console.error(
+            chalk.blue(
+              `\nPreflight: ${s.docsAnalyzed} docs, ${s.totalEntities} entities, ` +
+                `${s.groundedCount} grounded, ${s.floatingCount} floating, ` +
+                `avg grounding: ${s.avgGroundingPercent}%`,
+            ),
+          );
+        }
+      } catch (err: any) {
+        console.error(chalk.red("Error:"), err.message ?? err);
+        process.exit(1);
+      }
+      return;
+    }
+
+    // ── Full mode: requires Neo4j ─────────────────────────────────────
 
     if (!sessionId) {
       console.error(

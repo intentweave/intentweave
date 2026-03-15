@@ -343,6 +343,7 @@ Schema-free knowledge extraction:
 ### Features
 
 - **Incremental caching** — SHA-256 content-addressed, skip unchanged files
+- **Fast keyword scanning** — parallel file I/O (64 concurrent reads), combined regex pre-filter, single-pass `indexOf` matching, early termination. Scans 3500+ files in seconds, not minutes
 - **Batch failure detection** — 3 consecutive failures = abort
 - **Network resilience** — two-phase retry, batch cooldown
 - **Token/cost estimation** — before committing to LLM calls

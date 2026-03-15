@@ -25,6 +25,8 @@
 
 import type { Neo4jRunner } from "../context/index.js";
 import * as fs from "node:fs/promises";
+import { scanKeywordNames as indexKeywordsInCodebase } from "./keywordScanner.js";
+export { indexKeywordsInCodebase };
 
 // =============================================================================
 // Types
@@ -33,7 +35,13 @@ import * as fs from "node:fs/promises";
 /** A single issue found in a document */
 export interface DocIssue {
   /** Issue severity */
-  severity: "stale" | "drift" | "missing" | "contradiction" | "stale-temporal";
+  severity:
+    | "stale"
+    | "drift"
+    | "missing"
+    | "contradiction"
+    | "stale-temporal"
+    | "orphaned";
   /** Human-readable description */
   message: string;
   /** The entity name involved */
@@ -56,6 +64,12 @@ export interface DocReport {
   totalCount: number;
   /** Percentage of entities still fresh (0-100) */
   freshnessPercent: number;
+  /** Percentage of entities grounded in code, other docs, or KG (0-100) */
+  groundingPercent: number;
+  /** Number of entities grounded somewhere */
+  groundedCount: number;
+  /** Per-entity grounding details (for structured agent consumption) */
+  groundingDetails?: EntityGrounding[];
   /** Issues found */
   issues: DocIssue[];
 }
@@ -88,7 +102,10 @@ export interface DocHealthResult {
     missingCount: number;
     contradictionCount: number;
     temporalCount: number;
+    orphanedCount: number;
     undocumentedCount: number;
+    /** Average grounding % across all docs */
+    avgGroundingPercent: number;
   };
 }
 
@@ -132,6 +149,7 @@ const STRUCTURAL_PREDICATES = [
  * 2. For each document, get entities extracted from it
  * 3. Check each entity for staleness signals in the graph
  * 4. Check for structural drift (new relationships not in doc's triples)
+ * 4b. Check entity grounding (code refs, cross-doc mentions, KG connectivity)
  * 5. Find undocumented entities (canon entities with no RawTriple from any .md)
  */
 export async function analyzeDocHealth(
@@ -171,12 +189,34 @@ export async function analyzeDocHealth(
 
   log(`  Found ${docPaths.length} document(s)`);
 
+  // Step 1b: Build keyword index from codebase (shared across all doc analyses)
+  let keywordIndex: Set<string> | undefined;
+  if (cwd) {
+    // Collect all entity names across all docs for a single codebase scan
+    log("Step 1b: Collecting entity names for keyword indexing…");
+    const allEntityRows = await runner.run(
+      `MATCH (rt:RawTriple)-[:CANONICALIZED_FROM]->(ce:Canon:Entity)
+       WHERE rt.session_id = $sid
+       RETURN DISTINCT ce.name AS name`,
+      { sid: sessionId },
+    );
+    const allEntityNames = allEntityRows.map((r) => String(r.name));
+    keywordIndex = await indexKeywordsInCodebase(cwd, allEntityNames, log);
+  }
+
   // Step 2–4: Analyze each document
   const reports: DocReport[] = [];
 
   for (const filePath of docPaths) {
     log(`Step 2-4: Analyzing ${filePath}…`);
-    const report = await analyzeDocument(runner, sessionId, filePath, log, cwd);
+    const report = await analyzeDocument(
+      runner,
+      sessionId,
+      filePath,
+      log,
+      cwd,
+      keywordIndex,
+    );
     reports.push(report);
   }
 
@@ -218,7 +258,19 @@ export async function analyzeDocHealth(
         sum + r.issues.filter((i) => i.severity === "stale-temporal").length,
       0,
     ),
+    orphanedCount: reports.reduce(
+      (sum, r) =>
+        sum + r.issues.filter((i) => i.severity === "orphaned").length,
+      0,
+    ),
     undocumentedCount: undocumented.length,
+    avgGroundingPercent:
+      reports.length > 0
+        ? Math.round(
+            reports.reduce((sum, r) => sum + r.groundingPercent, 0) /
+              reports.length,
+          )
+        : 100,
   };
 
   return { sessionId, reports, undocumented, stats };
@@ -234,6 +286,7 @@ async function analyzeDocument(
   filePath: string,
   log: (msg: string) => void,
   cwd?: string,
+  keywordIndex?: Set<string>,
 ): Promise<DocReport> {
   const issues: DocIssue[] = [];
 
@@ -258,6 +311,8 @@ async function analyzeDocument(
       freshCount: 0,
       totalCount: 0,
       freshnessPercent: 100,
+      groundedCount: 0,
+      groundingPercent: 100,
       issues: [],
     };
   }
@@ -383,6 +438,64 @@ async function analyzeDocument(
     );
   }
 
+  // ─── Grounding analysis: detect orphaned entities ────────────────
+  let groundedCount = 0;
+  let groundingPercent = 100;
+  let groundingDetails: EntityGrounding[] | undefined;
+  if (entityNames.length > 0) {
+    const groundings = await checkEntityGrounding(
+      runner,
+      sessionId,
+      filePath,
+      entityNames,
+    );
+
+    // Merge keyword-index results (code presence via filesystem scan)
+    for (const g of groundings) {
+      if (keywordIndex?.has(g.name)) {
+        g.foundInCode = true;
+        g.grounded = true;
+      }
+    }
+
+    // Classify orphaned entities with heuristic
+    const orphaned = groundings.filter((g) => !g.grounded);
+    for (const g of orphaned) {
+      const eType = entities.find((e) => e.name === g.name)?.type ?? g.type;
+      g.likelyStatus = classifyOrphanedEntity(eType, filePath);
+    }
+
+    groundedCount = groundings.length - orphaned.length;
+    groundingPercent =
+      groundings.length > 0
+        ? Math.round((groundedCount / groundings.length) * 100)
+        : 100;
+    groundingDetails = groundings;
+
+    for (const g of orphaned) {
+      const eType = entities.find((e) => e.name === g.name)?.type ?? g.type;
+      const statusHint =
+        g.likelyStatus === "planned"
+          ? " (likely planned — not yet implemented)"
+          : g.likelyStatus === "stale"
+            ? " (likely stale — concept no longer in codebase)"
+            : "";
+      issues.push({
+        severity: "orphaned",
+        message: `"${g.name}" has no code references, no cross-document mentions, and low KG connectivity${statusHint}`,
+        entityName: g.name,
+        entityType: eType,
+        detail: `codeRefs=${g.codeRefs}, otherDocRefs=${g.otherDocRefs}, kgConns=${g.kgConnections}, inCode=${g.foundInCode}, likelyStatus=${g.likelyStatus}`,
+      });
+    }
+
+    if (groundingPercent < 40) {
+      log(
+        `  ⚠ Low grounding: ${groundingPercent}% (${orphaned.length} orphaned entities)`,
+      );
+    }
+  }
+
   // Deduplicate issues by entity+severity
   const seen = new Set<string>();
   const deduped = issues.filter((i) => {
@@ -406,14 +519,21 @@ async function analyzeDocument(
 
   // Determine status
   let status: "fresh" | "warning" | "rotten";
+  const staleIssueCount = deduped.filter((i) => i.severity === "stale").length;
+  const orphanedIssueCount = deduped.filter(
+    (i) => i.severity === "orphaned",
+  ).length;
+
   if (
     freshnessPercent >= 80 &&
-    deduped.filter((i) => i.severity === "stale").length === 0
+    staleIssueCount === 0 &&
+    groundingPercent >= 60
   ) {
     status = "fresh";
   } else if (
     freshnessPercent < 50 ||
-    deduped.filter((i) => i.severity === "stale").length >= 3
+    staleIssueCount >= 3 ||
+    groundingPercent < 30
   ) {
     status = "rotten";
   } else {
@@ -426,6 +546,9 @@ async function analyzeDocument(
     freshCount,
     totalCount: entities.length,
     freshnessPercent,
+    groundedCount,
+    groundingPercent,
+    groundingDetails,
     issues: deduped,
   };
 }
@@ -543,6 +666,160 @@ async function findUndocumentedEntities(
 }
 
 // =============================================================================
+// Grounding analysis — detect orphaned entities
+// =============================================================================
+
+/**
+ * Per-entity grounding result from KG analysis.
+ */
+export interface EntityGrounding {
+  name: string;
+  type: string;
+  /** Number of :CodeRef nodes linked via :REALIZED_BY */
+  codeRefs: number;
+  /** Number of other documents that mention this entity */
+  otherDocRefs: number;
+  /** Number of CANON_REL relationships (connectivity) */
+  kgConnections: number;
+  /** Whether this entity name was found in codebase source files */
+  foundInCode: boolean;
+  /** Is this entity considered grounded? (≥1 signal) */
+  grounded: boolean;
+  /** Heuristic classification for orphaned entities: stale, planned, or unknown */
+  likelyStatus?: "stale" | "planned" | "unknown";
+}
+
+/**
+ * Query Neo4j for grounding signals of each entity extracted from a document.
+ *
+ * For each Canon entity, checks:
+ *   1. CodeRef links (cross-layer linker output)
+ *   2. Cross-document mentions (other RawTriples reference the same entity)
+ *   3. KG connectivity (number of CANON_REL relationships)
+ *
+ * An entity is "grounded" if it has ≥1 of these signals.
+ * An entity with none is "orphaned" — likely stale.
+ */
+async function checkEntityGrounding(
+  runner: Neo4jRunner,
+  sessionId: string,
+  filePath: string,
+  entityNames: string[],
+): Promise<EntityGrounding[]> {
+  if (entityNames.length === 0) return [];
+
+  const rows = await runner.run(
+    `UNWIND $names AS entityName
+     MATCH (ce:Canon:Entity)
+     WHERE ce.session_id = $sid AND ce.name = entityName
+     // CodeRef links
+     OPTIONAL MATCH (ce)<-[:REALIZED_BY]-(cr:CodeRef)
+     WITH ce, entityName, count(DISTINCT cr) AS codeRefs
+     // Cross-document mentions
+     OPTIONAL MATCH (other:RawTriple)-[:CANONICALIZED_FROM]->(ce)
+       WHERE other.session_id = $sid AND other.sourceFile <> $file
+     WITH ce, entityName, codeRefs, count(DISTINCT other) AS otherDocRefs
+     // KG connectivity
+     OPTIONAL MATCH (ce)-[:CANON_REL]-()
+     WITH entityName, ce.type AS type, codeRefs, otherDocRefs,
+          count(*) AS kgConnections
+     RETURN entityName, type, codeRefs, otherDocRefs,
+            CASE WHEN kgConnections > 0 THEN kgConnections ELSE 0 END AS kgConnections`,
+    { sid: sessionId, file: filePath, names: entityNames },
+  );
+
+  return rows.map((r) => {
+    const codeRefs = Number(r.codeRefs) || 0;
+    const otherDocRefs = Number(r.otherDocRefs) || 0;
+    const kgConnections = Number(r.kgConnections) || 0;
+
+    return {
+      name: String(r.entityName),
+      type: String(r.type ?? "unknown"),
+      codeRefs,
+      otherDocRefs,
+      kgConnections,
+      foundInCode: false, // set later by keyword indexing
+      grounded: codeRefs > 0 || otherDocRefs > 0 || kgConnections > 1,
+    };
+  });
+}
+
+// =============================================================================
+// Orphaned entity classification heuristic
+// =============================================================================
+
+/** Doc path patterns that indicate planning / forward-looking content. */
+const PLANNING_DOC_PATTERNS = [
+  /roadmap/i,
+  /plan/i,
+  /implementation[-_]plan/i,
+  /backlog/i,
+  /todo/i,
+  /rfc/i,
+  /proposal/i,
+  /adr/i,
+  /future/i,
+  /next[-_]?steps/i,
+  /strategy/i,
+];
+
+/** Entity types that are inherently aspirational / planned. */
+const PLANNED_ENTITY_TYPES = new Set([
+  "phase",
+  "requirement",
+  "feature",
+  "question",
+  "tradeoff",
+  "risk",
+]);
+
+/** Entity types that are concrete and likely stale if ungrounded. */
+const CONCRETE_ENTITY_TYPES = new Set([
+  "technology",
+  "component",
+  "resource",
+]);
+
+/**
+ * Classify an ungrounded entity as likely "planned", "stale", or "unknown".
+ *
+ * The heuristic considers:
+ *   - **Entity type**: phases/requirements/features are likely planned;
+ *     technologies/components are likely stale if not in code.
+ *   - **Source document path**: entities from roadmaps/plans/RFCs are
+ *     more likely planned; entities from architecture/API docs are likely stale.
+ */
+export function classifyOrphanedEntity(
+  entityType: string,
+  sourceDocPath: string,
+): "stale" | "planned" | "unknown" {
+  const isPlannedType = PLANNED_ENTITY_TYPES.has(entityType.toLowerCase());
+  const isConcreteType = CONCRETE_ENTITY_TYPES.has(entityType.toLowerCase());
+  const isFromPlanningDoc = PLANNING_DOC_PATTERNS.some((re) =>
+    re.test(sourceDocPath),
+  );
+
+  // Planning doc + planning type → high confidence: planned
+  if (isFromPlanningDoc && isPlannedType) return "planned";
+  // Planning doc + any type → moderate: likely planned
+  if (isFromPlanningDoc) return "planned";
+  // Concrete type from a non-planning doc → likely stale
+  if (isConcreteType && !isFromPlanningDoc) return "stale";
+  // Planning type from a non-planning doc → could go either way
+  if (isPlannedType) return "planned";
+  // Default
+  return "unknown";
+}
+
+// =============================================================================
+// Keyword indexing — delegated to shared keywordScanner module
+// =============================================================================
+
+// (See keywordScanner.ts for the optimized scanner implementation with
+// ripgrep fast path. Re-exported as indexKeywordsInCodebase above.)
+
+// =============================================================================
 // Formatters
 // =============================================================================
 
@@ -558,6 +835,7 @@ const SEVERITY_ICONS: Record<string, string> = {
   missing: "📭",
   contradiction: "⚡",
   "stale-temporal": "🕐",
+  orphaned: "👻",
 };
 
 export function formatDocHealthMarkdown(result: DocHealthResult): string {
@@ -581,6 +859,13 @@ export function formatDocHealthMarkdown(result: DocHealthResult): string {
   lines.push(`| 🔴 Rotten | ${stats.rottenDocs} |`);
   lines.push("");
 
+  if (stats.avgGroundingPercent < 100) {
+    lines.push(
+      `**Avg grounding:** ${stats.avgGroundingPercent}% · 👻 ${stats.orphanedCount} orphaned entities`,
+    );
+    lines.push("");
+  }
+
   if (stats.totalIssues > 0) {
     lines.push(`**Issues found:** ${stats.totalIssues}`);
     const issueParts: string[] = [];
@@ -592,6 +877,8 @@ export function formatDocHealthMarkdown(result: DocHealthResult): string {
       issueParts.push(`🕐 ${stats.temporalCount} temporal`);
     if (stats.missingCount > 0)
       issueParts.push(`📭 ${stats.missingCount} missing`);
+    if (stats.orphanedCount > 0)
+      issueParts.push(`👻 ${stats.orphanedCount} orphaned`);
     lines.push(issueParts.join(" · "));
     lines.push("");
   }
@@ -609,6 +896,11 @@ export function formatDocHealthMarkdown(result: DocHealthResult): string {
     lines.push(
       `**Freshness:** ${report.freshnessPercent}% (${report.freshCount}/${report.totalCount} entities current)`,
     );
+    if (report.groundingPercent < 100) {
+      lines.push(
+        `**Grounding:** ${report.groundingPercent}% (${report.groundedCount}/${report.totalCount} entities grounded in code/docs)`,
+      );
+    }
     lines.push("");
 
     if (report.issues.length === 0) {
@@ -671,6 +963,11 @@ export function formatDocHealthMarkdown(result: DocHealthResult): string {
         "- **Review temporally stale docs**: Some entities were updated in the knowledge graph after the document was last modified. Re-check those sections for accuracy.",
       );
     }
+    if (stats.orphanedCount > 0) {
+      lines.push(
+        `- **Investigate orphaned entities**: ${stats.orphanedCount} entity(ies) appear only in their source document with no code references or cross-document mentions. They may be outdated concepts that no longer exist in the codebase.`,
+      );
+    }
     if (undocumented.length > 0) {
       lines.push(
         `- **Document new entities**: ${undocumented.length} entity(ies) with significant graph presence have no documentation.`,
@@ -689,6 +986,96 @@ export function formatDocHealthMarkdown(result: DocHealthResult): string {
   );
 
   return lines.join("\n");
+}
+
+/**
+ * Format doc-health results for agent / MCP consumption.
+ *
+ * Returns markdown + a structured JSON block that agents can parse to make
+ * decisions about orphaned entities (planned vs stale vs unknown).
+ */
+export function formatDocHealthForAgent(result: DocHealthResult): string {
+  const markdown = formatDocHealthMarkdown(result);
+
+  // Build structured grounding summary for agent reasoning
+  const groundingSummary: Record<
+    string,
+    {
+      status: string;
+      freshnessPercent: number;
+      groundingPercent: number;
+      orphanedEntities: Array<{
+        name: string;
+        type: string;
+        likelyStatus: string;
+        codeRefs: number;
+        otherDocRefs: number;
+        kgConnections: number;
+        foundInCode: boolean;
+      }>;
+      groundedEntities: string[];
+    }
+  > = {};
+
+  for (const report of result.reports) {
+    const orphaned = (report.groundingDetails ?? []).filter(
+      (g) => !g.grounded,
+    );
+    const grounded = (report.groundingDetails ?? []).filter(
+      (g) => g.grounded,
+    );
+
+    groundingSummary[report.filePath] = {
+      status: report.status,
+      freshnessPercent: report.freshnessPercent,
+      groundingPercent: report.groundingPercent,
+      orphanedEntities: orphaned.map((g) => ({
+        name: g.name,
+        type: g.type,
+        likelyStatus: g.likelyStatus ?? "unknown",
+        codeRefs: g.codeRefs,
+        otherDocRefs: g.otherDocRefs,
+        kgConnections: g.kgConnections,
+        foundInCode: g.foundInCode,
+      })),
+      groundedEntities: grounded.map((g) => g.name),
+    };
+  }
+
+  const agentBlock = [
+    "",
+    "---",
+    "",
+    "## 🤖 Structured Grounding Data (for agent reasoning)",
+    "",
+    "Use this data to classify orphaned entities. `likelyStatus` is a heuristic:",
+    "- **planned**: Entity appears to be a future/aspirational concept (from planning docs or planning entity types like phase/requirement/feature)",
+    "- **stale**: Entity appears outdated (concrete types like technology/component in non-planning docs with no code backing)",
+    "- **unknown**: Insufficient signal — investigate further with `kg_context` or `kg_query`",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        stats: {
+          avgGroundingPercent: result.stats.avgGroundingPercent,
+          orphanedCount: result.stats.orphanedCount,
+          totalIssues: result.stats.totalIssues,
+        },
+        documents: groundingSummary,
+      },
+      null,
+      2,
+    ),
+    "```",
+    "",
+    "**Agent workflow hints:**",
+    "- For `likelyStatus: \"stale\"` → recommend removing or updating the reference",
+    "- For `likelyStatus: \"planned\"` → leave as-is or verify with stakeholder",
+    "- For `likelyStatus: \"unknown\"` → use `kg_context --entity <name>` to investigate",
+    "- Sort by groundingPercent ascending to prioritize worst documents first",
+  ];
+
+  return markdown + "\n" + agentBlock.join("\n");
 }
 
 export function formatDocHealthJson(result: DocHealthResult): string {

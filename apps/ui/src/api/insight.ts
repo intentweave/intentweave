@@ -1,7 +1,7 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import type { InsightResponse } from "../types.js";
+import type { InsightResponse, LineageResponse } from "../types.js";
 
 const BASE = "/api";
 
@@ -45,4 +45,51 @@ export async function checkHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Fetch available sessions from the server.
+ */
+export interface SessionInfo {
+  id: string;
+  canonCount: number;
+  kwgCount: number;
+}
+
+export async function fetchSessions(): Promise<SessionInfo[]> {
+  try {
+    const res = await fetch(`${BASE}/sessions`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { sessions: SessionInfo[] };
+    return body.sessions ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch lineage for a single Canon entity — traces back through
+ * raw triples to original source documents.
+ */
+export async function fetchLineage(
+  canonId: string,
+  session?: string,
+): Promise<LineageResponse> {
+  const params = new URLSearchParams();
+  if (session) params.set("session", session);
+  const qs = params.toString();
+  const url = `${BASE}/insight/lineage/${encodeURIComponent(canonId)}${qs ? `?${qs}` : ""}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { error?: string }).error ??
+        `Lineage request failed (${res.status})`,
+    );
+  }
+
+  return res.json() as Promise<LineageResponse>;
 }

@@ -23,6 +23,14 @@ const IMPACT_PRESETS = [
   { label: "Security", question: "security" },
 ];
 
+/** Preset queries for full knowledge graph exploration. */
+const KG_PRESETS = [
+  { label: "Full Graph", question: "*" },
+  { label: "Decisions", question: "decision" },
+  { label: "Components", question: "component" },
+  { label: "Risks", question: "risk" },
+];
+
 interface QueryBarProps {
   onSubmit: (question: string, vizType?: VizType) => void;
   loading: boolean;
@@ -33,11 +41,17 @@ export function QueryBar({ onSubmit, loading, vizType }: QueryBarProps) {
   const [value, setValue] = useState("");
 
   const presets =
-    vizType === "impact-graph" ? IMPACT_PRESETS : DECISION_PRESETS;
+    vizType === "knowledge-graph"
+      ? KG_PRESETS
+      : vizType === "impact-graph"
+        ? IMPACT_PRESETS
+        : DECISION_PRESETS;
   const placeholder =
-    vizType === "impact-graph"
-      ? "Enter an entity name to analyze impact…"
-      : "Ask a question about your knowledge graph…";
+    vizType === "knowledge-graph"
+      ? "Filter entities (or * for full graph)…"
+      : vizType === "impact-graph"
+        ? "Enter an entity name to analyze impact…"
+        : "Ask a question about your knowledge graph…";
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();

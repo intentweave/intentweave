@@ -7,10 +7,12 @@ import { DecisionTree } from "./components/DecisionTree.js";
 import { DecisionTimeline } from "./components/DecisionTimeline.js";
 import { ImpactGraph } from "./components/ImpactGraph.js";
 import { ImpactSummary } from "./components/ImpactSummary.js";
+import { KnowledgeGraph } from "./components/KnowledgeGraph.js";
 import { Legend } from "./components/Legend.js";
 import { MetaBar } from "./components/MetaBar.js";
 import { NodeDetail } from "./components/NodeDetail.js";
-import { fetchInsight, checkHealth } from "./api/insight.js";
+import { fetchInsight, checkHealth, fetchSessions } from "./api/insight.js";
+import type { SessionInfo } from "./api/insight.js";
 import type {
   InsightResponse,
   InsightNode,
@@ -18,6 +20,7 @@ import type {
   VizType,
   DecisionTreeData,
   ImpactGraphData,
+  KnowledgeGraphData,
 } from "./types.js";
 
 type ViewMode = "graph" | "timeline";
@@ -30,10 +33,27 @@ export function App() {
   const [selectedNode, setSelectedNode] = useState<InsightNode | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("graph");
   const [vizType, setVizType] = useState<VizType>("decision-tree");
+  /** Node IDs to highlight on the graph when lineage is shown in the detail panel. */
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string> | null>(null);
+  /** Available sessions from the server. */
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  /** Currently selected session (null = server default). */
+  const [activeSession, setActiveSession] = useState<string | null>(null);
 
   // Check backend health on mount
   useEffect(() => {
     checkHealth().then(setBackendUp);
+  }, []);
+
+  // Fetch available sessions on mount
+  useEffect(() => {
+    fetchSessions().then((list) => {
+      setSessions(list);
+      // Auto-select first session if available
+      if (list.length > 0 && !activeSession) {
+        setActiveSession(list[0].id);
+      }
+    });
   }, []);
 
   const handleQuery = useCallback(
@@ -47,9 +67,16 @@ export function App() {
       setViewMode("graph");
 
       try {
+        // For KG mode, "*" means "show everything" → send no question filter
+        const effectiveQuestion =
+          (activeViz === "knowledge-graph" || activeViz === "kwg") && question.trim() === "*"
+            ? undefined
+            : question;
         const result = await fetchInsight({
-          question,
+          question: effectiveQuestion,
           vizType: activeViz,
+          maxNodes: (activeViz === "knowledge-graph" || activeViz === "kwg") ? 200 : undefined,
+          session: activeSession ?? undefined,
         });
         setInsight(result);
       } catch (err: unknown) {
@@ -59,7 +86,7 @@ export function App() {
         setLoading(false);
       }
     },
-    [vizType],
+    [vizType, activeSession],
   );
 
   // Active node kinds for legend filtering
@@ -71,6 +98,8 @@ export function App() {
   const isDecisionTree = insight?.vizType === "decision-tree";
   /** Is the current response an impact graph? */
   const isImpactGraph = insight?.vizType === "impact-graph";
+  /** Is the current response a full knowledge graph? */
+  const isKnowledgeGraph = insight?.vizType === "knowledge-graph";
 
   /** Navigate to a node by ID (from connection links in the detail panel). */
   const handleNavigate = useCallback(
@@ -118,7 +147,42 @@ export function App() {
             >
               Impact
             </button>
+            <button
+              onClick={() => setVizType("knowledge-graph")}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                vizType === "knowledge-graph"
+                  ? "bg-emerald-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Full KG
+            </button>
+            <button
+              onClick={() => setVizType("kwg")}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                vizType === "kwg"
+                  ? "bg-cyan-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              KWG
+            </button>
           </div>
+
+          {/* Session selector */}
+          {sessions.length > 0 && (
+            <select
+              value={activeSession ?? ""}
+              onChange={(e) => setActiveSession(e.target.value || null)}
+              className="bg-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1.5 border border-slate-700 focus:border-indigo-500 focus:outline-none"
+            >
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.id} ({s.canonCount > 0 ? `${s.canonCount} canon` : ""}{s.canonCount > 0 && s.kwgCount > 0 ? ", " : ""}{s.kwgCount > 0 ? `${s.kwgCount} kwg` : ""})
+                </option>
+              ))}
+            </select>
+          )}
 
           {/* View mode toggle (only for decision-tree) */}
           {isDecisionTree && insight && insight.data.nodes.length > 1 && (
@@ -212,11 +276,16 @@ export function App() {
                     Visualize blast radius and ripple effects
                   </p>
                 </div>
-                <div className="bg-slate-900 rounded-lg p-3 border border-slate-800 opacity-50">
+                <div
+                  className="bg-slate-900 rounded-lg p-3 border border-slate-800 cursor-pointer hover:border-emerald-800 transition-colors"
+                  onClick={() => setVizType("knowledge-graph")}
+                >
                   <span className="text-emerald-400 font-medium">
-                    Architecture
+                    Full Knowledge Graph
                   </span>
-                  <p className="mt-1">Coming soon</p>
+                  <p className="mt-1">
+                    Browse all entities and relationships
+                  </p>
                 </div>
                 <div className="bg-slate-900 rounded-lg p-3 border border-slate-800 opacity-50">
                   <span className="text-amber-400 font-medium">Doc Health</span>
@@ -248,6 +317,7 @@ export function App() {
               data={insight.data as DecisionTreeData}
               selectedNodeId={selectedNode?.id}
               onNodeClick={setSelectedNode}
+              highlightedNodeIds={highlightedNodeIds ?? undefined}
             />
           )}
         {isDecisionTree &&
@@ -266,6 +336,7 @@ export function App() {
               data={insight.data as ImpactGraphData}
               selectedNodeId={selectedNode?.id}
               onNodeClick={setSelectedNode}
+              highlightedNodeIds={highlightedNodeIds ?? undefined}
             />
             {(insight.data as ImpactGraphData).summary && (
               <ImpactSummary
@@ -274,13 +345,26 @@ export function App() {
             )}
           </>
         )}
+        {isKnowledgeGraph && insight && insight.data.nodes.length > 0 && (
+          <KnowledgeGraph
+            data={insight.data as KnowledgeGraphData}
+            selectedNodeId={selectedNode?.id}
+            onNodeClick={setSelectedNode}
+            highlightedNodeIds={highlightedNodeIds ?? undefined}
+          />
+        )}
 
-        {/* Node detail side panel */}
+        {/* Node detail side panel (with inline lineage) */}
         {selectedNode && (
           <NodeDetail
             node={selectedNode}
-            onClose={() => setSelectedNode(null)}
+            onClose={() => {
+              setSelectedNode(null);
+              setHighlightedNodeIds(null);
+            }}
             onNavigate={handleNavigate}
+            session={insight?.meta.session}
+            onHighlightChange={(ids) => setHighlightedNodeIds(ids)}
           />
         )}
 
@@ -292,7 +376,9 @@ export function App() {
               <p className="text-slate-400 text-sm">
                 {isImpactGraph
                   ? "No matching entities found in the knowledge graph."
-                  : "No decisions found in the knowledge graph."}
+                  : isKnowledgeGraph
+                    ? "No entities found in the knowledge graph for this session."
+                    : "No decisions found in the knowledge graph."}
               </p>
               <p className="text-slate-600 text-xs mt-1">
                 Run{" "}
@@ -312,7 +398,7 @@ export function App() {
 
       {/* Legend */}
       {insight && insight.data.nodes.length > 1 && (
-        <Legend activeKinds={activeKinds} showSeverity={isImpactGraph} />
+        <Legend activeKinds={activeKinds} showSeverity={isImpactGraph || isKnowledgeGraph} />
       )}
     </div>
   );
