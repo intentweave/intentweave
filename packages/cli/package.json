@@ -58,6 +58,7 @@
   "dependencies": {
     "@intentweave/analyzer": "workspace:*",
     "@intentweave/core": "workspace:*",
+    "@intentweave/index": "workspace:*",
     "@intentweave/profiles": "workspace:*",
     "chalk": "^5.3.0",
     "chokidar": "^5.0.0",

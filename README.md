@@ -1,16 +1,45 @@
 # IntentWeave
 
-**Semantic knowledge extraction platform** — build queryable knowledge graphs from documents and code.
+**Semantic knowledge extraction platform** — build queryable knowledge graphs from documents and code,
+with a zero-cost code-aware retrieval index for everyday use.
 
-IntentWeave extracts entities and relationships from your docs, specs, and code using LLMs,
-canonicalizes them into a coherent graph, persists to Neo4j, and exposes them through CLI, MCP tools,
-REST API, and a React UI.
+IntentWeave provides two complementary systems:
+
+1. **CARI (Code-Aware Retrieval Index)** — Builds a lightweight SQLite index from your code's AST,
+   document keywords, and git history. No LLM calls, no external services, no cost. Produces ranked
+   file retrieval, cross-layer connection discovery, and CI drift detection.
+
+2. **Knowledge Graph (KG)** — Uses LLMs to extract entities, decisions, and relationships from
+   natural-language documents. Persists to Neo4j for rich semantic queries, impact analysis, and
+   documentation health checks.
+
+Both are available through CLI, MCP tools (GitHub Copilot), REST API, and a React UI.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 ---
 
 ## Quick Start
+
+### CARI — Zero-Cost Index (no LLM, no Neo4j)
+
+```bash
+npm install -g @intentweave/cli
+cd /path/to/your/project
+
+iw init
+iw index build                         # < 3 seconds for most projects
+iw index retrieve "authentication"     # ranked file retrieval
+iw index connections "AuthService"     # cross-layer connection discovery
+iw index check --changed src/auth.ts   # CI drift detection
+iw index report                        # coverage, staleness, hidden couplings
+```
+
+Two depth modes:
+- `--depth structured` (default) — headings, bold text, code spans only. Fast and precise.
+- `--depth full` — adds body text scanning with IDF noise filtering. +72% more annotations.
+
+### Knowledge Graph — LLM Semantic Extraction
 
 ### Install from npm
 
@@ -244,6 +273,21 @@ iw xlink . --session my-project --persist
 
 # Persist to Neo4j
 iw persist --latest -v
+
+# --- CARI (no LLM, no Neo4j) ---
+
+# Build the lightweight index
+iw index build
+iw index build --depth full    # include body text with IDF filtering
+
+# Query the index
+iw index retrieve "authentication"         # ranked file retrieval
+iw index connections "AuthService"         # cross-layer connections + gaps
+iw index check --changed src/auth.ts       # CI drift detection
+iw index report                            # corpus-wide health dashboard
+
+# Incremental update (only changed files)
+iw index update
 ```
 
 > See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
@@ -260,6 +304,14 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `kg_impact`     | Semantic impact analysis         | `files`, `hops?`                |
 | `kg_doc_health` | Documentation freshness          | `files?`                        |
 | `kg_schema`     | Graph schema description         | _(none)_                        |
+
+**CARI tools** (no Neo4j or LLM needed):
+
+| Tool               | Purpose                                    | Key Parameters                          |
+| ------------------ | ------------------------------------------ | --------------------------------------- |
+| `cari_retrieve`    | Ranked file retrieval by topic or symbol   | `query`, `scope?`, `limit?`             |
+| `cari_connections` | Cross-layer connection discovery + gaps    | `entity`, `include?`, `limit?`          |
+| `cari_check`       | CI drift detection for changed files       | `changed`, `severity?`                  |
 
 Start the MCP server:
 
@@ -291,6 +343,7 @@ apps/
 packages/
   core/                 → @intentweave/core — types, predicates, interfaces
   analyzer/             → @intentweave/analyzer — pipeline engine (IN→FX→KX→GX)
+  index/                → @intentweave/index — CARI SQLite index (annotator, IDF, queries)
   cli/                  → @intentweave/cli — `iw` commands + MCP server
   server-core/          → @intentweave/server-core — Fastify + Neo4j + middleware
   server-open/          → @intentweave/server-open — open track API routes
@@ -323,9 +376,6 @@ The server is built on a layered plugin model:
 │  POST /api/xlink   — code linking         │
 └──────────────────────────────────────────┘
 ```
-
-Pro features (curation, promotion, proposals, ledger) are added via additional
-plugins from a separate `@intentweave/server-pro` package.
 
 ---
 
@@ -402,10 +452,10 @@ pnpm --filter @intentweave/cli publish --access public
 
 ### Project Stats
 
-- **9 packages** + 1 app
-- **710+ tests**, all passing
+- **10 packages** + 1 app
+- **800+ tests**, all passing
 - **TypeScript 5.6**, ESM, strict mode
-- **Fastify 5**, Neo4j 5, Turbo, pnpm workspaces
+- **Fastify 5**, Neo4j 5, SQLite (better-sqlite3), Turbo, pnpm workspaces
 
 ---
 

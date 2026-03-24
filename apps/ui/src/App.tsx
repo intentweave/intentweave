@@ -68,14 +68,15 @@ export function App() {
 
       try {
         // For KG mode, "*" means "show everything" → send no question filter
+        const isGraphViz = activeViz === "knowledge-graph" || activeViz === "kwg" || activeViz === "kwg-plus";
         const effectiveQuestion =
-          (activeViz === "knowledge-graph" || activeViz === "kwg") && question.trim() === "*"
+          isGraphViz && question.trim() === "*"
             ? undefined
             : question;
         const result = await fetchInsight({
           question: effectiveQuestion,
           vizType: activeViz,
-          maxNodes: (activeViz === "knowledge-graph" || activeViz === "kwg") ? 200 : undefined,
+          maxNodes: isGraphViz ? 200 : undefined,
           session: activeSession ?? undefined,
         });
         setInsight(result);
@@ -167,6 +168,16 @@ export function App() {
             >
               KWG
             </button>
+            <button
+              onClick={() => setVizType("kwg-plus")}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                vizType === "kwg-plus"
+                  ? "bg-sky-600 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              KWG+
+            </button>
           </div>
 
           {/* Session selector */}
@@ -178,7 +189,7 @@ export function App() {
             >
               {sessions.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.id} ({s.canonCount > 0 ? `${s.canonCount} canon` : ""}{s.canonCount > 0 && s.kwgCount > 0 ? ", " : ""}{s.kwgCount > 0 ? `${s.kwgCount} kwg` : ""})
+                  {s.id} ({s.canonCount > 0 ? `${s.canonCount} canon` : ""}{s.canonCount > 0 && (s.kwgCount > 0 || s.tcgCount > 0) ? ", " : ""}{s.kwgCount > 0 ? `${s.kwgCount} kwg` : ""}{s.kwgCount > 0 && s.tcgCount > 0 ? ", " : ""}{s.tcgCount > 0 ? `${s.tcgCount} tcg` : ""})
                 </option>
               ))}
             </select>
@@ -290,6 +301,17 @@ export function App() {
                 <div className="bg-slate-900 rounded-lg p-3 border border-slate-800 opacity-50">
                   <span className="text-amber-400 font-medium">Doc Health</span>
                   <p className="mt-1">Coming soon</p>
+                </div>
+                <div
+                  className="bg-slate-900 rounded-lg p-3 border border-slate-800 cursor-pointer hover:border-sky-800 transition-colors"
+                  onClick={() => setVizType("kwg-plus")}
+                >
+                  <span className="text-sky-400 font-medium">
+                    KWG+ (Multi-Layer)
+                  </span>
+                  <p className="mt-1">
+                    KWG + temporal code graph + drift overlays
+                  </p>
                 </div>
               </div>
             </div>

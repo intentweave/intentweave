@@ -1,0 +1,56 @@
+{
+  "name": "@intentweave/index",
+  "version": "0.1.0",
+  "description": "Code-aware retrieval index — SQLite-based index for agents and CI",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prepublishOnly": "npm run build",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'TODO: eslint'",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0"
+  },
+  "peerDependencies": {
+    "@intentweave/core": "workspace:*",
+    "@intentweave/analyzer": "workspace:*"
+  },
+  "devDependencies": {
+    "@intentweave/core": "workspace:*",
+    "@intentweave/analyzer": "workspace:*",
+    "@types/better-sqlite3": "^7.6.12",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "intentweave": {
+    "tier": "oss",
+    "description": "Code-aware retrieval index — lightweight SQLite backend for agents and CI"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intentweave/intentweave.git",
+    "directory": "packages/index"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

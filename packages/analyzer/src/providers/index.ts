@@ -14,3 +14,6 @@ export * from "./llm/index.js";
 
 // Extraction Providers (RX-stage)
 export * from "./extraction/index.js";
+
+// Embedding Providers (local ONNX + cloud)
+export * from "./embedding/index.js";

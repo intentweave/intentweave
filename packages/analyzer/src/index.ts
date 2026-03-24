@@ -44,3 +44,9 @@ export * from "./cache/index.js";
 
 // Analysis orchestration
 export * from "./analyzer.js";
+
+// KWG (Keyword Graph) — Phase A evidence graph pipeline
+export * from "./kwg/index.js";
+
+// TCG (Temporal Change Graph) — Phase B temporal signals pipeline
+export * from "./tcg/index.js";

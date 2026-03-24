@@ -82,6 +82,7 @@ export interface SemanticChunk {
     | "code"
     | "heading"
     | "list"
+    | "table"
     | "other";
   /** Heading level (if applicable) */
   headingLevel?: number;

@@ -275,6 +275,14 @@ GitHub Copilot in VS Code.
 | `kg_doc_health` | Documentation freshness          |
 | `kg_schema`     | Graph schema description         |
 
+**CARI tools** (local SQLite, no Neo4j or LLM needed):
+
+| Tool               | Purpose                              |
+| ------------------ | ------------------------------------ |
+| `cari_retrieve`    | Ranked file retrieval by topic       |
+| `cari_connections` | Cross-layer connections + gap detection |
+| `cari_check`       | CI drift detection for changed files |
+
 **VS Code auto-discovery:** Add this to `.vscode/mcp.json`:
 
 ```json
@@ -287,6 +295,148 @@ GitHub Copilot in VS Code.
   }
 }
 ```
+
+### `iw index` — Code-Aware Retrieval Index (CARI)
+
+Build and query a lightweight SQLite index from your code, docs, and git history.
+No LLM calls, no Neo4j, no external services.
+
+#### `iw index build`
+
+```bash
+iw index build [options]
+```
+
+Runs the full CARI pipeline: AST extraction → keyword extraction → co-occurrence →
+git analysis → annotation → SQLite persistence.
+
+| Option              | Default      | Description                                    |
+| ------------------- | ------------ | ---------------------------------------------- |
+| `--depth <mode>`    | `structured` | `structured` (headings/bold/code) or `full` (+ body text with IDF) |
+| `--include <glob>`  | —            | Only index files matching glob                 |
+| `--exclude <glob>`  | —            | Skip files matching glob                       |
+| `-v, --verbose`     | off          | Show per-stage progress                        |
+
+**Examples:**
+
+```bash
+# Default structured build (fast, precise)
+iw index build
+
+# Full-depth build (more annotations, IDF noise filtering)
+iw index build --depth full
+
+# Only index specific directories
+iw index build --include "src/**" --include "docs/**"
+```
+
+**Output:** `.iw/index.db` (SQLite database)
+
+#### `iw index retrieve`
+
+```bash
+iw index retrieve <query> [options]
+```
+
+Ranked file retrieval by topic or symbol name. Combines annotation relevance,
+symbol matching, co-occurrence boost, and co-change signals.
+
+| Option           | Default | Description               |
+| ---------------- | ------- | ------------------------- |
+| `--limit <n>`    | `10`    | Maximum results           |
+| `--scope <type>` | `all`   | `code`, `docs`, or `all`  |
+
+**Example:**
+
+```bash
+iw index retrieve "authentication"
+
+# 1. src/auth/service.ts     (0.95) — 12 annotations, AuthService class
+# 2. docs/auth.md            (0.92) — 18 mentions, primary auth doc
+# 3. src/auth/jwt.ts         (0.78) — co-occurs with AuthService
+```
+
+#### `iw index connections`
+
+```bash
+iw index connections <entity> [options]
+```
+
+Cross-layer connection discovery. Shows co-mentions in docs, co-changes in git,
+structural links in code — and **gaps** where signals disagree.
+
+| Option             | Default | Description                              |
+| ------------------ | ------- | ---------------------------------------- |
+| `--limit <n>`      | `15`    | Maximum connections                      |
+| `--include <type>` | all     | Filter: `doc_cooc`, `co_change`, `code_import` |
+
+**Example:**
+
+```bash
+iw index connections "AuthService"
+
+# Co-mentioned in docs:
+#   JwtValidator     (0.72, in 4 docs)
+#   RateLimiter      (0.45, in 2 docs)
+#
+# Co-changes in git:
+#   src/auth/jwt.ts  (jaccard: 0.68, 15 commits)
+#
+# ⚠ Gaps:
+#   RateLimiter co-mentioned but NO code dependency → hidden coupling?
+```
+
+#### `iw index check`
+
+```bash
+iw index check [options]
+```
+
+CI drift detection. Identifies docs that reference changed code and may need updating.
+
+| Option                | Default   | Description                        |
+| --------------------- | --------- | ---------------------------------- |
+| `--changed <files...>`| —         | Files changed in PR/commit         |
+| `--severity <level>`  | `info`    | Minimum: `info`, `warning`, `critical` |
+| `-f, --format`        | `text`    | Output: `text`, `json`, `github`   |
+
+**Example:**
+
+```bash
+# Check drift for changed files
+iw index check --changed src/auth/service.ts src/auth/jwt.ts
+
+# CI integration (GitHub Actions)
+iw index check --changed $(git diff --name-only origin/main...HEAD) --format github
+```
+
+#### `iw index report`
+
+```bash
+iw index report
+```
+
+Corpus-wide health dashboard. No arguments needed.
+
+**Output includes:**
+- Documentation coverage (% of exported symbols mentioned in docs)
+- Stale documents (docs referencing recently-changed code)
+- Hidden couplings (co-mentioned in docs but no code dependency)
+- Undocumented dependencies (code imports with no doc mention)
+
+#### `iw index update`
+
+```bash
+iw index update [options]
+```
+
+Incremental index update. Re-indexes only files whose content hash has changed.
+
+| Option       | Default | Description                |
+| ------------ | ------- | -------------------------- |
+| `-v`         | off     | Show what changed          |
+
+Typical update time: < 1 second for small changes.
 
 ---
 
@@ -330,13 +480,35 @@ graph to structural code symbols, enabling code-reference-enriched context.
 
 ## Common Workflows
 
-### First-time project setup
+### CARI — Zero-cost index (recommended starting point)
 
 ```bash
 cd my-project
 iw init
 
-# Analyze your docs
+# Build the index (no API keys needed)
+iw index build
+
+# Find relevant files
+iw index retrieve "authentication"
+
+# Explore connections
+iw index connections "UserService"
+
+# Check doc freshness
+iw index report
+
+# Add to CI (exit code 0 = clean, 1 = drift found)
+iw index check --changed $(git diff --name-only origin/main...HEAD)
+```
+
+### First-time KG project setup
+
+```bash
+cd my-project
+iw init
+
+# Analyze your docs (requires LLM + Neo4j)
 export OPENAI_API_KEY=sk-...
 iw run docs/**/*.md --track open --provider openai -i -v
 

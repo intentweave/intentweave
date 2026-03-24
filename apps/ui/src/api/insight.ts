@@ -54,6 +54,7 @@ export interface SessionInfo {
   id: string;
   canonCount: number;
   kwgCount: number;
+  tcgCount: number;
 }
 
 export async function fetchSessions(): Promise<SessionInfo[]> {

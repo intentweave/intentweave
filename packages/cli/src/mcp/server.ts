@@ -12,12 +12,16 @@
  *   - kg_context:  Build structured context for a topic / entity
  *   - kg_entities: List / search entities in the graph
  *   - kg_schema:   Describe the graph schema (entity types, predicates)
+ *   - cari_retrieve:    Ranked file retrieval from CARI index (SQLite)
+ *   - cari_connections: Interconnection discovery + gap detection
+ *   - cari_check:       CI drift detection for changed files
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
  *   iw mcp --session <id> --verbose   # log activity to stderr
  */
 
+import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -199,28 +203,49 @@ async function llmComplete(
 // =============================================================================
 
 const GRAPH_SCHEMA_TEXT = `
-Neo4j Knowledge-Graph Schema:
+Neo4j Multi-Layer Graph Schema:
 
-Node labels:
-  :Canon:Entity — canonical entities (properties: canonId, name, type, aliases[], confidence, session_id, run_id)
-  :RawTriple — raw extraction triples (properties: subject, predicate, object, confidence, rationale, session_id)
+Layer 1 — KWG (Keywords):
+  :KWEntity (name, mentionCount, session_id)
+  :KWDoc (name, filePath, session_id)
+  :KWCluster (clusterId, label, members[], size, session_id)
+  Edges: CO_OCCURS, MENTIONS, CONTAINS, IN_CLUSTER
 
-Entity types: concept, decision, option, requirement, feature, component, technology, resource, role, risk, phase, constraint, question, tradeoff
+Layer 2 — TCG (Temporal):
+  :TCGCommit (sha, message, authorName, date, session_id)
+  :TCGFile (filePath, session_id)
+  :TCGAuthor (name, email, session_id)
+  Edges: TOUCHED, AUTHORED, CO_CHANGED
 
-Relationships between :Canon:Entity nodes use :CANON_REL with a predicate property:
-  Structural:  CONTAINS, DEPENDS_ON, ALTERNATIVE_TO
-  Behavioral:  HAS_STATE, TRANSITIONS_TO, TRIGGERS
-  Decision:    DECIDED_FOR, DECIDED_AGAINST, SUPERSEDES, MOTIVATED_BY, ENABLES, BLOCKS, RISKS, DEFERRED_TO
-  Interaction: CALLS, USES, PRODUCES, CONSUMES
-  Fallback:    RELATED_TO
+Layer 3 — Drift:
+  :DriftSignal (id, name, detector, severity, message, category, files[], session_id)
+  Edges: ABOUT→KWEntity, AFFECTS→KWDoc, AFFECTS→TCGFile
+  Detectors: doc-code, doc-doc, deps  |  Severities: critical, warning, info
 
-Cross-layer links (semantic → code):
-  :CodeRef — code references (properties: filePath, name, kind, language, session_id)
-  (:Canon:Entity)-[:REALIZED_BY { strategy, confidence, detail }]->(:CodeRef)
-  CodeRef kinds: package-dep, import, symbol, file, directory
-  Strategies: dep (package.json), import (source imports), name (exported symbols), path (file paths)
+Layer 4 — SKG (Semantic):
+  :Canon:Entity (canonId, name, type, aliases[], confidence, session_id, run_id)
+  :RawTriple (subject, predicate, object, confidence, rationale, session_id)
+  Edges: CANON_REL {predicate}, CANONICALIZED_FROM {role}
+  Predicates: CONTAINS, DEPENDS_ON, DECIDED_FOR, DECIDED_AGAINST, ENABLES, BLOCKS, CALLS, USES, RELATED_TO, ...
+  Entity types: concept, decision, option, requirement, feature, component, technology, resource, role, risk, phase, constraint, question, tradeoff
 
-Other: (:RawTriple)-[:CANONICALIZED_FROM { role: "subject"|"object" }]->(:Canon:Entity)
+Layer 5 — Code:
+  :CodeRef (filePath, name, kind, language, session_id)
+  Edges: REALIZED_BY {strategy, confidence}
+
+Cross-Layer:
+  EVIDENCED_BY (Canon→KWEntity: mentionCount, driftCount, confidence)
+  REALIZED_BY (Canon→CodeRef: strategy, confidence)
+  ABOUT (DriftSignal→KWEntity)
+  AFFECTS (DriftSignal→KWDoc, DriftSignal→TCGFile)
+
+Query tips:
+  - CANON_REL predicates stored in predicate property, e.g. {predicate: "DECIDED_FOR"}
+  - Always filter by session_id
+  - Use toLower/CONTAINS for name matching
+  - For KWG: KWEntity.mentionCount, CO_OCCURS.weight
+  - For TCG: TCGFile.filePath, CO_CHANGED.weight
+  - For Drift: DriftSignal.severity, ABOUT→KWEntity
 `.trim();
 
 function buildCypherSystemPrompt(sessionId: string): string {
@@ -726,6 +751,272 @@ The structured JSON block at the end contains per-document grounding details. Us
     async () => {
       log("kg_schema");
       return { content: [{ type: "text", text: toolSchema() }] };
+    },
+  );
+
+  // ── CARI Tools (Code-Aware Retrieval Index) ──────────────────────────
+  // These tools query the SQLite-based CARI index (.iw/index.db).
+  // No Neo4j or LLM required — pure local, precomputed data.
+
+  /** Resolve the CARI index.db path (workspace .iw/index.db) */
+  function resolveIndexDb(): string {
+    return path.join(process.cwd(), ".iw", "index.db");
+  }
+
+  /** Lazy-load @intentweave/index to avoid import cost when not used */
+  async function loadIndex() {
+    return await import("@intentweave/index");
+  }
+
+  // ── Tool: cari_retrieve ───────────────────────────────────────────
+  server.tool(
+    "cari_retrieve",
+    `Ranked file retrieval from the CARI index. Given a topic or symbol name, returns the most relevant files with scores and reasons.
+
+Use this to find code and documentation related to a concept (e.g. "authentication", "payment flow") or a symbol (e.g. "AuthService", "validateUser").
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      query: z
+        .string()
+        .describe(
+          "Topic or symbol name to search for (e.g. 'authentication', 'PaymentGateway')",
+        ),
+      scope: z
+        .enum(["code", "docs", "all"])
+        .optional()
+        .default("all")
+        .describe("Restrict results to code files, doc files, or all"),
+      limit: z
+        .number()
+        .optional()
+        .default(10)
+        .describe("Maximum number of files to return"),
+    },
+    async (args) => {
+      log(
+        `cari_retrieve: query="${args.query}" scope=${args.scope} limit=${args.limit}`,
+      );
+      try {
+        const { retrieve } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = retrieve(dbPath, {
+          query: args.query,
+          scope: args.scope,
+          limit: args.limit,
+        });
+
+        if (result.files.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No files found matching "${args.query}". Try a broader query or run \`iw index build\` to rebuild the index.`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Retrieve: "${args.query}"  (scope: ${args.scope}, top ${result.files.length})`,
+          "",
+          "| # | File | Score | Reason |",
+          "|---|------|-------|--------|",
+          ...result.files.map(
+            (f, i) =>
+              `| ${i + 1} | ${f.path} | ${f.score.toFixed(2)} | ${f.reason} |`,
+          ),
+        ];
+
+        // Append spans if present
+        for (const f of result.files) {
+          if (f.spans && f.spans.length > 0) {
+            lines.push("", `### ${f.path}`);
+            for (const s of f.spans.slice(0, 5)) {
+              lines.push(`- L${s.line}: ${s.text}`);
+            }
+          }
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("does not exist")
+          ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
+          : `Error: ${err.message}`;
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_connections ────────────────────────────────────────
+  server.tool(
+    "cari_connections",
+    `Discover connections for a symbol or concept across three evidence layers:
+- **Doc co-occurrence**: entities mentioned together in documentation
+- **Git co-change**: files that change together in commits
+- **Code structure**: annotations linking doc mentions to code symbols
+
+Highlights **gaps** where evidence layers disagree (hidden couplings, undocumented dependencies).
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      entity: z
+        .string()
+        .describe(
+          "Symbol name or keyword to find connections for (e.g. 'AuthService', 'rate limiting')",
+        ),
+      include: z
+        .array(z.enum(["doc_cooc", "co_change", "code_import"]))
+        .optional()
+        .describe(
+          "Filter to specific evidence sources (default: all three)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(10)
+        .describe("Maximum connections per source type"),
+    },
+    async (args) => {
+      log(
+        `cari_connections: entity="${args.entity}" include=${JSON.stringify(args.include)} limit=${args.limit}`,
+      );
+      try {
+        const { connections } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = connections(dbPath, {
+          entity: args.entity,
+          limit: args.limit,
+          include: args.include as any,
+        });
+
+        if (
+          result.connections.length === 0 &&
+          result.gaps.length === 0
+        ) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No connections found for "${args.entity}". Check that the entity exists in the index (\`iw index retrieve "${args.entity}"\`).`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Connections: "${result.entity}"`,
+          "",
+        ];
+
+        // Group connections by source type
+        const bySource = new Map<string, Array<{ name: string; score: number; detail: string }>>();
+        for (const conn of result.connections) {
+          for (const src of conn.sources) {
+            if (!bySource.has(src.type)) bySource.set(src.type, []);
+            bySource.get(src.type)!.push({
+              name: conn.name,
+              score: src.score,
+              detail: src.detail,
+            });
+          }
+        }
+
+        const sourceLabels: Record<string, string> = {
+          doc_cooc: "Co-mentioned in docs",
+          co_change: "Co-changes in git",
+          code_import: "Code structure",
+        };
+
+        for (const [srcType, items] of bySource) {
+          lines.push(
+            `### ${sourceLabels[srcType] ?? srcType}`,
+            "",
+            "| Entity | Score | Detail |",
+            "|--------|-------|--------|",
+          );
+          for (const item of items) {
+            lines.push(
+              `| ${item.name} | ${item.score.toFixed(2)} | ${item.detail} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        // Gaps
+        if (result.gaps.length > 0) {
+          lines.push("### ⚠ Gaps", "");
+          for (const gap of result.gaps) {
+            const icon = gap.severity === "warning" ? "⚠" : "ℹ";
+            lines.push(
+              `- ${icon} **${gap.entities.join(" ↔ ")}**: ${gap.description}`,
+            );
+          }
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("does not exist")
+          ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
+          : `Error: ${err.message}`;
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_check ──────────────────────────────────────────────
+  server.tool(
+    "cari_check",
+    `CI drift detection. Given changed file paths (from a PR diff or git status), finds:
+- Documentation that references symbols in changed files but hasn't been updated
+- Co-change partners missing from the PR (files that usually change together)
+- Documentation files referencing hotspot code not included in the PR
+
+Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
+    {
+      changed: z
+        .array(z.string())
+        .describe(
+          'File paths that changed (e.g. ["src/auth/service.ts", "src/auth/jwt.ts"])',
+        ),
+      severity: z
+        .enum(["info", "warning", "critical"])
+        .optional()
+        .default("info")
+        .describe("Minimum severity to report"),
+    },
+    async (args) => {
+      log(
+        `cari_check: changed=${JSON.stringify(args.changed)} severity=${args.severity}`,
+      );
+      try {
+        const { check, formatCheck } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = check(dbPath, {
+          changed: args.changed,
+          severity: args.severity,
+        });
+
+        if (result.findings.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "✓ No drift detected. All documentation and co-change patterns look consistent with the changed files.",
+              },
+            ],
+          };
+        }
+
+        const header = `## Drift Check  (${result.findings.length} finding${result.findings.length === 1 ? "" : "s"}, exit code ${result.exitCode})\n\n`;
+        const body = formatCheck(result, "text");
+        return { content: [{ type: "text", text: header + body }] };
+      } catch (err: any) {
+        const msg = err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("does not exist")
+          ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
+          : `Error: ${err.message}`;
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
     },
   );
 

@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import type { Driver } from "neo4j-driver";
 import type { ServerConfig } from "@intentweave/server-core";
 import { createRunnerFromDriver } from "../helpers/index.js";
-import { buildDecisionTree, buildImpactGraph, buildKnowledgeGraph, buildKwgGraph, buildLineage } from "../insight/index.js";
+import { buildDecisionTree, buildImpactGraph, buildKnowledgeGraph, buildKwgGraph, buildKwgPlusGraph, buildLineage } from "../insight/index.js";
 
 /**
  * POST /api/insight — Generate a purpose-built visualization from the knowledge graph.
@@ -44,6 +44,7 @@ export async function registerInsightRoutes(
                 "impact-graph",
                 "knowledge-graph",
                 "kwg",
+                "kwg-plus",
                 "architecture",
                 "heatmap",
               ],
@@ -178,9 +179,19 @@ export async function registerInsightRoutes(
           return result;
         }
 
+        case "kwg-plus": {
+          const result = await buildKwgPlusGraph({
+            runner,
+            sessionId,
+            question: body.question,
+            maxNodes: body.maxNodes ?? 200,
+          });
+          return result;
+        }
+
         default:
           return (reply as any).status(400).send({
-            error: `Unsupported vizType: ${vizType}. Supported: decision-tree, impact-graph, knowledge-graph, kwg`,
+            error: `Unsupported vizType: ${vizType}. Supported: decision-tree, impact-graph, knowledge-graph, kwg, kwg-plus`,
           });
       }
     },

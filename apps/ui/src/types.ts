@@ -11,6 +11,7 @@ export type VizType =
   | "impact-graph"
   | "knowledge-graph"
   | "kwg"
+  | "kwg-plus"
   | "architecture"
   | "heatmap";
 
@@ -24,7 +25,15 @@ export type NodeKind =
   | "rationale"
   | "risk"
   | "center"
-  | "affected";
+  | "affected"
+  // KWG+ / TCG overlay kinds
+  | "file"
+  | "commit"
+  | "author"
+  | "drift"
+  // SCG (Static Code Graph) layer kinds
+  | "directory"
+  | "symbol";
 
 export interface InsightNode {
   id: string;
@@ -140,6 +149,14 @@ export const NODE_COLORS: Record<NodeKind, string> = {
   risk: "#f97316",
   center: "#ec4899",
   affected: "#a78bfa",
+  // KWG+ / TCG overlay kinds
+  file: "#38bdf8",     // sky-400 — file nodes
+  commit: "#a78bfa",   // violet-400 — git commits
+  author: "#fb923c",   // orange-400 — git authors
+  drift: "#f43f5e",    // rose-500 — drift signals
+  // SCG layer kinds
+  directory: "#6b7280", // gray-500 — directories
+  symbol: "#22d3ee",    // cyan-400 — code symbols
 };
 
 /** Human-readable labels for node kinds. */
@@ -154,6 +171,14 @@ export const NODE_KIND_LABELS: Record<NodeKind, string> = {
   risk: "Risk",
   center: "Center",
   affected: "Affected",
+  // KWG+ / TCG overlay kinds
+  file: "File",
+  commit: "Commit",
+  author: "Author",
+  drift: "Drift Signal",
+  // SCG layer kinds
+  directory: "Directory",
+  symbol: "Symbol",
 };
 
 /** Human-readable predicate labels. */
@@ -169,6 +194,13 @@ export const PREDICATE_LABELS: Record<string, string> = {
   DEPENDS_ON: "depends on",
   CONTAINS: "contains",
   RELATED_TO: "related to",
+  // SCG predicates
+  SCG_CONTAINS: "contains",
+  SAME_FILE: "same file",
+  // Cross-layer predicates
+  GROUNDED_IN: "grounded in",
+  DRIFTED: "drifted from",
+  DRIFTED_FILE: "drift in file",
 };
 
 /** Edge stroke colors by predicate severity. */

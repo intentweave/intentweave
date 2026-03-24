@@ -2,32 +2,65 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * iw doc-health — Documentation health analysis
+ * iw doc-health — Unified documentation health & drift analysis
  *
  * Answers: "Which parts of my documentation are stale, drifted, or missing?"
  *
- * Scans documents in a session and compares their extracted entities against
- * the current graph state to detect staleness, drift, and contradictions.
+ * Runs up to four drift detectors:
+ *   - doc-code: ungrounded mentions, undocumented code, signature mismatches
+ *   - temporal: staleness, decision volatility, abandoned code, change lag
+ *   - deps:     unused/undeclared dependencies, version drift in docs
+ *   - doc-doc:  diverged doc pairs, qualifier contradictions
  *
  * Examples:
- *   iw doc-health -s planpling
- *   iw doc-health docs/*.md -s planpling -v
- *   iw doc-health docs/ARCHITECTURE.md -s planpling --format json -o health.json
+ *   iw doc-health -s planpling                        # all detectors
+ *   iw doc-health -s planpling --only doc-code,deps   # specific detectors
+ *   iw doc-health -s planpling -f json -o report.json # JSON output
+ *   iw doc-health --lite docs/                        # zero-infra preflight
+ *
+ * @see PHASE-C-SPEC.md §9
  */
 
 import { Command } from "commander";
 import chalk from "chalk";
 import { writeFileSync } from "node:fs";
+import { performance } from "node:perf_hooks";
 import {
-  analyzeDocHealth,
-  formatDocHealthMarkdown,
-  formatDocHealthJson,
-  type DocHealthOptions,
   preflightDocHealth,
   formatPreflightMarkdown,
-  formatPreflightForAgent,
 } from "../doc-health/index.js";
-import type { Neo4jRunner } from "../context/index.js";
+
+// Drift detectors
+import { detectDocCodeDrift } from "../drift/docCodeDrift.js";
+import { detectTemporalDrift } from "../drift/temporalDrift.js";
+import { detectDepsDrift } from "../drift/depsDrift.js";
+import { detectDocDocDrift } from "../drift/docDocDrift.js";
+import {
+  assembleUnifiedReport,
+  renderUnifiedReport,
+  disabledDetectorStats,
+} from "../drift/unifiedReport.js";
+
+// Analyzer stages
+import {
+  runAxStage,
+  runTcxStage,
+  runCocStage,
+  runHotStage,
+  runOwnStage,
+  runStlStage,
+} from "@intentweave/analyzer";
+import type { AxOutput } from "@intentweave/analyzer";
+
+// Core types
+import type {
+  KwgEntityForDrift,
+  KwgMentionForDrift,
+  TcgPipelineOutput,
+  DetectorStats,
+  UnifiedDriftReport,
+  DriftSignal,
+} from "@intentweave/core";
 
 // =============================================================================
 // Neo4j connection (same pattern as other commands)
@@ -70,77 +103,23 @@ async function connectNeo4j(uri?: string): Promise<Neo4jConnection> {
 }
 
 // =============================================================================
-// Runner adapter
-// =============================================================================
-
-function toPlainValue(v: unknown): unknown {
-  if (v === null || v === undefined) return v;
-  if (
-    typeof v === "object" &&
-    v !== null &&
-    "toNumber" in v &&
-    typeof (v as any).toNumber === "function"
-  ) {
-    return (v as any).toNumber();
-  }
-  if (Array.isArray(v)) return v.map(toPlainValue);
-  return v;
-}
-
-function plainProps(props: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(props)) {
-    out[k] = toPlainValue(v);
-  }
-  return out;
-}
-
-function createRunner(conn: Neo4jConnection): Neo4jRunner {
-  return {
-    async run(
-      cypher: string,
-      params: Record<string, unknown> = {},
-    ): Promise<Record<string, unknown>[]> {
-      const neo4j = await import("neo4j-driver");
-      const cleanParams: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(params)) {
-        cleanParams[k] =
-          typeof v === "number" ? neo4j.default.int(Math.round(v)) : v;
-      }
-      const result = await conn.session.run(cypher, cleanParams);
-      return result.records.map((rec: any) => {
-        const row: Record<string, unknown> = {};
-        for (const key of rec.keys) {
-          const v = rec.get(key);
-          if (v !== null && typeof v === "object" && "properties" in v) {
-            row[key as string] = plainProps(v.properties);
-          } else {
-            row[key as string] = toPlainValue(v);
-          }
-        }
-        return row;
-      });
-    },
-  };
-}
-
-// =============================================================================
 // Command
 // =============================================================================
 
+const VALID_DETECTORS = new Set(["doc-code", "temporal", "deps", "doc-doc"]);
+
 export const docHealthCommand = new Command("doc-health")
   .description(
-    "Analyze documentation freshness — detect stale, drifted, and undocumented entities",
+    "Unified documentation health — runs drift detectors for stale, drifted, undocumented, and contradictory entities",
   )
   .argument(
     "[files...]",
     "Document file(s) to analyze (omit to scan all session docs)",
   )
-  .option("-s, --session <id>", "Session ID (required)", "")
+  .option("-s, --session <id>", "Session ID (required for full mode)", "")
   .option(
-    "--min-rel <n>",
-    "Min relationships for undocumented entity flagging",
-    "2",
+    "--only <detectors>",
+    "Run specific detectors (comma-separated): doc-code,temporal,deps,doc-doc",
   )
   .option("-f, --format <fmt>", "Output format: markdown | json", "markdown")
   .option("-o, --output <path>", "Write output to file")
@@ -153,7 +132,6 @@ export const docHealthCommand = new Command("doc-health")
   .action(async (files: string[], options) => {
     const {
       session: sessionId,
-      minRel: minRelStr,
       format,
       output,
       verbose,
@@ -206,7 +184,7 @@ export const docHealthCommand = new Command("doc-health")
       return;
     }
 
-    // ── Full mode: requires Neo4j ─────────────────────────────────────
+    // ── Full mode: unified drift detection (requires Neo4j) ───────────
 
     if (!sessionId) {
       console.error(
@@ -217,48 +195,241 @@ export const docHealthCommand = new Command("doc-health")
       process.exit(1);
     }
 
-    const minRelCount = parseInt(minRelStr, 10) || 2;
+    // Parse --only flag
+    const enabledDetectors = new Set<string>();
+    if (options.only) {
+      for (const d of options.only.split(",").map((s: string) => s.trim())) {
+        if (!VALID_DETECTORS.has(d)) {
+          console.error(
+            chalk.red(
+              `Unknown detector: "${d}". Valid: ${[...VALID_DETECTORS].join(", ")}`,
+            ),
+          );
+          process.exit(1);
+        }
+        enabledDetectors.add(d);
+      }
+    } else {
+      // All detectors enabled by default
+      for (const d of VALID_DETECTORS) enabledDetectors.add(d);
+    }
+
+    const enableDocCode = enabledDetectors.has("doc-code");
+    const enableTemporal = enabledDetectors.has("temporal");
+    const enableDeps = enabledDetectors.has("deps");
+    const enableDocDoc = enabledDetectors.has("doc-doc");
+
+    const log = verbose
+      ? (msg: string) => console.error(chalk.blue(msg))
+      : () => {};
+    const workspaceRoot = process.cwd();
 
     let conn: Neo4jConnection | undefined;
 
     try {
       conn = await connectNeo4j(options.neo4jUri);
-      if (verbose) console.error(chalk.blue("Connected to Neo4j"));
+      log("Connected to Neo4j");
 
-      const runner = createRunner(conn);
-      const log = verbose
-        ? (msg: string) => console.error(chalk.blue(msg))
-        : undefined;
+      // ─── Step 1: Load KWG data from Neo4j ─────────────────────────
 
-      const healthOpts: DocHealthOptions = {
-        runner,
+      const kwgEntities = await loadKwgEntities(conn, sessionId, log);
+      const kwgMentions = await loadKwgMentions(conn, sessionId, log);
+
+      const hasKwg = kwgEntities.length > 0;
+      if (!hasKwg) {
+        log(
+          "No KWG data found — doc-code, doc-doc detectors will be skipped",
+        );
+      }
+
+      // ─── Step 2: Run AX extraction (if needed) ────────────────────
+
+      let axOutput: AxOutput | undefined;
+      if (enableDocCode || enableDeps) {
+        const axStart = performance.now();
+        log("Running AX extraction (code symbols)...");
+        try {
+          axOutput = await runAxStage({ workspaceRoot });
+          log(
+            `AX: ${axOutput.totalFiles} files, ${axOutput.totalSymbols} symbols (${((performance.now() - axStart) / 1000).toFixed(1)}s)`,
+          );
+        } catch (err: any) {
+          log(`AX extraction failed: ${err.message} — skipping code-dependent detectors`);
+        }
+      }
+
+      // ─── Step 3: Run TCG pipeline (if needed) ─────────────────────
+
+      let tcgOutput: TcgPipelineOutput | undefined;
+      if (enableTemporal) {
+        const tcgStart = performance.now();
+        log("Running TCG pipeline (git history)...");
+        try {
+          const tcxOutput = await runTcxStage({
+            workspaceRoot,
+            depth: "full",
+            log: verbose ? (msg: string) => console.error(chalk.gray(`  tcx: ${msg}`)) : undefined,
+          });
+          const cocOutput = runCocStage({ tcxOutput });
+          const hotOutput = runHotStage({ tcxOutput });
+          const ownOutput = runOwnStage({ tcxOutput });
+          const stlOutput = runStlStage({
+            tcxOutput,
+            kwgEntities: kwgEntities.map((e) => e.name),
+            workspaceRoot,
+          });
+
+          tcgOutput = {
+            tcx: tcxOutput,
+            coc: cocOutput,
+            hot: hotOutput,
+            own: ownOutput,
+            stl: stlOutput,
+            meta: {
+              session: sessionId,
+              workspaceRoot,
+              gitDepth: "full history",
+              totalDurationMs: performance.now() - tcgStart,
+            },
+          };
+          log(
+            `TCG: ${tcxOutput.commits.length} commits, ${cocOutput.edges.length} co-change edges (${((performance.now() - tcgStart) / 1000).toFixed(1)}s)`,
+          );
+        } catch (err: any) {
+          log(`TCG pipeline failed: ${err.message} — skipping temporal detector`);
+        }
+      }
+
+      // ─── Step 4: Run detectors ────────────────────────────────────
+
+      let docCodeSignals: DriftSignal[] = [];
+      let docCodeStats: DetectorStats = disabledDetectorStats();
+
+      let temporalSignals: DriftSignal[] = [];
+      let temporalStats: DetectorStats = disabledDetectorStats();
+
+      let depsSignals: DriftSignal[] = [];
+      let depsStats: DetectorStats = disabledDetectorStats();
+
+      let docDocSignals: DriftSignal[] = [];
+      let docDocStats: DetectorStats = disabledDetectorStats();
+
+      // 4a: Doc ↔ Code
+      if (enableDocCode && hasKwg && axOutput) {
+        const t0 = performance.now();
+        log("Running doc-code drift detector...");
+        const dcReport = await detectDocCodeDrift(
+          conn.driver,
+          sessionId,
+          axOutput,
+          { log },
+        );
+        docCodeSignals = dcReport.signals;
+        docCodeStats = {
+          enabled: true,
+          signalCount: dcReport.signals.length,
+          durationMs: performance.now() - t0,
+          metrics: {
+            ungroundedCount: dcReport.stats.ungroundedCount,
+            undocumentedCount: dcReport.stats.undocumentedCount,
+            signatureMismatchCount: dcReport.stats.signatureMismatchCount,
+          },
+        };
+        log(`  doc-code: ${dcReport.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+      } else if (enableDocCode) {
+        log("Skipping doc-code: " + (!hasKwg ? "no KWG data" : "no AX output"));
+      }
+
+      // 4b: Temporal
+      if (enableTemporal && tcgOutput) {
+        const t0 = performance.now();
+        log("Running temporal drift detector...");
+        const result = detectTemporalDrift({
+          tcgOutput,
+          kwgEntities: hasKwg ? kwgEntities : undefined,
+          kwgMentions: hasKwg ? kwgMentions : undefined,
+          workspaceRoot,
+          log,
+        });
+        temporalSignals = result.signals;
+        temporalStats = result.stats;
+        log(`  temporal: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+      } else if (enableTemporal) {
+        log("Skipping temporal: no TCG data");
+      }
+
+      // 4c: Dependencies
+      if (enableDeps && axOutput) {
+        const t0 = performance.now();
+        log("Running dependency drift detector...");
+        const result = detectDepsDrift({
+          axOutput,
+          kwgEntities: hasKwg ? kwgEntities : undefined,
+          kwgMentions: hasKwg ? kwgMentions : undefined,
+          workspaceRoot,
+          log,
+        });
+        depsSignals = result.signals;
+        depsStats = result.stats;
+        log(`  deps: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+      } else if (enableDeps) {
+        log("Skipping deps: no AX output");
+      }
+
+      // 4d: Doc ↔ Doc
+      if (enableDocDoc && hasKwg) {
+        const t0 = performance.now();
+        log("Running doc-doc drift detector...");
+        const result = detectDocDocDrift({
+          kwgEntities,
+          kwgMentions,
+          log,
+        });
+        docDocSignals = result.signals;
+        docDocStats = result.stats;
+        log(`  doc-doc: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+      } else if (enableDocDoc) {
+        log("Skipping doc-doc: no KWG data");
+      }
+
+      // ─── Step 5: Assemble unified report ──────────────────────────
+
+      const report = assembleUnifiedReport(
         sessionId,
-        files: files.length > 0 ? files : undefined,
-        minRelCount,
-        cwd: process.cwd(),
-        log,
-      };
+        workspaceRoot,
+        docCodeSignals,
+        temporalSignals,
+        depsSignals,
+        docDocSignals,
+        {
+          docCode: docCodeStats,
+          temporal: temporalStats,
+          deps: depsStats,
+          docDoc: docDocStats,
+        },
+      );
 
-      const result = await analyzeDocHealth(healthOpts);
+      // ─── Step 6: Output ───────────────────────────────────────────
 
       const formatted =
         format === "json"
-          ? formatDocHealthJson(result)
-          : formatDocHealthMarkdown(result);
+          ? JSON.stringify(report, null, 2)
+          : renderUnifiedReport(report);
 
       if (output) {
         writeFileSync(output, formatted, "utf-8");
-        console.error(chalk.green(`Doc health report written to ${output}`));
+        console.error(
+          chalk.green(`Doc health report written to ${output}`),
+        );
       } else {
         console.log(formatted);
       }
 
       if (verbose) {
-        const s = result.stats;
+        const s = report.stats;
         console.error(
           chalk.blue(
-            `\n${s.docsAnalyzed} docs: ${s.freshDocs} fresh, ${s.warningDocs} warning, ${s.rottenDocs} rotten` +
-              ` | ${s.totalIssues} issues | ${s.undocumentedCount} undocumented`,
+            `\n${s.totalSignals} drift signals: ${s.criticalCount} critical, ${s.warningCount} warning, ${s.infoCount} info | ${(s.totalDurationMs / 1000).toFixed(1)}s`,
           ),
         );
       }
@@ -269,3 +440,86 @@ export const docHealthCommand = new Command("doc-health")
       if (conn) await conn.close();
     }
   });
+
+// =============================================================================
+// KWG data loaders (Neo4j → lightweight in-memory types)
+// =============================================================================
+
+async function loadKwgEntities(
+  conn: Neo4jConnection,
+  session: string,
+  log: (msg: string) => void,
+): Promise<KwgEntityForDrift[]> {
+  const neo4j = await import("neo4j-driver");
+  const result = await conn.session.run(
+    `MATCH (e:KWEntity {session_id: $session})
+     RETURN e.name AS name,
+            e.mentionCount AS mentionCount,
+            e.qualifiers AS qualifiers,
+            e.filePaths AS filePaths`,
+    { session },
+  );
+
+  const entities: KwgEntityForDrift[] = result.records.map((rec: any) => ({
+    name: rec.get("name") as string,
+    mentionCount: toNumber(rec.get("mentionCount")),
+    qualifiers: toStringArray(rec.get("qualifiers")),
+    filePaths: toStringArray(rec.get("filePaths")),
+  }));
+
+  log(`Loaded ${entities.length} KWG entities from Neo4j`);
+  return entities;
+}
+
+async function loadKwgMentions(
+  conn: Neo4jConnection,
+  session: string,
+  log: (msg: string) => void,
+): Promise<KwgMentionForDrift[]> {
+  const result = await conn.session.run(
+    `MATCH (m:KWMention {session_id: $session})
+     RETURN m.entityName AS entityName,
+            m.text AS text,
+            m.heading AS heading,
+            m.filePath AS filePath,
+            m.startLine AS startLine,
+            m.qualifiers AS qualifiers`,
+    { session },
+  );
+
+  const mentions: KwgMentionForDrift[] = result.records.map((rec: any) => ({
+    entityName: rec.get("entityName") as string,
+    text: rec.get("text") as string,
+    heading: rec.get("heading") as string | undefined,
+    filePath: rec.get("filePath") as string,
+    startLine: toNumber(rec.get("startLine")),
+    qualifiers: toStringArray(rec.get("qualifiers")),
+  }));
+
+  log(`Loaded ${mentions.length} KWG mentions from Neo4j`);
+  return mentions;
+}
+
+// =============================================================================
+// Neo4j value helpers
+// =============================================================================
+
+function toNumber(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "number") return v;
+  if (
+    typeof v === "object" &&
+    v !== null &&
+    "toNumber" in v &&
+    typeof (v as any).toNumber === "function"
+  ) {
+    return (v as any).toNumber();
+  }
+  return Number(v) || 0;
+}
+
+function toStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "string") return v ? [v] : [];
+  return [];
+}

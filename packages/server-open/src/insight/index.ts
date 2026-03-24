@@ -28,6 +28,9 @@ export type { BuildKnowledgeGraphOpts } from "./knowledge-graph.js";
 export { buildKwgGraph } from "./kwg-graph.js";
 export type { BuildKwgGraphOpts } from "./kwg-graph.js";
 
+export { buildKwgPlusGraph } from "./kwg-plus-graph.js";
+export type { BuildKwgPlusGraphOpts } from "./kwg-plus-graph.js";
+
 export { buildLineage } from "./lineage.js";
 export type {
   BuildLineageOpts,

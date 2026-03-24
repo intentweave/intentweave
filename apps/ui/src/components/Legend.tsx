@@ -14,6 +14,14 @@ const KINDS: NodeKind[] = [
   "risk",
   "center",
   "affected",
+  // KWG+ / TCG overlay kinds
+  "file",
+  "commit",
+  "author",
+  "drift",
+  // SCG layer kinds
+  "directory",
+  "symbol",
 ];
 
 /** Severity items shown only for impact-graph views. */

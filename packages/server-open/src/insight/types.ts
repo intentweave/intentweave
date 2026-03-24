@@ -18,6 +18,7 @@ export type VizType =
   | "decision-tree"
   | "impact-graph"
   | "knowledge-graph"
+  | "kwg-plus"
   | "architecture"
   | "heatmap";
 
@@ -35,7 +36,15 @@ export type NodeKind =
   | "rationale"
   | "risk"
   | "center"
-  | "affected";
+  | "affected"
+  // KWG+ / TCG overlay kinds
+  | "file"
+  | "commit"
+  | "author"
+  | "drift"
+  // SCG (Static Code Graph) layer kinds
+  | "directory"
+  | "symbol";
 
 export interface InsightNode {
   id: string;

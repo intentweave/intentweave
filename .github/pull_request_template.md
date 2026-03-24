@@ -18,4 +18,3 @@
 - [ ] `pnpm test` passes
 - [ ] Follows existing code style
 - [ ] No `any` types unless justified
-- [ ] Respects OSS/Pro tier boundaries (no Pro features in OSS packages)

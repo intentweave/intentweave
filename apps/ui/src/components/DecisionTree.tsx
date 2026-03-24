@@ -30,6 +30,13 @@ const DEPTH: Record<NodeKind, number> = {
   risk: 3,
   center: 0,
   affected: 2,
+  // KWG+ / TCG / SCG overlay kinds (not used in decision tree, default depth)
+  file: 3,
+  commit: 3,
+  author: 3,
+  drift: 3,
+  directory: 3,
+  symbol: 3,
 };
 
 const BAND_HEIGHT = 160;

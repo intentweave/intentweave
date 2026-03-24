@@ -33,6 +33,7 @@ export async function registerSessionRoutes(
                     id: { type: "string" },
                     canonCount: { type: "number" },
                     kwgCount: { type: "number" },
+                    tcgCount: { type: "number" },
                   },
                 },
               },
@@ -62,10 +63,17 @@ export async function registerSessionRoutes(
         RETURN n.session_id AS sid, count(n) AS cnt
       `);
 
+      // Query TCGFile sessions (Phase B)
+      const tcgRows = await runner.run(`
+        MATCH (n:TCGFile)
+        WHERE n.session_id IS NOT NULL
+        RETURN n.session_id AS sid, count(n) AS cnt
+      `);
+
       // Merge into a unified map
       const map = new Map<
         string,
-        { id: string; canonCount: number; kwgCount: number }
+        { id: string; canonCount: number; kwgCount: number; tcgCount: number }
       >();
 
       for (const r of canonRows) {
@@ -74,6 +82,7 @@ export async function registerSessionRoutes(
           id: sid,
           canonCount: 0,
           kwgCount: 0,
+          tcgCount: 0,
         };
         existing.canonCount = r.cnt as number;
         map.set(sid, existing);
@@ -85,8 +94,21 @@ export async function registerSessionRoutes(
           id: sid,
           canonCount: 0,
           kwgCount: 0,
+          tcgCount: 0,
         };
         existing.kwgCount = r.cnt as number;
+        map.set(sid, existing);
+      }
+
+      for (const r of tcgRows) {
+        const sid = r.sid as string;
+        const existing = map.get(sid) ?? {
+          id: sid,
+          canonCount: 0,
+          kwgCount: 0,
+          tcgCount: 0,
+        };
+        existing.tcgCount = r.cnt as number;
         map.set(sid, existing);
       }
 

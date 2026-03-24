@@ -19,91 +19,33 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { writeFileSync } from "node:fs";
+import { MULTI_LAYER_SCHEMA, getSchemaForLayer, type GraphLayer } from "../schema/graphSchema.js";
 
 // =============================================================================
 // Graph schema description (fed to the LLM for Cypher generation)
+// — Now uses the unified multi-layer schema from schema/graphSchema.ts
 // =============================================================================
 
-const GRAPH_SCHEMA = `
-## Neo4j Knowledge-Graph Schema
+const GRAPH_SCHEMA = MULTI_LAYER_SCHEMA;
 
-### Node labels
-
-1. **:Canon:Entity**
-   Every canonical entity extracted by the KX stage.
-   Properties:
-     - canonId   (string, unique per session)  — e.g. "schema_free_extraction"
-     - name      (string)                      — human-readable label
-     - type      (string)                      — one of: concept, decision, option, requirement,
-                                                  feature, component, technology, resource, role,
-                                                  risk, phase, constraint, question, tradeoff
-     - aliases   (string[])                    — alternate surface forms
-     - confidence (float 0-1)
-     - session_id (string)                     — workspace / session scope
-     - run_id     (string)
-     - workspace_id (string)
-     - track      (string)                     — always "open"
-
-2. **:RawTriple**
-   Every raw (pre-canonicalization) triple from the FX stage.
-   Properties:
-     - subject      (string)
-     - predicate    (string)
-     - object       (string)
-     - subjectKind  (string)
-     - objectKind   (string)
-     - confidence   (float 0-1)
-     - rationale    (string)
-     - session_id   (string)
-     - run_id       (string)
-
-### Relationships between :Canon:Entity nodes
-
-All canonical relationships are stored as **:CANON_REL** edges with a
-\`predicate\` property that holds the semantic relationship type.
-
-Canonical predicates (stored in r.predicate):
-  Structural:  CONTAINS, DEPENDS_ON, ALTERNATIVE_TO
-  Behavioral:  HAS_STATE, TRANSITIONS_TO, TRIGGERS
-  Decision:    DECIDED_FOR, DECIDED_AGAINST, SUPERSEDES, MOTIVATED_BY,
-               ENABLES, BLOCKS, RISKS, DEFERRED_TO
-  Interaction: CALLS, USES, PRODUCES, CONSUMES
-  Fallback:    RELATED_TO
-
-**Example relationship queries:**
-  // Find all "DECIDED_FOR" relationships:
-  MATCH (a:Canon)-[r:CANON_REL {predicate: "DECIDED_FOR"}]->(b:Canon) ...
-
-  // Find all relationships for a concept:
-  MATCH (a:Canon)-[r:CANON_REL]->(b:Canon) WHERE toLower(a.name) CONTAINS "..." ...
-
-  // Find by multiple predicates:
-  MATCH (a:Canon)-[r:CANON_REL]->(b:Canon) WHERE r.predicate IN ["ENABLES","BLOCKS"] ...
-
-### Other relationships
-
-  (:RawTriple)-[:CANONICALIZED_FROM { role: "subject"|"object" }]->(:Canon:Entity)
-
-### Important notes
-- Always filter by session_id when the user mentions a workspace.
-- Relationship predicates are stored in the \`predicate\` property of :CANON_REL, NOT as separate relationship types.
-- Use OPTIONAL MATCH when relationships might not exist.
-- Return human-readable columns (name, type) rather than raw IDs.
-- When asked about decisions, use predicate "DECIDED_FOR" or "DECIDED_AGAINST".
-`.trim();
+const VALID_LAYERS: GraphLayer[] = ["kwg", "tcg", "drift", "skg", "code", "all"];
 
 // =============================================================================
 // Cypher-generation system prompt
 // =============================================================================
 
-function buildSystemPrompt(sessionId?: string): string {
+function buildSystemPrompt(sessionId?: string, layer?: GraphLayer): string {
   const sessionClause = sessionId
     ? `\nThe current session_id is "${sessionId}". Always include \`WHERE ... session_id = "${sessionId}"\` unless the user explicitly asks for cross-session results.`
     : "";
 
+  const schema = layer && layer !== "all"
+    ? getSchemaForLayer(layer)
+    : GRAPH_SCHEMA;
+
   return `You are a Cypher query generator for a Neo4j knowledge graph.
 
-${GRAPH_SCHEMA}
+${schema}
 ${sessionClause}
 
 Rules:
@@ -350,6 +292,7 @@ export const queryCommand = new Command("query")
     "summary",
   )
   .option("-s, --session <id>", "Session ID to scope queries to")
+  .option("-l, --layer <layer>", "Focus on graph layer: kwg | tcg | drift | skg | code | all", "all")
   .option("-v, --verbose", "Show generated Cypher before execution")
   .option(
     "--model <model>",
@@ -365,11 +308,14 @@ export const queryCommand = new Command("query")
       output,
       format,
       session: sessionId,
+      layer: layerStr,
       verbose,
       model,
       neoUri,
       apiKey,
     } = options;
+
+    const layer = (VALID_LAYERS.includes(layerStr as GraphLayer) ? layerStr : "all") as GraphLayer;
 
     const limitN = parseInt(limit, 10) || 50;
     let conn: Neo4jConnection | undefined;
@@ -394,7 +340,7 @@ export const queryCommand = new Command("query")
         if (verbose) {
           console.log(chalk.blue("Translating question to Cypher…"));
         }
-        const systemPrompt = buildSystemPrompt(sessionId);
+        const systemPrompt = buildSystemPrompt(sessionId, layer);
         const userPrompt = `Question: ${queryArg}\nLimit: ${limitN}`;
         cypherQuery = await llmComplete({
           system: systemPrompt,
@@ -449,7 +395,7 @@ export const queryCommand = new Command("query")
           ].join("\n");
 
           cypherQuery = await llmComplete({
-            system: buildSystemPrompt(sessionId),
+            system: buildSystemPrompt(sessionId, layer),
             userMessage: fixPrompt,
             model,
             apiKey,

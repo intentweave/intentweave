@@ -13,6 +13,15 @@
 // Stage output types
 export * from "./stages.js";
 
+// KWG (Keyword Graph) types — Phase A evidence graph
+export * from "./kwg.js";
+
+// TCG (Temporal Change Graph) types — Phase B temporal signals
+export * from "./tcg.js";
+
+// Drift detection types — Phase C drift detectors
+export * from "./drift.js";
+
 // Extraction hooks types
 export * from "./hooks.js";
 
