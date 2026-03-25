@@ -216,12 +216,36 @@ iw doc-health [files...] [options]
 ```
 
 Detects stale references, structural drift, contradictions, and undocumented entities.
+Three modes (least → most infrastructure):
 
-| Option          | Default | Description         |
-| --------------- | ------- | ------------------- |
-| `-s, --session` | —       | Neo4j session scope |
-| `-f, --format`  | `text`  | Output format       |
-| `-o, --output`  | —       | Write to file       |
+1. `--lite` — Zero-infra keyword scan (regex grounding, no index)
+2. _(default)_ — CARI-backed analysis from `.iw/index.db` (no Neo4j)
+3. `--neo4j` — Full KG-based analysis (requires Neo4j + persisted KWG)
+
+| Option          | Default        | Description                                        |
+| --------------- | -------------- | -------------------------------------------------- |
+| `--db <path>`   | `.iw/index.db` | Path to CARI index (default mode)                  |
+| `--neo4j`       | off            | Full KG mode — requires Neo4j + persisted KWG      |
+| `--neo4j-uri`   | —              | Neo4j connection URI (implies `--neo4j`)           |
+| `-s, --session` | —              | Session ID (required for `--neo4j` mode only)      |
+| `--only`        | all            | Specific detectors: doc-code,temporal,deps,doc-doc |
+| `--lite`        | off            | Lightweight keyword-only mode — no index needed    |
+| `-f, --format`  | `markdown`     | Output format: markdown \| json                    |
+| `-o, --output`  | —              | Write to file                                      |
+| `-v, --verbose` | off            | Show progress on stderr                            |
+
+```bash
+# Default: CARI mode (reads .iw/index.db, no Neo4j)
+iw doc-health
+iw doc-health -v -f json -o report.json
+
+# Lightweight preflight (no index needed)
+iw doc-health --lite docs/
+
+# Full KG mode (requires Neo4j)
+iw doc-health --neo4j -s my-project
+iw doc-health --neo4j -s my-project --only doc-code,deps
+```
 
 ### `iw persist` — Write to Neo4j
 

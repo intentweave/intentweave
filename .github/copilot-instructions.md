@@ -125,22 +125,24 @@ iw persist --latest -v                                    # Persist to Neo4j
 iw query "What are the main components?" -s my-project   # Query
 iw context "authentication" -s my-project                 # RAG context
 iw impact src/auth.ts -s my-project                       # Impact analysis
-iw doc-health -s my-project                               # Doc health
+iw doc-health                                               # Doc health (CARI default)
+iw doc-health --neo4j -s my-project                         # Doc health (full KG mode)
 ```
 
 ### Key Files
 
-| File                                               | Purpose                             |
-| -------------------------------------------------- | ----------------------------------- |
-| `packages/analyzer/src/stages/fx.ts`               | FX extraction (parallel chunks)     |
-| `packages/analyzer/src/stages/kx.ts`               | KX canonicalization (30 predicates) |
-| `packages/analyzer/src/stages/gx.ts`               | GX cross-document entity merge      |
-| `packages/analyzer/src/pipeline/openTrack.ts`      | Open track orchestrator             |
-| `packages/cli/src/commands/run.ts`                 | `iw run` CLI command                |
-| `packages/cli/src/commands/query.ts`               | `iw query` CLI command              |
-| `packages/cli/src/commands/context.ts`             | `iw context` CLI command            |
-| `packages/cli/src/impact/impactAnalyzer.ts`        | Impact analysis engine              |
-| `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer       |
+| File                                               | Purpose                               |
+| -------------------------------------------------- | ------------------------------------- |
+| `packages/analyzer/src/stages/fx.ts`               | FX extraction (parallel chunks)       |
+| `packages/analyzer/src/stages/kx.ts`               | KX canonicalization (30 predicates)   |
+| `packages/analyzer/src/stages/gx.ts`               | GX cross-document entity merge        |
+| `packages/analyzer/src/pipeline/openTrack.ts`      | Open track orchestrator               |
+| `packages/cli/src/commands/run.ts`                 | `iw run` CLI command                  |
+| `packages/cli/src/commands/query.ts`               | `iw query` CLI command                |
+| `packages/cli/src/commands/context.ts`             | `iw context` CLI command              |
+| `packages/cli/src/impact/impactAnalyzer.ts`        | Impact analysis engine                |
+| `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer (Neo4j) |
+| `packages/cli/src/doc-health/cariDocHealth.ts`     | Documentation health analyzer (CARI)  |
 
 ## MCP Tools
 
@@ -148,14 +150,14 @@ The MCP server exposes 9 tools for GitHub Copilot:
 
 ### KG Tools (require Neo4j)
 
-| Tool            | Purpose                  | Key Parameters                  |
-| --------------- | ------------------------ | ------------------------------- |
-| `kg_query`      | NL or Cypher query       | `question`, `cypher?`, `limit?` |
-| `kg_context`    | Build RAG context        | `topic?`, `entity?`, `hops?`    |
-| `kg_entities`   | List/search entities     | `type?`, `search?`, `limit?`    |
-| `kg_impact`     | Semantic impact analysis | `files`, `hops?`                |
-| `kg_doc_health` | Documentation freshness  | `files?`                        |
-| `kg_schema`     | Graph schema             | _(none)_                        |
+| Tool            | Purpose                         | Key Parameters                  |
+| --------------- | ------------------------------- | ------------------------------- |
+| `kg_query`      | NL or Cypher query              | `question`, `cypher?`, `limit?` |
+| `kg_context`    | Build RAG context               | `topic?`, `entity?`, `hops?`    |
+| `kg_entities`   | List/search entities            | `type?`, `search?`, `limit?`    |
+| `kg_impact`     | Semantic impact analysis        | `files`, `hops?`                |
+| `kg_doc_health` | Documentation freshness (Neo4j) | `files?`                        |
+| `kg_schema`     | Graph schema                    | _(none)_                        |
 
 ### CARI Tools (local SQLite, no Neo4j or LLM)
 

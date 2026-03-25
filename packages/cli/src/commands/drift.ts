@@ -4,24 +4,25 @@
 /**
  * drift command — Detect divergence between documentation and code.
  *
- * Compares the KWG (keyword mention graph from docs, persisted in Neo4j)
- * against the AX (AST extraction from code) to find disconnections.
+ * DEPRECATED: Use `iw doc-health` instead, which subsumes all drift detectors.
+ * This command is kept for backward compatibility and delegates to the CARI-backed
+ * health analyzer by default. Use `--neo4j` for KG-based analysis.
  *
  * Usage:
- *   iw drift --session <name>                     # all drift detectors
- *   iw drift --doc-code --session <name>           # doc ↔ code only
- *   iw drift --doc-code --session X [codePaths...] # specific code dirs
- *   iw drift --doc-code -s X -v                    # verbose output
- *
- * Requires: KWG persisted in Neo4j for the session (run `iw build kwg ... --persist` first).
+ *   iw drift                                          # CARI mode (default)
+ *   iw drift --neo4j --session <name>                 # full KG mode
+ *   iw drift --neo4j --session <name> [codePaths...]  # specific code dirs
  *
  * @see LAYERED-GRAPH-ARCHITECTURE.md §4.7
- * @version 0.1
+ * @version 0.2
  */
 
 import { Command } from "commander";
 import chalk from "chalk";
 import * as path from "node:path";
+import { writeFileSync } from "node:fs";
+import { analyzeFromCari } from "../doc-health/cariDocHealth.js";
+import { renderUnifiedReport } from "../drift/unifiedReport.js";
 import {
   runAxStage,
   loadAxOutput,
@@ -41,16 +42,14 @@ import { createNeo4jDriver } from "../kwg/persistKwg.js";
 
 export const driftCommand = new Command("drift")
   .description(
-    "Detect drift between documentation and code — ungrounded mentions, undocumented symbols",
+    "Detect drift between documentation and code (deprecated — use doc-health)",
   )
   .argument(
     "[paths...]",
     "Code directories to scan (default: current directory)",
   )
-  .requiredOption(
-    "-s, --session <name>",
-    "Session name (must have KWG persisted)",
-  )
+  .option("-s, --session <name>", "Session name (required for --neo4j mode)")
+  .option("--neo4j", "Full KG mode — requires Neo4j + persisted KWG", false)
   .option("--doc-code", "Run doc ↔ code drift detection only", false)
   .option(
     "--deps",
@@ -69,12 +68,20 @@ export const driftCommand = new Command("drift")
     false,
   )
   .option("--ax-cache <path>", "Path to cached AX output (skip re-extraction)")
+  .option("--db <path>", "Path to CARI index.db (default: .iw/index.db)")
   .option("-f, --format <format>", "Output format: text | json", "text")
   .option("-o, --output <file>", "Write output to file")
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
+    console.error(
+      chalk.yellow(
+        "⚠ `iw drift` is deprecated — use `iw doc-health` instead.\n",
+      ),
+    );
+
     const {
       session,
+      neo4j: useNeo4j,
       docCode,
       deps,
       temporal,
@@ -85,6 +92,49 @@ export const driftCommand = new Command("drift")
       output: outputFile,
       verbose,
     } = opts;
+
+    // ── Default mode: CARI-backed analysis ────────────────────────────
+    if (!useNeo4j) {
+      try {
+        const log = verbose
+          ? (msg: string) => console.error(chalk.blue(msg))
+          : undefined;
+
+        const { report, dbPath } = analyzeFromCari({
+          dbPath: opts.db,
+          log: log ?? undefined,
+        });
+
+        if (verbose) {
+          console.error(chalk.blue(`Index: ${dbPath}`));
+        }
+
+        const formatted =
+          format === "json"
+            ? JSON.stringify(report, null, 2)
+            : renderUnifiedReport(report);
+
+        if (outputFile) {
+          writeFileSync(outputFile, formatted, "utf-8");
+          console.error(chalk.green(`Drift report written to ${outputFile}`));
+        } else {
+          console.log(formatted);
+        }
+      } catch (err: any) {
+        console.error(chalk.red("Error:"), err.message ?? err);
+        process.exit(1);
+      }
+      return;
+    }
+
+    // ── Neo4j mode: KG-based doc-code drift ───────────────────────────
+
+    if (!session) {
+      console.error(
+        chalk.red("Session ID required for --neo4j mode. Use --session <id>."),
+      );
+      process.exit(1);
+    }
 
     // If no specific detector selected, run all available (currently just doc-code)
     const runDocCode = docCode || (!deps && !temporal);

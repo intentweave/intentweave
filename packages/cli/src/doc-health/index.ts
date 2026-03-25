@@ -4,3 +4,4 @@
 export * from "./docHealthAnalyzer.js";
 export * from "./preflightDocHealth.js";
 export * from "./keywordScanner.js";
+export * from "./cariDocHealth.js";

@@ -266,8 +266,9 @@ iw context -e "React" --hops 3 -s my-project
 # Impact analysis
 iw impact src/auth.ts -s my-project
 
-# Documentation health check
-iw doc-health docs/ -s my-project
+# Documentation health check (CARI default — no Neo4j needed)
+iw doc-health
+iw doc-health --neo4j -s my-project   # full KG mode
 
 # Cross-layer code linking
 iw xlink . --session my-project --persist

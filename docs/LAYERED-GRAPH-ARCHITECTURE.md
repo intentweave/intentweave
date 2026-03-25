@@ -163,7 +163,7 @@ Cost/Richness ▲
    Layer 0    │  FILE: File Structure (dirs, files, imports)     ── implicit
               │
    Cross-cut  │  TCG: Temporal Change Graph (git history)        ── iw build tcg
-              │  Drift Detectors: doc↔code, dep, temporal        ── iw drift
+              │  Drift Detectors: doc↔code, dep, temporal        ── iw doc-health
               └──────────────────────────────────────────────────▶  Cost ($, time)
                 free/seconds                                       $$$/hours
 ```
@@ -629,16 +629,17 @@ Uses TCG signals to detect time-based divergence.
 **CLI integration:**
 
 ```bash
-# Run all drift detectors
-iw drift --session X
+# Default: CARI-backed analysis (no Neo4j)
+iw doc-health
 
-# Specific detector categories
-iw drift --doc-code --session X          # doc ↔ code drift only
-iw drift --deps --session X              # dependency/architecture drift only
-iw drift --temporal --session X          # temporal drift only
+# Full KG mode (requires Neo4j)
+iw doc-health --neo4j -s X
+iw doc-health --neo4j -s X --only doc-code   # doc ↔ code drift only
+iw doc-health --neo4j -s X --only deps       # dependency drift only
+iw doc-health --neo4j -s X --only temporal   # temporal drift only
 
 # Verbose output
-$ iw drift --session X -v
+$ iw doc-health --neo4j -s X -v
 
   Drift Analysis
   ──────────────────────────────────────
@@ -823,10 +824,9 @@ iw build skg --session X --provider openai -i   # chunk + extract + canonicalize
 iw build dcg --session X                  # trace-calls + trace-dataflow (future)
 
 # === Drift detection ===
-iw drift --session X                      # all drift detectors (doc↔code + deps + temporal)
-iw drift --doc-code --session X           # doc ↔ code drift only
-iw drift --deps --session X               # dependency/architecture drift only
-iw drift --temporal --session X           # temporal drift only
+iw doc-health                             # CARI-backed analysis (default, no Neo4j)
+iw doc-health --neo4j -s X               # full KG mode (all detectors)
+iw doc-health --neo4j -s X --only doc-code   # doc ↔ code drift only
 
 # === Convenience aliases ===
 iw build --cheap --session X --persist    # = kwg + scg + tcg + drift + xlink (all free layers)
@@ -879,7 +879,7 @@ $ iw build tcg --session planpling --persist -v
 ```
 
 ```
-$ iw drift --session planpling -v
+$ iw doc-health --neo4j -s planpling -v
 
   Drift Analysis
   ──────────────────────────────────────
@@ -1394,13 +1394,13 @@ previously SKG-only use cases.
 ```bash
 # Phase A: Mention graph catches most disconnections ($0)
 iw build kwg --session X --persist
-iw drift --doc-code --session X
+iw doc-health --neo4j -s X --only doc-code
 # → "5 ungrounded mentions, 12 undocumented entities"
 # → Each with mention evidence: file, section, heading, qualifier
 
 # Phase B: Temporal context adds "when did it drift?" ($0)
 iw build tcg --session X --persist
-iw drift --temporal --session X
+iw doc-health --neo4j -s X --only temporal
 # → "PaymentGateway: last code commit 3 months ago (deleted), doc updated 6 months ago"
 
 # Phase C (optional): Semantic grounding for confirmed issues ($$)
@@ -1498,7 +1498,7 @@ codebase.
 > footprint no longer matches the codebase, the code changed 12 times since the doc was written,
 > and the function signature drifted." That's actionable evidence without spending a token.
 
-**Example:** `iw doc-health --session X`
+**Example:** `iw doc-health` (CARI default) or `iw doc-health --neo4j -s X` (full KG)
 
 ```
 ⚠️  docs/auth.md — STALE (high confidence)
@@ -1681,7 +1681,7 @@ analysis misses files that have no import relationship but always change togethe
 
 ```bash
 # Phase A: evidence-based contradiction flags ($0)
-iw doc-health --session X
+iw doc-health --neo4j -s X
 # → "⚠️  Potential contradiction: 'PostgreSQL' has decision qualifier in docs/db-eval.md,
 #     'Neo4j' has decision qualifier in docs/arch.md. Both in database context.
 #     TCG: docs/db-eval.md last modified 2 years ago (4 commits).
@@ -1689,14 +1689,14 @@ iw doc-health --session X
 #     Likely: db-eval.md is outdated."
 
 # Phase C: drift detection ($0)
-iw doc-health --session X
+iw doc-health --neo4j -s X
 # → "❌  Drift: docs/arch.md says AuthService is stateless.
 #     SCG: AuthService has 3 instance properties.
 #     Confidence: high (structural evidence)."
 
 # Optional: semantic confirmation (requires SKG)
 iw build skg docs/db-eval.md docs/arch.md --session X --persist
-iw doc-health --session X --full
+iw doc-health --neo4j -s X --only doc-code,temporal
 # → "Confirmed contradiction: DECIDED_FOR PostgreSQL vs DECIDED_FOR Neo4j
 #     for the same purpose (primary database). Recommend: archive db-eval.md."
 ```
@@ -1888,7 +1888,7 @@ iw build tcg --session my-project --persist
 # ──────────────────────────────────────────────────────
 # Step 3: Free, instant — "what's broken or stale?"
 # ──────────────────────────────────────────────────────
-iw doc-health --session my-project
+iw doc-health --neo4j -s my-project
 # → Drift detectors run against KWG + TCG: doc↔code, doc↔doc, deps, temporal
 # → Actionable: "docs/auth.md is stale — 12 code changes since last doc update, signature drifted"
 

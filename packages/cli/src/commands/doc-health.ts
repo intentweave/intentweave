@@ -6,17 +6,18 @@
  *
  * Answers: "Which parts of my documentation are stale, drifted, or missing?"
  *
- * Runs up to four drift detectors:
- *   - doc-code: ungrounded mentions, undocumented code, signature mismatches
- *   - temporal: staleness, decision volatility, abandoned code, change lag
- *   - deps:     unused/undeclared dependencies, version drift in docs
- *   - doc-doc:  diverged doc pairs, qualifier contradictions
+ * Three modes (least → most infrastructure):
+ *   1. --lite    Zero-infra keyword scan (regex grounding, no index)
+ *   2. (default) CARI-backed analysis from .iw/index.db (no Neo4j)
+ *   3. --neo4j   Full KG-based analysis (requires Neo4j + persisted KWG)
  *
  * Examples:
- *   iw doc-health -s planpling                        # all detectors
- *   iw doc-health -s planpling --only doc-code,deps   # specific detectors
- *   iw doc-health -s planpling -f json -o report.json # JSON output
+ *   iw doc-health                                     # CARI mode (default)
+ *   iw doc-health --db path/to/index.db               # custom index path
  *   iw doc-health --lite docs/                        # zero-infra preflight
+ *   iw doc-health --neo4j -s planpling                # full KG mode
+ *   iw doc-health --neo4j -s planpling --only doc-code,deps
+ *   iw doc-health -f json -o report.json              # JSON output
  *
  * @see PHASE-C-SPEC.md §9
  */
@@ -29,8 +30,9 @@ import {
   preflightDocHealth,
   formatPreflightMarkdown,
 } from "../doc-health/index.js";
+import { analyzeFromCari } from "../doc-health/cariDocHealth.js";
 
-// Drift detectors
+// Drift detectors (used in --neo4j mode)
 import { detectDocCodeDrift } from "../drift/docCodeDrift.js";
 import { detectTemporalDrift } from "../drift/temporalDrift.js";
 import { detectDepsDrift } from "../drift/depsDrift.js";
@@ -41,7 +43,7 @@ import {
   disabledDetectorStats,
 } from "../drift/unifiedReport.js";
 
-// Analyzer stages
+// Analyzer stages (used in --neo4j mode)
 import {
   runAxStage,
   runTcxStage,
@@ -110,13 +112,13 @@ const VALID_DETECTORS = new Set(["doc-code", "temporal", "deps", "doc-doc"]);
 
 export const docHealthCommand = new Command("doc-health")
   .description(
-    "Unified documentation health — runs drift detectors for stale, drifted, undocumented, and contradictory entities",
+    "Documentation health — detect stale, drifted, undocumented, and contradictory entities",
   )
   .argument(
     "[files...]",
     "Document file(s) to analyze (omit to scan all session docs)",
   )
-  .option("-s, --session <id>", "Session ID (required for full mode)", "")
+  .option("-s, --session <id>", "Session ID (required for --neo4j mode)", "")
   .option(
     "--only <detectors>",
     "Run specific detectors (comma-separated): doc-code,temporal,deps,doc-doc",
@@ -124,10 +126,16 @@ export const docHealthCommand = new Command("doc-health")
   .option("-f, --format <fmt>", "Output format: markdown | json", "markdown")
   .option("-o, --output <path>", "Write output to file")
   .option("-v, --verbose", "Show progress on stderr")
-  .option("--neo4j-uri <uri>", "Neo4j connection URI")
-  .option("--lite", "Lightweight keyword-only mode — no Neo4j or LLM required")
+  .option("--neo4j", "Full KG mode — requires Neo4j + persisted KWG", false)
+  .option("--neo4j-uri <uri>", "Neo4j connection URI (implies --neo4j)")
+  .option("--db <path>", "Path to CARI index.db (default: .iw/index.db)")
+  .option(
+    "--lite",
+    "Lightweight keyword-only mode — no index or Neo4j required",
+  )
   .action(async (files: string[], options) => {
     const { session: sessionId, format, output, verbose, lite } = options;
+    const useNeo4j = options.neo4j || !!options.neo4jUri;
 
     // ── Lite mode: zero-infrastructure preflight ──────────────────────
     if (lite) {
@@ -175,7 +183,50 @@ export const docHealthCommand = new Command("doc-health")
       return;
     }
 
-    // ── Full mode: unified drift detection (requires Neo4j) ───────────
+    // ── Default mode: CARI-backed analysis (no Neo4j) ─────────────────
+    if (!useNeo4j) {
+      try {
+        const log = verbose
+          ? (msg: string) => console.error(chalk.blue(msg))
+          : undefined;
+
+        const { report, dbPath } = analyzeFromCari({
+          dbPath: options.db,
+          log: log ?? undefined,
+        });
+
+        if (verbose) {
+          console.error(chalk.blue(`Index: ${dbPath}`));
+        }
+
+        const formatted =
+          format === "json"
+            ? JSON.stringify(report, null, 2)
+            : renderUnifiedReport(report);
+
+        if (output) {
+          writeFileSync(output, formatted, "utf-8");
+          console.error(chalk.green(`Doc health report written to ${output}`));
+        } else {
+          console.log(formatted);
+        }
+
+        if (verbose) {
+          const s = report.stats;
+          console.error(
+            chalk.blue(
+              `\n${s.totalSignals} drift signals: ${s.criticalCount} critical, ${s.warningCount} warning, ${s.infoCount} info | ${(s.totalDurationMs / 1000).toFixed(1)}s`,
+            ),
+          );
+        }
+      } catch (err: any) {
+        console.error(chalk.red("Error:"), err.message ?? err);
+        process.exit(1);
+      }
+      return;
+    }
+
+    // ── Neo4j mode: full KG-based drift detection ─────────────────────
 
     if (!sessionId) {
       console.error(
