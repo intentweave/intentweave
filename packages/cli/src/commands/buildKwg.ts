@@ -16,23 +16,10 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import {
-  runInStage,
-  type InStageInput,
-} from "@intentweave/analyzer";
-import {
-  runKwxStage,
-  runCoxStage,
-  runClxStage,
-} from "@intentweave/analyzer";
-import {
-  persistKwg,
-  createNeo4jDriver,
-} from "../kwg/persistKwg.js";
-import type {
-  KwxStageOutput,
-  KwgPipelineOutput,
-} from "@intentweave/core";
+import { runInStage, type InStageInput } from "@intentweave/analyzer";
+import { runKwxStage, runCoxStage, runClxStage } from "@intentweave/analyzer";
+import { persistKwg, createNeo4jDriver } from "../kwg/persistKwg.js";
+import type { KwxStageOutput, KwgPipelineOutput } from "@intentweave/core";
 import { ConsoleLogger, NoopLogger } from "@intentweave/analyzer";
 
 // =============================================================================
@@ -158,9 +145,7 @@ const kwgSubcommand = new Command("kwg")
         ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
         : (_msg: string) => {};
 
-      console.log(
-        chalk.bold(`\n  ▸ KWG Pipeline — session: ${opts.session}`),
-      );
+      console.log(chalk.bold(`\n  ▸ KWG Pipeline — session: ${opts.session}`));
 
       // ── 1. Discover files ──────────────────────────────────────
       const files = await discoverFiles(paths, cwd, log);
@@ -191,10 +176,7 @@ const kwgSubcommand = new Command("kwg")
           filePath: relPath,
           content,
         };
-        const inOutput = await runInStage(
-          inInput,
-          ctx as any,
-        );
+        const inOutput = await runInStage(inInput, ctx as any);
 
         // KWX stage
         const kwxOutput = await runKwxStage({ inOutput });
@@ -332,9 +314,7 @@ const kwgSubcommand = new Command("kwg")
 
       // ── Done ───────────────────────────────────────────────────
       const totalSec = (totalTimeMs / 1000).toFixed(1);
-      console.log(
-        chalk.green(`  ✓ KWG build complete in ${totalSec}s\n`),
-      );
+      console.log(chalk.green(`  ✓ KWG build complete in ${totalSec}s\n`));
     },
   );
 

@@ -44,7 +44,9 @@ export const evidenceCommand = new Command("evidence")
       if (format === "json") {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(chalk.blue(`\n  ▸ Evidence Linker — session: ${session}\n`));
+        console.log(
+          chalk.blue(`\n  ▸ Evidence Linker — session: ${session}\n`),
+        );
         console.log(
           `  EVIDENCED_BY links created:  ${chalk.green(String(result.linksCreated))}`,
         );

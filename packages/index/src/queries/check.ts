@@ -18,10 +18,7 @@ import { openIndex } from "./shared.js";
 /**
  * Check changed files for documentation drift.
  */
-export function check(
-  dbPath: string,
-  params: CheckParams,
-): CheckResult {
+export function check(dbPath: string, params: CheckParams): CheckResult {
   const db = openIndex(dbPath);
   try {
     return checkFromDb(db, params);

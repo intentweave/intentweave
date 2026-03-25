@@ -162,9 +162,7 @@ export function runStlStage(input: StlStageInput): StlStageOutput {
       ...fresherFiles.map((f) => new Date(f.lastModified).getTime()),
     );
     const stalenessScore =
-      Math.round(
-        ((freshestCodeMs - docMs) / (1000 * 60 * 60 * 24)) * 10,
-      ) / 10;
+      Math.round(((freshestCodeMs - docMs) / (1000 * 60 * 60 * 24)) * 10) / 10;
 
     if (stalenessScore < minStalenessDays) continue;
 
@@ -219,9 +217,7 @@ export function runStlStage(input: StlStageInput): StlStageOutput {
 /**
  * Build a map of filePath → lastModified date from commit data.
  */
-function buildFileLastModified(
-  tcx: TcxStageOutput,
-): Map<string, string> {
+function buildFileLastModified(tcx: TcxStageOutput): Map<string, string> {
   const result = new Map<string, string>();
 
   for (const commit of tcx.commits) {

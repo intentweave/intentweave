@@ -204,7 +204,11 @@ describe("buildImpactGraph", () => {
 
     // Context lines should be populated
     expect(data.summary.contextLines.length).toBeGreaterThan(0);
-    expect(data.summary.contextLines.some((l: string) => l.includes("Authentication"))).toBe(true);
+    expect(
+      data.summary.contextLines.some((l: string) =>
+        l.includes("Authentication"),
+      ),
+    ).toBe(true);
   });
 
   it("falls back to most-connected entity when no keyword match", async () => {

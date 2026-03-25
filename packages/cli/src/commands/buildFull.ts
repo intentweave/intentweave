@@ -92,10 +92,7 @@ import { runEmbedPipeline } from "../embed/embedPipeline.js";
 
 const SUPPORTED_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst"]);
 
-async function discoverFiles(
-  paths: string[],
-  cwd: string,
-): Promise<string[]> {
+async function discoverFiles(paths: string[], cwd: string): Promise<string[]> {
   const files: string[] = [];
   for (const p of paths) {
     const abs = path.isAbsolute(p) ? p : path.resolve(cwd, p);
@@ -108,9 +105,7 @@ async function discoverFiles(
       }
     } else if (stat.isDirectory()) {
       const entries = await fs.readdir(abs, { withFileTypes: true });
-      const subPaths = entries.map((e) =>
-        path.join(abs, e.name),
-      );
+      const subPaths = entries.map((e) => path.join(abs, e.name));
       files.push(...(await discoverFiles(subPaths, cwd)));
     }
   }
@@ -140,7 +135,11 @@ function createMinimalContext(verbose: boolean) {
 // Stage progress bar
 // =============================================================================
 
-function stageBar(name: string, color: (s: string) => string, sec: number): string {
+function stageBar(
+  name: string,
+  color: (s: string) => string,
+  sec: number,
+): string {
   return `  ${name.padEnd(5)} ${color("████████████████████████████████")}  ${sec.toFixed(1)}s`;
 }
 
@@ -155,7 +154,11 @@ export const fullSubcommand = new Command("full")
   .argument("<paths...>", "Document file(s) or directories to analyze")
   .requiredOption("-s, --session <name>", "Session name")
   .option("--persist", "Persist all layers to Neo4j", false)
-  .option("--provider <name>", "LLM provider for SKG stage: openai | smart-mock", "openai")
+  .option(
+    "--provider <name>",
+    "LLM provider for SKG stage: openai | smart-mock",
+    "openai",
+  )
   .option("--model <name>", "Model for SKG extraction", "gpt-4o-mini")
   .option("--max-candidates <n>", "Max triage candidates for SKG", "50")
   .option("--skip-skg", "Skip SKG extraction (cheap + embed only)", false)
@@ -182,9 +185,15 @@ export const fullSubcommand = new Command("full")
 
     console.log(chalk.blue(`\n  ▸ Full Pipeline — session: ${session}`));
     if (skipSkg) {
-      console.log(chalk.blue(`  ▸ SKG skipped — $0.00 total (cheap + embed)\n`));
+      console.log(
+        chalk.blue(`  ▸ SKG skipped — $0.00 total (cheap + embed)\n`),
+      );
     } else {
-      console.log(chalk.blue(`  ▸ Selective SKG via ${provider}/${model} — top ${maxCandidates} candidates\n`));
+      console.log(
+        chalk.blue(
+          `  ▸ Selective SKG via ${provider}/${model} — top ${maxCandidates} candidates\n`,
+        ),
+      );
     }
 
     const pipelineStart = performance.now();
@@ -283,17 +292,20 @@ export const fullSubcommand = new Command("full")
           try {
             const edgeHints = new Map<string, string[]>();
             for (const h of verbHintResult.hints) {
-              const [a, b] = h.subjectName < h.objectName
-                ? [h.subjectName, h.objectName]
-                : [h.objectName, h.subjectName];
+              const [a, b] =
+                h.subjectName < h.objectName
+                  ? [h.subjectName, h.objectName]
+                  : [h.objectName, h.subjectName];
               const key = `${a}|||${b}`;
               if (!edgeHints.has(key)) edgeHints.set(key, []);
               edgeHints.get(key)!.push(h.predicate);
             }
-            const edgeHintArray = [...edgeHints.entries()].map(([key, preds]) => {
-              const [entityA, entityB] = key.split("|||");
-              return { entityA, entityB, verbHints: [...new Set(preds)] };
-            });
+            const edgeHintArray = [...edgeHints.entries()].map(
+              ([key, preds]) => {
+                const [entityA, entityB] = key.split("|||");
+                return { entityA, entityB, verbHints: [...new Set(preds)] };
+              },
+            );
             await neo4jSession.run(
               `
               UNWIND $edges AS e
@@ -302,7 +314,9 @@ export const fullSubcommand = new Command("full")
               `,
               { edges: edgeHintArray, session },
             );
-            log(`Verb hints persisted on ${edgeHintArray.length} CO_OCCURS edges`);
+            log(
+              `Verb hints persisted on ${edgeHintArray.length} CO_OCCURS edges`,
+            );
           } finally {
             await neo4jSession.close();
           }
@@ -315,7 +329,9 @@ export const fullSubcommand = new Command("full")
       const tcxOutput = await runTcxStage({
         workspaceRoot: cwd,
         depth: "full",
-        log: verbose ? (msg: string) => console.log(chalk.gray(`  tcx: ${msg}`)) : undefined,
+        log: verbose
+          ? (msg: string) => console.log(chalk.gray(`  tcx: ${msg}`))
+          : undefined,
       });
       const cocTcgOutput = runCocStage({ tcxOutput });
       const hotOutput = runHotStage({ tcxOutput });
@@ -359,7 +375,9 @@ export const fullSubcommand = new Command("full")
       if (persist && driver) {
         log("Persisting SCG to Neo4j...");
         const scgResult = await persistScg(axOutput, session, driver, { log });
-        log(`SCG persisted: ${scgResult.dirsWritten} dirs, ${scgResult.filesWritten} files, ${scgResult.symbolsWritten} symbols`);
+        log(
+          `SCG persisted: ${scgResult.dirsWritten} dirs, ${scgResult.filesWritten} files, ${scgResult.symbolsWritten} symbols`,
+        );
       }
 
       // ── 1d: Drift Detection ──────────────────────────────────────
@@ -390,7 +408,9 @@ export const fullSubcommand = new Command("full")
       let docCodeStats: DetectorStats = disabledDetectorStats();
       if (persist && driver) {
         const t0 = performance.now();
-        const dcReport = await detectDocCodeDrift(driver, session, axOutput, { log });
+        const dcReport = await detectDocCodeDrift(driver, session, axOutput, {
+          log,
+        });
         docCodeSignals = dcReport.signals;
         docCodeStats = {
           enabled: true,
@@ -444,8 +464,12 @@ export const fullSubcommand = new Command("full")
       // Persist drift signals
       if (persist && driver) {
         log("Persisting drift signals to Neo4j...");
-        const driftPersist = await persistDrift(report, session, driver, { log });
-        log(`Drift persist: ${driftPersist.nodesCreated} signals, ${driftPersist.relsCreated} rels`);
+        const driftPersist = await persistDrift(report, session, driver, {
+          log,
+        });
+        log(
+          `Drift persist: ${driftPersist.nodesCreated} signals, ${driftPersist.relsCreated} rels`,
+        );
       }
 
       const stage1Ms = performance.now() - stage1Start;
@@ -526,7 +550,9 @@ export const fullSubcommand = new Command("full")
         }
 
         if (candidateFiles.size > 0) {
-          log(`Selective SKG: ${candidateFiles.size} files contain triage candidates`);
+          log(
+            `Selective SKG: ${candidateFiles.size} files contain triage candidates`,
+          );
 
           // Import the open track runner
           try {
@@ -537,9 +563,8 @@ export const fullSubcommand = new Command("full")
               createDefaultExtractionProvider,
               convertProfileForAnalyzer,
             } = await import("@intentweave/analyzer");
-            const { OpenAILLMProvider, SmartMockLLMProvider } = await import(
-              "@intentweave/analyzer/llm"
-            );
+            const { OpenAILLMProvider, SmartMockLLMProvider } =
+              await import("@intentweave/analyzer/llm");
             const { createWorkspaceRef } = await import("@intentweave/core");
             const { profileRegistry } = await import("@intentweave/profiles");
 
@@ -549,10 +574,14 @@ export const fullSubcommand = new Command("full")
               const apiKey = process.env.OPENAI_API_KEY;
               if (!apiKey) {
                 console.log(
-                  chalk.yellow("  ⚠ OPENAI_API_KEY not set — skipping SKG stage"),
+                  chalk.yellow(
+                    "  ⚠ OPENAI_API_KEY not set — skipping SKG stage",
+                  ),
                 );
                 console.log(
-                  chalk.yellow('    Set OPENAI_API_KEY="sk-proj-..." to enable SKG'),
+                  chalk.yellow(
+                    '    Set OPENAI_API_KEY="sk-proj-..." to enable SKG',
+                  ),
                 );
               } else {
                 llmProvider = new OpenAILLMProvider({ apiKey, model });
@@ -562,9 +591,12 @@ export const fullSubcommand = new Command("full")
             }
 
             if (llmProvider) {
-              const extractionProvider = createDefaultExtractionProvider(llmProvider, {
-                parallelChunks: 5,
-              });
+              const extractionProvider = createDefaultExtractionProvider(
+                llmProvider,
+                {
+                  parallelChunks: 5,
+                },
+              );
               const workspace = createWorkspaceRef(session, session);
               const store = createFileStore({
                 rootDir: path.join(cwd, ".iw", "runs", `full-${Date.now()}`),
@@ -603,23 +635,31 @@ export const fullSubcommand = new Command("full")
                 });
 
                 log(`Running open track on ${artifacts.length} files...`);
-                const openResults = await runOpenTrackBatch(artifacts, pipelineCtx, {
-                  llmProvider,
-                  concurrency: 5,
-                  onStage: (stage: any) => {
-                    if (verbose) {
-                      log(`  FX/KX: ${stage.artifactId ?? ''} — ${stage.stage ?? stage}`);
-                    }
+                const openResults = await runOpenTrackBatch(
+                  artifacts,
+                  pipelineCtx,
+                  {
+                    llmProvider,
+                    concurrency: 5,
+                    onStage: (stage: any) => {
+                      if (verbose) {
+                        log(
+                          `  FX/KX: ${stage.artifactId ?? ""} — ${stage.stage ?? stage}`,
+                        );
+                      }
+                    },
                   },
-                });
+                );
 
                 // Count results
                 const totalEntitiesSKG = openResults.reduce(
-                  (acc: number, r: any) => acc + (r.kx?.canonEntities?.length ?? 0),
+                  (acc: number, r: any) =>
+                    acc + (r.kx?.canonEntities?.length ?? 0),
                   0,
                 );
                 const totalRels = openResults.reduce(
-                  (acc: number, r: any) => acc + (r.kx?.canonTriples?.length ?? 0),
+                  (acc: number, r: any) =>
+                    acc + (r.kx?.canonTriples?.length ?? 0),
                   0,
                 );
 
@@ -634,16 +674,21 @@ export const fullSubcommand = new Command("full")
                 // Persist open track results to Neo4j
                 if (persist && driver) {
                   try {
-                    const { persistKxToNeo4j } = await import("./persist-neo4j.js");
+                    const { persistKxToNeo4j } =
+                      await import("./persist-neo4j.js");
                     const kxOutputs = openResults.map((r: any) => r.kx);
                     const persistResult = await persistKxToNeo4j(kxOutputs, {
                       sessionId: session,
                       runId: `full-skg-${Date.now()}`,
                       workspaceId: session,
                       mode: "delta",
-                      log: verbose ? (msg: string) => console.log(chalk.dim(`  ${msg}`)) : undefined,
+                      log: verbose
+                        ? (msg: string) => console.log(chalk.dim(`  ${msg}`))
+                        : undefined,
                     });
-                    log(`SKG persisted: ${persistResult.canonEntitiesWritten ?? totalEntitiesSKG} entities, ${persistResult.canonRelationshipsWritten ?? totalRels} rels`);
+                    log(
+                      `SKG persisted: ${persistResult.canonEntitiesWritten ?? totalEntitiesSKG} entities, ${persistResult.canonRelationshipsWritten ?? totalRels} rels`,
+                    );
                   } catch (err: any) {
                     log(`SKG persist failed: ${err.message}`);
                   }
@@ -683,9 +728,8 @@ export const fullSubcommand = new Command("full")
         // Cross-layer: REALIZED_BY (Canon → CodeRef via xlink)
         let realizedByLinks = 0;
         try {
-          const { runCrossLayerLinker, persistCrossLinks } = await import(
-            "../linker/index.js"
-          );
+          const { runCrossLayerLinker, persistCrossLinks } =
+            await import("../linker/index.js");
 
           // Load Canon entities from Neo4j to check if linking is needed
           const xlinkSession = driver.session();
@@ -695,7 +739,10 @@ export const fullSubcommand = new Command("full")
                RETURN count(c) AS cnt`,
               { sid: session },
             );
-            const entityCount = res.records[0]?.get("cnt")?.toNumber?.() ?? res.records[0]?.get("cnt") ?? 0;
+            const entityCount =
+              res.records[0]?.get("cnt")?.toNumber?.() ??
+              res.records[0]?.get("cnt") ??
+              0;
 
             if (entityCount > 0) {
               const xlinkResult = await runCrossLayerLinker({
@@ -770,11 +817,12 @@ export const fullSubcommand = new Command("full")
           const stage5Ms = performance.now() - stage5Start;
           console.log(stageBar("EMBED", chalk.red, stage5Ms / 1000));
           console.log(
-            chalk.yellow(
-              `       → Embedding skipped: ${err.message}`,
-            ),
+            chalk.yellow(`       → Embedding skipped: ${err.message}`),
           );
-          if (err.message.includes("@huggingface/transformers") || err.message.includes("onnxruntime")) {
+          if (
+            err.message.includes("@huggingface/transformers") ||
+            err.message.includes("onnxruntime")
+          ) {
             console.log(
               chalk.yellow(
                 `       → Install: pnpm add @huggingface/transformers -w`,

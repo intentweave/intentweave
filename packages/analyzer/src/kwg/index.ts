@@ -29,4 +29,8 @@ export { runClxStage } from "./clxStage.js";
 
 // Verb hint detection (optional pass, post-KWX)
 export { detectVerbHints, VERB_PATTERNS } from "./verbDetector.js";
-export type { VerbHint, VerbDetectorResult, VerbPattern } from "./verbDetector.js";
+export type {
+  VerbHint,
+  VerbDetectorResult,
+  VerbPattern,
+} from "./verbDetector.js";

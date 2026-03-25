@@ -83,7 +83,10 @@ export function DecisionTimeline({
     );
 
     // Build adjacency: decision → children (via edges, excluding root edges)
-    const childrenOf = new Map<string, { node: InsightNode; predicate: string }[]>();
+    const childrenOf = new Map<
+      string,
+      { node: InsightNode; predicate: string }[]
+    >();
     const decisionIds = new Set(decisions.map((d) => d.id));
     const nodeById = new Map(data.nodes.map((n) => [n.id, n]));
 
@@ -146,19 +149,21 @@ export function DecisionTimeline({
     const xMax = new Date(timeDomain[1].getTime() + pad);
 
     const totalHeight = MARGIN.top + laneCount * LANE_HEIGHT + MARGIN.bottom;
-    const innerWidth = Math.max(containerWidth - MARGIN.left - MARGIN.right, 600);
+    const innerWidth = Math.max(
+      containerWidth - MARGIN.left - MARGIN.right,
+      600,
+    );
 
     svg
       .attr("width", containerWidth)
       .attr("height", Math.max(totalHeight, containerHeight));
 
-    const xScale = d3
-      .scaleTime()
-      .domain([xMin, xMax])
-      .range([0, innerWidth]);
+    const xScale = d3.scaleTime().domain([xMin, xMax]).range([0, innerWidth]);
 
     // ── Zoom ─────────────────────────────────────────────────────────────
-    const g = svg.append("g").attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
+    const g = svg
+      .append("g")
+      .attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
 
     const zoom = d3
       .zoom<SVGSVGElement, unknown>()
@@ -172,7 +177,10 @@ export function DecisionTimeline({
     svg.call(zoom);
 
     // Set initial transform to include margins
-    svg.call(zoom.transform, d3.zoomIdentity.translate(MARGIN.left, MARGIN.top));
+    svg.call(
+      zoom.transform,
+      d3.zoomIdentity.translate(MARGIN.left, MARGIN.top),
+    );
 
     // ── Swim lane backgrounds ────────────────────────────────────────────
     const laneGroup = g.append("g").attr("class", "lanes");
@@ -211,9 +219,7 @@ export function DecisionTimeline({
       ? d3
           .axisTop(xScale)
           .ticks(Math.min(Math.floor(innerWidth / 120), 12))
-          .tickFormat((d) =>
-            d3.timeFormat("%b %d, %Y")(d as Date),
-          )
+          .tickFormat((d) => d3.timeFormat("%b %d, %Y")(d as Date))
       : d3
           .axisTop(xScale)
           .ticks(decisions.length)
@@ -267,10 +273,7 @@ export function DecisionTimeline({
         .attr("y", -NODE_HEIGHT / 2)
         .attr("fill", NODE_COLORS.decision + "1A")
         .attr("stroke", NODE_COLORS.decision)
-        .attr(
-          "stroke-width",
-          decision.id === selectedNodeId ? 3.5 : 2,
-        )
+        .attr("stroke-width", decision.id === selectedNodeId ? 3.5 : 2)
         .attr(
           "filter",
           decision.id === selectedNodeId
@@ -385,10 +388,7 @@ export function DecisionTimeline({
           .attr("y", -NODE_HEIGHT / 2)
           .attr("fill", color + "1A")
           .attr("stroke", color)
-          .attr(
-            "stroke-width",
-            child.id === selectedNodeId ? 3.5 : 2,
-          )
+          .attr("stroke-width", child.id === selectedNodeId ? 3.5 : 2)
           .attr(
             "filter",
             child.id === selectedNodeId
@@ -428,7 +428,10 @@ export function DecisionTimeline({
   }, [data, selectedNodeId, onNodeClick]);
 
   return (
-    <div ref={containerRef} className="w-full h-full overflow-auto bg-slate-950">
+    <div
+      ref={containerRef}
+      className="w-full h-full overflow-auto bg-slate-950"
+    >
       <svg ref={svgRef} className="min-w-full" />
     </div>
   );

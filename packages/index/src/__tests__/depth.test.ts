@@ -128,7 +128,8 @@ describe("HeuristicKeywordExtractor — dictionary mode", () => {
 
     // "rate limiter" only in body (lowercase, not PascalCase)
     // Heading mentions a different phrase
-    const text = "# API Design\n\nWe use a rate limiter for throughput control.";
+    const text =
+      "# API Design\n\nWe use a rate limiter for throughput control.";
     const matches = extractor.extract(text);
 
     const dictMatches = matches.filter((m) => m.source === "dictionary");

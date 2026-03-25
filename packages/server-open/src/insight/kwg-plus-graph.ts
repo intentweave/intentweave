@@ -59,16 +59,34 @@ export async function buildKwgPlusGraph(
   await fetchKwgLayer(runner, sessionId, question, maxNodes, nodeMap, edges);
 
   // ── 2. TCG Layer — files, commits, authors ──────────────────────────────
-  const tcgStats = await fetchTcgLayer(runner, sessionId, maxNodes, nodeMap, edges);
+  const tcgStats = await fetchTcgLayer(
+    runner,
+    sessionId,
+    maxNodes,
+    nodeMap,
+    edges,
+  );
 
   // ── 3. SCG Layer — code files, symbols ─────────────────────────────────
-  const scgStats = await fetchScgLayer(runner, sessionId, maxNodes, nodeMap, edges);
+  const scgStats = await fetchScgLayer(
+    runner,
+    sessionId,
+    maxNodes,
+    nodeMap,
+    edges,
+  );
 
   // ── 4. Cross-layer links — KWDoc ↔ TCGFile ↔ SCG:File by file path ────
   await fetchCrossLayerLinks(runner, sessionId, nodeMap, edges);
 
   // ── 5. Drift signals (Phase C) ─────────────────────────────────────────
-  const driftStats = await fetchDriftLayer(runner, sessionId, maxNodes, nodeMap, edges);
+  const driftStats = await fetchDriftLayer(
+    runner,
+    sessionId,
+    maxNodes,
+    nodeMap,
+    edges,
+  );
 
   // ── 5. Compute depth from connectivity ──────────────────────────────────
   const nodes = [...nodeMap.values()];
@@ -85,7 +103,8 @@ export async function buildKwgPlusGraph(
   const layerInfo: string[] = ["KWG"];
   if (tcgStats.nodeCount > 0) layerInfo.push(`TCG(${tcgStats.nodeCount})`);
   if (scgStats.nodeCount > 0) layerInfo.push(`SCG(${scgStats.nodeCount})`);
-  if (driftStats.nodeCount > 0) layerInfo.push(`Drift(${driftStats.nodeCount})`);
+  if (driftStats.nodeCount > 0)
+    layerInfo.push(`Drift(${driftStats.nodeCount})`);
 
   const title = question
     ? `KWG+: "${question}" [${layerInfo.join("+")}]`
@@ -347,7 +366,7 @@ async function fetchTcgLayer(
       kind: "file",
       entityType: "file",
       sourceDoc: fp,
-      confidence: Math.min((r.changeCount as number ?? 1) / 10, 1.0),
+      confidence: Math.min(((r.changeCount as number) ?? 1) / 10, 1.0),
       rawTriples: [],
       connections: [],
     });
@@ -370,7 +389,7 @@ async function fetchTcgLayer(
     if (!hash) continue;
     const id = `tcgcommit:${hash}`;
     const shortHash = hash.substring(0, 7);
-    const msg = (r.message as string ?? "").substring(0, 40);
+    const msg = ((r.message as string) ?? "").substring(0, 40);
     nodeMap.set(id, {
       id,
       label: `⊙ ${shortHash}: ${msg}`,
@@ -522,7 +541,14 @@ async function fetchScgLayer(
     if (!symId) continue;
     const id = `scgsym:${symId}`;
     const kind = r.kind as string;
-    const icon = kind === "class" ? "◆" : kind === "interface" ? "◇" : kind === "function" ? "ƒ" : "▸";
+    const icon =
+      kind === "class"
+        ? "◆"
+        : kind === "interface"
+          ? "◇"
+          : kind === "function"
+            ? "ƒ"
+            : "▸";
     nodeMap.set(id, {
       id,
       label: `${icon} ${r.name as string}`,
@@ -544,7 +570,11 @@ async function fetchScgLayer(
     const fileNodeId = `scgfile:${fp}`;
     const symNodeId = `scgsym:${symId}`;
     if (nodeMap.has(fileNodeId) && nodeMap.has(symNodeId)) {
-      edges.push({ source: fileNodeId, target: symNodeId, label: "SCG_CONTAINS" });
+      edges.push({
+        source: fileNodeId,
+        target: symNodeId,
+        label: "SCG_CONTAINS",
+      });
       addConnection(nodeMap, fileNodeId, symNodeId, "SCG_CONTAINS");
     }
   }
@@ -572,17 +602,24 @@ async function fetchCrossLayerLinks(
     .map((n) => n.sourceDoc!);
 
   const scgFilePaths = [...nodeMap.values()]
-    .filter((n) => n.kind === "file" && n.entityType === "code-file" && n.sourceDoc)
+    .filter(
+      (n) => n.kind === "file" && n.entityType === "code-file" && n.sourceDoc,
+    )
     .map((n) => n.sourceDoc!);
 
   const tcgByPath = new Map(
     [...nodeMap.entries()]
-      .filter(([_, n]) => n.kind === "file" && n.entityType === "file" && n.sourceDoc)
+      .filter(
+        ([_, n]) => n.kind === "file" && n.entityType === "file" && n.sourceDoc,
+      )
       .map(([id, n]) => [n.sourceDoc!, id] as const),
   );
   const scgByPath = new Map(
     [...nodeMap.entries()]
-      .filter(([_, n]) => n.kind === "file" && n.entityType === "code-file" && n.sourceDoc)
+      .filter(
+        ([_, n]) =>
+          n.kind === "file" && n.entityType === "code-file" && n.sourceDoc,
+      )
       .map(([id, n]) => [n.sourceDoc!, id] as const),
   );
 
@@ -743,7 +780,14 @@ async function fetchCrossLayerLinks(
       // Inject missing symbol node
       if (!nodeMap.has(symId)) {
         const kind = r.symbolKind as string;
-        const icon = kind === "class" ? "◆" : kind === "interface" ? "◇" : kind === "function" ? "ƒ" : "▸";
+        const icon =
+          kind === "class"
+            ? "◆"
+            : kind === "interface"
+              ? "◇"
+              : kind === "function"
+                ? "ƒ"
+                : "▸";
         nodeMap.set(symId, {
           id: symId,
           label: `${icon} ${r.symbolName as string}`,
@@ -801,14 +845,16 @@ async function fetchDriftLayer(
     const name = (r.name as string) ?? "";
     const message = (r.message as string) ?? `${detector} drift`;
 
-    const icon = severity === "critical" ? "🔴" : severity === "warning" ? "🟡" : "🔵";
+    const icon =
+      severity === "critical" ? "🔴" : severity === "warning" ? "🟡" : "🔵";
 
     nodeMap.set(id, {
       id,
       label: `${icon} ${(name || message).substring(0, 40)}`,
       kind: "drift",
       entityType: detector,
-      confidence: severity === "critical" ? 1.0 : severity === "warning" ? 0.7 : 0.4,
+      confidence:
+        severity === "critical" ? 1.0 : severity === "warning" ? 0.7 : 0.4,
       rawTriples: [],
       connections: [],
     });

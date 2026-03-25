@@ -38,6 +38,8 @@
     "@huggingface/transformers": "^3.8.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }

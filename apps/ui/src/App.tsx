@@ -34,7 +34,8 @@ export function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("graph");
   const [vizType, setVizType] = useState<VizType>("decision-tree");
   /** Node IDs to highlight on the graph when lineage is shown in the detail panel. */
-  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string> | null>(null);
+  const [highlightedNodeIds, setHighlightedNodeIds] =
+    useState<Set<string> | null>(null);
   /** Available sessions from the server. */
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   /** Currently selected session (null = server default). */
@@ -68,11 +69,12 @@ export function App() {
 
       try {
         // For KG mode, "*" means "show everything" → send no question filter
-        const isGraphViz = activeViz === "knowledge-graph" || activeViz === "kwg" || activeViz === "kwg-plus";
+        const isGraphViz =
+          activeViz === "knowledge-graph" ||
+          activeViz === "kwg" ||
+          activeViz === "kwg-plus";
         const effectiveQuestion =
-          isGraphViz && question.trim() === "*"
-            ? undefined
-            : question;
+          isGraphViz && question.trim() === "*" ? undefined : question;
         const result = await fetchInsight({
           question: effectiveQuestion,
           vizType: activeViz,
@@ -189,7 +191,13 @@ export function App() {
             >
               {sessions.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.id} ({s.canonCount > 0 ? `${s.canonCount} canon` : ""}{s.canonCount > 0 && (s.kwgCount > 0 || s.tcgCount > 0) ? ", " : ""}{s.kwgCount > 0 ? `${s.kwgCount} kwg` : ""}{s.kwgCount > 0 && s.tcgCount > 0 ? ", " : ""}{s.tcgCount > 0 ? `${s.tcgCount} tcg` : ""})
+                  {s.id} ({s.canonCount > 0 ? `${s.canonCount} canon` : ""}
+                  {s.canonCount > 0 && (s.kwgCount > 0 || s.tcgCount > 0)
+                    ? ", "
+                    : ""}
+                  {s.kwgCount > 0 ? `${s.kwgCount} kwg` : ""}
+                  {s.kwgCount > 0 && s.tcgCount > 0 ? ", " : ""}
+                  {s.tcgCount > 0 ? `${s.tcgCount} tcg` : ""})
                 </option>
               ))}
             </select>
@@ -294,9 +302,7 @@ export function App() {
                   <span className="text-emerald-400 font-medium">
                     Full Knowledge Graph
                   </span>
-                  <p className="mt-1">
-                    Browse all entities and relationships
-                  </p>
+                  <p className="mt-1">Browse all entities and relationships</p>
                 </div>
                 <div className="bg-slate-900 rounded-lg p-3 border border-slate-800 opacity-50">
                   <span className="text-amber-400 font-medium">Doc Health</span>
@@ -420,7 +426,10 @@ export function App() {
 
       {/* Legend */}
       {insight && insight.data.nodes.length > 1 && (
-        <Legend activeKinds={activeKinds} showSeverity={isImpactGraph || isKnowledgeGraph} />
+        <Legend
+          activeKinds={activeKinds}
+          showSeverity={isImpactGraph || isKnowledgeGraph}
+        />
       )}
     </div>
   );

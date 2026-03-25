@@ -50,15 +50,11 @@ const QUALIFIER_PATTERNS: QualifierPattern[] = [
   },
   {
     qualifier: "must",
-    patterns: [
-      /\b(must|required|mandatory|shall)\b/i,
-    ],
+    patterns: [/\b(must|required|mandatory|shall)\b/i],
   },
   {
     qualifier: "should",
-    patterns: [
-      /\b(should|recommended|ideally|prefer|preferably)\b/i,
-    ],
+    patterns: [/\b(should|recommended|ideally|prefer|preferably)\b/i],
   },
   {
     qualifier: "alternative",
@@ -76,9 +72,7 @@ const QUALIFIER_PATTERNS: QualifierPattern[] = [
   },
   {
     qualifier: "example",
-    patterns: [
-      /\b(example|e\.g\.|for instance|such as|demo|sample)\b/i,
-    ],
+    patterns: [/\b(example|e\.g\.|for instance|such as|demo|sample)\b/i],
   },
 ];
 

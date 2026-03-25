@@ -84,7 +84,8 @@ function isStaticDeclaration(node: Parser.SyntaxNode): boolean {
       for (let j = 0; j < child.childCount; j++) {
         const mod = child.child(j)!;
         if (
-          (mod.type === "property_modifier" || mod.type === "member_modifier") &&
+          (mod.type === "property_modifier" ||
+            mod.type === "member_modifier") &&
           (mod.text === "static" || mod.text === "class")
         ) {
           return true;
@@ -141,7 +142,7 @@ function extractInheritance(node: Parser.SyntaxNode): string[] {
         const typeId =
           userType.type === "type_identifier"
             ? userType
-            : userType.childForFieldName("name") ?? userType.firstChild;
+            : (userType.childForFieldName("name") ?? userType.firstChild);
         if (typeId) result.push(typeId.text);
       }
     }
@@ -162,14 +163,20 @@ function extractDocComment(
       return text.replace(/^\/\/\/\s?/, "").trim();
     }
     if (text.startsWith("/**")) {
-      return text.replace(/^\/\*\*\s?/, "").replace(/\s?\*\/$/, "").trim();
+      return text
+        .replace(/^\/\*\*\s?/, "")
+        .replace(/\s?\*\/$/, "")
+        .trim();
     }
   }
   return undefined;
 }
 
 /** Build a displayable signature string. */
-function buildSignature(node: Parser.SyntaxNode, kind: SwiftSymbolKind): string {
+function buildSignature(
+  node: Parser.SyntaxNode,
+  kind: SwiftSymbolKind,
+): string {
   const lines = node.text.split("\n");
   const firstLine = lines[0].trim();
   // Trim body
@@ -254,7 +261,16 @@ export class SwiftExtractor {
     const imports: SwiftImport[] = [];
     const errors: string[] = [];
 
-    this.walkNode(tree.rootNode, content, filePath, symbols, imports, opts, undefined, 0);
+    this.walkNode(
+      tree.rootNode,
+      content,
+      filePath,
+      symbols,
+      imports,
+      opts,
+      undefined,
+      0,
+    );
 
     if (tree.rootNode.hasError) {
       errors.push("Parse errors detected in file");
@@ -322,20 +338,38 @@ export class SwiftExtractor {
     switch (node.type) {
       case "class_declaration":
         this.extractClassDeclaration(
-          node, content, filePath, symbols, imports, options, parentName, depth,
+          node,
+          content,
+          filePath,
+          symbols,
+          imports,
+          options,
+          parentName,
+          depth,
         );
         break;
 
       case "protocol_declaration":
         this.extractProtocol(
-          node, content, filePath, symbols, imports, options, depth,
+          node,
+          content,
+          filePath,
+          symbols,
+          imports,
+          options,
+          depth,
         );
         break;
 
       case "function_declaration":
       case "protocol_function_declaration":
         this.extractFunction(
-          node, content, filePath, symbols, options, parentName,
+          node,
+          content,
+          filePath,
+          symbols,
+          options,
+          parentName,
         );
         break;
 
@@ -344,12 +378,26 @@ export class SwiftExtractor {
         break;
 
       case "typealias_declaration":
-        this.extractTypealias(node, content, filePath, symbols, options, parentName);
+        this.extractTypealias(
+          node,
+          content,
+          filePath,
+          symbols,
+          options,
+          parentName,
+        );
         break;
 
       case "property_declaration":
       case "protocol_property_declaration":
-        this.extractProperty(node, content, filePath, symbols, options, parentName);
+        this.extractProperty(
+          node,
+          content,
+          filePath,
+          symbols,
+          options,
+          parentName,
+        );
         break;
 
       case "import_declaration":
@@ -423,9 +471,7 @@ export class SwiftExtractor {
       sym.conformances = inheritance;
     } else if (kind === "extension") {
       // For extensions, the "name" is the extended type
-      const userTypeNode = node.children.find(
-        (c) => c.type === "user_type",
-      );
+      const userTypeNode = node.children.find((c) => c.type === "user_type");
       if (userTypeNode) {
         sym.extendedType = userTypeNode.text;
         sym.name = userTypeNode.text;
@@ -655,7 +701,7 @@ export class SwiftExtractor {
       const pattern = node.children.find((c) => c.type === "pattern");
       name = pattern
         ? (pattern.childForFieldName("bound_identifier")?.text ??
-           pattern.text.replace(/^(var|let)\s+/, "").trim())
+          pattern.text.replace(/^(var|let)\s+/, "").trim())
         : (nameNode?.text ?? "<anonymous>");
     } else {
       name = nameNode?.text ?? "<anonymous>";
@@ -686,10 +732,7 @@ export class SwiftExtractor {
   /**
    * Extract import declaration.
    */
-  private extractImport(
-    node: Parser.SyntaxNode,
-    imports: SwiftImport[],
-  ): void {
+  private extractImport(node: Parser.SyntaxNode, imports: SwiftImport[]): void {
     // import_declaration children: "import" keyword, optional kind, identifier(s)
     let moduleName = "";
     let importKind: SwiftImport["kind"];
@@ -701,9 +744,15 @@ export class SwiftExtractor {
 
       // Kind specifier: `import struct Foundation.URL`
       if (
-        ["struct", "class", "protocol", "enum", "func", "var", "typealias"].includes(
-          child.text,
-        )
+        [
+          "struct",
+          "class",
+          "protocol",
+          "enum",
+          "func",
+          "var",
+          "typealias",
+        ].includes(child.text)
       ) {
         importKind = child.text as SwiftImport["kind"];
         continue;

@@ -24,15 +24,15 @@ Neo4j, Cypher, or LLM calls.
 
 ## 2. Design Principles
 
-| # | Principle | Implication |
-|---|-----------|-------------|
-| 1 | **$0 by default** | No LLM calls in the core pipeline. Local AST + heuristics + git only. |
-| 2 | **Single file output** | Index is one `.iw/index.db` (SQLite) or `.iw/index.json`. No server needed. |
-| 3 | **Predefined use cases** | Users don't query the index — agents and CI consume it via predefined APIs. |
-| 4 | **Statistical indication** | Scores and weights, not binary truth. Co-occurrence is a signal, not a fact. |
-| 5 | **Incremental** | On-save or on-commit update. Not a batch pipeline users must remember to run. |
-| 6 | **Agent-native** | MCP tools or file-readable format. Agents ask structured questions, get ranked answers. |
-| 7 | **CI-native** | `iw check --pr` exits 0/1 with actionable findings. No Neo4j in CI. |
+| #   | Principle                  | Implication                                                                             |
+| --- | -------------------------- | --------------------------------------------------------------------------------------- |
+| 1   | **$0 by default**          | No LLM calls in the core pipeline. Local AST + heuristics + git only.                   |
+| 2   | **Single file output**     | Index is one `.iw/index.db` (SQLite) or `.iw/index.json`. No server needed.             |
+| 3   | **Predefined use cases**   | Users don't query the index — agents and CI consume it via predefined APIs.             |
+| 4   | **Statistical indication** | Scores and weights, not binary truth. Co-occurrence is a signal, not a fact.            |
+| 5   | **Incremental**            | On-save or on-commit update. Not a batch pipeline users must remember to run.           |
+| 6   | **Agent-native**           | MCP tools or file-readable format. Agents ask structured questions, get ranked answers. |
+| 7   | **CI-native**              | `iw check --pr` exits 0/1 with actionable findings. No Neo4j in CI.                     |
 
 ## 3. What the Index Contains
 
@@ -77,13 +77,13 @@ The core data structure. Each annotation links a text span in a document to a co
 
 **`confidence` scoring:**
 
-| Match type | Score | Description |
-|------------|-------|-------------|
-| `exact` | 0.90–1.0 | Doc text exactly matches symbol name (case-insensitive) |
-| `slug` | 0.75–0.90 | Slugified forms match (`validate-user` ↔ `validateUser`) |
-| `token` | 0.50–0.75 | Token overlap ≥50% (multi-word mentions) |
-| `heading` | 0.30–0.50 | Heading/bold text matches but no direct code symbol |
-| `ungrounded` | 0.0–0.30 | Keyword entity with no code match (concept, decision, etc.) |
+| Match type   | Score     | Description                                                 |
+| ------------ | --------- | ----------------------------------------------------------- |
+| `exact`      | 0.90–1.0  | Doc text exactly matches symbol name (case-insensitive)     |
+| `slug`       | 0.75–0.90 | Slugified forms match (`validate-user` ↔ `validateUser`)    |
+| `token`      | 0.50–0.75 | Token overlap ≥50% (multi-word mentions)                    |
+| `heading`    | 0.30–0.50 | Heading/bold text matches but no direct code symbol         |
+| `ungrounded` | 0.0–0.30  | Keyword entity with no code match (concept, decision, etc.) |
 
 **`source` — how the mention was detected (from KWX):**
 `heading` | `bold` | `code-span` | `identifier` | `dictionary` | `custom-pattern`
@@ -106,6 +106,7 @@ sources only — structured sources (`heading`, `bold`, `code-span`) are exempt.
 prevents complete suppression.
 
 Benchmark results on the IntentWeave repo:
+
 - High-value terms: ~0.857 confidence
 - Filler words: floored at 0.1
 - Full-depth mode: +72% annotations, +189% grounded links vs structured-only
@@ -128,10 +129,10 @@ How often two symbols (or keywords) are mentioned together. Already computed: `C
 
 **Two sources of co-occurrence:**
 
-| Source | What it captures | From |
-|--------|-----------------|------|
-| `doc_cooc` | Two entities mentioned near each other in docs (sliding window) | COX stage |
-| `code_import` | Two symbols in the same file or import chain | AST extraction |
+| Source        | What it captures                                                | From           |
+| ------------- | --------------------------------------------------------------- | -------------- |
+| `doc_cooc`    | Two entities mentioned near each other in docs (sliding window) | COX stage      |
+| `code_import` | Two symbols in the same file or import chain                    | AST extraction |
 
 **The insight lives in the gap:** Entities that co-occur in docs but NOT in code imports = conceptual
 coupling without structural coupling. Entities that co-import in code but NOT in docs = undocumented
@@ -320,17 +321,17 @@ where α=0.4, β=0.3, γ=0.15, δ=0.10, ε=0.05
 
 ```typescript
 interface RetrieveParams {
-  query: string;          // NL topic or symbol name
-  limit?: number;         // default 10
-  scope?: "code" | "docs" | "all";  // filter by file type
+  query: string; // NL topic or symbol name
+  limit?: number; // default 10
+  scope?: "code" | "docs" | "all"; // filter by file type
 }
 
 interface RetrieveResult {
   files: Array<{
     path: string;
     score: number;
-    reason: string;       // human-readable: "12 annotations matching 'auth'"
-    spans?: Array<{ line: number; text: string }>;  // relevant lines
+    reason: string; // human-readable: "12 annotations matching 'auth'"
+    spans?: Array<{ line: number; text: string }>; // relevant lines
   }>;
 }
 ```
@@ -369,9 +370,9 @@ co-change, code structure) and highlights where they disagree.
 
 ```typescript
 interface ConnectionsParams {
-  entity: string;         // symbol name or keyword
+  entity: string; // symbol name or keyword
   limit?: number;
-  include?: ("doc_cooc" | "co_change" | "code_import")[];  // filter sources
+  include?: ("doc_cooc" | "co_change" | "code_import")[]; // filter sources
 }
 
 interface ConnectionsResult {
@@ -381,9 +382,9 @@ interface ConnectionsResult {
     sources: Array<{
       type: "doc_cooc" | "co_change" | "code_import";
       score: number;
-      detail: string;    // "4 docs", "15 commits", "direct import"
+      detail: string; // "4 docs", "15 commits", "direct import"
     }>;
-    gap?: string;        // "co-mentioned but no code dependency"
+    gap?: string; // "co-mentioned but no code dependency"
   }>;
   gaps: Array<{
     description: string;
@@ -428,8 +429,8 @@ The `--format github` flag outputs GitHub Actions annotations (`::warning file=.
 
 ```typescript
 interface CheckParams {
-  changed: string[];      // file paths from PR diff
-  severity?: "info" | "warning" | "critical";  // minimum severity to report
+  changed: string[]; // file paths from PR diff
+  severity?: "info" | "warning" | "critical"; // minimum severity to report
   format?: "text" | "json" | "github";
 }
 
@@ -439,9 +440,9 @@ interface CheckResult {
     message: string;
     file: string;
     line?: number;
-    related: string[];    // files that should be checked/updated
+    related: string[]; // files that should be checked/updated
   }>;
-  exitCode: number;       // 0 = clean, 1 = warnings, 2 = critical
+  exitCode: number; // 0 = clean, 1 = warnings, 2 = critical
 }
 ```
 
@@ -541,4 +542,3 @@ File changed (save / commit)
 **Content-addressed caching:** Each file's `content_hash` (SHA-256) is stored in the `files`
 table. On incremental update, only files with changed hashes are reprocessed. The existing
 `.iw/cache/` infrastructure can be reused.
-

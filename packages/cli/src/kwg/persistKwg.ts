@@ -95,10 +95,7 @@ export async function persistKwg(
     }
 
     // -- Ensure Session node
-    await neo4jSession.run(
-      "MERGE (s:Session {name: $session})",
-      { session },
-    );
+    await neo4jSession.run("MERGE (s:Session {name: $session})", { session });
 
     if (force) {
       // Full rewrite: delete all KW nodes for this session
@@ -108,7 +105,8 @@ export async function persistKwg(
         { session },
       );
       const deleted = deleteResult.summary.counters.updates().nodesDeleted;
-      relsDeleted += deleteResult.summary.counters.updates().relationshipsDeleted;
+      relsDeleted +=
+        deleteResult.summary.counters.updates().relationshipsDeleted;
       log(`KWG persist: deleted ${deleted} nodes`);
     }
 
@@ -167,14 +165,17 @@ export async function persistKwg(
         { entities: entityParams, session },
       );
       nodesCreated += entityResult.summary.counters.updates().nodesCreated;
-      nodesUpdated += entityResult.summary.counters.updates().propertiesSet > 0
-        ? entityParams.length
-        : 0;
+      nodesUpdated +=
+        entityResult.summary.counters.updates().propertiesSet > 0
+          ? entityParams.length
+          : 0;
     }
 
     // ── 3. Per-file: MERGE doc + delete/recreate mentions ────────────
     for (const [filePath, kwxOutput] of output.kwxOutputs) {
-      log(`KWG persist: processing ${filePath} (${kwxOutput.mentions.length} mentions)...`);
+      log(
+        `KWG persist: processing ${filePath} (${kwxOutput.mentions.length} mentions)...`,
+      );
 
       // MERGE document node
       await neo4jSession.run(
@@ -257,7 +258,8 @@ export async function persistKwg(
           { mentions: mentionParams, session },
         );
         nodesCreated += mentionResult.summary.counters.updates().nodesCreated;
-        relsCreated += mentionResult.summary.counters.updates().relationshipsCreated;
+        relsCreated +=
+          mentionResult.summary.counters.updates().relationshipsCreated;
       }
 
       // Create direct doc→entity KW_MENTIONS edges (for UI traversal)
@@ -274,12 +276,15 @@ export async function persistKwg(
           `,
           { entityNames: uniqueEntities, filePath, session },
         );
-        relsCreated += kwmResult.summary.counters.updates().relationshipsCreated;
+        relsCreated +=
+          kwmResult.summary.counters.updates().relationshipsCreated;
       }
     }
 
     // ── 4. Session-level: delete + recreate CO_OCCURS edges ──────────
-    log(`KWG persist: writing ${output.coxOutput.edges.length} co-occurrence edges...`);
+    log(
+      `KWG persist: writing ${output.coxOutput.edges.length} co-occurrence edges...`,
+    );
 
     // Delete old edges
     const edgeDelResult = await neo4jSession.run(
@@ -289,7 +294,8 @@ export async function persistKwg(
       `,
       { session },
     );
-    relsDeleted += edgeDelResult.summary.counters.updates().relationshipsDeleted;
+    relsDeleted +=
+      edgeDelResult.summary.counters.updates().relationshipsDeleted;
 
     // Create new edges
     if (output.coxOutput.edges.length > 0) {
@@ -324,7 +330,8 @@ export async function persistKwg(
       `,
       { session },
     );
-    relsDeleted += clusterDelResult.summary.counters.updates().relationshipsDeleted;
+    relsDeleted +=
+      clusterDelResult.summary.counters.updates().relationshipsDeleted;
 
     // Create new clusters + MEMBER_OF + REPRESENTED_BY
     if (output.clxOutput.clusters.length > 0) {
@@ -363,7 +370,8 @@ export async function persistKwg(
         { clusters: clusterParams, session },
       );
       nodesCreated += clusterResult.summary.counters.updates().nodesCreated;
-      relsCreated += clusterResult.summary.counters.updates().relationshipsCreated;
+      relsCreated +=
+        clusterResult.summary.counters.updates().relationshipsCreated;
     }
 
     const durationMs = Math.round(performance.now() - startTime);
@@ -389,7 +397,9 @@ export async function persistKwg(
  * Create a Neo4j driver from environment variables.
  * Uses dynamic import to avoid hard dependency on neo4j-driver.
  */
-export async function createNeo4jDriver(): Promise<import("neo4j-driver").Driver> {
+export async function createNeo4jDriver(): Promise<
+  import("neo4j-driver").Driver
+> {
   const neo4j = await import("neo4j-driver");
 
   const uri = process.env.NEO4J_URI ?? "bolt://localhost:7687";

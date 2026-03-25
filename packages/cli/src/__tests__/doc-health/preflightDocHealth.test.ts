@@ -23,7 +23,8 @@ import {
 
 describe("extractMarkdownEntities", () => {
   it("extracts heading text from H1-H4", () => {
-    const md = "# Auth Service\n## Rate Limiter\n### Token Bucket\n#### Overflow Guard";
+    const md =
+      "# Auth Service\n## Rate Limiter\n### Token Bucket\n#### Overflow Guard";
     const entities = extractMarkdownEntities(md);
     const names = entities.map((e) => e.name);
     expect(names).toContain("Auth Service");
@@ -48,7 +49,8 @@ describe("extractMarkdownEntities", () => {
   });
 
   it("extracts bold phrases", () => {
-    const md = "The **Auth Service** depends on **Token Manager** and __Rate Limiter__.";
+    const md =
+      "The **Auth Service** depends on **Token Manager** and __Rate Limiter__.";
     const entities = extractMarkdownEntities(md);
     const bold = entities.filter((e) => e.source === "bold");
     expect(bold.map((e) => e.name)).toEqual(
@@ -57,7 +59,8 @@ describe("extractMarkdownEntities", () => {
   });
 
   it("extracts code spans (PascalCase)", () => {
-    const md = "Uses `AuthService` and `TokenManager` for auth. Also mentions `foo`.";
+    const md =
+      "Uses `AuthService` and `TokenManager` for auth. Also mentions `foo`.";
     const entities = extractMarkdownEntities(md);
     const codeSpans = entities.filter((e) => e.source === "code-span");
     expect(codeSpans.map((e) => e.name)).toContain("AuthService");
@@ -175,7 +178,7 @@ describe("preflightDocHealth", () => {
     );
     await writeFile(
       "src/auth.ts",
-      'export class AuthService {\n  validate() { return true; }\n}\n',
+      "export class AuthService {\n  validate() { return true; }\n}\n",
     );
     await writeFile(
       "src/tokens.ts",
@@ -199,10 +202,7 @@ describe("preflightDocHealth", () => {
       "docs/plan.md",
       "# Roadmap\n\nWe plan to build **GraphQL Gateway** and **EventBus**.",
     );
-    await writeFile(
-      "src/app.ts",
-      'console.log("no matching code");\n',
-    );
+    await writeFile("src/app.ts", 'console.log("no matching code");\n');
 
     const result = await preflightDocHealth({
       files: ["docs/plan.md"],

@@ -132,8 +132,7 @@ export function KnowledgeGraph({
         source: e.source,
         target: e.target,
         label:
-          PREDICATE_LABELS[e.label] ??
-          e.label.toLowerCase().replace(/_/g, " "),
+          PREDICATE_LABELS[e.label] ?? e.label.toLowerCase().replace(/_/g, " "),
       }));
 
     // ── Zoom ───────────────────────────────────────────────────────────────
@@ -192,11 +191,10 @@ export function KnowledgeGraph({
         return sev === "critical" ? 1.8 : sev === "warning" ? 1.3 : 1;
       })
       .attr("fill", "none")
-      .attr("marker-end", (d) =>
-        `url(#kg-arrow-${predicateSeverity(d.label)})`,
-      )
-      ; // opacity set by applyStyles
-
+      .attr(
+        "marker-end",
+        (d) => `url(#kg-arrow-${predicateSeverity(d.label)})`,
+      ); // opacity set by applyStyles
     // Edge labels (visibility controlled by applyStyles for large graphs)
     const showAllEdgeLabels = data.edges.length <= 60;
     const edgeLabelSel = linkGroup
@@ -226,13 +224,12 @@ export function KnowledgeGraph({
       .attr("cursor", "pointer")
       .on("click", (_event, d) => {
         const original = nodeById.get(d.id);
-        if (original && onNodeClickRef.current) onNodeClickRef.current(original);
+        if (original && onNodeClickRef.current)
+          onNodeClickRef.current(original);
       });
 
     // Node circle (fill / stroke / filter set by applyStyles)
-    nodeSel
-      .append("circle")
-      .attr("r", (d) => d.r);
+    nodeSel.append("circle").attr("r", (d) => d.r);
 
     // Entity type badge (small text inside large nodes)
     nodeSel
@@ -344,10 +341,7 @@ export function KnowledgeGraph({
     const tX = width / 2 - ((minX + maxX) / 2) * scale;
     const tY = height / 2 - ((minY + maxY) / 2) * scale;
 
-    svg.call(
-      zoom.transform,
-      d3.zoomIdentity.translate(tX, tY).scale(scale),
-    );
+    svg.call(zoom.transform, d3.zoomIdentity.translate(tX, tY).scale(scale));
 
     // Restart simulation for interactivity
     simulation.alpha(0.5).restart();
@@ -381,22 +375,16 @@ export function KnowledgeGraph({
           hasHl && isHl(d.id) ? "url(#kg-lineage-glow)" : null,
         );
 
-      nodeSel
-        .select(".kg-label")
-        .attr("fill", (d) => {
-          if (!isHl(d.id)) return "#334155";
-          return d.connectionCount > maxConn * 0.4 ? "#e2e8f0" : "#94a3b8";
-        });
+      nodeSel.select(".kg-label").attr("fill", (d) => {
+        if (!isHl(d.id)) return "#334155";
+        return d.connectionCount > maxConn * 0.4 ? "#e2e8f0" : "#94a3b8";
+      });
 
       linkSel.attr("opacity", (d) => {
         const sId =
-          typeof d.source === "string"
-            ? d.source
-            : (d.source as SimNode).id;
+          typeof d.source === "string" ? d.source : (d.source as SimNode).id;
         const tId =
-          typeof d.target === "string"
-            ? d.target
-            : (d.target as SimNode).id;
+          typeof d.target === "string" ? d.target : (d.target as SimNode).id;
         if (!isEdgeHl(sId, tId)) return 0.06;
         const sev = predicateSeverity(d.label);
         return sev === "critical" ? 0.8 : sev === "warning" ? 0.6 : 0.35;
@@ -405,13 +393,9 @@ export function KnowledgeGraph({
       edgeLabelSel.attr("opacity", (d) => {
         if (showAllEdgeLabels) return 1;
         const sId =
-          typeof d.source === "string"
-            ? d.source
-            : (d.source as SimNode).id;
+          typeof d.source === "string" ? d.source : (d.source as SimNode).id;
         const tId =
-          typeof d.target === "string"
-            ? d.target
-            : (d.target as SimNode).id;
+          typeof d.target === "string" ? d.target : (d.target as SimNode).id;
         return isEdgeHl(sId, tId) ? 1 : 0;
       });
     }

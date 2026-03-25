@@ -119,7 +119,13 @@ export interface MentionRecord {
   qualifiers: SignalQualifier[];
 
   /** How this mention was detected */
-  source: "heading" | "bold" | "code-span" | "identifier" | "dictionary" | "custom-pattern";
+  source:
+    | "heading"
+    | "bold"
+    | "code-span"
+    | "identifier"
+    | "dictionary"
+    | "custom-pattern";
 
   /** Chunk ID from IN stage (for co-occurrence windowing) */
   chunkId: string;

@@ -91,7 +91,9 @@ export async function linkEvidencedBy(
     const canonLinked = toInt(rec.get("canonLinked"));
     const kwLinked = toInt(rec.get("kwLinked"));
 
-    log(`EVIDENCED_BY: ${linksCreated} links (${canonLinked} Canon → ${kwLinked} KWEntity)`);
+    log(
+      `EVIDENCED_BY: ${linksCreated} links (${canonLinked} Canon → ${kwLinked} KWEntity)`,
+    );
 
     // ── Step 2: Count unlinked Canon entities ───────────────────────
     const unlinkedResult = await session.run(

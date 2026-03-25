@@ -1,18 +1,18 @@
 {
-	"servers": {
-		"intentweave-kg": {
-			"type": "stdio",
-			"command": "node",
-			"args": [
-				"packages/cli/dist/cli.js",
-				"mcp",
-				"--session",
-				"intentweave",
-				"--verbose"
-			],
-			"env": {
-				"NEO4J_PASSWORD": "codegraph"
-			}
-		}
-	}
+  "servers": {
+    "intentweave-kg": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "packages/cli/dist/cli.js",
+        "mcp",
+        "--session",
+        "intentweave",
+        "--verbose"
+      ],
+      "env": {
+        "NEO4J_PASSWORD": "codegraph"
+      }
+    }
+  }
 }

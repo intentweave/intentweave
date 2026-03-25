@@ -40,16 +40,16 @@ and co-occurrence analysis. No LLM calls, no external services.
 
 Measured on the IntentWeave monorepo itself (264 code files, 7 docs, 5316 symbols):
 
-| Metric | Structured Mode | Full-Depth Mode |
-|--------|---------------:|----------------:|
-| Build time | 1.1 s | 2.8 s |
-| Annotations | 6,721 | 11,533 |
-| Grounded (linked to code) | 2,548 (38%) | 7,360 (64%) |
-| Co-occurrence edges | 1,099 | 2,631 |
-| IDF terms tracked | — | 2,843 |
-| LLM calls | 0 | 0 |
-| External dependencies | 0 | 0 |
-| Index file size | ~2 MB | ~4 MB |
+| Metric                    | Structured Mode | Full-Depth Mode |
+| ------------------------- | --------------: | --------------: |
+| Build time                |           1.1 s |           2.8 s |
+| Annotations               |           6,721 |          11,533 |
+| Grounded (linked to code) |     2,548 (38%) |     7,360 (64%) |
+| Co-occurrence edges       |           1,099 |           2,631 |
+| IDF terms tracked         |               — |           2,843 |
+| LLM calls                 |               0 |               0 |
+| External dependencies     |               0 |               0 |
+| Index file size           |           ~2 MB |           ~4 MB |
 
 **Full-depth mode** adds +72% more annotations and +189% more grounded links by scanning
 document body text with dictionary matching and IDF-based noise filtering.
@@ -62,12 +62,12 @@ document body text with dictionary matching and IDF-based noise filtering.
 
 ### For Developers
 
-| Task | Command | What You Get |
-|------|---------|-------------|
-| Find relevant files | `iw index retrieve "auth"` | Ranked files with confidence scores and reasons |
-| Understand connections | `iw index connections "AuthService"` | Co-mentions, co-changes, structural links, and **gaps** |
-| Check before PR | `iw index check --changed src/auth.ts` | Docs that reference changed code and may need updating |
-| Health dashboard | `iw index report` | Coverage %, stale docs, hidden couplings, undocumented deps |
+| Task                   | Command                                | What You Get                                                |
+| ---------------------- | -------------------------------------- | ----------------------------------------------------------- |
+| Find relevant files    | `iw index retrieve "auth"`             | Ranked files with confidence scores and reasons             |
+| Understand connections | `iw index connections "AuthService"`   | Co-mentions, co-changes, structural links, and **gaps**     |
+| Check before PR        | `iw index check --changed src/auth.ts` | Docs that reference changed code and may need updating      |
+| Health dashboard       | `iw index report`                      | Coverage %, stale docs, hidden couplings, undocumented deps |
 
 ### For CI/CD
 
@@ -84,14 +84,14 @@ Exit code 0 = clean, 1 = warnings (stale docs, missing coverage).
 IntentWeave exposes tools via the Model Context Protocol, usable by GitHub Copilot
 and other LLM agents:
 
-| Tool | Purpose |
-|------|---------|
-| `cari_retrieve` | "Find files about X" → ranked results |
-| `cari_connections` | "What's related to X?" → cross-layer connections |
-| `cari_check` | "I changed X — what else needs updating?" → drift findings |
-| `kg_query` | Natural-language graph query (requires Neo4j) |
-| `kg_context` | Build RAG context from knowledge graph |
-| `kg_impact` | Semantic impact analysis for file changes |
+| Tool               | Purpose                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `cari_retrieve`    | "Find files about X" → ranked results                      |
+| `cari_connections` | "What's related to X?" → cross-layer connections           |
+| `cari_check`       | "I changed X — what else needs updating?" → drift findings |
+| `kg_query`         | Natural-language graph query (requires Neo4j)              |
+| `kg_context`       | Build RAG context from knowledge graph                     |
+| `kg_impact`        | Semantic impact analysis for file changes                  |
 
 ---
 
@@ -119,13 +119,13 @@ SQL — < 100ms latency. The entire build pipeline is local and deterministic.
 
 ## Competitive Positioning
 
-| Approach | Cost | Setup | Retrieval Quality | Doc Drift Detection |
-|----------|------|-------|-------------------|---------------------|
-| grep / ripgrep | $0 | None | Low (string match only) | None |
-| Vector embeddings | $$$ | Embedding API + vector DB | Medium (semantic but lossy) | None |
-| Language servers | $0 | Per-language setup | High (structural only) | None |
-| **IntentWeave CARI** | **$0** | **`iw index build`** | **High (structural + semantic + temporal)** | **Built-in** |
-| IntentWeave KG | $$$ | Neo4j + LLM API | Highest (full semantic graph) | Built-in |
+| Approach             | Cost   | Setup                     | Retrieval Quality                           | Doc Drift Detection |
+| -------------------- | ------ | ------------------------- | ------------------------------------------- | ------------------- |
+| grep / ripgrep       | $0     | None                      | Low (string match only)                     | None                |
+| Vector embeddings    | $$$    | Embedding API + vector DB | Medium (semantic but lossy)                 | None                |
+| Language servers     | $0     | Per-language setup        | High (structural only)                      | None                |
+| **IntentWeave CARI** | **$0** | **`iw index build`**      | **High (structural + semantic + temporal)** | **Built-in**        |
+| IntentWeave KG       | $$$    | Neo4j + LLM API           | Highest (full semantic graph)               | Built-in            |
 
 CARI's advantage: it combines **three independent signals** (code structure, document semantics,
 git history) into a single ranked score. When these signals disagree, that disagreement itself
@@ -153,6 +153,7 @@ iw index check --changed $(git diff --name-only origin/main...HEAD)
 ```
 
 For full documentation, see:
+
 - [CLI Usage Guide](CLI-USAGE.md)
 - [CARI Technical Specification](CODE-AWARE-RETRIEVAL-INDEX.md)
 - [README](../README.md)

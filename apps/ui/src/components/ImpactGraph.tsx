@@ -17,7 +17,12 @@
 import { useEffect, useRef } from "react";
 import * as d3 from "d3";
 import type { ImpactGraphData, InsightNode, NodeKind } from "../types.js";
-import { NODE_COLORS, PREDICATE_LABELS, EDGE_SEVERITY_COLORS, predicateSeverity } from "../types.js";
+import {
+  NODE_COLORS,
+  PREDICATE_LABELS,
+  EDGE_SEVERITY_COLORS,
+  predicateSeverity,
+} from "../types.js";
 
 // ── Layout constants ─────────────────────────────────────────────────────────
 
@@ -111,8 +116,12 @@ export function ImpactGraph({
         depth,
         confidence: n.confidence,
         r,
-        x: cx + (isCenter ? 0 : Math.cos(angle) * ringR + (Math.random() - 0.5) * 40),
-        y: cy + (isCenter ? 0 : Math.sin(angle) * ringR + (Math.random() - 0.5) * 40),
+        x:
+          cx +
+          (isCenter ? 0 : Math.cos(angle) * ringR + (Math.random() - 0.5) * 40),
+        y:
+          cy +
+          (isCenter ? 0 : Math.sin(angle) * ringR + (Math.random() - 0.5) * 40),
       };
     });
 
@@ -148,7 +157,10 @@ export function ImpactGraph({
         .attr("cy", cy)
         .attr("r", d * RING_RADIUS + 60)
         .attr("fill", "none")
-        .attr("stroke", d === 1 ? "rgba(99, 102, 241, 0.15)" : "rgba(99, 102, 241, 0.08)")
+        .attr(
+          "stroke",
+          d === 1 ? "rgba(99, 102, 241, 0.15)" : "rgba(99, 102, 241, 0.08)",
+        )
         .attr("stroke-width", 1)
         .attr("stroke-dasharray", d === 1 ? "none" : "4 4");
 
@@ -196,9 +208,10 @@ export function ImpactGraph({
         return sev === "critical" ? 2.0 : sev === "warning" ? 1.5 : 1.2;
       })
       .attr("fill", "none")
-      .attr("marker-end", (d) => `url(#impact-arrow-${predicateSeverity(d.label)})`)
-      ; // opacity set by applyStyles
-
+      .attr(
+        "marker-end",
+        (d) => `url(#impact-arrow-${predicateSeverity(d.label)})`,
+      ); // opacity set by applyStyles
     // Edge labels
     const edgeLabelSel = linkGroup
       .selectAll<SVGTextElement, SimLink>("text")
@@ -207,7 +220,11 @@ export function ImpactGraph({
       .attr("font-size", 9)
       .attr("fill", (d) => {
         const sev = predicateSeverity(d.label);
-        return sev === "critical" ? "#fca5a5" : sev === "warning" ? "#fcd34d" : "#64748b";
+        return sev === "critical"
+          ? "#fca5a5"
+          : sev === "warning"
+            ? "#fcd34d"
+            : "#64748b";
       })
       .attr("text-anchor", "middle")
       .attr("dy", -4)
@@ -223,7 +240,8 @@ export function ImpactGraph({
       .attr("cursor", "pointer")
       .on("click", (_event, d) => {
         const original = nodeById.get(d.id);
-        if (original && onNodeClickRef.current) onNodeClickRef.current(original);
+        if (original && onNodeClickRef.current)
+          onNodeClickRef.current(original);
       });
 
     // Outer glow for center node
@@ -249,9 +267,7 @@ export function ImpactGraph({
       .attr("flood-opacity", 0.7);
 
     // Node circle (fill / stroke / filter set by applyStyles)
-    nodeSel
-      .append("circle")
-      .attr("r", (d) => d.r);
+    nodeSel.append("circle").attr("r", (d) => d.r);
 
     // Confidence ring (outer arc for depth 0-1 nodes)
     nodeSel
@@ -321,15 +337,14 @@ export function ImpactGraph({
           .strength(0.3),
       )
       .force("charge", d3.forceManyBody().strength(-300))
-      .force("collision", d3.forceCollide<SimNode>().radius((d) => d.r + 12))
+      .force(
+        "collision",
+        d3.forceCollide<SimNode>().radius((d) => d.r + 12),
+      )
       .force(
         "radial",
         d3
-          .forceRadial<SimNode>(
-            (d) => d.depth * RING_RADIUS,
-            cx,
-            cy,
-          )
+          .forceRadial<SimNode>((d) => d.depth * RING_RADIUS, cx, cy)
           .strength((d) => (d.depth === 0 ? 1 : 0.6)),
       )
       .on("tick", tick);
@@ -404,24 +419,26 @@ export function ImpactGraph({
           hasHl && isHl(d.id) ? "url(#lineage-glow)" : null,
         );
 
-      nodeSel
-        .select(".ig-label")
-        .attr("fill", (d) => {
-          if (!isHl(d.id)) return "#334155";
-          return d.depth === 0 ? "#e2e8f0" : "#94a3b8";
-        });
+      nodeSel.select(".ig-label").attr("fill", (d) => {
+        if (!isHl(d.id)) return "#334155";
+        return d.depth === 0 ? "#e2e8f0" : "#94a3b8";
+      });
 
       linkSel.attr("opacity", (d) => {
-        const sId = typeof d.source === "string" ? d.source : (d.source as SimNode).id;
-        const tId = typeof d.target === "string" ? d.target : (d.target as SimNode).id;
+        const sId =
+          typeof d.source === "string" ? d.source : (d.source as SimNode).id;
+        const tId =
+          typeof d.target === "string" ? d.target : (d.target as SimNode).id;
         if (!isEdgeHl(sId, tId)) return 0.08;
         const sev = predicateSeverity(d.label);
         return sev === "critical" ? 0.9 : sev === "warning" ? 0.7 : 0.5;
       });
 
       edgeLabelSel.attr("opacity", (d) => {
-        const sId = typeof d.source === "string" ? d.source : (d.source as SimNode).id;
-        const tId = typeof d.target === "string" ? d.target : (d.target as SimNode).id;
+        const sId =
+          typeof d.source === "string" ? d.source : (d.source as SimNode).id;
+        const tId =
+          typeof d.target === "string" ? d.target : (d.target as SimNode).id;
         return isEdgeHl(sId, tId) ? 1 : 0.08;
       });
     }

@@ -450,8 +450,7 @@ async function toolDocHealth(args: {
   // Lightweight mode: no Neo4j, no LLM — keyword-only
   if (args.lite) {
     const cwd = process.cwd();
-    const targets =
-      args.files && args.files.length > 0 ? args.files : [cwd];
+    const targets = args.files && args.files.length > 0 ? args.files : [cwd];
     const result = await preflightDocHealth({ files: targets, cwd });
     return formatPreflightForAgent(result);
   }
@@ -840,9 +839,11 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("does not exist")
-          ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
-          : `Error: ${err.message}`;
+        const msg =
+          err.message?.includes("SQLITE_CANTOPEN") ||
+          err.message?.includes("does not exist")
+            ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
+            : `Error: ${err.message}`;
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -868,9 +869,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
       include: z
         .array(z.enum(["doc_cooc", "co_change", "code_import"]))
         .optional()
-        .describe(
-          "Filter to specific evidence sources (default: all three)",
-        ),
+        .describe("Filter to specific evidence sources (default: all three)"),
       limit: z
         .number()
         .optional()
@@ -890,10 +889,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           include: args.include as any,
         });
 
-        if (
-          result.connections.length === 0 &&
-          result.gaps.length === 0
-        ) {
+        if (result.connections.length === 0 && result.gaps.length === 0) {
           return {
             content: [
               {
@@ -904,13 +900,13 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           };
         }
 
-        const lines = [
-          `## Connections: "${result.entity}"`,
-          "",
-        ];
+        const lines = [`## Connections: "${result.entity}"`, ""];
 
         // Group connections by source type
-        const bySource = new Map<string, Array<{ name: string; score: number; detail: string }>>();
+        const bySource = new Map<
+          string,
+          Array<{ name: string; score: number; detail: string }>
+        >();
         for (const conn of result.connections) {
           for (const src of conn.sources) {
             if (!bySource.has(src.type)) bySource.set(src.type, []);
@@ -956,9 +952,11 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("does not exist")
-          ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
-          : `Error: ${err.message}`;
+        const msg =
+          err.message?.includes("SQLITE_CANTOPEN") ||
+          err.message?.includes("does not exist")
+            ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
+            : `Error: ${err.message}`;
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1012,9 +1010,11 @@ Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
         const body = formatCheck(result, "text");
         return { content: [{ type: "text", text: header + body }] };
       } catch (err: any) {
-        const msg = err.message?.includes("SQLITE_CANTOPEN") || err.message?.includes("does not exist")
-          ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
-          : `Error: ${err.message}`;
+        const msg =
+          err.message?.includes("SQLITE_CANTOPEN") ||
+          err.message?.includes("does not exist")
+            ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
+            : `Error: ${err.message}`;
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },

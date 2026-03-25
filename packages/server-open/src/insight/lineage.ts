@@ -112,7 +112,9 @@ function escapeStr(s: string): string {
  * 3. Aggregate source documents
  * 4. Fetch CANON_REL with rawPredicate provenance
  */
-export async function buildLineage(opts: BuildLineageOpts): Promise<LineageResponse> {
+export async function buildLineage(
+  opts: BuildLineageOpts,
+): Promise<LineageResponse> {
   const { runner, sessionId, canonId } = opts;
   const t0 = Date.now();
   const sid = escapeStr(sessionId);
@@ -173,7 +175,10 @@ export async function buildLineage(opts: BuildLineageOpts): Promise<LineageRespo
   }));
 
   // ── Step 3: Aggregate source documents ─────────────────────────────────
-  const sourceMap = new Map<string, { artifactId: string; predicates: Set<string>; count: number }>();
+  const sourceMap = new Map<
+    string,
+    { artifactId: string; predicates: Set<string>; count: number }
+  >();
   for (const t of triples) {
     const key = t.sourceFile ?? t.artifactId ?? "unknown";
     let entry = sourceMap.get(key);

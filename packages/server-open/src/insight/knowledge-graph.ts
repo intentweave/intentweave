@@ -140,7 +140,9 @@ export async function buildKnowledgeGraph(
   }
 
   // ── Step 3: Fetch edges between loaded entities ──────────────────────────
-  const idList = [...idSet].map((id) => `"${id.replace(/"/g, '\\"')}"`).join(", ");
+  const idList = [...idSet]
+    .map((id) => `"${id.replace(/"/g, '\\"')}"`)
+    .join(", ");
 
   const edgeRows =
     idSet.size > 0
@@ -221,11 +223,7 @@ export async function buildKnowledgeGraph(
     const cc = n.connections?.length ?? 0;
     if (maxConnections > 0) {
       n.depth =
-        cc > maxConnections * 0.6
-          ? 0
-          : cc > maxConnections * 0.2
-            ? 1
-            : 2;
+        cc > maxConnections * 0.6 ? 0 : cc > maxConnections * 0.2 ? 1 : 2;
     } else {
       n.depth = 1;
     }
@@ -260,9 +258,7 @@ export async function buildKnowledgeGraph(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Map KG entity types to NodeKind for coloring. */
-function mapEntityTypeToKind(
-  type: string | undefined,
-): InsightNode["kind"] {
+function mapEntityTypeToKind(type: string | undefined): InsightNode["kind"] {
   switch (type) {
     case "decision":
       return "decision";

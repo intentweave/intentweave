@@ -202,7 +202,8 @@ export async function triageFromEvidence(
       coOccurrenceDegree: toInt(r.get("coOccDegree")),
       clusterSize: toInt(r.get("clusterSize")),
       driftSignalCount: toInt(r.get("driftCount")),
-      driftMaxSeverity: (r.get("maxSeverity") as TriageCandidate["driftMaxSeverity"]) ?? "none",
+      driftMaxSeverity:
+        (r.get("maxSeverity") as TriageCandidate["driftMaxSeverity"]) ?? "none",
       isInSkg: r.get("isInSkg") as boolean,
       score: toFloat(r.get("score")),
       rank: i + 1,
@@ -224,10 +225,13 @@ export async function triageFromEvidence(
 
     const skipped = skippedResult.records[0];
     const skippedAlreadyInSkg = toInt(skipped.get("skippedSkg"));
-    const skippedBelowThreshold = totalKwgEntities - candidates.length - skippedAlreadyInSkg;
+    const skippedBelowThreshold =
+      totalKwgEntities - candidates.length - skippedAlreadyInSkg;
 
     const durationMs = performance.now() - start;
-    log(`Triage complete: ${candidates.length} candidates (${durationMs.toFixed(0)}ms)`);
+    log(
+      `Triage complete: ${candidates.length} candidates (${durationMs.toFixed(0)}ms)`,
+    );
 
     return {
       candidates,

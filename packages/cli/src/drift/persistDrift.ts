@@ -76,7 +76,9 @@ export async function persistDrift(
   try {
     // ── Ensure schema indexes ──────────────────────────────────────
     log("Drift persist: ensuring schema indexes...");
-    for (const stmt of DRIFT_SCHEMA_CYPHER.split("\n").filter((l) => l.trim())) {
+    for (const stmt of DRIFT_SCHEMA_CYPHER.split("\n").filter((l) =>
+      l.trim(),
+    )) {
       try {
         await neo4jSession.run(stmt);
       } catch {
@@ -85,10 +87,7 @@ export async function persistDrift(
     }
 
     // ── Ensure Session node ────────────────────────────────────────
-    await neo4jSession.run(
-      "MERGE (s:Session {name: $session})",
-      { session },
-    );
+    await neo4jSession.run("MERGE (s:Session {name: $session})", { session });
 
     // ── Step 1: Delete existing drift signals for session ──────────
     log("Drift persist: deleting existing drift signals...");
@@ -96,8 +95,7 @@ export async function persistDrift(
       `MATCH (d:DriftSignal {session_id: $session}) DETACH DELETE d`,
       { session },
     );
-    nodesDeleted =
-      deleteResult.summary.counters.updates().nodesDeleted ?? 0;
+    nodesDeleted = deleteResult.summary.counters.updates().nodesDeleted ?? 0;
     log(`Drift persist: deleted ${nodesDeleted} existing signals`);
 
     // ── Step 2: Create new drift signal nodes ──────────────────────
@@ -117,7 +115,9 @@ export async function persistDrift(
     const BATCH_SIZE = 50;
     for (let i = 0; i < report.signals.length; i += BATCH_SIZE) {
       const batch = report.signals.slice(i, i + BATCH_SIZE);
-      const params = batch.map((s, idx) => serializeSignal(s, session, i + idx));
+      const params = batch.map((s, idx) =>
+        serializeSignal(s, session, i + idx),
+      );
 
       await neo4jSession.run(
         `UNWIND $signals AS sig

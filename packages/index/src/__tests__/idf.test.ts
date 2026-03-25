@@ -21,10 +21,7 @@ function makeMention(entityName: string): MentionRecord {
   };
 }
 
-function makeKwx(
-  filePath: string,
-  entityNames: string[],
-): KwxStageOutput {
+function makeKwx(filePath: string, entityNames: string[]): KwxStageOutput {
   return {
     $schema: "intentweave://schemas/kwx/v1",
     stage: "KWX",

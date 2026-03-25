@@ -35,8 +35,19 @@ export const embedCommand = new Command("embed")
   .option("-f, --format <fmt>", "Output format: table | json", "table")
   .option("-v, --verbose", "Verbose output", false)
   .action(async (opts) => {
-    const { session, layers: layersStr, batchSize: batchSizeStr, skip, format, verbose } = opts;
-    const layers = layersStr.split(",").map((l: string) => l.trim()) as ("kwg" | "skg" | "cluster")[];
+    const {
+      session,
+      layers: layersStr,
+      batchSize: batchSizeStr,
+      skip,
+      format,
+      verbose,
+    } = opts;
+    const layers = layersStr.split(",").map((l: string) => l.trim()) as (
+      | "kwg"
+      | "skg"
+      | "cluster"
+    )[];
     const batchSize = parseInt(batchSizeStr, 10) || 100;
 
     let driver;
@@ -48,20 +59,32 @@ export const embedCommand = new Command("embed")
         layers,
         batchSize,
         skipExisting: skip !== false,
-        log: verbose ? (msg: string) => console.log(chalk.gray(`  ${msg}`)) : undefined,
+        log: verbose
+          ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
+          : undefined,
       });
 
       if (format === "json") {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(chalk.blue(`\n  ▸ Embedding Pipeline — session: ${session}\n`));
+        console.log(
+          chalk.blue(`\n  ▸ Embedding Pipeline — session: ${session}\n`),
+        );
 
-        const totalEmbedded = Object.values(result.embedded).reduce((a, b) => a + b, 0);
-        const totalSkipped = Object.values(result.skipped).reduce((a, b) => a + b, 0);
+        const totalEmbedded = Object.values(result.embedded).reduce(
+          (a, b) => a + b,
+          0,
+        );
+        const totalSkipped = Object.values(result.skipped).reduce(
+          (a, b) => a + b,
+          0,
+        );
 
         for (const [label, count] of Object.entries(result.embedded)) {
           const skipCount = result.skipped[label] ?? 0;
-          console.log(`  ${label.padEnd(20)} ${chalk.green(String(count).padStart(5))} embedded  ${chalk.gray(String(skipCount).padStart(5) + " skipped")}`);
+          console.log(
+            `  ${label.padEnd(20)} ${chalk.green(String(count).padStart(5))} embedded  ${chalk.gray(String(skipCount).padStart(5) + " skipped")}`,
+          );
         }
 
         console.log(

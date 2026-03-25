@@ -90,10 +90,13 @@ export function connectionsFromDb(
     for (const row of coocs) {
       const other =
         row.entity_a.toLowerCase() === entity ? row.entity_b : row.entity_a;
-      const docCount = row.file_paths
-        ? JSON.parse(row.file_paths).length
-        : 0;
-      addConn(other, "doc_cooc", row.score, `${docCount} doc(s), count=${row.count}`);
+      const docCount = row.file_paths ? JSON.parse(row.file_paths).length : 0;
+      addConn(
+        other,
+        "doc_cooc",
+        row.score,
+        `${docCount} doc(s), count=${row.count}`,
+      );
     }
   }
 
@@ -170,12 +173,7 @@ export function connectionsFromDb(
         .all(sym.file_path, entity, limit) as Array<{ name: string }>;
 
       for (const other of sameFile) {
-        addConn(
-          other.name,
-          "code_import",
-          0.6,
-          `same file: ${sym.file_path}`,
-        );
+        addConn(other.name, "code_import", 0.6, `same file: ${sym.file_path}`);
       }
     }
 
@@ -194,12 +192,7 @@ export function connectionsFromDb(
       .all(entity, limit) as Array<{ doc_path: string; cnt: number }>;
 
     for (const ref of docRefs) {
-      addConn(
-        ref.doc_path,
-        "code_import",
-        0.5,
-        `${ref.cnt} annotation(s)`,
-      );
+      addConn(ref.doc_path, "code_import", 0.5, `${ref.cnt} annotation(s)`);
     }
   }
 

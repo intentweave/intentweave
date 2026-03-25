@@ -121,7 +121,14 @@ export interface SwiftImport {
   moduleName: string;
 
   /** Specific symbol import (e.g., import struct Foundation.URL). */
-  kind?: "struct" | "class" | "protocol" | "enum" | "func" | "var" | "typealias";
+  kind?:
+    | "struct"
+    | "class"
+    | "protocol"
+    | "enum"
+    | "func"
+    | "var"
+    | "typealias";
 
   /** Specific imported name within the module */
   symbolName?: string;

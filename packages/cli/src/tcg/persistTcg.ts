@@ -119,10 +119,7 @@ export async function persistTcg(
     log("Old TCG data deleted");
 
     // ── 2. Ensure Session node ─────────────────────────────────────────
-    await neo4jSession.run(
-      "MERGE (s:Session {name: $session})",
-      { session },
-    );
+    await neo4jSession.run("MERGE (s:Session {name: $session})", { session });
 
     // ── 3. Create TCGAuthor nodes ──────────────────────────────────────
     const authors = output.tcx.authors;
@@ -179,7 +176,9 @@ export async function persistTcg(
       commitsCreated += batch.length;
       authoredByEdges += batch.length;
     }
-    log(`${commitsCreated} commits created, ${authoredByEdges} AUTHORED_BY edges`);
+    log(
+      `${commitsCreated} commits created, ${authoredByEdges} AUTHORED_BY edges`,
+    );
 
     // ── 5. Session → Commit/Author containment ─────────────────────────
     await neo4jSession.run(

@@ -43,12 +43,12 @@ iw --help
 
 ### Requirements
 
-| Requirement       | Version  | Notes                                          |
-| ----------------- | -------- | ---------------------------------------------- |
-| **Node.js**       | ≥ 20     | `node -v`                                      |
-| **Neo4j**         | 5.x      | Only for `query`, `context`, `impact`, `persist` |
-| **OpenAI API key** | —       | Only for `--provider openai` and NL queries     |
-| **Docker**        | —        | Easiest way to run Neo4j locally                |
+| Requirement        | Version | Notes                                            |
+| ------------------ | ------- | ------------------------------------------------ |
+| **Node.js**        | ≥ 20    | `node -v`                                        |
+| **Neo4j**          | 5.x     | Only for `query`, `context`, `impact`, `persist` |
+| **OpenAI API key** | —       | Only for `--provider openai` and NL queries      |
+| **Docker**         | —       | Easiest way to run Neo4j locally                 |
 
 ---
 
@@ -133,18 +133,18 @@ iw query "What decisions were made?" -f json -o decisions.json
 iw run [files...] [options]
 ```
 
-| Option                | Default      | Description                          |
-| --------------------- | ------------ | ------------------------------------ |
-| `-t, --track <track>` | `main`       | Pipeline track: `main`, `open`, `both` |
-| `--provider <name>`   | `smart-mock` | LLM provider: `smart-mock`, `openai` |
-| `--model <name>`      | `gpt-4o-mini`| Model for OpenAI provider            |
-| `-i, --incremental`   | off          | SHA-256 content-addressed cache      |
-| `--persist`           | off          | Auto-persist to Neo4j after run      |
-| `--force`             | off          | Ignore cache, recompute everything   |
-| `-p, --profile <name>`| `standard`   | Extraction profile                   |
-| `--concurrency <n>`   | `5`          | Parallel LLM calls                   |
-| `--from-fx <source>`  | —            | Skip FX, reuse cached FX output      |
-| `-v, --verbose`       | off          | Show per-stage progress              |
+| Option                 | Default       | Description                            |
+| ---------------------- | ------------- | -------------------------------------- |
+| `-t, --track <track>`  | `main`        | Pipeline track: `main`, `open`, `both` |
+| `--provider <name>`    | `smart-mock`  | LLM provider: `smart-mock`, `openai`   |
+| `--model <name>`       | `gpt-4o-mini` | Model for OpenAI provider              |
+| `-i, --incremental`    | off           | SHA-256 content-addressed cache        |
+| `--persist`            | off           | Auto-persist to Neo4j after run        |
+| `--force`              | off           | Ignore cache, recompute everything     |
+| `-p, --profile <name>` | `standard`    | Extraction profile                     |
+| `--concurrency <n>`    | `5`           | Parallel LLM calls                     |
+| `--from-fx <source>`   | —             | Skip FX, reuse cached FX output        |
+| `-v, --verbose`        | off           | Show per-stage progress                |
 
 **Examples:**
 
@@ -169,12 +169,12 @@ iw query <question> [options]
 iw query --cypher <cypher> [options]
 ```
 
-| Option             | Default | Description                    |
-| ------------------ | ------- | ------------------------------ |
-| `-s, --session`    | —       | Neo4j session scope            |
-| `-f, --format`     | `table` | Output format: `table`, `json` |
-| `-o, --output`     | —       | Write output to file           |
-| `-v, --verbose`    | off     | Show generated Cypher          |
+| Option          | Default | Description                    |
+| --------------- | ------- | ------------------------------ |
+| `-s, --session` | —       | Neo4j session scope            |
+| `-f, --format`  | `table` | Output format: `table`, `json` |
+| `-o, --output`  | —       | Write output to file           |
+| `-v, --verbose` | off     | Show generated Cypher          |
 
 ### `iw context` — Build RAG context
 
@@ -184,15 +184,15 @@ iw context -e <entity> [options]
 iw context --all [options]
 ```
 
-| Option          | Default | Description                      |
-| --------------- | ------- | -------------------------------- |
-| `-s, --session` | —       | Neo4j session scope              |
-| `-e, --entity`  | —       | Seed from specific entity        |
-| `--hops <n>`    | `2`     | Expansion depth from seed entity |
+| Option          | Default | Description                         |
+| --------------- | ------- | ----------------------------------- |
+| `-s, --session` | —       | Neo4j session scope                 |
+| `-e, --entity`  | —       | Seed from specific entity           |
+| `--hops <n>`    | `2`     | Expansion depth from seed entity    |
 | `--all`         | off     | Dump all entities and relationships |
-| `--code-refs`   | off     | Include source code references   |
-| `-f, --format`  | `text`  | Output: `text`, `json`           |
-| `-o, --output`  | —       | Write output to file             |
+| `--code-refs`   | off     | Include source code references      |
+| `-f, --format`  | `text`  | Output: `text`, `json`              |
+| `-o, --output`  | —       | Write output to file                |
 
 ### `iw impact` — Semantic impact analysis
 
@@ -229,11 +229,11 @@ Detects stale references, structural drift, contradictions, and undocumented ent
 iw persist [run-id] [options]
 ```
 
-| Option           | Default | Description                     |
-| ---------------- | ------- | ------------------------------- |
-| `--latest`       | off     | Persist the most recent run     |
-| `--file <path>`  | —       | Persist from a specific JSON file |
-| `-v, --verbose`  | off     | Show persistence details        |
+| Option          | Default | Description                       |
+| --------------- | ------- | --------------------------------- |
+| `--latest`      | off     | Persist the most recent run       |
+| `--file <path>` | —       | Persist from a specific JSON file |
+| `-v, --verbose` | off     | Show persistence details          |
 
 ### `iw xlink` — Cross-layer code linking
 
@@ -244,11 +244,11 @@ iw xlink [directory] [options]
 Links semantic entities (from the knowledge graph) to actual source code symbols
 found via AST extraction.
 
-| Option           | Default | Description                     |
-| ---------------- | ------- | ------------------------------- |
-| `-s, --session`  | —       | Neo4j session scope             |
-| `--persist`      | off     | Write code links to Neo4j       |
-| `-v, --verbose`  | off     | Detailed output                 |
+| Option          | Default | Description               |
+| --------------- | ------- | ------------------------- |
+| `-s, --session` | —       | Neo4j session scope       |
+| `--persist`     | off     | Write code links to Neo4j |
+| `-v, --verbose` | off     | Detailed output           |
 
 ### `iw mcp` — MCP server for Copilot
 
@@ -259,10 +259,10 @@ iw mcp [options]
 Starts an MCP (Model Context Protocol) server over stdio for use with
 GitHub Copilot in VS Code.
 
-| Option           | Default | Description             |
-| ---------------- | ------- | ----------------------- |
-| `-s, --session`  | —       | Default session scope   |
-| `-v, --verbose`  | off     | Log tool invocations    |
+| Option          | Default | Description           |
+| --------------- | ------- | --------------------- |
+| `-s, --session` | —       | Default session scope |
+| `-v, --verbose` | off     | Log tool invocations  |
 
 **Exposed tools:**
 
@@ -277,11 +277,11 @@ GitHub Copilot in VS Code.
 
 **CARI tools** (local SQLite, no Neo4j or LLM needed):
 
-| Tool               | Purpose                              |
-| ------------------ | ------------------------------------ |
-| `cari_retrieve`    | Ranked file retrieval by topic       |
+| Tool               | Purpose                                 |
+| ------------------ | --------------------------------------- |
+| `cari_retrieve`    | Ranked file retrieval by topic          |
 | `cari_connections` | Cross-layer connections + gap detection |
-| `cari_check`       | CI drift detection for changed files |
+| `cari_check`       | CI drift detection for changed files    |
 
 **VS Code auto-discovery:** Add this to `.vscode/mcp.json`:
 
@@ -310,12 +310,12 @@ iw index build [options]
 Runs the full CARI pipeline: AST extraction → keyword extraction → co-occurrence →
 git analysis → annotation → SQLite persistence.
 
-| Option              | Default      | Description                                    |
-| ------------------- | ------------ | ---------------------------------------------- |
-| `--depth <mode>`    | `structured` | `structured` (headings/bold/code) or `full` (+ body text with IDF) |
-| `--include <glob>`  | —            | Only index files matching glob                 |
-| `--exclude <glob>`  | —            | Skip files matching glob                       |
-| `-v, --verbose`     | off          | Show per-stage progress                        |
+| Option             | Default      | Description                                                        |
+| ------------------ | ------------ | ------------------------------------------------------------------ |
+| `--depth <mode>`   | `structured` | `structured` (headings/bold/code) or `full` (+ body text with IDF) |
+| `--include <glob>` | —            | Only index files matching glob                                     |
+| `--exclude <glob>` | —            | Skip files matching glob                                           |
+| `-v, --verbose`    | off          | Show per-stage progress                                            |
 
 **Examples:**
 
@@ -341,10 +341,10 @@ iw index retrieve <query> [options]
 Ranked file retrieval by topic or symbol name. Combines annotation relevance,
 symbol matching, co-occurrence boost, and co-change signals.
 
-| Option           | Default | Description               |
-| ---------------- | ------- | ------------------------- |
-| `--limit <n>`    | `10`    | Maximum results           |
-| `--scope <type>` | `all`   | `code`, `docs`, or `all`  |
+| Option           | Default | Description              |
+| ---------------- | ------- | ------------------------ |
+| `--limit <n>`    | `10`    | Maximum results          |
+| `--scope <type>` | `all`   | `code`, `docs`, or `all` |
 
 **Example:**
 
@@ -365,9 +365,9 @@ iw index connections <entity> [options]
 Cross-layer connection discovery. Shows co-mentions in docs, co-changes in git,
 structural links in code — and **gaps** where signals disagree.
 
-| Option             | Default | Description                              |
-| ------------------ | ------- | ---------------------------------------- |
-| `--limit <n>`      | `15`    | Maximum connections                      |
+| Option             | Default | Description                                    |
+| ------------------ | ------- | ---------------------------------------------- |
+| `--limit <n>`      | `15`    | Maximum connections                            |
 | `--include <type>` | all     | Filter: `doc_cooc`, `co_change`, `code_import` |
 
 **Example:**
@@ -394,11 +394,11 @@ iw index check [options]
 
 CI drift detection. Identifies docs that reference changed code and may need updating.
 
-| Option                | Default   | Description                        |
-| --------------------- | --------- | ---------------------------------- |
-| `--changed <files...>`| —         | Files changed in PR/commit         |
-| `--severity <level>`  | `info`    | Minimum: `info`, `warning`, `critical` |
-| `-f, --format`        | `text`    | Output: `text`, `json`, `github`   |
+| Option                 | Default | Description                            |
+| ---------------------- | ------- | -------------------------------------- |
+| `--changed <files...>` | —       | Files changed in PR/commit             |
+| `--severity <level>`   | `info`  | Minimum: `info`, `warning`, `critical` |
+| `-f, --format`         | `text`  | Output: `text`, `json`, `github`       |
 
 **Example:**
 
@@ -419,6 +419,7 @@ iw index report
 Corpus-wide health dashboard. No arguments needed.
 
 **Output includes:**
+
 - Documentation coverage (% of exported symbols mentioned in docs)
 - Stale documents (docs referencing recently-changed code)
 - Hidden couplings (co-mentioned in docs but no code dependency)
@@ -432,9 +433,9 @@ iw index update [options]
 
 Incremental index update. Re-indexes only files whose content hash has changed.
 
-| Option       | Default | Description                |
-| ------------ | ------- | -------------------------- |
-| `-v`         | off     | Show what changed          |
+| Option | Default | Description       |
+| ------ | ------- | ----------------- |
+| `-v`   | off     | Show what changed |
 
 Typical update time: < 1 second for small changes.
 
@@ -442,15 +443,15 @@ Typical update time: < 1 second for small changes.
 
 ## Environment Variables
 
-| Variable           | Default                 | Description                           |
-| ------------------ | ----------------------- | ------------------------------------- |
-| `NEO4J_URI`        | `bolt://localhost:7687` | Neo4j bolt URI                        |
-| `NEO4J_USERNAME`   | `neo4j`                 | Neo4j username                        |
-| `NEO4J_PASSWORD`   | _(required for Neo4j)_  | Neo4j password                        |
-| `NEO4J_DATABASE`   | `neo4j`                 | Neo4j database name                   |
-| `IW_SESSION`       | `default`               | Default session ID                    |
-| `OPENAI_API_KEY`   | _(optional)_            | Required for `--provider openai` and NL queries |
-| `IW_LLM_MODEL`    | `gpt-4o-mini`           | LLM model for NL queries              |
+| Variable         | Default                 | Description                                     |
+| ---------------- | ----------------------- | ----------------------------------------------- |
+| `NEO4J_URI`      | `bolt://localhost:7687` | Neo4j bolt URI                                  |
+| `NEO4J_USERNAME` | `neo4j`                 | Neo4j username                                  |
+| `NEO4J_PASSWORD` | _(required for Neo4j)_  | Neo4j password                                  |
+| `NEO4J_DATABASE` | `neo4j`                 | Neo4j database name                             |
+| `IW_SESSION`     | `default`               | Default session ID                              |
+| `OPENAI_API_KEY` | _(optional)_            | Required for `--provider openai` and NL queries |
+| `IW_LLM_MODEL`   | `gpt-4o-mini`           | LLM model for NL queries                        |
 
 ---
 
@@ -468,10 +469,10 @@ of language. This is the primary extraction mode.
 
 Uses tree-sitter AST parsing for precise code symbol extraction:
 
-| Language              | Parser                  | Symbols extracted                          |
-| --------------------- | ----------------------- | ------------------------------------------ |
-| TypeScript/JavaScript | `tree-sitter-typescript`| classes, functions, interfaces, types, enums |
-| Swift                 | `tree-sitter-swift`     | structs, classes, protocols, enums, extensions, functions, methods, properties |
+| Language              | Parser                   | Symbols extracted                                                              |
+| --------------------- | ------------------------ | ------------------------------------------------------------------------------ |
+| TypeScript/JavaScript | `tree-sitter-typescript` | classes, functions, interfaces, types, enums                                   |
+| Swift                 | `tree-sitter-swift`      | structs, classes, protocols, enums, extensions, functions, methods, properties |
 
 The cross-layer linker (`iw xlink`) connects semantic entities from the knowledge
 graph to structural code symbols, enabling code-reference-enriched context.

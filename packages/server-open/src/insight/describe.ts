@@ -9,7 +9,11 @@
  * so it adds zero additional queries.
  */
 
-import type { InsightNode, InsightRawTriple, InsightConnection } from "./types.js";
+import type {
+  InsightNode,
+  InsightRawTriple,
+  InsightConnection,
+} from "./types.js";
 
 // ── Predicate priority for description building ──────────────────────────────
 
@@ -156,13 +160,14 @@ export function synthesizeDescription(node: InsightNode): string {
 
   for (const t of asSubject) {
     if (factCount >= MAX_FACTS) break;
-    if (usedPredicates.has(t.predicate) && !BEHAVIORAL_PREDICATES.has(t.predicate))
+    if (
+      usedPredicates.has(t.predicate) &&
+      !BEHAVIORAL_PREDICATES.has(t.predicate)
+    )
       continue;
     if (IDENTITY_PREDICATES.has(t.predicate)) continue; // already handled
     usedPredicates.add(t.predicate);
-    parts.push(
-      `${capitalize(humanPredicate(t.predicate))} ${t.object}.`,
-    );
+    parts.push(`${capitalize(humanPredicate(t.predicate))} ${t.object}.`);
     factCount++;
   }
 
@@ -207,7 +212,8 @@ export function summarizeConnections(connections: InsightConnection[]): string {
     const overflow =
       connections.filter(
         (c) =>
-          `${c.direction === "outgoing" ? "→" : "←"} ${humanPredicate(c.predicate)}` === key,
+          `${c.direction === "outgoing" ? "→" : "←"} ${humanPredicate(c.predicate)}` ===
+          key,
       ).length - targets.length;
     const suffix = overflow > 0 ? `, +${overflow} more` : "";
     parts.push(`${key}: ${targets.join(", ")}${suffix}`);

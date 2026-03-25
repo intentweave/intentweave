@@ -96,9 +96,7 @@ export interface PreflightOptions {
  *
  * Deduplication is by lowercased name; first occurrence wins.
  */
-export function extractMarkdownEntities(
-  markdown: string,
-): MarkdownEntity[] {
+export function extractMarkdownEntities(markdown: string): MarkdownEntity[] {
   const seen = new Set<string>();
   const entities: MarkdownEntity[] = [];
 
@@ -283,9 +281,7 @@ export async function preflightDocHealth(
       if (stat.isDirectory()) {
         // Scan directory for markdown files
         const found = await findMarkdownFiles(full, docExtensions);
-        docPaths.push(
-          ...found.map((fp) => path.relative(cwd, fp)),
-        );
+        docPaths.push(...found.map((fp) => path.relative(cwd, fp)));
       } else {
         docPaths.push(path.relative(cwd, full));
       }
@@ -334,11 +330,7 @@ export async function preflightDocHealth(
 
   // Step 3: build keyword index from codebase source files
   log("Preflight: scanning codebase for keyword matches…");
-  const keywordIndex = await indexKeywordsInCodebase(
-    cwd,
-    [...allNames],
-    log,
-  );
+  const keywordIndex = await indexKeywordsInCodebase(cwd, [...allNames], log);
 
   // Step 4: build per-document reports
   const reports: PreflightDocReport[] = [];

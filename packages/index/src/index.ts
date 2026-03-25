@@ -16,11 +16,7 @@ export type { AnnotateOptions } from "./annotator.js";
 export { computeIdf } from "./idf.js";
 
 // Phase 4: Incremental updates
-export {
-  detectChanges,
-  applyChanges,
-  hashFile,
-} from "./incremental.js";
+export { detectChanges, applyChanges, hashFile } from "./incremental.js";
 export type {
   IncrementalUpdateOptions,
   IncrementalUpdateResult,

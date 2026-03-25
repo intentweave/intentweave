@@ -11,7 +11,4 @@ export {
   cosineSimilarity,
   getEmbeddingDimension,
 } from "./onnxEmbedding.js";
-export type {
-  EmbeddingResult,
-  OnnxEmbeddingOptions,
-} from "./onnxEmbedding.js";
+export type { EmbeddingResult, OnnxEmbeddingOptions } from "./onnxEmbedding.js";

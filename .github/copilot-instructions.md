@@ -77,21 +77,21 @@ iw index update                       # only changed files
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
-| `packages/index/src/writer.ts` | SQLite index builder |
-| `packages/index/src/annotator.ts` | Document→code annotation engine (IDF penalty) |
-| `packages/index/src/idf.ts` | IDF scorer + stopword baseline (50 terms, ceiling 0.15) |
-| `packages/index/src/schema.ts` | SQLite table definitions |
-| `packages/index/src/queries/retrieve.ts` | Ranked file retrieval |
-| `packages/index/src/queries/connections.ts` | Cross-layer connection discovery |
-| `packages/index/src/queries/check.ts` | CI drift detection |
-| `packages/index/src/queries/report.ts` | Corpus-wide health report |
-| `packages/index/src/incremental.ts` | Content-hash incremental updates |
-| `packages/analyzer/src/kwg/heuristicExtractor.ts` | Keyword extraction (dictionary, depth) |
-| `packages/analyzer/src/kwg/kwxStage.ts` | KWX stage options (depth, dictionary) |
-| `packages/cli/src/commands/indexBuild.ts` | `iw index build` CLI orchestrator |
-| `packages/cli/src/mcp/server.ts` | MCP server (6 KG + 3 CARI tools) |
+| File                                              | Purpose                                                 |
+| ------------------------------------------------- | ------------------------------------------------------- |
+| `packages/index/src/writer.ts`                    | SQLite index builder                                    |
+| `packages/index/src/annotator.ts`                 | Document→code annotation engine (IDF penalty)           |
+| `packages/index/src/idf.ts`                       | IDF scorer + stopword baseline (50 terms, ceiling 0.15) |
+| `packages/index/src/schema.ts`                    | SQLite table definitions                                |
+| `packages/index/src/queries/retrieve.ts`          | Ranked file retrieval                                   |
+| `packages/index/src/queries/connections.ts`       | Cross-layer connection discovery                        |
+| `packages/index/src/queries/check.ts`             | CI drift detection                                      |
+| `packages/index/src/queries/report.ts`            | Corpus-wide health report                               |
+| `packages/index/src/incremental.ts`               | Content-hash incremental updates                        |
+| `packages/analyzer/src/kwg/heuristicExtractor.ts` | Keyword extraction (dictionary, depth)                  |
+| `packages/analyzer/src/kwg/kwxStage.ts`           | KWX stage options (depth, dictionary)                   |
+| `packages/cli/src/commands/indexBuild.ts`         | `iw index build` CLI orchestrator                       |
+| `packages/cli/src/mcp/server.ts`                  | MCP server (6 KG + 3 CARI tools)                        |
 
 ### SQLite Schema (`.iw/index.db`)
 
@@ -130,17 +130,17 @@ iw doc-health -s my-project                               # Doc health
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
-| `packages/analyzer/src/stages/fx.ts` | FX extraction (parallel chunks) |
-| `packages/analyzer/src/stages/kx.ts` | KX canonicalization (30 predicates) |
-| `packages/analyzer/src/stages/gx.ts` | GX cross-document entity merge |
-| `packages/analyzer/src/pipeline/openTrack.ts` | Open track orchestrator |
-| `packages/cli/src/commands/run.ts` | `iw run` CLI command |
-| `packages/cli/src/commands/query.ts` | `iw query` CLI command |
-| `packages/cli/src/commands/context.ts` | `iw context` CLI command |
-| `packages/cli/src/impact/impactAnalyzer.ts` | Impact analysis engine |
-| `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer |
+| File                                               | Purpose                             |
+| -------------------------------------------------- | ----------------------------------- |
+| `packages/analyzer/src/stages/fx.ts`               | FX extraction (parallel chunks)     |
+| `packages/analyzer/src/stages/kx.ts`               | KX canonicalization (30 predicates) |
+| `packages/analyzer/src/stages/gx.ts`               | GX cross-document entity merge      |
+| `packages/analyzer/src/pipeline/openTrack.ts`      | Open track orchestrator             |
+| `packages/cli/src/commands/run.ts`                 | `iw run` CLI command                |
+| `packages/cli/src/commands/query.ts`               | `iw query` CLI command              |
+| `packages/cli/src/commands/context.ts`             | `iw context` CLI command            |
+| `packages/cli/src/impact/impactAnalyzer.ts`        | Impact analysis engine              |
+| `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer       |
 
 ## MCP Tools
 
@@ -148,22 +148,22 @@ The MCP server exposes 9 tools for GitHub Copilot:
 
 ### KG Tools (require Neo4j)
 
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `kg_query` | NL or Cypher query | `question`, `cypher?`, `limit?` |
-| `kg_context` | Build RAG context | `topic?`, `entity?`, `hops?` |
-| `kg_entities` | List/search entities | `type?`, `search?`, `limit?` |
-| `kg_impact` | Semantic impact analysis | `files`, `hops?` |
-| `kg_doc_health` | Documentation freshness | `files?` |
-| `kg_schema` | Graph schema | _(none)_ |
+| Tool            | Purpose                  | Key Parameters                  |
+| --------------- | ------------------------ | ------------------------------- |
+| `kg_query`      | NL or Cypher query       | `question`, `cypher?`, `limit?` |
+| `kg_context`    | Build RAG context        | `topic?`, `entity?`, `hops?`    |
+| `kg_entities`   | List/search entities     | `type?`, `search?`, `limit?`    |
+| `kg_impact`     | Semantic impact analysis | `files`, `hops?`                |
+| `kg_doc_health` | Documentation freshness  | `files?`                        |
+| `kg_schema`     | Graph schema             | _(none)_                        |
 
 ### CARI Tools (local SQLite, no Neo4j or LLM)
 
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `cari_retrieve` | Ranked file retrieval | `query`, `scope?`, `limit?` |
+| Tool               | Purpose                     | Key Parameters                 |
+| ------------------ | --------------------------- | ------------------------------ |
+| `cari_retrieve`    | Ranked file retrieval       | `query`, `scope?`, `limit?`    |
 | `cari_connections` | Connection discovery + gaps | `entity`, `include?`, `limit?` |
-| `cari_check` | CI drift detection | `changed`, `severity?` |
+| `cari_check`       | CI drift detection          | `changed`, `severity?`         |
 
 ### Usage Patterns
 

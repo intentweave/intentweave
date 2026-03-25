@@ -343,7 +343,9 @@ export async function buildDecisionTree(
     (n) => n.kind === "decision" && n.runId,
   );
   if (decisionNodes.length > 0) {
-    const uniqueRunIds = [...new Set(decisionNodes.map((n) => n.runId!))].sort();
+    const uniqueRunIds = [
+      ...new Set(decisionNodes.map((n) => n.runId!)),
+    ].sort();
     const runIdRank = new Map(uniqueRunIds.map((id, i) => [id, i + 1]));
     for (const node of decisionNodes) {
       node.temporalOrder = runIdRank.get(node.runId!);

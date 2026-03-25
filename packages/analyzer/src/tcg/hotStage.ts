@@ -101,8 +101,7 @@ export function runHotStage(input: HotStageInput): HotStageOutput {
   }
 
   const mean = allCounts.reduce((a, b) => a + b, 0) / n;
-  const variance =
-    allCounts.reduce((sum, x) => sum + (x - mean) ** 2, 0) / n;
+  const variance = allCounts.reduce((sum, x) => sum + (x - mean) ** 2, 0) / n;
   const stdDev = Math.sqrt(variance);
 
   const allChurn = Array.from(fileStats.values()).map((s) => s.churn);

@@ -185,9 +185,7 @@ describe("annotate", () => {
     const result = annotate(ax, [kwx]);
 
     expect(result).toHaveLength(1);
-    expect(result[0].symbolId).toBe(
-      "impl:src/pipeline.ts#function:pipeline",
-    );
+    expect(result[0].symbolId).toBe("impl:src/pipeline.ts#function:pipeline");
     expect(result[0].confidence).toBe(0.5);
   });
 

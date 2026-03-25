@@ -240,7 +240,9 @@ export async function detectDocCodeDrift(
       codeSymbols.push(sym);
     }
   }
-  log(`  → ${codeSymbols.length} code symbols (${exportedOnly ? "exported" : "all"})`);
+  log(
+    `  → ${codeSymbols.length} code symbols (${exportedOnly ? "exported" : "all"})`,
+  );
 
   // ── 3. Build match indexes ────────────────────────────────────────────
   // Code symbol lookup: slug → symbol(s)
@@ -334,7 +336,10 @@ export async function detectDocCodeDrift(
     if (!m) return null;
     const inner = m[1].trim();
     if (inner === "") return [];
-    return inner.split(",").map((p) => p.trim()).filter(Boolean);
+    return inner
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
   };
 
   /** Extract kind reference from text like "the AuthService function" */
@@ -342,10 +347,22 @@ export async function detectDocCodeDrift(
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // Match "the <name> function/class/interface/type" or "function/class <name>"
     const patterns = [
-      new RegExp(`\\b(function|class|interface|type|enum)\\s+${escaped}\\b`, "i"),
-      new RegExp(`\\b${escaped}\\s+(function|class|interface|type|enum)\\b`, "i"),
-      new RegExp(`the\\s+${escaped}\\s+(function|class|interface|type|enum)`, "i"),
-      new RegExp(`(function|class|interface|type|enum)\\s+called\\s+${escaped}`, "i"),
+      new RegExp(
+        `\\b(function|class|interface|type|enum)\\s+${escaped}\\b`,
+        "i",
+      ),
+      new RegExp(
+        `\\b${escaped}\\s+(function|class|interface|type|enum)\\b`,
+        "i",
+      ),
+      new RegExp(
+        `the\\s+${escaped}\\s+(function|class|interface|type|enum)`,
+        "i",
+      ),
+      new RegExp(
+        `(function|class|interface|type|enum)\\s+called\\s+${escaped}`,
+        "i",
+      ),
     ];
     for (const re of patterns) {
       const m = text.match(re);
@@ -375,7 +392,10 @@ export async function detectDocCodeDrift(
         if (sym.parameters && sym.parameters.length > 0) {
           for (const mention of mentions) {
             const docParams = extractParams(mention.text, entity.name);
-            if (docParams !== null && docParams.length !== sym.parameters.length) {
+            if (
+              docParams !== null &&
+              docParams.length !== sym.parameters.length
+            ) {
               signals.push({
                 category: "signature-mismatch",
                 severity: "warning",
@@ -388,12 +408,14 @@ export async function detectDocCodeDrift(
                   qualifiers: entity.qualifiers as DriftEvidence["qualifiers"],
                   docSignature: `${entity.name}(${docParams.join(", ")})`,
                   codeSignature: `${sym.name}(${sym.parameters.join(", ")})`,
-                  mentionContexts: [{
-                    text: mention.text,
-                    heading: mention.heading,
-                    filePath: mention.filePath,
-                    startLine: mention.startLine,
-                  }],
+                  mentionContexts: [
+                    {
+                      text: mention.text,
+                      heading: mention.heading,
+                      filePath: mention.filePath,
+                      startLine: mention.startLine,
+                    },
+                  ],
                 },
               });
               break; // One signal per entity-symbol pair is enough
@@ -417,12 +439,14 @@ export async function detectDocCodeDrift(
                 qualifiers: entity.qualifiers as DriftEvidence["qualifiers"],
                 docSignature: `${docKind} ${entity.name}`,
                 codeSignature: `${sym.kind} ${sym.name}`,
-                mentionContexts: [{
-                  text: mention.text,
-                  heading: mention.heading,
-                  filePath: mention.filePath,
-                  startLine: mention.startLine,
-                }],
+                mentionContexts: [
+                  {
+                    text: mention.text,
+                    heading: mention.heading,
+                    filePath: mention.filePath,
+                    startLine: mention.startLine,
+                  },
+                ],
               },
             });
             break;
@@ -431,7 +455,8 @@ export async function detectDocCodeDrift(
 
         // Check 3: Deprecation gap — code is deprecated but doc doesn't acknowledge
         if (sym.docSummary && /\b@deprecated\b/i.test(sym.docSummary)) {
-          const hasDeprecatedQualifier = entity.qualifiers.includes("deprecated");
+          const hasDeprecatedQualifier =
+            entity.qualifiers.includes("deprecated");
           if (!hasDeprecatedQualifier) {
             signals.push({
               category: "signature-mismatch",
@@ -487,9 +512,10 @@ export async function detectDocCodeDrift(
       files: entity.filePaths,
       evidence: {
         mentionCount: entity.mentionCount,
-        qualifiers: entity.qualifiers.length > 0
-          ? entity.qualifiers as DriftEvidence["qualifiers"]
-          : undefined,
+        qualifiers:
+          entity.qualifiers.length > 0
+            ? (entity.qualifiers as DriftEvidence["qualifiers"])
+            : undefined,
         nearMatchScore: nearScore > 0.2 ? nearScore : undefined,
         nearMatchName: nearScore > 0.2 ? nearName : undefined,
       },
@@ -551,9 +577,13 @@ export async function detectDocCodeDrift(
     workspaceRoot: axOutput.workspaceRoot,
     signals,
     stats: {
-      ungroundedCount: signals.filter((s) => s.category === "ungrounded").length,
-      undocumentedCount: signals.filter((s) => s.category === "undocumented").length,
-      signatureMismatchCount: signals.filter((s) => s.category === "signature-mismatch").length,
+      ungroundedCount: signals.filter((s) => s.category === "ungrounded")
+        .length,
+      undocumentedCount: signals.filter((s) => s.category === "undocumented")
+        .length,
+      signatureMismatchCount: signals.filter(
+        (s) => s.category === "signature-mismatch",
+      ).length,
       totalKwgEntities: significantEntities.length,
       totalCodeSymbols: codeSymbols.length,
       matchedCount: matchedKwg.size,
@@ -595,42 +625,28 @@ export function renderDriftReport(report: DriftReport): string {
   // Summary
   lines.push("## Summary");
   lines.push("");
-  lines.push(
-    `| Metric | Count |`,
-  );
+  lines.push(`| Metric | Count |`);
   lines.push(`|--------|-------|`);
   lines.push(`| KWG entities (≥ threshold) | ${stats.totalKwgEntities} |`);
   lines.push(`| Code symbols (exported) | ${stats.totalCodeSymbols} |`);
   lines.push(`| Matched (doc ↔ code) | ${stats.matchedCount} |`);
-  lines.push(
-    `| ⚠ Ungrounded mentions | ${stats.ungroundedCount} |`,
-  );
-  lines.push(
-    `| 📄 Undocumented code | ${stats.undocumentedCount} |`,
-  );
-  lines.push(
-    `| ✗ Signature mismatches | ${stats.signatureMismatchCount} |`,
-  );
+  lines.push(`| ⚠ Ungrounded mentions | ${stats.ungroundedCount} |`);
+  lines.push(`| 📄 Undocumented code | ${stats.undocumentedCount} |`);
+  lines.push(`| ✗ Signature mismatches | ${stats.signatureMismatchCount} |`);
   lines.push(`| Duration | ${stats.durationMs}ms |`);
   lines.push("");
 
   if (signals.length === 0) {
-    lines.push(
-      "✓ **No drift detected** — documentation and code are aligned.",
-    );
+    lines.push("✓ **No drift detected** — documentation and code are aligned.");
     return lines.join("\n");
   }
 
   // Ungrounded mentions
   const ungrounded = signals.filter((s) => s.category === "ungrounded");
   if (ungrounded.length > 0) {
-    lines.push(
-      `## ⚠ Ungrounded Mentions (${ungrounded.length})`,
-    );
+    lines.push(`## ⚠ Ungrounded Mentions (${ungrounded.length})`);
     lines.push("");
-    lines.push(
-      "Entities mentioned in documentation but not found in code:",
-    );
+    lines.push("Entities mentioned in documentation but not found in code:");
     lines.push("");
 
     for (const s of ungrounded) {
@@ -652,13 +668,9 @@ export function renderDriftReport(report: DriftReport): string {
   // Undocumented code
   const undocumented = signals.filter((s) => s.category === "undocumented");
   if (undocumented.length > 0) {
-    lines.push(
-      `## 📄 Undocumented Code (${undocumented.length})`,
-    );
+    lines.push(`## 📄 Undocumented Code (${undocumented.length})`);
     lines.push("");
-    lines.push(
-      "Code symbols that exist but have no documentation mentions:",
-    );
+    lines.push("Code symbols that exist but have no documentation mentions:");
     lines.push("");
 
     // Only show top 30 to avoid overwhelming output
@@ -679,11 +691,11 @@ export function renderDriftReport(report: DriftReport): string {
   }
 
   // Signature mismatches
-  const sigMismatch = signals.filter((s) => s.category === "signature-mismatch");
+  const sigMismatch = signals.filter(
+    (s) => s.category === "signature-mismatch",
+  );
   if (sigMismatch.length > 0) {
-    lines.push(
-      `## ✗ Signature Mismatches (${sigMismatch.length})`,
-    );
+    lines.push(`## ✗ Signature Mismatches (${sigMismatch.length})`);
     lines.push("");
     lines.push(
       "Entities matched in both docs and code, but with conflicting signatures:",

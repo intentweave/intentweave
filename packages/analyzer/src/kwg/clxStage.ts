@@ -67,9 +67,7 @@ function buildAdjacencyList(
  * Find connected components using BFS.
  * Returns an array of components (each component is a set of entity names).
  */
-function findConnectedComponents(
-  adj: Map<string, Set<string>>,
-): Set<string>[] {
+function findConnectedComponents(adj: Map<string, Set<string>>): Set<string>[] {
   const visited = new Set<string>();
   const components: Set<string>[] = [];
 
@@ -221,7 +219,9 @@ export async function runClxStage(
     }
   }
 
-  logger?.info(`CLX: clustering ${allEntityNames.size} entities from ${input.coxOutput.edges.length} edges`);
+  logger?.info(
+    `CLX: clustering ${allEntityNames.size} entities from ${input.coxOutput.edges.length} edges`,
+  );
 
   const { clusters, unclustered } = detectClusters(
     input.coxOutput.edges,

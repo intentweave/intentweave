@@ -326,17 +326,14 @@ export function applyChanges(
       }
 
       // ── 8. Rebuild FTS indexes ─────────────────────────────
-      db.exec(
-        `INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')`,
-      );
-      db.exec(
-        `INSERT INTO annotations_fts(annotations_fts) VALUES('rebuild')`,
-      );
+      db.exec(`INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')`);
+      db.exec(`INSERT INTO annotations_fts(annotations_fts) VALUES('rebuild')`);
 
       // ── 9. Update metadata ─────────────────────────────────
-      db.prepare(
-        `INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)`,
-      ).run("last_updated", new Date().toISOString());
+      db.prepare(`INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)`).run(
+        "last_updated",
+        new Date().toISOString(),
+      );
     });
 
     tx();
@@ -378,21 +375,20 @@ function deleteFileData(db: Database.Database, filePath: string): void {
 /** Delete symbols (and annotations referencing them) for a code file. */
 function deleteSymbolsForFile(db: Database.Database, filePath: string): void {
   // Delete annotations that reference symbols in this file
-  db.prepare(`
+  db.prepare(
+    `
     DELETE FROM annotations WHERE symbol_id IN (
       SELECT id FROM symbols WHERE file_path = ?
     )
-  `).run(filePath);
+  `,
+  ).run(filePath);
 
   // Delete the symbols themselves
   db.prepare("DELETE FROM symbols WHERE file_path = ?").run(filePath);
 }
 
 /** Delete annotations from a specific doc file. */
-function deleteAnnotationsForDoc(
-  db: Database.Database,
-  docPath: string,
-): void {
+function deleteAnnotationsForDoc(db: Database.Database, docPath: string): void {
   db.prepare("DELETE FROM annotations WHERE doc_path = ?").run(docPath);
 }
 
@@ -404,7 +400,9 @@ function deleteCoOccurrencesForFiles(
   // co_occurrences.file_paths is a JSON array — scan and delete edges
   // that include any of the changed files
   const allEdges = db
-    .prepare("SELECT rowid, file_paths FROM co_occurrences WHERE source = 'doc_cooc'")
+    .prepare(
+      "SELECT rowid, file_paths FROM co_occurrences WHERE source = 'doc_cooc'",
+    )
     .all() as Array<{ rowid: number; file_paths: string }>;
 
   const toDelete: number[] = [];

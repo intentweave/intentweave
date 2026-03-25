@@ -53,7 +53,8 @@ export function buildIndex(
   opts: IndexBuildOptions,
 ): IndexBuildResult {
   const start = Date.now();
-  const dbPath = opts.outputPath ?? path.join(opts.workspaceRoot, ".iw", "index.db");
+  const dbPath =
+    opts.outputPath ?? path.join(opts.workspaceRoot, ".iw", "index.db");
 
   // Ensure directory exists
   const dir = path.dirname(dbPath);
@@ -143,7 +144,10 @@ function writeSymbols(db: Database.Database, ax: AxOutput): number {
 // Annotations
 // =============================================================================
 
-function writeAnnotations(db: Database.Database, annotations: Annotation[]): number {
+function writeAnnotations(
+  db: Database.Database,
+  annotations: Annotation[],
+): number {
   const stmt = db.prepare(`
     INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source, qualifier, idf_score)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -176,7 +180,10 @@ function writeAnnotations(db: Database.Database, annotations: Annotation[]): num
 // Co-occurrences
 // =============================================================================
 
-function writeCoOccurrences(db: Database.Database, cox: CoxStageOutput): number {
+function writeCoOccurrences(
+  db: Database.Database,
+  cox: CoxStageOutput,
+): number {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO co_occurrences (entity_a, entity_b, count, score, source, file_paths)
     VALUES (?, ?, ?, ?, ?, ?)

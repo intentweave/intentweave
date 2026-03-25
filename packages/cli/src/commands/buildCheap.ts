@@ -37,10 +37,7 @@ import {
   detectVerbHints,
 } from "@intentweave/analyzer";
 import type { VerbHint, VerbDetectorResult } from "@intentweave/analyzer";
-import type {
-  InStageInput,
-  AxOutput,
-} from "@intentweave/analyzer";
+import type { InStageInput, AxOutput } from "@intentweave/analyzer";
 
 // Core types
 import type {
@@ -76,10 +73,7 @@ import { persistDrift } from "../drift/persistDrift.js";
 
 const SUPPORTED_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst"]);
 
-async function discoverFiles(
-  paths: string[],
-  cwd: string,
-): Promise<string[]> {
+async function discoverFiles(paths: string[], cwd: string): Promise<string[]> {
   const files: string[] = [];
   for (const p of paths) {
     const abs = path.isAbsolute(p) ? p : path.resolve(cwd, p);
@@ -92,9 +86,7 @@ async function discoverFiles(
       }
     } else if (stat.isDirectory()) {
       const entries = await fs.readdir(abs, { withFileTypes: true });
-      const subPaths = entries.map((e) =>
-        path.join(abs, e.name),
-      );
+      const subPaths = entries.map((e) => path.join(abs, e.name));
       files.push(...(await discoverFiles(subPaths, cwd)));
     }
   }
@@ -244,7 +236,9 @@ export const cheapSubcommand = new Command("cheap")
         if (verbose && verbHintResult.hints.length > 0) {
           const top = verbHintResult.hints.slice(0, 10);
           for (const h of top) {
-            log(`  ${h.subjectName} --${h.predicate}--> ${h.objectName} (${h.confidence.toFixed(2)})`);
+            log(
+              `  ${h.subjectName} --${h.predicate}--> ${h.objectName} (${h.confidence.toFixed(2)})`,
+            );
           }
         }
       }
@@ -269,17 +263,20 @@ export const cheapSubcommand = new Command("cheap")
             // Group hints by edge (subject+object pair) and collect predicates
             const edgeHints = new Map<string, string[]>();
             for (const h of hintParams) {
-              const [a, b] = h.subjectName < h.objectName
-                ? [h.subjectName, h.objectName]
-                : [h.objectName, h.subjectName];
+              const [a, b] =
+                h.subjectName < h.objectName
+                  ? [h.subjectName, h.objectName]
+                  : [h.objectName, h.subjectName];
               const key = `${a}|||${b}`;
               if (!edgeHints.has(key)) edgeHints.set(key, []);
               edgeHints.get(key)!.push(h.predicate);
             }
-            const edgeHintArray = [...edgeHints.entries()].map(([key, preds]) => {
-              const [entityA, entityB] = key.split("|||");
-              return { entityA, entityB, verbHints: [...new Set(preds)] };
-            });
+            const edgeHintArray = [...edgeHints.entries()].map(
+              ([key, preds]) => {
+                const [entityA, entityB] = key.split("|||");
+                return { entityA, entityB, verbHints: [...new Set(preds)] };
+              },
+            );
             await neo4jSession.run(
               `
               UNWIND $edges AS e
@@ -288,7 +285,9 @@ export const cheapSubcommand = new Command("cheap")
               `,
               { edges: edgeHintArray, session },
             );
-            log(`Verb hints persisted on ${edgeHintArray.length} CO_OCCURS edges`);
+            log(
+              `Verb hints persisted on ${edgeHintArray.length} CO_OCCURS edges`,
+            );
           } finally {
             await neo4jSession.close();
           }
@@ -303,7 +302,9 @@ export const cheapSubcommand = new Command("cheap")
       const tcxOutput = await runTcxStage({
         workspaceRoot: cwd,
         depth: "full",
-        log: verbose ? (msg: string) => console.log(chalk.gray(`  tcx: ${msg}`)) : undefined,
+        log: verbose
+          ? (msg: string) => console.log(chalk.gray(`  tcx: ${msg}`))
+          : undefined,
       });
       const cocTcgOutput = runCocStage({ tcxOutput });
       const hotOutput = runHotStage({ tcxOutput });
@@ -367,7 +368,9 @@ export const cheapSubcommand = new Command("cheap")
       if (persist && driver) {
         log("Persisting SCG to Neo4j...");
         const scgResult = await persistScg(axOutput, session, driver, { log });
-        log(`SCG persisted: ${scgResult.dirsWritten} dirs, ${scgResult.filesWritten} files, ${scgResult.symbolsWritten} symbols`);
+        log(
+          `SCG persisted: ${scgResult.dirsWritten} dirs, ${scgResult.filesWritten} files, ${scgResult.symbolsWritten} symbols`,
+        );
       }
 
       // ════════════════════════════════════════════════════════════════
@@ -402,7 +405,9 @@ export const cheapSubcommand = new Command("cheap")
       let docCodeStats: DetectorStats = disabledDetectorStats();
       if (persist && driver) {
         const t0 = performance.now();
-        const dcReport = await detectDocCodeDrift(driver, session, axOutput, { log });
+        const dcReport = await detectDocCodeDrift(driver, session, axOutput, {
+          log,
+        });
         docCodeSignals = dcReport.signals;
         docCodeStats = {
           enabled: true,
@@ -470,8 +475,12 @@ export const cheapSubcommand = new Command("cheap")
       // Persist drift signals
       if (persist && driver) {
         log("Persisting drift signals to Neo4j...");
-        const driftPersist = await persistDrift(report, session, driver, { log });
-        log(`Drift persist: ${driftPersist.nodesCreated} signals, ${driftPersist.relsCreated} rels`);
+        const driftPersist = await persistDrift(report, session, driver, {
+          log,
+        });
+        log(
+          `Drift persist: ${driftPersist.nodesCreated} signals, ${driftPersist.relsCreated} rels`,
+        );
       }
 
       // ════════════════════════════════════════════════════════════════

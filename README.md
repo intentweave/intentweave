@@ -36,6 +36,7 @@ iw index report                        # coverage, staleness, hidden couplings
 ```
 
 Two depth modes:
+
 - `--depth structured` (default) — headings, bold text, code spans only. Fast and precise.
 - `--depth full` — adds body text scanning with IDF noise filtering. +72% more annotations.
 
@@ -307,11 +308,11 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 
 **CARI tools** (no Neo4j or LLM needed):
 
-| Tool               | Purpose                                    | Key Parameters                          |
-| ------------------ | ------------------------------------------ | --------------------------------------- |
-| `cari_retrieve`    | Ranked file retrieval by topic or symbol   | `query`, `scope?`, `limit?`             |
-| `cari_connections` | Cross-layer connection discovery + gaps    | `entity`, `include?`, `limit?`          |
-| `cari_check`       | CI drift detection for changed files       | `changed`, `severity?`                  |
+| Tool               | Purpose                                  | Key Parameters                 |
+| ------------------ | ---------------------------------------- | ------------------------------ |
+| `cari_retrieve`    | Ranked file retrieval by topic or symbol | `query`, `scope?`, `limit?`    |
+| `cari_connections` | Cross-layer connection discovery + gaps  | `entity`, `include?`, `limit?` |
+| `cari_check`       | CI drift detection for changed files     | `changed`, `severity?`         |
 
 Start the MCP server:
 

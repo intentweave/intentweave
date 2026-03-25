@@ -86,7 +86,9 @@ export function renderUnifiedReport(report: UnifiedDriftReport): string {
   const lines: string[] = [];
   const { signals, stats, detectorStats } = report;
 
-  const enabledCount = Object.values(detectorStats).filter((d) => d.enabled).length;
+  const enabledCount = Object.values(detectorStats).filter(
+    (d) => d.enabled,
+  ).length;
 
   lines.push(
     `  Doc Health Report — session: ${report.session}  │  ${enabledCount} detector${enabledCount === 1 ? "" : "s"}  │  ${stats.totalSignals} signals`,
@@ -95,7 +97,9 @@ export function renderUnifiedReport(report: UnifiedDriftReport): string {
 
   // ── Doc ↔ Code ───────────────────────────────────────────────────────
   if (detectorStats.docCode.enabled) {
-    lines.push("  ── Doc ↔ Code ─────────────────────────────────────────────────");
+    lines.push(
+      "  ── Doc ↔ Code ─────────────────────────────────────────────────",
+    );
     const dcSignals = signals.filter((s) => s.detector === "doc-code");
     if (dcSignals.length === 0) {
       lines.push("    ✓ No doc-code drift detected");
@@ -107,7 +111,9 @@ export function renderUnifiedReport(report: UnifiedDriftReport): string {
 
   // ── Temporal Drift ───────────────────────────────────────────────────
   if (detectorStats.temporal.enabled) {
-    lines.push("  ── Temporal Drift ─────────────────────────────────────────────");
+    lines.push(
+      "  ── Temporal Drift ─────────────────────────────────────────────",
+    );
     const tSignals = signals.filter((s) => s.detector === "temporal");
     if (tSignals.length === 0) {
       lines.push("    ✓ No temporal drift detected");
@@ -119,7 +125,9 @@ export function renderUnifiedReport(report: UnifiedDriftReport): string {
 
   // ── Dependencies ─────────────────────────────────────────────────────
   if (detectorStats.deps.enabled) {
-    lines.push("  ── Dependencies ───────────────────────────────────────────────");
+    lines.push(
+      "  ── Dependencies ───────────────────────────────────────────────",
+    );
     const depSignals = signals.filter((s) => s.detector === "deps");
     if (depSignals.length === 0) {
       lines.push("    ✓ No dependency drift detected");
@@ -131,7 +139,9 @@ export function renderUnifiedReport(report: UnifiedDriftReport): string {
 
   // ── Doc ↔ Doc ────────────────────────────────────────────────────────
   if (detectorStats.docDoc.enabled) {
-    lines.push("  ── Doc ↔ Doc ──────────────────────────────────────────────────");
+    lines.push(
+      "  ── Doc ↔ Doc ──────────────────────────────────────────────────",
+    );
     const ddSignals = signals.filter((s) => s.detector === "doc-doc");
     if (ddSignals.length === 0) {
       lines.push("    ✓ No doc-doc drift detected");
@@ -142,7 +152,9 @@ export function renderUnifiedReport(report: UnifiedDriftReport): string {
   }
 
   // ── Footer ───────────────────────────────────────────────────────────
-  lines.push("  ─────────────────────────────────────────────────────────────────");
+  lines.push(
+    "  ─────────────────────────────────────────────────────────────────",
+  );
   lines.push(
     `  ✓ ${stats.totalSignals} drift signals  │  ${stats.criticalCount} critical  │  ${stats.warningCount} warnings  │  ${stats.infoCount} info  │  ${(stats.totalDurationMs / 1000).toFixed(1)}s  │  $0.00`,
   );
@@ -155,8 +167,8 @@ export function renderUnifiedReport(report: UnifiedDriftReport): string {
 // =============================================================================
 
 const CATEGORY_ICONS: Record<string, string> = {
-  "ungrounded": "⚠",
-  "undocumented": "📄",
+  ungrounded: "⚠",
+  undocumented: "📄",
   "signature-mismatch": "✗",
   "temporal-stale": "⚠",
   "temporal-volatile": "⟳",
@@ -202,8 +214,8 @@ function renderDetectorSection(lines: string[], signals: DriftSignal[]): void {
 
 function formatCategory(category: string): string {
   const labels: Record<string, string> = {
-    "ungrounded": "ungrounded mention(s)",
-    "undocumented": "undocumented code entit(ies)",
+    ungrounded: "ungrounded mention(s)",
+    undocumented: "undocumented code entit(ies)",
     "signature-mismatch": "signature mismatch(es)",
     "temporal-stale": "stale document(s)",
     "temporal-volatile": "volatile decision(s)",

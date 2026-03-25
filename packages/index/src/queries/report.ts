@@ -46,9 +46,7 @@ export function reportFromDb(db: Database.Database): ReportResult {
 function computeCoverage(db: Database.Database): ReportResult["coverage"] {
   // Total exported symbols
   const totalRow = db
-    .prepare(
-      `SELECT COUNT(*) AS cnt FROM symbols WHERE export = 'exported'`,
-    )
+    .prepare(`SELECT COUNT(*) AS cnt FROM symbols WHERE export = 'exported'`)
     .get() as { cnt: number };
 
   // Exported symbols that have at least one annotation pointing to them
@@ -66,7 +64,8 @@ function computeCoverage(db: Database.Database): ReportResult["coverage"] {
 
   const total = totalRow.cnt;
   const documented = documentedRow.cnt;
-  const percentage = total > 0 ? Math.round((documented / total) * 1000) / 10 : 0;
+  const percentage =
+    total > 0 ? Math.round((documented / total) * 1000) / 10 : 0;
 
   // Top undocumented exported symbols
   const topUndocumented = db

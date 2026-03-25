@@ -74,7 +74,9 @@ const STRONG_COCHANGE_JACCARD = 0.3;
  *
  * Pure function — no Neo4j queries, no side effects.
  */
-export function detectTemporalDrift(input: TemporalDriftInput): TemporalDriftOutput {
+export function detectTemporalDrift(
+  input: TemporalDriftInput,
+): TemporalDriftOutput {
   const startTime = performance.now();
   const log = input.log ?? (() => {});
   const minStalenessDays = input.minStalenessDays ?? DEFAULT_MIN_STALENESS_DAYS;
@@ -90,12 +92,19 @@ export function detectTemporalDrift(input: TemporalDriftInput): TemporalDriftOut
   const coChangeEdges = tcgOutput.coc.edges;
   const stlSignals = tcgOutput.stl.signals;
 
-  log(`Temporal drift: ${tcgOutput.tcx.commits.length} commits, ${Object.keys(fileLastModified).length} files`);
+  log(
+    `Temporal drift: ${tcgOutput.tcx.commits.length} commits, ${Object.keys(fileLastModified).length} files`,
+  );
 
   // ── Pass 1: Enhanced staleness ─────────────────────────────────────────
   log("Pass 1: enhanced staleness...");
   const stalenessSignals = detectEnhancedStaleness(
-    stlSignals, hotspotMap, ownershipMap, fileCommitCount, minStalenessDays, log,
+    stlSignals,
+    hotspotMap,
+    ownershipMap,
+    fileCommitCount,
+    minStalenessDays,
+    log,
   );
   signals.push(...stalenessSignals);
 
@@ -103,7 +112,10 @@ export function detectTemporalDrift(input: TemporalDriftInput): TemporalDriftOut
   if (kwgEntities && kwgMentions && kwgMentions.length > 0) {
     log("Pass 2: decision volatility...");
     const volatilitySignals = detectDecisionVolatility(
-      kwgEntities, kwgMentions, tcgOutput, log,
+      kwgEntities,
+      kwgMentions,
+      tcgOutput,
+      log,
     );
     signals.push(...volatilitySignals);
   }
@@ -112,7 +124,10 @@ export function detectTemporalDrift(input: TemporalDriftInput): TemporalDriftOut
   if (coChangeEdges.length > 0) {
     log("Pass 3: correlated change lag...");
     const lagSignals = detectCorrelatedChangeLag(
-      coChangeEdges, fileLastModified, tcgOutput, log,
+      coChangeEdges,
+      fileLastModified,
+      tcgOutput,
+      log,
     );
     signals.push(...lagSignals);
   }
@@ -121,7 +136,9 @@ export function detectTemporalDrift(input: TemporalDriftInput): TemporalDriftOut
   if (kwgEntities && kwgEntities.length > 0) {
     log("Pass 4: abandoned code...");
     const abandonedSignals = detectAbandonedCode(
-      kwgEntities, fileLastModified, log,
+      kwgEntities,
+      fileLastModified,
+      log,
     );
     signals.push(...abandonedSignals);
   }
@@ -137,9 +154,16 @@ export function detectTemporalDrift(input: TemporalDriftInput): TemporalDriftOut
       durationMs,
       metrics: {
         stalenessSignals: stalenessSignals.length,
-        volatilitySignals: signals.filter(s => s.category === "temporal-volatile").length,
-        lagSignals: signals.filter(s => s.category === "temporal-stale" && s.evidence.footprintSimilarity !== undefined).length,
-        abandonedSignals: signals.filter(s => s.category === "abandoned-code").length,
+        volatilitySignals: signals.filter(
+          (s) => s.category === "temporal-volatile",
+        ).length,
+        lagSignals: signals.filter(
+          (s) =>
+            s.category === "temporal-stale" &&
+            s.evidence.footprintSimilarity !== undefined,
+        ).length,
+        abandonedSignals: signals.filter((s) => s.category === "abandoned-code")
+          .length,
         totalCommits: tcgOutput.tcx.commits.length,
         totalFiles: Object.keys(fileLastModified).length,
       },
@@ -184,8 +208,12 @@ function detectEnhancedStaleness(
       severity = "info";
     }
 
-    const hotspotStr = isHotspot ? `, code is hotspot (z=${hotspot!.zScore.toFixed(1)})` : "";
-    const ownerStr = ownership?.primaryOwner ? `, owner: ${ownership.primaryOwner}` : "";
+    const hotspotStr = isHotspot
+      ? `, code is hotspot (z=${hotspot!.zScore.toFixed(1)})`
+      : "";
+    const ownerStr = ownership?.primaryOwner
+      ? `, owner: ${ownership.primaryOwner}`
+      : "";
 
     signals.push({
       category: "temporal-stale",
@@ -193,7 +221,7 @@ function detectEnhancedStaleness(
       detector: "temporal",
       message: `"${stl.filePath}" is ${stl.stalenessScore}d stale${hotspotStr}${ownerStr}, ${codeCommitsSinceDoc} code commits since doc update`,
       name: stl.filePath,
-      files: [stl.filePath, ...stl.fresherRelatedFiles.map(f => f.filePath)],
+      files: [stl.filePath, ...stl.fresherRelatedFiles.map((f) => f.filePath)],
       evidence: {
         docStalenessDays: stl.stalenessScore,
         codeCommitsSinceDocUpdate: codeCommitsSinceDoc,
@@ -223,7 +251,7 @@ function detectDecisionVolatility(
   const signals: DriftSignal[] = [];
 
   // Find entities with "decision" qualifier
-  const decisionEntities = kwgEntities.filter(e =>
+  const decisionEntities = kwgEntities.filter((e) =>
     e.qualifiers.includes("decision"),
   );
 
@@ -244,15 +272,16 @@ function detectDecisionVolatility(
   }
 
   for (const entity of decisionEntities) {
-    const entityMentions = mentionsByEntity.get(entity.name.toLowerCase()) ?? [];
+    const entityMentions =
+      mentionsByEntity.get(entity.name.toLowerCase()) ?? [];
     if (entityMentions.length === 0) continue;
 
     // For each doc file with mentions, count commits near the mention lines
-    const docFiles = [...new Set(entityMentions.map(m => m.filePath))];
+    const docFiles = [...new Set(entityMentions.map((m) => m.filePath))];
     let totalNearCommits = 0;
 
     for (const docFile of docFiles) {
-      const fileMentions = entityMentions.filter(m => m.filePath === docFile);
+      const fileMentions = entityMentions.filter((m) => m.filePath === docFile);
       const fileCommits = commitsByFile.get(docFile) ?? [];
 
       // Count unique commits that Modified lines within ±MENTION_LINE_PROXIMITY
@@ -313,8 +342,7 @@ function detectCorrelatedChangeLag(
   const cutoff = new Date(now.getTime() - windowMs);
 
   // Only consider strong co-change pairs involving a doc file
-  const isDocFile = (fp: string) =>
-    /\.(md|mdx|txt|rst|adoc)$/i.test(fp);
+  const isDocFile = (fp: string) => /\.(md|mdx|txt|rst|adoc)$/i.test(fp);
 
   // Build recent commit index: file → commits after cutoff
   const recentCommitsByFile = new Map<string, CommitRecord[]>();
@@ -359,7 +387,10 @@ function detectCorrelatedChangeLag(
         name: docFile,
         files: [docFile, codeFile],
         evidence: {
-          docStalenessDays: daysBetween(fileLastModified[docFile], now.toISOString()),
+          docStalenessDays: daysBetween(
+            fileLastModified[docFile],
+            now.toISOString(),
+          ),
           codeCommitsSinceDocUpdate: recentCodeCommits.length,
           lastDocModified: fileLastModified[docFile],
           lastCodeModified: fileLastModified[codeFile],
@@ -391,7 +422,8 @@ function detectAbandonedCode(
   // For v1: we flag code files (non-doc) in fileLastModified that haven't been
   // touched in >= ABANDONED_THRESHOLD_DAYS and are associated with KWG entities.
   const isDocFile = (fp: string) => /\.(md|mdx|txt|rst|adoc)$/i.test(fp);
-  const isCodeFile = (fp: string) => !isDocFile(fp) && !/\.(json|yaml|yml|lock|toml)$/i.test(fp);
+  const isCodeFile = (fp: string) =>
+    !isDocFile(fp) && !/\.(json|yaml|yml|lock|toml)$/i.test(fp);
 
   // Collect code files that are old
   const abandonedCodeFiles: Array<{ filePath: string; daysSince: number }> = [];
@@ -411,7 +443,7 @@ function detectAbandonedCode(
   // For each abandoned code file, check if any KWG entity references it
   // (entity.filePaths contains doc files that mention the entity, but
   // the entity name might match the code file name)
-  const entityNames = new Set(kwgEntities.map(e => e.name.toLowerCase()));
+  const entityNames = new Set(kwgEntities.map((e) => e.name.toLowerCase()));
 
   for (const { filePath, daysSince } of abandonedCodeFiles) {
     // Extract filename stem for matching
@@ -424,7 +456,7 @@ function detectAbandonedCode(
     if (entityNames.has(stem)) {
       // Find doc files that mention this entity
       const mentioningEntity = kwgEntities.find(
-        e => e.name.toLowerCase() === stem,
+        (e) => e.name.toLowerCase() === stem,
       );
       const docFiles = mentioningEntity?.filePaths ?? [];
 
@@ -453,7 +485,9 @@ function detectAbandonedCode(
 // =============================================================================
 
 /** Build file → last modified date map from TCG output */
-function buildFileLastModifiedMap(tcg: TcgPipelineOutput): Record<string, string> {
+function buildFileLastModifiedMap(
+  tcg: TcgPipelineOutput,
+): Record<string, string> {
   const map: Record<string, string> = {};
   for (const commit of tcg.tcx.commits) {
     const commitDate = commit.date;
@@ -487,7 +521,9 @@ function buildHotspotMap(tcg: TcgPipelineOutput): Map<string, HotspotSignal> {
 }
 
 /** Build file → OwnershipRecord map */
-function buildOwnershipMap(tcg: TcgPipelineOutput): Map<string, OwnershipRecord> {
+function buildOwnershipMap(
+  tcg: TcgPipelineOutput,
+): Map<string, OwnershipRecord> {
   const map = new Map<string, OwnershipRecord>();
   for (const o of tcg.own.ownership) {
     map.set(o.filePath, o);
@@ -496,7 +532,9 @@ function buildOwnershipMap(tcg: TcgPipelineOutput): Map<string, OwnershipRecord>
 }
 
 /** Build file → CommitRecord[] map */
-function buildCommitsByFileMap(tcg: TcgPipelineOutput): Map<string, CommitRecord[]> {
+function buildCommitsByFileMap(
+  tcg: TcgPipelineOutput,
+): Map<string, CommitRecord[]> {
   const map = new Map<string, CommitRecord[]>();
   for (const commit of tcg.tcx.commits) {
     for (const file of commit.files) {

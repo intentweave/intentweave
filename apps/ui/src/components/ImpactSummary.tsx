@@ -9,7 +9,10 @@
  */
 
 import { useState } from "react";
-import type { ImpactSummary as ImpactSummaryType, ImpactChain } from "../types.js";
+import type {
+  ImpactSummary as ImpactSummaryType,
+  ImpactChain,
+} from "../types.js";
 import { EDGE_SEVERITY_COLORS } from "../types.js";
 
 interface ImpactSummaryProps {
@@ -67,7 +70,9 @@ function ChainSection({
             <div
               key={i}
               className="flex items-start gap-2 text-xs text-slate-400 pl-2 border-l-2"
-              style={{ borderColor: EDGE_SEVERITY_COLORS[chain.severity] + "60" }}
+              style={{
+                borderColor: EDGE_SEVERITY_COLORS[chain.severity] + "60",
+              }}
             >
               <SeverityBadge severity={chain.severity} />
               <span className="break-words leading-relaxed">{chain.path}</span>
@@ -132,14 +137,27 @@ export function ImpactSummary({ summary }: ImpactSummaryProps) {
 
           {/* Stats banner */}
           <div className="grid grid-cols-2 gap-px bg-slate-800 border-b border-slate-800">
-            <StatCell label="Direct" value={stats.directCount} color="#3b82f6" />
-            <StatCell label="Ripple" value={stats.rippleCount} color="#8b5cf6" />
+            <StatCell
+              label="Direct"
+              value={stats.directCount}
+              color="#3b82f6"
+            />
+            <StatCell
+              label="Ripple"
+              value={stats.rippleCount}
+              color="#8b5cf6"
+            />
             <StatCell label="Risks" value={stats.riskCount} color="#ef4444" />
-            <StatCell label="Decisions" value={stats.decisionCount} color="#f59e0b" />
+            <StatCell
+              label="Decisions"
+              value={stats.decisionCount}
+              color="#f59e0b"
+            />
           </div>
           <div className="px-4 py-1.5 border-b border-slate-800">
             <span className="text-[10px] text-slate-500">
-              {stats.totalRelationships} relationship{stats.totalRelationships !== 1 ? "s" : ""} total
+              {stats.totalRelationships} relationship
+              {stats.totalRelationships !== 1 ? "s" : ""} total
             </span>
           </div>
 

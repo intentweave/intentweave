@@ -775,11 +775,7 @@ const PLANNED_ENTITY_TYPES = new Set([
 ]);
 
 /** Entity types that are concrete and likely stale if ungrounded. */
-const CONCRETE_ENTITY_TYPES = new Set([
-  "technology",
-  "component",
-  "resource",
-]);
+const CONCRETE_ENTITY_TYPES = new Set(["technology", "component", "resource"]);
 
 /**
  * Classify an ungrounded entity as likely "planned", "stale", or "unknown".
@@ -1018,12 +1014,8 @@ export function formatDocHealthForAgent(result: DocHealthResult): string {
   > = {};
 
   for (const report of result.reports) {
-    const orphaned = (report.groundingDetails ?? []).filter(
-      (g) => !g.grounded,
-    );
-    const grounded = (report.groundingDetails ?? []).filter(
-      (g) => g.grounded,
-    );
+    const orphaned = (report.groundingDetails ?? []).filter((g) => !g.grounded);
+    const grounded = (report.groundingDetails ?? []).filter((g) => g.grounded);
 
     groundingSummary[report.filePath] = {
       status: report.status,
@@ -1069,9 +1061,9 @@ export function formatDocHealthForAgent(result: DocHealthResult): string {
     "```",
     "",
     "**Agent workflow hints:**",
-    "- For `likelyStatus: \"stale\"` → recommend removing or updating the reference",
-    "- For `likelyStatus: \"planned\"` → leave as-is or verify with stakeholder",
-    "- For `likelyStatus: \"unknown\"` → use `kg_context --entity <name>` to investigate",
+    '- For `likelyStatus: "stale"` → recommend removing or updating the reference',
+    '- For `likelyStatus: "planned"` → leave as-is or verify with stakeholder',
+    '- For `likelyStatus: "unknown"` → use `kg_context --entity <name>` to investigate',
     "- Sort by groundingPercent ascending to prioritize worst documents first",
   ];
 

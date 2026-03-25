@@ -15,11 +15,7 @@ import type {
   InsightRawTriple,
   LineageResponse,
 } from "../types.js";
-import {
-  NODE_COLORS,
-  NODE_KIND_LABELS,
-  PREDICATE_LABELS,
-} from "../types.js";
+import { NODE_COLORS, NODE_KIND_LABELS, PREDICATE_LABELS } from "../types.js";
 import { fetchLineage } from "../api/insight.js";
 
 /** Format an ISO/Neo4j datetime string to a human-readable form. */
@@ -41,9 +37,7 @@ function formatTimestamp(ts: string): string {
 
 /** Human-readable predicate phrase. */
 function humanPredicate(pred: string): string {
-  return (
-    PREDICATE_LABELS[pred] ?? pred.toLowerCase().replace(/_/g, " ")
-  );
+  return PREDICATE_LABELS[pred] ?? pred.toLowerCase().replace(/_/g, " ");
 }
 
 /** Format a raw triple as a human-readable sentence. */
@@ -79,7 +73,13 @@ function groupConnections(
   return grouped;
 }
 
-export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChange }: NodeDetailProps) {
+export function NodeDetail({
+  node,
+  onClose,
+  onNavigate,
+  session,
+  onHighlightChange,
+}: NodeDetailProps) {
   const kindColor = NODE_COLORS[node.kind];
   const kindLabel = NODE_KIND_LABELS[node.kind];
   const connections = node.connections ?? [];
@@ -114,7 +114,8 @@ export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChan
         }
       })
       .catch((err) => {
-        if (!cancelled) setLineageError(err instanceof Error ? err.message : String(err));
+        if (!cancelled)
+          setLineageError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
         if (!cancelled) setLineageLoading(false);
@@ -221,7 +222,9 @@ export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChan
 
             {/* Canonical Relationships */}
             {lineage && lineage.canonRelations.length > 0 && (
-              <Section label={`Relationships (${lineage.canonRelations.length})`}>
+              <Section
+                label={`Relationships (${lineage.canonRelations.length})`}
+              >
                 <div className="space-y-1">
                   {lineage.canonRelations.map((rel, i) => {
                     const arrow = rel.direction === "outgoing" ? "→" : "←";
@@ -249,11 +252,19 @@ export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChan
                         </div>
                         {(rel.rawPredicate || rel.confidence != null) && (
                           <div className="flex gap-3 text-[9px] text-slate-600">
-                            {rel.rawPredicate && rel.rawPredicate !== rel.predicate && (
-                              <span>raw: <span className="italic text-slate-500">{rel.rawPredicate}</span></span>
-                            )}
+                            {rel.rawPredicate &&
+                              rel.rawPredicate !== rel.predicate && (
+                                <span>
+                                  raw:{" "}
+                                  <span className="italic text-slate-500">
+                                    {rel.rawPredicate}
+                                  </span>
+                                </span>
+                              )}
                             {rel.confidence != null && (
-                              <span>conf: {(rel.confidence * 100).toFixed(0)}%</span>
+                              <span>
+                                conf: {(rel.confidence * 100).toFixed(0)}%
+                              </span>
                             )}
                           </div>
                         )}
@@ -285,7 +296,10 @@ export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChan
                           <span>conf: {(t.confidence * 100).toFixed(0)}%</span>
                         )}
                         {t.sourceFile && (
-                          <span className="font-mono truncate max-w-[180px]" title={t.sourceFile}>
+                          <span
+                            className="font-mono truncate max-w-[180px]"
+                            title={t.sourceFile}
+                          >
                             📄 {t.sourceFile}
                           </span>
                         )}
@@ -319,14 +333,16 @@ export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChan
                         className="bg-slate-800/30 rounded px-2 py-1.5 space-y-0.5"
                       >
                         <div className="flex items-center gap-1.5">
-                          <span className="text-emerald-400 text-[11px]">📄</span>
+                          <span className="text-emerald-400 text-[11px]">
+                            📄
+                          </span>
                           <span className="text-slate-200 text-[11px] font-mono break-all">
                             {s.sourceFile}
                           </span>
                         </div>
                         <div className="text-[9px] text-slate-500">
-                          {s.tripleCount} triple{s.tripleCount !== 1 ? "s" : ""} ·{" "}
-                          {s.predicates.map(humanPredicate).join(", ")}
+                          {s.tripleCount} triple{s.tripleCount !== 1 ? "s" : ""}{" "}
+                          · {s.predicates.map(humanPredicate).join(", ")}
                         </div>
                       </div>
                     ))}
@@ -434,7 +450,9 @@ export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChan
               <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-indigo-100 text-[10px] font-bold">
                 #{node.temporalOrder}
               </span>
-              <span className="text-slate-500 text-[11px]">in decision sequence</span>
+              <span className="text-slate-500 text-[11px]">
+                in decision sequence
+              </span>
             </span>
           </Section>
         )}
@@ -519,7 +537,8 @@ export function NodeDetail({ node, onClose, onNavigate, session, onHighlightChan
           !node.rawTriples?.length &&
           node.confidence == null && (
             <p className="text-slate-600 italic text-[11px]">
-              No additional context. Run the pipeline with more documents to enrich this entity.
+              No additional context. Run the pipeline with more documents to
+              enrich this entity.
             </p>
           )}
       </div>

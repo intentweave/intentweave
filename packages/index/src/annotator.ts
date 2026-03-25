@@ -64,7 +64,9 @@ export function annotate(
       const match = matchMention(mention, byExactName, bySlug, allNames);
 
       let confidence = match.confidence;
-      const idfScore = opts?.idfScores?.get(normalizeForIdf(mention.entityName));
+      const idfScore = opts?.idfScores?.get(
+        normalizeForIdf(mention.entityName),
+      );
 
       // Apply IDF penalty for body-text sources when enabled.
       // Low-IDF terms (appearing in many docs) get reduced confidence.
@@ -93,7 +95,9 @@ export function annotate(
   }
 
   // Sort by (docPath, line)
-  annotations.sort((a, b) => a.docPath.localeCompare(b.docPath) || a.line - b.line);
+  annotations.sort(
+    (a, b) => a.docPath.localeCompare(b.docPath) || a.line - b.line,
+  );
 
   opts?.log?.(
     `Annotated: ${annotations.length} total, ` +

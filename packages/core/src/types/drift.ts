@@ -37,18 +37,17 @@ export const DRIFT_SCHEMAS = {
  * Each detector produces signals in one or more categories.
  */
 export type DriftCategory =
-  | "ungrounded"          // C1: entity in docs but not in code
-  | "undocumented"        // C1: code symbol not referenced in docs
-  | "signature-mismatch"  // C1: doc mentions entity with wrong signature
-  | "temporal-stale"      // C2: doc not updated despite code changes
-  | "temporal-volatile"   // C2: section has high decision churn
-  | "abandoned-code"      // C2: code entity with zero recent commits
-  | "dep-unused"          // C3: declared dependency not imported
-  | "dep-undeclared"      // C3: imported module not in package.json
-  | "dep-version-drift"   // C3: doc mentions different version than declared
-  | "doc-doc-diverged"    // C4: two docs cover same topic, mention footprints differ
-  | "doc-doc-contradicts" // C4: two docs have conflicting qualifiers for same entity
-  ;
+  | "ungrounded" // C1: entity in docs but not in code
+  | "undocumented" // C1: code symbol not referenced in docs
+  | "signature-mismatch" // C1: doc mentions entity with wrong signature
+  | "temporal-stale" // C2: doc not updated despite code changes
+  | "temporal-volatile" // C2: section has high decision churn
+  | "abandoned-code" // C2: code entity with zero recent commits
+  | "dep-unused" // C3: declared dependency not imported
+  | "dep-undeclared" // C3: imported module not in package.json
+  | "dep-version-drift" // C3: doc mentions different version than declared
+  | "doc-doc-diverged" // C4: two docs cover same topic, mention footprints differ
+  | "doc-doc-contradicts"; // C4: two docs have conflicting qualifiers for same entity
 
 // =============================================================================
 // DriftSeverity

@@ -39,10 +39,7 @@ import {
 import type { InStageInput } from "@intentweave/analyzer";
 
 // Core types
-import type {
-  KwxStageOutput,
-  TcgPipelineOutput,
-} from "@intentweave/core";
+import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
 
 // Index package
 import { buildIndex, annotate, computeIdf } from "@intentweave/index";
@@ -55,10 +52,7 @@ import type { IndexBuildOptions } from "@intentweave/index";
 
 const SUPPORTED_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst"]);
 
-async function discoverFiles(
-  paths: string[],
-  cwd: string,
-): Promise<string[]> {
+async function discoverFiles(paths: string[], cwd: string): Promise<string[]> {
   const files: string[] = [];
   for (const p of paths) {
     const abs = path.isAbsolute(p) ? p : path.resolve(cwd, p);
@@ -102,9 +96,7 @@ function createMinimalContext(verbose: boolean) {
 // =============================================================================
 
 const indexBuildSubcommand = new Command("build")
-  .description(
-    "Build CARI index: KWG + TCG + AX → SQLite (.iw/index.db)",
-  )
+  .description("Build CARI index: KWG + TCG + AX → SQLite (.iw/index.db)")
   .argument("<paths...>", "Document file(s) or directories to analyze")
   .requiredOption("-s, --session <name>", "Session name")
   .option(
@@ -133,9 +125,7 @@ const indexBuildSubcommand = new Command("build")
       log("Discovering document files...");
       const docFiles = await discoverFiles(paths, cwd);
       if (docFiles.length === 0) {
-        console.error(
-          chalk.red("No document files found in the given paths."),
-        );
+        console.error(chalk.red("No document files found in the given paths."));
         process.exit(1);
       }
       log(`Found ${docFiles.length} document files`);
@@ -184,7 +174,10 @@ const indexBuildSubcommand = new Command("build")
         const inOutput = await runInStage(inInput, ctx as any);
         const kwxOutput = await runKwxStage(
           { inOutput },
-          { depth: depth as "structured" | "full", dictionary: symbolDictionary },
+          {
+            depth: depth as "structured" | "full",
+            dictionary: symbolDictionary,
+          },
         );
         kwxOutputs.push(kwxOutput);
       }
@@ -219,9 +212,7 @@ const indexBuildSubcommand = new Command("build")
       const ownOutput = runOwnStage({ tcxOutput });
       const stlOutput = runStlStage({
         tcxOutput,
-        kwgEntities: kwxOutputs
-          .flatMap((o) => o.entities)
-          .map((e) => e.name),
+        kwgEntities: kwxOutputs.flatMap((o) => o.entities).map((e) => e.name),
         workspaceRoot: cwd,
       });
 
@@ -250,8 +241,7 @@ const indexBuildSubcommand = new Command("build")
       );
 
       // ── 5. IDF scoring (for "full" depth) ─────────────────────
-      const idfScores =
-        depth === "full" ? computeIdf(kwxOutputs) : undefined;
+      const idfScores = depth === "full" ? computeIdf(kwxOutputs) : undefined;
 
       if (idfScores) {
         log(`IDF computed: ${idfScores.size} terms`);
@@ -362,7 +352,11 @@ const indexRetrieveSubcommand = new Command("retrieve")
       return;
     }
 
-    console.log(chalk.blue(`\n  ▸ Top ${result.files.length} files for: "${params.query}"\n`));
+    console.log(
+      chalk.blue(
+        `\n  ▸ Top ${result.files.length} files for: "${params.query}"\n`,
+      ),
+    );
     for (const file of result.files) {
       console.log(`  ${chalk.green(file.score.toFixed(2))}  ${file.path}`);
       console.log(chalk.gray(`         ${file.reason}`));
@@ -381,7 +375,10 @@ const indexConnectionsSubcommand = new Command("connections")
   .description("Discover connections for an entity across doc, git, and code")
   .argument("<entity>", "Symbol name or keyword")
   .option("-n, --limit <n>", "Maximum connections per source", "10")
-  .option("--include <sources>", "Filter sources: doc_cooc,co_change,code_import")
+  .option(
+    "--include <sources>",
+    "Filter sources: doc_cooc,co_change,code_import",
+  )
   .option("--db <path>", "Path to index.db")
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action((entity: string, opts) => {
@@ -430,9 +427,7 @@ const indexConnectionsSubcommand = new Command("connections")
         seen.add(conn.name);
         const src = conn.sources.find((s) => s.type === type)!;
         const gapTag = conn.gap ? chalk.yellow(` ⚠ ${conn.gap}`) : "";
-        console.log(
-          `    ${conn.name.padEnd(30)} (${src.detail})${gapTag}`,
-        );
+        console.log(`    ${conn.name.padEnd(30)} (${src.detail})${gapTag}`);
       }
       console.log();
     }
@@ -452,8 +447,16 @@ const indexConnectionsSubcommand = new Command("connections")
 const indexCheckSubcommand = new Command("check")
   .description("CI drift detection: find docs affected by changed files")
   .argument("<changed...>", "Changed file paths (from PR diff or git status)")
-  .option("--severity <level>", "Minimum severity: info, warning, or critical", "info")
-  .option("-f, --format <format>", "Output format: text, json, or github", "text")
+  .option(
+    "--severity <level>",
+    "Minimum severity: info, warning, or critical",
+    "info",
+  )
+  .option(
+    "-f, --format <format>",
+    "Output format: text, json, or github",
+    "text",
+  )
   .option("--db <path>", "Path to index.db")
   .action((changed: string[], opts) => {
     const dbPath = resolveDbPath(opts.db);
@@ -505,7 +508,9 @@ const indexReportSubcommand = new Command("report")
     if (result.coverage.topUndocumented.length > 0) {
       console.log(chalk.gray("    Top undocumented:"));
       for (const sym of result.coverage.topUndocumented.slice(0, 5)) {
-        console.log(chalk.gray(`      ${sym.kind} ${sym.name} (${sym.filePath})`));
+        console.log(
+          chalk.gray(`      ${sym.kind} ${sym.name} (${sym.filePath})`),
+        );
       }
     }
 
@@ -523,7 +528,9 @@ const indexReportSubcommand = new Command("report")
     }
 
     // Hidden couplings
-    const hiddenOnly = result.hiddenCouplings.filter((c) => !c.hasCodeDependency);
+    const hiddenOnly = result.hiddenCouplings.filter(
+      (c) => !c.hasCodeDependency,
+    );
     if (hiddenOnly.length > 0) {
       console.log(chalk.blue("\n  ▸ Hidden Couplings"));
       console.log(
@@ -559,12 +566,16 @@ const indexReportSubcommand = new Command("report")
 // ── iw index update ────────────────────────────────────────────
 
 const indexUpdateSubcommand = new Command("update")
-  .description(
-    "Incrementally update the CARI index for changed files only",
+  .description("Incrementally update the CARI index for changed files only")
+  .argument(
+    "[paths...]",
+    "Scope to specific directories (default: workspace root)",
   )
-  .argument("[paths...]", "Scope to specific directories (default: workspace root)")
   .option("--db <path>", "Path to index.db")
-  .option("-s, --session <name>", "Session name (reads from existing DB if omitted)")
+  .option(
+    "-s, --session <name>",
+    "Session name (reads from existing DB if omitted)",
+  )
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
     const cwd = process.cwd();
@@ -598,7 +609,9 @@ const indexUpdateSubcommand = new Command("update")
         path.resolve(cwd, f.filePath),
       );
       const allFiles = [...docFiles, ...allCodeFiles];
-      log(`Scanned ${docFiles.length} doc files, ${allCodeFiles.length} code files`);
+      log(
+        `Scanned ${docFiles.length} doc files, ${allCodeFiles.length} code files`,
+      );
 
       // ── 2. Detect changes ────────────────────────────────────
       const changes = detectChanges(dbPath, cwd, allFiles);
@@ -606,9 +619,7 @@ const indexUpdateSubcommand = new Command("update")
       if (changes.length === 0) {
         const elapsed = performance.now() - pipelineStart;
         console.log(
-          chalk.green(
-            `\n  ✓ Index is up to date (${(elapsed).toFixed(0)}ms)\n`,
-          ),
+          chalk.green(`\n  ✓ Index is up to date (${elapsed.toFixed(0)}ms)\n`),
         );
         return;
       }
@@ -648,16 +659,12 @@ const indexUpdateSubcommand = new Command("update")
 
       // Re-run COX on changed doc KWX outputs
       const coxOutput =
-        kwxOutputs.length > 0
-          ? await runCoxStage({ kwxOutputs })
-          : undefined;
+        kwxOutputs.length > 0 ? await runCoxStage({ kwxOutputs }) : undefined;
 
       // ── 4. Annotate changed files ────────────────────────────
       // Only annotate if we have both code symbols and doc mentions
       const annotations =
-        kwxOutputs.length > 0
-          ? annotate(axOutput, kwxOutputs, { log })
-          : [];
+        kwxOutputs.length > 0 ? annotate(axOutput, kwxOutputs, { log }) : [];
 
       // ── 5. Refresh TCG (lightweight — git data) ──────────────
       const tcgStart = performance.now();

@@ -175,7 +175,8 @@ export async function persistScg(
          RETURN count(n) AS cnt`,
         { batch },
       );
-      dirsWritten = res.records[0]?.get("cnt")?.toNumber?.() ?? directories.length;
+      dirsWritten =
+        res.records[0]?.get("cnt")?.toNumber?.() ?? directories.length;
       log(`SCG persist: ${dirsWritten} :SCG:Dir nodes`);
     } finally {
       await s1.close();
@@ -203,7 +204,8 @@ export async function persistScg(
          RETURN count(n) AS cnt`,
         { batch },
       );
-      filesWritten = res.records[0]?.get("cnt")?.toNumber?.() ?? filePaths.length;
+      filesWritten =
+        res.records[0]?.get("cnt")?.toNumber?.() ?? filePaths.length;
       log(`SCG persist: ${filesWritten} :SCG:File nodes`);
     } finally {
       await s2.close();
@@ -319,8 +321,11 @@ export async function persistScg(
         const parent = file.symbols.find(
           (s) =>
             s.name === sym.container &&
-            (s.kind === "class" || s.kind === "interface" || s.kind === "enum" ||
-             s.kind === "struct" || s.kind === "protocol"),
+            (s.kind === "class" ||
+              s.kind === "interface" ||
+              s.kind === "enum" ||
+              s.kind === "struct" ||
+              s.kind === "protocol"),
         );
         if (parent) {
           symSymBatch.push({ parentId: parent.id, childId: sym.id });

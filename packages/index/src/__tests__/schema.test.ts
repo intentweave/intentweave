@@ -83,7 +83,9 @@ describe("initSchema", () => {
 
     const rows = db.pragma("journal_mode") as any;
     // pragma() returns an array of objects like [{journal_mode:'wal'}]
-    const mode = Array.isArray(rows) ? rows[0]?.journal_mode : rows?.journal_mode;
+    const mode = Array.isArray(rows)
+      ? rows[0]?.journal_mode
+      : rows?.journal_mode;
     // In-memory databases may report "memory" instead of "wal"
     expect(["wal", "memory"]).toContain(mode);
   });
@@ -110,9 +112,7 @@ describe("initSchema", () => {
        VALUES ('impl:foo.ts#function:bar', 'bar', 'function', 'foo.ts', 10, 'exported')`,
     ).run();
 
-    const count = db
-      .prepare(`SELECT count(*) as c FROM symbols`)
-      .get() as any;
+    const count = db.prepare(`SELECT count(*) as c FROM symbols`).get() as any;
     expect(count.c).toBe(1);
   });
 

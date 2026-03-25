@@ -99,7 +99,11 @@ export function retrieveFromDb(
   // Score files by aggregating hits
   const fileScores = new Map<
     string,
-    { score: number; reasons: string[]; spans: Array<{ line: number; text: string }> }
+    {
+      score: number;
+      reasons: string[];
+      spans: Array<{ line: number; text: string }>;
+    }
   >();
 
   const addFileScore = (
@@ -136,10 +140,15 @@ export function retrieveFromDb(
         | { file_path: string; line: number; name: string }
         | undefined;
       if (sym) {
-        addFileScore(sym.file_path, score * 0.8, `annotated symbol: ${sym.name}`, {
-          line: sym.line,
-          text: sym.name,
-        });
+        addFileScore(
+          sym.file_path,
+          score * 0.8,
+          `annotated symbol: ${sym.name}`,
+          {
+            line: sym.line,
+            text: sym.name,
+          },
+        );
       }
     }
   }
@@ -174,9 +183,10 @@ export function retrieveFromDb(
       }>;
 
       for (const cooc of coocs) {
-        const related = cooc.entity_a.toLowerCase() === entity
-          ? cooc.entity_b
-          : cooc.entity_a;
+        const related =
+          cooc.entity_a.toLowerCase() === entity
+            ? cooc.entity_b
+            : cooc.entity_a;
         // Find files containing the related entity
         const relatedFiles = db
           .prepare(

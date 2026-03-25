@@ -25,7 +25,9 @@ import { persistScg } from "../scg/scgPersist.js";
 // =============================================================================
 
 export const scgSubcommand = new Command("scg")
-  .description("Build the SCG (code symbols) layer: AX extraction + Neo4j persist ($0.00)")
+  .description(
+    "Build the SCG (code symbols) layer: AX extraction + Neo4j persist ($0.00)",
+  )
   .requiredOption("-s, --session <name>", "Session name")
   .option("--persist", "Persist SCG to Neo4j", false)
   .option("-v, --verbose", "Verbose output", false)
@@ -70,9 +72,7 @@ export const scgSubcommand = new Command("scg")
         );
         if (result.staleRemoved > 0) {
           console.log(
-            chalk.gray(
-              `       → Cleaned ${result.staleRemoved} stale nodes`,
-            ),
+            chalk.gray(`       → Cleaned ${result.staleRemoved} stale nodes`),
           );
         }
       }

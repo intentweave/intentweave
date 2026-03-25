@@ -19,7 +19,11 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { writeFileSync } from "node:fs";
-import { MULTI_LAYER_SCHEMA, getSchemaForLayer, type GraphLayer } from "../schema/graphSchema.js";
+import {
+  MULTI_LAYER_SCHEMA,
+  getSchemaForLayer,
+  type GraphLayer,
+} from "../schema/graphSchema.js";
 
 // =============================================================================
 // Graph schema description (fed to the LLM for Cypher generation)
@@ -28,7 +32,14 @@ import { MULTI_LAYER_SCHEMA, getSchemaForLayer, type GraphLayer } from "../schem
 
 const GRAPH_SCHEMA = MULTI_LAYER_SCHEMA;
 
-const VALID_LAYERS: GraphLayer[] = ["kwg", "tcg", "drift", "skg", "code", "all"];
+const VALID_LAYERS: GraphLayer[] = [
+  "kwg",
+  "tcg",
+  "drift",
+  "skg",
+  "code",
+  "all",
+];
 
 // =============================================================================
 // Cypher-generation system prompt
@@ -39,9 +50,8 @@ function buildSystemPrompt(sessionId?: string, layer?: GraphLayer): string {
     ? `\nThe current session_id is "${sessionId}". Always include \`WHERE ... session_id = "${sessionId}"\` unless the user explicitly asks for cross-session results.`
     : "";
 
-  const schema = layer && layer !== "all"
-    ? getSchemaForLayer(layer)
-    : GRAPH_SCHEMA;
+  const schema =
+    layer && layer !== "all" ? getSchemaForLayer(layer) : GRAPH_SCHEMA;
 
   return `You are a Cypher query generator for a Neo4j knowledge graph.
 
@@ -292,7 +302,11 @@ export const queryCommand = new Command("query")
     "summary",
   )
   .option("-s, --session <id>", "Session ID to scope queries to")
-  .option("-l, --layer <layer>", "Focus on graph layer: kwg | tcg | drift | skg | code | all", "all")
+  .option(
+    "-l, --layer <layer>",
+    "Focus on graph layer: kwg | tcg | drift | skg | code | all",
+    "all",
+  )
   .option("-v, --verbose", "Show generated Cypher before execution")
   .option(
     "--model <model>",
@@ -315,7 +329,9 @@ export const queryCommand = new Command("query")
       apiKey,
     } = options;
 
-    const layer = (VALID_LAYERS.includes(layerStr as GraphLayer) ? layerStr : "all") as GraphLayer;
+    const layer = (
+      VALID_LAYERS.includes(layerStr as GraphLayer) ? layerStr : "all"
+    ) as GraphLayer;
 
     const limitN = parseInt(limit, 10) || 50;
     let conn: Neo4jConnection | undefined;

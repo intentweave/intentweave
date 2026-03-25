@@ -13,7 +13,11 @@
 
 import { describe, it, expect } from "vitest";
 import { buildKwgPlusGraph } from "../insight/kwg-plus-graph.js";
-import type { InsightNode, InsightEdge, KnowledgeGraphData } from "../insight/types.js";
+import type {
+  InsightNode,
+  InsightEdge,
+  KnowledgeGraphData,
+} from "../insight/types.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -50,7 +54,12 @@ function edgesByLabel(data: KnowledgeGraphData): Record<string, InsightEdge[]> {
 
 /** Classify nodes by layer prefix */
 function nodesByLayer(nodes: InsightNode[]) {
-  const kwg = nodes.filter((n) => n.id.startsWith("kwent:") || n.id.startsWith("kwdoc:") || n.id.startsWith("kwcluster:"));
+  const kwg = nodes.filter(
+    (n) =>
+      n.id.startsWith("kwent:") ||
+      n.id.startsWith("kwdoc:") ||
+      n.id.startsWith("kwcluster:"),
+  );
   const tcg = nodes.filter((n) => n.id.startsWith("tcg"));
   const scg = nodes.filter((n) => n.id.startsWith("scg"));
   const drift = nodes.filter((n) => n.id.startsWith("drift:"));
@@ -79,11 +88,46 @@ function realisticMockQueries(): MockQuery[] {
     {
       pattern: /KWEntity.*ORDER BY rels DESC/,
       rows: [
-        { name: "Pipeline", type: "concept", mentionCount: 20, qualifiers: null, predominantSource: null, filePaths: null },
-        { name: "Analyzer", type: "component", mentionCount: 15, qualifiers: null, predominantSource: null, filePaths: null },
-        { name: "Cache", type: "component", mentionCount: 12, qualifiers: null, predominantSource: null, filePaths: null },
-        { name: "drift", type: "concept", mentionCount: 10, qualifiers: null, predominantSource: null, filePaths: null },
-        { name: "symbols", type: "concept", mentionCount: 8, qualifiers: null, predominantSource: null, filePaths: null },
+        {
+          name: "Pipeline",
+          type: "concept",
+          mentionCount: 20,
+          qualifiers: null,
+          predominantSource: null,
+          filePaths: null,
+        },
+        {
+          name: "Analyzer",
+          type: "component",
+          mentionCount: 15,
+          qualifiers: null,
+          predominantSource: null,
+          filePaths: null,
+        },
+        {
+          name: "Cache",
+          type: "component",
+          mentionCount: 12,
+          qualifiers: null,
+          predominantSource: null,
+          filePaths: null,
+        },
+        {
+          name: "drift",
+          type: "concept",
+          mentionCount: 10,
+          qualifiers: null,
+          predominantSource: null,
+          filePaths: null,
+        },
+        {
+          name: "symbols",
+          type: "concept",
+          mentionCount: 8,
+          qualifiers: null,
+          predominantSource: null,
+          filePaths: null,
+        },
       ],
     },
     // KWDoc nodes
@@ -122,21 +166,49 @@ function realisticMockQueries(): MockQuery[] {
     {
       pattern: /TCGFile.*changeCount/,
       rows: [
-        { filePath: "src/analyzer.ts", staleness: 0.2, hotspot: 0.8, changeCount: 50 },
-        { filePath: "src/cache.ts", staleness: 0.1, hotspot: 0.6, changeCount: 30 },
-        { filePath: "README.md", staleness: 0.3, hotspot: 0.3, changeCount: 10 },
-        { filePath: "src/pipeline.ts", staleness: 0.15, hotspot: 0.7, changeCount: 40 },
+        {
+          filePath: "src/analyzer.ts",
+          staleness: 0.2,
+          hotspot: 0.8,
+          changeCount: 50,
+        },
+        {
+          filePath: "src/cache.ts",
+          staleness: 0.1,
+          hotspot: 0.6,
+          changeCount: 30,
+        },
+        {
+          filePath: "README.md",
+          staleness: 0.3,
+          hotspot: 0.3,
+          changeCount: 10,
+        },
+        {
+          filePath: "src/pipeline.ts",
+          staleness: 0.15,
+          hotspot: 0.7,
+          changeCount: 40,
+        },
       ],
     },
     // TCGCommit
     {
       pattern: /TCGCommit.*ORDER BY c\.date/,
       rows: [
-        { hash: "abc1234", message: "Refactor pipeline", date: "2026-01-15", authorName: "Alice" },
+        {
+          hash: "abc1234",
+          message: "Refactor pipeline",
+          date: "2026-01-15",
+          authorName: "Alice",
+        },
       ],
     },
     // TCGAuthor
-    { pattern: /TCGAuthor.*email/, rows: [{ email: "alice@example.com", name: "Alice" }] },
+    {
+      pattern: /TCGAuthor.*email/,
+      rows: [{ email: "alice@example.com", name: "Alice" }],
+    },
     // MODIFIED edges
     {
       pattern: /TCGCommit.*MODIFIED.*TCGFile/,
@@ -179,9 +251,27 @@ function realisticMockQueries(): MockQuery[] {
     {
       pattern: /KWEntity.*SCG:Symbol.*toLower/,
       rows: [
-        { entityName: "Analyzer", symbolId: "sym:Analyzer", symbolName: "Analyzer", symbolKind: "class", filePath: "src/analyzer.ts" },
-        { entityName: "Cache", symbolId: "sym:Cache", symbolName: "Cache", symbolKind: "class", filePath: "src/cache.ts" },
-        { entityName: "Pipeline", symbolId: "sym:Pipeline", symbolName: "Pipeline", symbolKind: "interface", filePath: "src/pipeline.ts" },
+        {
+          entityName: "Analyzer",
+          symbolId: "sym:Analyzer",
+          symbolName: "Analyzer",
+          symbolKind: "class",
+          filePath: "src/analyzer.ts",
+        },
+        {
+          entityName: "Cache",
+          symbolId: "sym:Cache",
+          symbolName: "Cache",
+          symbolKind: "class",
+          filePath: "src/cache.ts",
+        },
+        {
+          entityName: "Pipeline",
+          symbolId: "sym:Pipeline",
+          symbolName: "Pipeline",
+          symbolKind: "interface",
+          filePath: "src/pipeline.ts",
+        },
       ],
     },
 
@@ -189,7 +279,11 @@ function realisticMockQueries(): MockQuery[] {
     {
       pattern: /SCG:File.*symbolCount DESC/,
       rows: [
-        { filePath: "src/analyzer.ts", language: "typescript", symbolCount: 25 },
+        {
+          filePath: "src/analyzer.ts",
+          language: "typescript",
+          symbolCount: 25,
+        },
         { filePath: "src/cache.ts", language: "typescript", symbolCount: 15 },
         { filePath: "src/model.ts", language: "typescript", symbolCount: 20 },
       ],
@@ -198,10 +292,38 @@ function realisticMockQueries(): MockQuery[] {
     {
       pattern: /SCG_CONTAINS.*SCG:Symbol/,
       rows: [
-        { symbolId: "sym:Analyzer", name: "Analyzer", kind: "class", filePath: "src/analyzer.ts", exportStatus: "exported", startLine: 10 },
-        { symbolId: "sym:Cache", name: "Cache", kind: "class", filePath: "src/cache.ts", exportStatus: "exported", startLine: 5 },
-        { symbolId: "sym:Pipeline", name: "Pipeline", kind: "interface", filePath: "src/pipeline.ts", exportStatus: "exported", startLine: 1 },
-        { symbolId: "sym:Model", name: "Model", kind: "class", filePath: "src/model.ts", exportStatus: "exported", startLine: 3 },
+        {
+          symbolId: "sym:Analyzer",
+          name: "Analyzer",
+          kind: "class",
+          filePath: "src/analyzer.ts",
+          exportStatus: "exported",
+          startLine: 10,
+        },
+        {
+          symbolId: "sym:Cache",
+          name: "Cache",
+          kind: "class",
+          filePath: "src/cache.ts",
+          exportStatus: "exported",
+          startLine: 5,
+        },
+        {
+          symbolId: "sym:Pipeline",
+          name: "Pipeline",
+          kind: "interface",
+          filePath: "src/pipeline.ts",
+          exportStatus: "exported",
+          startLine: 1,
+        },
+        {
+          symbolId: "sym:Model",
+          name: "Model",
+          kind: "class",
+          filePath: "src/model.ts",
+          exportStatus: "exported",
+          startLine: 3,
+        },
       ],
     },
 
@@ -209,8 +331,24 @@ function realisticMockQueries(): MockQuery[] {
     {
       pattern: /DriftSignal.*name.*detector.*severity/,
       rows: [
-        { id: "drift-1", name: "Pipeline", detector: "missing-code-ref", severity: "warning", message: "Pipeline docs outdated", category: "undocumented", files: ["src/pipeline.ts"] },
-        { id: "drift-2", name: "README", detector: "staleness", severity: "info", message: "README needs update", category: "stale", files: ["README.md"] },
+        {
+          id: "drift-1",
+          name: "Pipeline",
+          detector: "missing-code-ref",
+          severity: "warning",
+          message: "Pipeline docs outdated",
+          category: "undocumented",
+          files: ["src/pipeline.ts"],
+        },
+        {
+          id: "drift-2",
+          name: "README",
+          detector: "staleness",
+          severity: "info",
+          message: "README needs update",
+          category: "stale",
+          files: ["README.md"],
+        },
       ],
     },
   ];
@@ -235,7 +373,8 @@ describe("KWG+ Cross-Layer Connectivity", () => {
       if (scgIds.has(e.source)) connectedScg.add(e.source);
       if (scgIds.has(e.target)) connectedScg.add(e.target);
     }
-    const isolatedRatio = (scgIds.size - connectedScg.size) / Math.max(scgIds.size, 1);
+    const isolatedRatio =
+      (scgIds.size - connectedScg.size) / Math.max(scgIds.size, 1);
 
     expect(isolatedRatio).toBeLessThan(0.3);
   });

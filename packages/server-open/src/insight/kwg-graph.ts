@@ -149,7 +149,13 @@ export async function buildKwgGraph(
   }
 
   if (entityNames.size === 0) {
-    return emptyResponse(sessionId, question, totalEntities, totalRelationships, t0);
+    return emptyResponse(
+      sessionId,
+      question,
+      totalEntities,
+      totalRelationships,
+      t0,
+    );
   }
 
   // Escape entity names for Cypher IN clause
@@ -241,7 +247,7 @@ export async function buildKwgGraph(
         label: (r.label as string) ?? `Cluster ${cId}`,
         kind: "rationale",
         entityType: "cluster",
-        confidence: Math.min((r.memberCount as number ?? 2) / 10, 1.0),
+        confidence: Math.min(((r.memberCount as number) ?? 2) / 10, 1.0),
         rawTriples: [],
         connections: [],
       });
@@ -337,7 +343,9 @@ function emptyResponse(
 ): InsightResponse {
   return {
     vizType: "knowledge-graph",
-    title: question ? `Keyword Graph: "${question}"` : "Keyword Knowledge Graph",
+    title: question
+      ? `Keyword Graph: "${question}"`
+      : "Keyword Knowledge Graph",
     data: {
       nodes: [],
       edges: [],

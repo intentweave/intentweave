@@ -243,7 +243,14 @@ Cross-Layer:
 // Layer filter (for --layer routing)
 // =============================================================================
 
-export type GraphLayer = "kwg" | "tcg" | "drift" | "skg" | "scg" | "code" | "all";
+export type GraphLayer =
+  | "kwg"
+  | "tcg"
+  | "drift"
+  | "skg"
+  | "scg"
+  | "code"
+  | "all";
 
 export const LAYER_LABELS: Record<Exclude<GraphLayer, "all">, string[]> = {
   kwg: ["KWEntity", "KWDoc", "KWCluster"],

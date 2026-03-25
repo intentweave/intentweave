@@ -61,11 +61,14 @@ const QUALIFIER_CONFLICTS: Array<{
 
 interface DocEntityProfile {
   /** Entity names → mention details */
-  entities: Map<string, {
-    mentionCount: number;
-    qualifiers: Set<SignalQualifier>;
-    headings: Set<string>;
-  }>;
+  entities: Map<
+    string,
+    {
+      mentionCount: number;
+      qualifiers: Set<SignalQualifier>;
+      headings: Set<string>;
+    }
+  >;
 }
 
 // =============================================================================
@@ -80,7 +83,8 @@ interface DocEntityProfile {
 export function detectDocDocDrift(input: DocDocDriftInput): DocDocDriftOutput {
   const startTime = performance.now();
   const log = input.log ?? (() => {});
-  const minSharedEntities = input.minSharedEntities ?? DEFAULT_MIN_SHARED_ENTITIES;
+  const minSharedEntities =
+    input.minSharedEntities ?? DEFAULT_MIN_SHARED_ENTITIES;
   const minDivergence = input.minDivergence ?? DEFAULT_MIN_DIVERGENCE;
 
   const { kwgEntities, kwgMentions } = input;
@@ -131,10 +135,11 @@ export function detectDocDocDrift(input: DocDocDriftInput): DocDocDriftOutput {
       candidatePairs++;
 
       // ── 3. Compute divergence ──────────────────────────────────────────
-      const uniqueToA = [...entitiesA].filter(e => !shared.has(e));
-      const uniqueToB = [...entitiesB].filter(e => !shared.has(e));
+      const uniqueToA = [...entitiesA].filter((e) => !shared.has(e));
+      const uniqueToB = [...entitiesB].filter((e) => !shared.has(e));
       const totalEntities = new Set([...entitiesA, ...entitiesB]).size;
-      const divergenceScore = (uniqueToA.length + uniqueToB.length) / totalEntities;
+      const divergenceScore =
+        (uniqueToA.length + uniqueToB.length) / totalEntities;
 
       if (divergenceScore >= minDivergence) {
         // Determine severity
@@ -164,8 +169,10 @@ export function detectDocDocDrift(input: DocDocDriftInput): DocDocDriftOutput {
 
       // ── 4. Detect qualifier contradictions ─────────────────────────────
       for (const entityName of shared) {
-        const qualsA = profileA.entities.get(entityName)?.qualifiers ?? new Set();
-        const qualsB = profileB.entities.get(entityName)?.qualifiers ?? new Set();
+        const qualsA =
+          profileA.entities.get(entityName)?.qualifiers ?? new Set();
+        const qualsB =
+          profileB.entities.get(entityName)?.qualifiers ?? new Set();
 
         if (qualsA.size === 0 || qualsB.size === 0) continue;
 
@@ -185,11 +192,13 @@ export function detectDocDocDrift(input: DocDocDriftInput): DocDocDriftOutput {
               files: [pathA, pathB],
               evidence: {
                 docPair: [pathA, pathB],
-                conflictingQualifiers: [{
-                  entity: entityName,
-                  qualifiersInA: [...qualsA] as SignalQualifier[],
-                  qualifiersInB: [...qualsB] as SignalQualifier[],
-                }],
+                conflictingQualifiers: [
+                  {
+                    entity: entityName,
+                    qualifiersInA: [...qualsA] as SignalQualifier[],
+                    qualifiersInB: [...qualsB] as SignalQualifier[],
+                  },
+                ],
               },
             });
           }
@@ -199,7 +208,9 @@ export function detectDocDocDrift(input: DocDocDriftInput): DocDocDriftOutput {
   }
 
   const durationMs = Math.round(performance.now() - startTime);
-  log(`Doc-doc drift: ${signals.length} signals, ${pairsChecked} pairs checked, ${candidatePairs} candidates (${durationMs}ms)`);
+  log(
+    `Doc-doc drift: ${signals.length} signals, ${pairsChecked} pairs checked, ${candidatePairs} candidates (${durationMs}ms)`,
+  );
 
   return {
     signals,
@@ -211,8 +222,11 @@ export function detectDocDocDrift(input: DocDocDriftInput): DocDocDriftOutput {
         docCount: docPaths.length,
         pairsChecked,
         candidatePairs,
-        divergedCount: signals.filter(s => s.category === "doc-doc-diverged").length,
-        contradictionCount: signals.filter(s => s.category === "doc-doc-contradicts").length,
+        divergedCount: signals.filter((s) => s.category === "doc-doc-diverged")
+          .length,
+        contradictionCount: signals.filter(
+          (s) => s.category === "doc-doc-contradicts",
+        ).length,
       },
     },
   };

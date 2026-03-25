@@ -31,7 +31,10 @@ export function runOwnStage(input: OwnStageInput): OwnStageOutput {
   // Map<filePath, Map<authorEmail, { name, email, commitCount, lastTouch }>>
   const fileAuthors = new Map<
     string,
-    Map<string, { name: string; email: string; commitCount: number; lastTouch: string }>
+    Map<
+      string,
+      { name: string; email: string; commitCount: number; lastTouch: string }
+    >
   >();
 
   for (const commit of tcxOutput.commits) {
@@ -85,9 +88,7 @@ export function runOwnStage(input: OwnStageInput): OwnStageOutput {
       .sort((a, b) => b.commitCount - a.commitCount);
 
     // ── Gini coefficient ─────────────────────────────────────────────
-    const ownershipClarity = computeGini(
-      authors.map((a) => a.commitCount),
-    );
+    const ownershipClarity = computeGini(authors.map((a) => a.commitCount));
     const hasClearOwner = authors[0].percentage > 50;
 
     const record: OwnershipRecord = {

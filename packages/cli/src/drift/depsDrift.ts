@@ -86,12 +86,46 @@ const KNOWN_DEV_TOOLS = new Set([
  * Node.js builtin modules — imports of these are not external dependencies.
  */
 const NODE_BUILTINS = new Set([
-  "assert", "buffer", "child_process", "cluster", "console", "constants",
-  "crypto", "dgram", "dns", "domain", "events", "fs", "http", "http2",
-  "https", "inspector", "module", "net", "os", "path", "perf_hooks",
-  "process", "punycode", "querystring", "readline", "repl", "stream",
-  "string_decoder", "sys", "timers", "tls", "trace_events", "tty", "url",
-  "util", "v8", "vm", "wasi", "worker_threads", "zlib",
+  "assert",
+  "buffer",
+  "child_process",
+  "cluster",
+  "console",
+  "constants",
+  "crypto",
+  "dgram",
+  "dns",
+  "domain",
+  "events",
+  "fs",
+  "http",
+  "http2",
+  "https",
+  "inspector",
+  "module",
+  "net",
+  "os",
+  "path",
+  "perf_hooks",
+  "process",
+  "punycode",
+  "querystring",
+  "readline",
+  "repl",
+  "stream",
+  "string_decoder",
+  "sys",
+  "timers",
+  "tls",
+  "trace_events",
+  "tty",
+  "url",
+  "util",
+  "v8",
+  "vm",
+  "wasi",
+  "worker_threads",
+  "zlib",
 ]);
 
 // =============================================================================
@@ -163,7 +197,12 @@ export function detectDepsDrift(input: DepsDriftInput): DepsDriftOutput {
   // ── 5. Detect version drift (doc vs manifest) ─────────────────────────
   if (kwgEntities && kwgMentions && kwgMentions.length > 0) {
     log("Checking version drift in docs...");
-    const versionSignals = detectVersionDrift(manifests, kwgEntities, kwgMentions, log);
+    const versionSignals = detectVersionDrift(
+      manifests,
+      kwgEntities,
+      kwgMentions,
+      log,
+    );
     signals.push(...versionSignals);
   }
 
@@ -179,13 +218,17 @@ export function detectDepsDrift(input: DepsDriftInput): DepsDriftOutput {
       metrics: {
         manifests: manifests.length,
         totalDeclaredDeps: manifests.reduce(
-          (sum, m) => sum + Object.keys(m.dependencies).length + Object.keys(m.devDependencies).length,
+          (sum, m) =>
+            sum +
+            Object.keys(m.dependencies).length +
+            Object.keys(m.devDependencies).length,
           0,
         ),
         totalCodeImports: codeImports.size,
         unusedCount: unusedSignals.length,
         undeclaredCount: undeclaredSignals.length,
-        versionDriftCount: signals.length - unusedSignals.length - undeclaredSignals.length,
+        versionDriftCount:
+          signals.length - unusedSignals.length - undeclaredSignals.length,
       },
     },
   };
@@ -280,7 +323,8 @@ function collectCodeImports(
     }
 
     // Match: import ... from "specifier" / require("specifier")
-    const importRegex = /(?:import\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
+    const importRegex =
+      /(?:import\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
     let match: RegExpExecArray | null;
     while ((match = importRegex.exec(content)) !== null) {
       const specifier = match[1] ?? match[2];
@@ -402,8 +446,10 @@ function detectUndeclaredDeps(
   const allDeclared = new Set<string>();
   for (const manifest of manifests) {
     for (const dep of Object.keys(manifest.dependencies)) allDeclared.add(dep);
-    for (const dep of Object.keys(manifest.devDependencies)) allDeclared.add(dep);
-    for (const dep of Object.keys(manifest.peerDependencies)) allDeclared.add(dep);
+    for (const dep of Object.keys(manifest.devDependencies))
+      allDeclared.add(dep);
+    for (const dep of Object.keys(manifest.peerDependencies))
+      allDeclared.add(dep);
   }
 
   for (const [pkg, importingFiles] of codeImports) {
@@ -411,7 +457,7 @@ function detectUndeclaredDeps(
     if (isNodeBuiltin(pkg)) continue;
 
     // Skip monorepo internal references (workspace packages)
-    const isWorkspacePkg = manifests.some(m => m.name === pkg);
+    const isWorkspacePkg = manifests.some((m) => m.name === pkg);
     if (isWorkspacePkg) continue;
 
     signals.push({
@@ -448,11 +494,17 @@ function detectVersionDrift(
   const declaredVersions = new Map<string, { version: string; file: string }>();
   for (const manifest of manifests) {
     for (const [dep, version] of Object.entries(manifest.dependencies)) {
-      declaredVersions.set(dep.toLowerCase(), { version, file: manifest.filePath });
+      declaredVersions.set(dep.toLowerCase(), {
+        version,
+        file: manifest.filePath,
+      });
     }
     for (const [dep, version] of Object.entries(manifest.devDependencies)) {
       if (!declaredVersions.has(dep.toLowerCase())) {
-        declaredVersions.set(dep.toLowerCase(), { version, file: manifest.filePath });
+        declaredVersions.set(dep.toLowerCase(), {
+          version,
+          file: manifest.filePath,
+        });
       }
     }
   }
@@ -493,8 +545,8 @@ function detectVersionDrift(
       if (isNaN(docMajor)) continue;
 
       if (docMajor !== declaredMajor) {
-        const isMinorOnly = docVersion.includes(".") &&
-          docMajor === declaredMajor;
+        const isMinorOnly =
+          docVersion.includes(".") && docMajor === declaredMajor;
 
         signals.push({
           category: "dep-version-drift",
@@ -507,12 +559,14 @@ function detectVersionDrift(
             packageName: mention.entityName,
             declaredVersion: declared.version,
             docMentionedVersion: docVersion,
-            mentionContexts: [{
-              text: mention.text,
-              heading: mention.heading,
-              filePath: mention.filePath,
-              startLine: mention.startLine,
-            }],
+            mentionContexts: [
+              {
+                text: mention.text,
+                heading: mention.heading,
+                filePath: mention.filePath,
+                startLine: mention.startLine,
+              },
+            ],
           },
         });
         break; // One signal per entity-mention pair

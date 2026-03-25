@@ -189,10 +189,7 @@ export async function runKwxStage(
     const heading = getHeadingContext(chunk);
 
     // Extract keywords from chunk content
-    const kwMatches: KeywordMatch[] = extractor.extract(
-      chunk.content,
-      heading,
-    );
+    const kwMatches: KeywordMatch[] = extractor.extract(chunk.content, heading);
 
     for (const kw of kwMatches) {
       // Extract sentence context around the keyword

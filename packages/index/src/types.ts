@@ -40,7 +40,13 @@ export interface Annotation {
   confidence: number;
 
   /** Detection source from KWX */
-  source: "heading" | "bold" | "code-span" | "identifier" | "dictionary" | "custom-pattern";
+  source:
+    | "heading"
+    | "bold"
+    | "code-span"
+    | "identifier"
+    | "dictionary"
+    | "custom-pattern";
 
   /** Signal qualifier (decision, deprecated, planned, etc.) */
   qualifier?: string;

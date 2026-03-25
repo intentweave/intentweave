@@ -1,7 +1,12 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import { NODE_COLORS, NODE_KIND_LABELS, EDGE_SEVERITY_COLORS, type NodeKind } from "../types.js";
+import {
+  NODE_COLORS,
+  NODE_KIND_LABELS,
+  EDGE_SEVERITY_COLORS,
+  type NodeKind,
+} from "../types.js";
 
 const KINDS: NodeKind[] = [
   "topic",

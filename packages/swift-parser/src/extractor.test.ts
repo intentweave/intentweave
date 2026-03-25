@@ -27,7 +27,10 @@ describe("SwiftExtractor", () => {
     });
 
     it("extracts language is swift", () => {
-      const result = extractor.extractFromString("import Foundation", "test.swift");
+      const result = extractor.extractFromString(
+        "import Foundation",
+        "test.swift",
+      );
       expect(result.language).toBe("swift");
     });
   });
@@ -370,7 +373,10 @@ struct TaskListView: View {
 }
 `;
 
-      const result = extractor.extractFromString(source, "Sources/TaskView.swift");
+      const result = extractor.extractFromString(
+        source,
+        "Sources/TaskView.swift",
+      );
 
       // Imports
       expect(result.imports).toHaveLength(2);

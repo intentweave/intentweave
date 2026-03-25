@@ -44,9 +44,7 @@ const DEPENDENCY_PREDICATES = new Set([
 ]);
 
 /** Classify a predicate into a severity level. */
-function predicateSeverity(
-  pred: string,
-): "critical" | "warning" | "info" {
+function predicateSeverity(pred: string): "critical" | "warning" | "info" {
   if (RISK_PREDICATES.has(pred)) return "critical";
   if (DEPENDENCY_PREDICATES.has(pred) || pred === "DECIDED_AGAINST")
     return "warning";
@@ -280,7 +278,13 @@ export async function buildImpactGraph(
         maxDepth: 0,
         summary: {
           headline: "No entities found matching the query.",
-          stats: { directCount: 0, rippleCount: 0, riskCount: 0, decisionCount: 0, totalRelationships: 0 },
+          stats: {
+            directCount: 0,
+            rippleCount: 0,
+            riskCount: 0,
+            decisionCount: 0,
+            totalRelationships: 0,
+          },
           riskChains: [],
           decisionChains: [],
           dependencyChains: [],
@@ -481,9 +485,7 @@ export async function buildImpactGraph(
   const dedupedEdges = deduplicateEdges(edges);
   const actualMaxDepth = Math.max(...Array.from(depthMap.values()), 0);
   const seedName = seedRow.name as string;
-  const title = question
-    ? `Impact: ${seedName}`
-    : `Impact: ${seedName}`;
+  const title = question ? `Impact: ${seedName}` : `Impact: ${seedName}`;
 
   // ── Step 7: Synthesize descriptions from raw triples ─────────────────────
   enrichNodeDescriptions(nodeMap.values());
@@ -578,13 +580,9 @@ function buildImpactSummary(
   // Build context lines (RAG-quality structured text)
   const contextLines: string[] = [];
 
-  contextLines.push(
-    `## Impact Analysis: ${seedName}`,
-  );
+  contextLines.push(`## Impact Analysis: ${seedName}`);
   contextLines.push("");
-  contextLines.push(
-    `Center entity: ${seedName} (type: ${seedType})`,
-  );
+  contextLines.push(`Center entity: ${seedName} (type: ${seedType})`);
   contextLines.push(
     `Blast radius: ${directNodes.length} direct + ${rippleNodes.length} ripple = ${nodes.length - 1} total affected entities`,
   );
@@ -620,7 +618,9 @@ function buildImpactSummary(
     for (const n of directNodes) {
       const typeTag = n.entityType ? ` (${n.entityType})` : "";
       const confTag =
-        n.confidence != null ? ` [conf: ${(n.confidence * 100).toFixed(0)}%]` : "";
+        n.confidence != null
+          ? ` [conf: ${(n.confidence * 100).toFixed(0)}%]`
+          : "";
       contextLines.push(`- ${n.label}${typeTag}${confTag}`);
     }
     contextLines.push("");

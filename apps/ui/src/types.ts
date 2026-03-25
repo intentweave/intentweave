@@ -150,13 +150,13 @@ export const NODE_COLORS: Record<NodeKind, string> = {
   center: "#ec4899",
   affected: "#a78bfa",
   // KWG+ / TCG overlay kinds
-  file: "#38bdf8",     // sky-400 — file nodes
-  commit: "#a78bfa",   // violet-400 — git commits
-  author: "#fb923c",   // orange-400 — git authors
-  drift: "#f43f5e",    // rose-500 — drift signals
+  file: "#38bdf8", // sky-400 — file nodes
+  commit: "#a78bfa", // violet-400 — git commits
+  author: "#fb923c", // orange-400 — git authors
+  drift: "#f43f5e", // rose-500 — drift signals
   // SCG layer kinds
   directory: "#6b7280", // gray-500 — directories
-  symbol: "#22d3ee",    // cyan-400 — code symbols
+  symbol: "#22d3ee", // cyan-400 — code symbols
 };
 
 /** Human-readable labels for node kinds. */
@@ -206,8 +206,8 @@ export const PREDICATE_LABELS: Record<string, string> = {
 /** Edge stroke colors by predicate severity. */
 export const EDGE_SEVERITY_COLORS: Record<ImpactSeverity, string> = {
   critical: "#ef4444", // red-500
-  warning: "#f59e0b",  // amber-500
-  info: "#64748b",     // slate-500
+  warning: "#f59e0b", // amber-500
+  info: "#64748b", // slate-500
 };
 
 /** Map predicates to their severity level. */

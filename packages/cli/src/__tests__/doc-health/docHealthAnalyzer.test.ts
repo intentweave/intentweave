@@ -336,7 +336,12 @@ describe("analyzeDocHealth", () => {
       [],
       // grounding check
       [
-        { entityName: "MongoDB", codeRefs: 0, otherDocRefs: 0, kgConnections: 1 },
+        {
+          entityName: "MongoDB",
+          codeRefs: 0,
+          otherDocRefs: 0,
+          kgConnections: 1,
+        },
         { entityName: "Neo4j", codeRefs: 1, otherDocRefs: 0, kgConnections: 3 },
       ],
       // undocumented
@@ -375,7 +380,14 @@ describe("analyzeDocHealth", () => {
       // contradiction check
       [],
       // grounding check
-      [{ entityName: "AuthService", codeRefs: 1, otherDocRefs: 0, kgConnections: 3 }],
+      [
+        {
+          entityName: "AuthService",
+          codeRefs: 1,
+          otherDocRefs: 0,
+          kgConnections: 3,
+        },
+      ],
       // undocumented
       [],
     ]);
@@ -651,7 +663,14 @@ describe("temporal staleness", () => {
       // temporal: entity updated before doc mtime
       [{ name: "FastAPI", type: "technology", updatedAt: oldDate }],
       // grounding check
-      [{ entityName: "FastAPI", codeRefs: 1, otherDocRefs: 0, kgConnections: 2 }],
+      [
+        {
+          entityName: "FastAPI",
+          codeRefs: 1,
+          otherDocRefs: 0,
+          kgConnections: 2,
+        },
+      ],
       // undocumented
       [],
     ]);
@@ -792,7 +811,12 @@ describe("grounding analysis", () => {
       // grounding: React is grounded, OldConcept is orphaned
       [
         { entityName: "React", codeRefs: 3, otherDocRefs: 1, kgConnections: 5 },
-        { entityName: "OldConcept", codeRefs: 0, otherDocRefs: 0, kgConnections: 0 },
+        {
+          entityName: "OldConcept",
+          codeRefs: 0,
+          otherDocRefs: 0,
+          kgConnections: 0,
+        },
       ],
       // undocumented
       [],
@@ -821,7 +845,14 @@ describe("grounding analysis", () => {
       [],
       [],
       // grounding: has code refs
-      [{ entityName: "AuthService", codeRefs: 2, otherDocRefs: 0, kgConnections: 1 }],
+      [
+        {
+          entityName: "AuthService",
+          codeRefs: 2,
+          otherDocRefs: 0,
+          kgConnections: 1,
+        },
+      ],
       [],
     ]);
 
@@ -845,7 +876,14 @@ describe("grounding analysis", () => {
       [],
       [],
       // grounding: no code refs but has cross-doc refs
-      [{ entityName: "Pipeline", codeRefs: 0, otherDocRefs: 3, kgConnections: 1 }],
+      [
+        {
+          entityName: "Pipeline",
+          codeRefs: 0,
+          otherDocRefs: 3,
+          kgConnections: 1,
+        },
+      ],
       [],
     ]);
 
@@ -932,9 +970,24 @@ describe("grounding analysis", () => {
       [],
       // grounding: React grounded, others orphaned
       [
-        { entityName: "React", codeRefs: 5, otherDocRefs: 2, kgConnections: 10 },
-        { entityName: "OldLib", codeRefs: 0, otherDocRefs: 0, kgConnections: 0 },
-        { entityName: "DeadCode", codeRefs: 0, otherDocRefs: 0, kgConnections: 1 },
+        {
+          entityName: "React",
+          codeRefs: 5,
+          otherDocRefs: 2,
+          kgConnections: 10,
+        },
+        {
+          entityName: "OldLib",
+          codeRefs: 0,
+          otherDocRefs: 0,
+          kgConnections: 0,
+        },
+        {
+          entityName: "DeadCode",
+          codeRefs: 0,
+          otherDocRefs: 0,
+          kgConnections: 1,
+        },
       ],
       [],
     ]);
@@ -1072,8 +1125,7 @@ describe("formatDocHealthMarkdown — grounding", () => {
                 '"OldConcept" has no code references, no cross-document mentions, and low KG connectivity',
               entityName: "OldConcept",
               entityType: "concept",
-              detail:
-                "codeRefs=0, otherDocRefs=0, kgConns=0, inCode=false",
+              detail: "codeRefs=0, otherDocRefs=0, kgConns=0, inCode=false",
             },
           ],
         }),
@@ -1189,7 +1241,14 @@ describe("grounding likelyStatus integration", () => {
       [],
       [],
       // grounding: orphaned
-      [{ entityName: "MongoDB", codeRefs: 0, otherDocRefs: 0, kgConnections: 0 }],
+      [
+        {
+          entityName: "MongoDB",
+          codeRefs: 0,
+          otherDocRefs: 0,
+          kgConnections: 0,
+        },
+      ],
       [],
     ]);
 

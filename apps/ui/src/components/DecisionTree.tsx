@@ -398,14 +398,18 @@ export function DecisionTree({
 
       // Edge opacity
       linkPaths.attr("stroke-opacity", (d) => {
-        const sId = typeof d.source === "string" ? d.source : (d.source as SimNode).id;
-        const tId = typeof d.target === "string" ? d.target : (d.target as SimNode).id;
+        const sId =
+          typeof d.source === "string" ? d.source : (d.source as SimNode).id;
+        const tId =
+          typeof d.target === "string" ? d.target : (d.target as SimNode).id;
         return isEdgeHl(sId, tId) ? 0.5 : 0.08;
       });
 
       linkLabels.attr("opacity", (d) => {
-        const sId = typeof d.source === "string" ? d.source : (d.source as SimNode).id;
-        const tId = typeof d.target === "string" ? d.target : (d.target as SimNode).id;
+        const sId =
+          typeof d.source === "string" ? d.source : (d.source as SimNode).id;
+        const tId =
+          typeof d.target === "string" ? d.target : (d.target as SimNode).id;
         return isEdgeHl(sId, tId) ? 1 : 0.08;
       });
     }

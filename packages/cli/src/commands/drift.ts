@@ -43,13 +43,31 @@ export const driftCommand = new Command("drift")
   .description(
     "Detect drift between documentation and code — ungrounded mentions, undocumented symbols",
   )
-  .argument("[paths...]", "Code directories to scan (default: current directory)")
-  .requiredOption("-s, --session <name>", "Session name (must have KWG persisted)")
+  .argument(
+    "[paths...]",
+    "Code directories to scan (default: current directory)",
+  )
+  .requiredOption(
+    "-s, --session <name>",
+    "Session name (must have KWG persisted)",
+  )
   .option("--doc-code", "Run doc ↔ code drift detection only", false)
-  .option("--deps", "Run dependency/architecture drift detection only (future)", false)
+  .option(
+    "--deps",
+    "Run dependency/architecture drift detection only (future)",
+    false,
+  )
   .option("--temporal", "Run temporal drift detection only (future)", false)
-  .option("--min-mentions <n>", "Minimum KWG mentions to consider entity significant", "2")
-  .option("--include-internal", "Include internal (non-exported) code symbols", false)
+  .option(
+    "--min-mentions <n>",
+    "Minimum KWG mentions to consider entity significant",
+    "2",
+  )
+  .option(
+    "--include-internal",
+    "Include internal (non-exported) code symbols",
+    false,
+  )
   .option("--ax-cache <path>", "Path to cached AX output (skip re-extraction)")
   .option("-f, --format <format>", "Output format: text | json", "text")
   .option("-o, --output <file>", "Write output to file")
@@ -97,7 +115,9 @@ export const driftCommand = new Command("drift")
     try {
       driver = await createNeo4jDriver();
     } catch (err) {
-      console.error(chalk.red(`Neo4j connection failed: ${(err as Error).message}`));
+      console.error(
+        chalk.red(`Neo4j connection failed: ${(err as Error).message}`),
+      );
       process.exit(1);
     }
 
@@ -129,7 +149,9 @@ export const driftCommand = new Command("drift")
       } else {
         // Run AX extraction
         if (verbose) {
-          console.log(chalk.gray(`  Extracting code symbols from: ${workspaceRoot}`));
+          console.log(
+            chalk.gray(`  Extracting code symbols from: ${workspaceRoot}`),
+          );
         }
 
         const axOptions: AxStageOptions = {
@@ -195,9 +217,7 @@ export const driftCommand = new Command("drift")
           );
         } else {
           // Ungrounded mentions
-          const ungrounded = signals.filter(
-            (s) => s.category === "ungrounded",
-          );
+          const ungrounded = signals.filter((s) => s.category === "ungrounded");
           if (ungrounded.length > 0) {
             console.log(
               chalk.yellow(
@@ -246,15 +266,11 @@ export const driftCommand = new Command("drift")
                         ` (near: "${s.evidence.nearMatchName}" @ ${Math.round(s.evidence.nearMatchScore * 100)}%)`,
                       )
                     : "";
-                console.log(
-                  `       ${s.name} — ${s.files[0]}${nearStr}`,
-                );
+                console.log(`       ${s.name} — ${s.files[0]}${nearStr}`);
               }
               if (undocumented.length > 15) {
                 console.log(
-                  chalk.gray(
-                    `       ... and ${undocumented.length - 15} more`,
-                  ),
+                  chalk.gray(`       ... and ${undocumented.length - 15} more`),
                 );
               }
             }

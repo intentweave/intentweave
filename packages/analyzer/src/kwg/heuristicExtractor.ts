@@ -32,17 +32,80 @@ import type { KeywordMatch } from "@intentweave/core";
  */
 const NOISE_WORDS = new Set([
   // English noise
-  "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
-  "her", "was", "one", "our", "out", "has", "its", "let", "say", "she",
-  "too", "use", "how", "why", "see", "now", "way", "may", "also", "then",
-  "than", "that", "this", "with", "will", "each", "make", "like", "from",
-  "have", "been", "just", "more", "over", "such", "note", "todo", "done",
-  "here", "true", "false", "null", "undefined",
+  "the",
+  "and",
+  "for",
+  "are",
+  "but",
+  "not",
+  "you",
+  "all",
+  "can",
+  "had",
+  "her",
+  "was",
+  "one",
+  "our",
+  "out",
+  "has",
+  "its",
+  "let",
+  "say",
+  "she",
+  "too",
+  "use",
+  "how",
+  "why",
+  "see",
+  "now",
+  "way",
+  "may",
+  "also",
+  "then",
+  "than",
+  "that",
+  "this",
+  "with",
+  "will",
+  "each",
+  "make",
+  "like",
+  "from",
+  "have",
+  "been",
+  "just",
+  "more",
+  "over",
+  "such",
+  "note",
+  "todo",
+  "done",
+  "here",
+  "true",
+  "false",
+  "null",
+  "undefined",
   // Markdown noise
-  "table", "example", "summary", "overview", "introduction", "conclusion",
-  "appendix", "references", "changelog", "version", "status", "usage",
-  "setup", "install", "getting started", "quick start", "prerequisites",
-  "important", "warning", "deprecated",
+  "table",
+  "example",
+  "summary",
+  "overview",
+  "introduction",
+  "conclusion",
+  "appendix",
+  "references",
+  "changelog",
+  "version",
+  "status",
+  "usage",
+  "setup",
+  "install",
+  "getting started",
+  "quick start",
+  "prerequisites",
+  "important",
+  "warning",
+  "deprecated",
 ]);
 
 // =============================================================================
@@ -62,11 +125,11 @@ function isCamelCase(s: string): boolean {
 /** Strip inline markdown formatting from text. */
 function stripInlineMarkdown(text: string): string {
   return text
-    .replace(/\*\*(.+?)\*\*/g, "$1")     // bold
-    .replace(/__(.+?)__/g, "$1")          // bold alt
-    .replace(/\*(.+?)\*/g, "$1")          // italic
-    .replace(/_(.+?)_/g, "$1")            // italic alt
-    .replace(/`(.+?)`/g, "$1")            // code span
+    .replace(/\*\*(.+?)\*\*/g, "$1") // bold
+    .replace(/__(.+?)__/g, "$1") // bold alt
+    .replace(/\*(.+?)\*/g, "$1") // italic
+    .replace(/_(.+?)_/g, "$1") // italic alt
+    .replace(/`(.+?)`/g, "$1") // code span
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links
     .trim();
 }
@@ -192,7 +255,8 @@ export class HeuristicKeywordExtractor {
     }
 
     // Also match camelCase in prose
-    const camelRe = /(?<![`*_#\[])\b([a-z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*)\b(?![`*_\]])/g;
+    const camelRe =
+      /(?<![`*_#\[])\b([a-z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*)\b(?![`*_\]])/g;
     for (const match of text.matchAll(camelRe)) {
       const word = match[1];
       if (isCamelCase(word)) {
@@ -218,7 +282,11 @@ export class HeuristicKeywordExtractor {
     text: string,
     seen: Set<string>,
     matches: KeywordMatch[],
-    addMatch: (text: string, offset: number, source: KeywordMatch["source"]) => void,
+    addMatch: (
+      text: string,
+      offset: number,
+      source: KeywordMatch["source"],
+    ) => void,
   ): void {
     // Strip markdown formatting for clean body text scanning
     const stripped = stripInlineMarkdown(

@@ -175,10 +175,13 @@ export async function runCoxStage(
   const start = performance.now();
   const logger = ctx?.logger;
 
-  logger?.info(`COX: computing co-occurrence for ${input.kwxOutputs.length} file(s)`, {
-    windowSize: WINDOW_SIZE,
-    minCount: MIN_COUNT,
-  });
+  logger?.info(
+    `COX: computing co-occurrence for ${input.kwxOutputs.length} file(s)`,
+    {
+      windowSize: WINDOW_SIZE,
+      minCount: MIN_COUNT,
+    },
+  );
 
   // Step 1: Compute per-document local edges
   const allLocalEdges: LocalEdge[] = [];
@@ -187,7 +190,9 @@ export async function runCoxStage(
     allLocalEdges.push(...docEdges);
   }
 
-  logger?.debug(`COX: ${allLocalEdges.length} local edge(s) from sliding window`);
+  logger?.debug(
+    `COX: ${allLocalEdges.length} local edge(s) from sliding window`,
+  );
 
   // Step 2: Aggregate and filter
   const edges = aggregateEdges(allLocalEdges, MIN_COUNT);

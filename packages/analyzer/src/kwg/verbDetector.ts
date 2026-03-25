@@ -59,25 +59,41 @@ export interface VerbDetectorResult {
 
 export const VERB_PATTERNS: VerbPattern[] = [
   // Structural
-  { pattern: /\bcontains?\b/i,                     predicate: "CONTAINS",        direction: "forward" },
-  { pattern: /\bdepends?\s+on\b/i,                 predicate: "DEPENDS_ON",      direction: "forward" },
-  { pattern: /\bextends?\b/i,                      predicate: "EXTENDS",         direction: "forward" },
-  { pattern: /\bimplements?\b/i,                   predicate: "IMPLEMENTS",      direction: "forward" },
-  { pattern: /\breplaces?\b/i,                     predicate: "REPLACES",        direction: "forward" },
-  { pattern: /\brequires?\b/i,                     predicate: "REQUIRES",        direction: "forward" },
+  { pattern: /\bcontains?\b/i, predicate: "CONTAINS", direction: "forward" },
+  {
+    pattern: /\bdepends?\s+on\b/i,
+    predicate: "DEPENDS_ON",
+    direction: "forward",
+  },
+  { pattern: /\bextends?\b/i, predicate: "EXTENDS", direction: "forward" },
+  {
+    pattern: /\bimplements?\b/i,
+    predicate: "IMPLEMENTS",
+    direction: "forward",
+  },
+  { pattern: /\breplaces?\b/i, predicate: "REPLACES", direction: "forward" },
+  { pattern: /\brequires?\b/i, predicate: "REQUIRES", direction: "forward" },
 
   // Behavioral
-  { pattern: /\benables?\b/i,                      predicate: "ENABLES",         direction: "forward" },
-  { pattern: /\bblocks?\b/i,                       predicate: "BLOCKS",          direction: "forward" },
-  { pattern: /\btriggers?\b/i,                     predicate: "TRIGGERS",        direction: "forward" },
-  { pattern: /\bproduces?\b/i,                     predicate: "PRODUCES",        direction: "forward" },
-  { pattern: /\bconsumes?\b/i,                     predicate: "CONSUMES",        direction: "forward" },
-  { pattern: /\buses?\b/i,                         predicate: "USES",            direction: "forward" },
-  { pattern: /\bcalls?\b/i,                        predicate: "CALLS",           direction: "forward" },
+  { pattern: /\benables?\b/i, predicate: "ENABLES", direction: "forward" },
+  { pattern: /\bblocks?\b/i, predicate: "BLOCKS", direction: "forward" },
+  { pattern: /\btriggers?\b/i, predicate: "TRIGGERS", direction: "forward" },
+  { pattern: /\bproduces?\b/i, predicate: "PRODUCES", direction: "forward" },
+  { pattern: /\bconsumes?\b/i, predicate: "CONSUMES", direction: "forward" },
+  { pattern: /\buses?\b/i, predicate: "USES", direction: "forward" },
+  { pattern: /\bcalls?\b/i, predicate: "CALLS", direction: "forward" },
 
   // Decision
-  { pattern: /\bis\s+(?:an?\s+)?alternative\s+to\b/i, predicate: "ALTERNATIVE_TO", direction: "forward" },
-  { pattern: /\bsupersedes?\b/i,                   predicate: "SUPERSEDES",      direction: "forward" },
+  {
+    pattern: /\bis\s+(?:an?\s+)?alternative\s+to\b/i,
+    predicate: "ALTERNATIVE_TO",
+    direction: "forward",
+  },
+  {
+    pattern: /\bsupersedes?\b/i,
+    predicate: "SUPERSEDES",
+    direction: "forward",
+  },
 ];
 
 // =============================================================================
@@ -127,10 +143,16 @@ export function detectVerbHints(
       if (!sentenceText) continue;
 
       // Find verb patterns in the sentence
-      const detected = scanForVerbs(sentenceText, mA.entityName, mB.entityName, mA.filePath);
+      const detected = scanForVerbs(
+        sentenceText,
+        mA.entityName,
+        mB.entityName,
+        mA.filePath,
+      );
       if (detected) {
         hints.push(detected);
-        byPredicate[detected.predicate] = (byPredicate[detected.predicate] ?? 0) + 1;
+        byPredicate[detected.predicate] =
+          (byPredicate[detected.predicate] ?? 0) + 1;
       }
     }
   }
@@ -177,10 +199,7 @@ function scanForVerbs(
       : [entityB, entityA, posB, posA];
 
   // Extract the text between the two entities
-  const between = lower.slice(
-    firstPos + first.length,
-    secondPos,
-  ).trim();
+  const between = lower.slice(firstPos + first.length, secondPos).trim();
 
   // Skip if the gap is too large (probably different sentences)
   if (between.length > 120) return null;
@@ -191,9 +210,7 @@ function scanForVerbs(
   for (const vp of VERB_PATTERNS) {
     if (vp.pattern.test(between)) {
       const [subject, object] =
-        vp.direction === "forward"
-          ? [first, second]
-          : [second, first];
+        vp.direction === "forward" ? [first, second] : [second, first];
 
       return {
         subjectName: subject,
@@ -217,13 +234,14 @@ function scanForVerbs(
  * - The verb is the primary verb in the gap (no other verbs competing)
  */
 function computeConfidence(between: string, pattern: RegExp): number {
-  const base = 0.40;
+  const base = 0.4;
   // Shorter gap → higher confidence
-  const lengthBonus = between.length < 20 ? 0.15 : between.length < 50 ? 0.05 : 0;
+  const lengthBonus =
+    between.length < 20 ? 0.15 : between.length < 50 ? 0.05 : 0;
   // Single verb match → higher confidence (no competing verbs)
   const matches = between.match(pattern);
   const singleMatch = matches && matches.length === 1 ? 0.05 : 0;
-  return Math.min(0.60, base + lengthBonus + singleMatch);
+  return Math.min(0.6, base + lengthBonus + singleMatch);
 }
 
 // =============================================================================

@@ -27,7 +27,7 @@
 
 export interface EmbeddingResult {
   text: string;
-  embedding: number[];  // 384 dimensions for MiniLM
+  embedding: number[]; // 384 dimensions for MiniLM
 }
 
 export interface OnnxEmbeddingOptions {
@@ -98,8 +98,8 @@ export async function embedBatch(
     } catch {
       throw new Error(
         "ONNX embedding requires @huggingface/transformers.\n" +
-        "Install with: pnpm add @huggingface/transformers -w\n" +
-        "Or use --model openai for cloud-based embeddings.",
+          "Install with: pnpm add @huggingface/transformers -w\n" +
+          "Or use --model openai for cloud-based embeddings.",
       );
     }
   }
@@ -108,7 +108,7 @@ export async function embedBatch(
   if (!cachedPipe || cachedModelId !== model) {
     log(`Loading embedding model: ${model}`);
     cachedPipe = await pipeline("feature-extraction", model, {
-      quantized: true,  // Use quantized model (~6MB instead of ~22MB)
+      quantized: true, // Use quantized model (~6MB instead of ~22MB)
     });
     cachedModelId = model;
     log(`Model loaded: ${model}`);
@@ -120,13 +120,15 @@ export async function embedBatch(
   // Process in batches
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
-    log(`Embedding batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)} (${batch.length} texts)`);
+    log(
+      `Embedding batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)} (${batch.length} texts)`,
+    );
 
     for (const text of batch) {
       // Run inference — returns Tensor with shape [1, tokens, 384]
       const output = await embedder(text, {
-        pooling: "mean",    // Mean of token embeddings
-        normalize: true,     // L2 normalize
+        pooling: "mean", // Mean of token embeddings
+        normalize: true, // L2 normalize
       });
 
       // Extract the embedding as plain array

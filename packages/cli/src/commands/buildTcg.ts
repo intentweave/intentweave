@@ -100,9 +100,7 @@ export const tcgSubcommand = new Command("tcg")
     const tcxOutput = await runTcxStage(tcxInput);
     const tcxMs = Date.now() - tcxStart;
 
-    console.log(
-      `  TCX  ${chalk.green("████████████████████████████████")}`,
-    );
+    console.log(`  TCX  ${chalk.green("████████████████████████████████")}`);
     console.log(
       chalk.gray(
         `       → ${tcxOutput.meta.commitCount} commits, ${tcxOutput.meta.authorCount} authors, ${tcxOutput.meta.fileCount} files  (${tcxMs}ms)`,
@@ -126,9 +124,7 @@ export const tcgSubcommand = new Command("tcg")
     const cocOutput = runCocStage(cocInput);
     const cocMs = Date.now() - cocStart;
 
-    console.log(
-      `  COC  ${chalk.green("████████████████████████████████")}`,
-    );
+    console.log(`  COC  ${chalk.green("████████████████████████████████")}`);
     console.log(
       chalk.gray(
         `       → ${cocOutput.meta.edgeCount} co-change edges (min ${cocOutput.meta.minCoChangeThreshold} co-changes, min ${cocOutput.meta.minJaccardThreshold} Jaccard)  (${cocMs}ms)`,
@@ -145,9 +141,7 @@ export const tcgSubcommand = new Command("tcg")
     const hotOutput = runHotStage(hotInput);
     const hotMs = Date.now() - hotStart;
 
-    console.log(
-      `  HOT  ${chalk.green("████████████████████████████████")}`,
-    );
+    console.log(`  HOT  ${chalk.green("████████████████████████████████")}`);
     console.log(
       chalk.gray(
         `       → ${hotOutput.meta.hotspotCount} hotspot files (z-score > ${hotOutput.meta.zScoreThreshold})  (${hotMs}ms)`,
@@ -179,9 +173,7 @@ export const tcgSubcommand = new Command("tcg")
     const ownOutput = runOwnStage(ownInput);
     const ownMs = Date.now() - ownStart;
 
-    console.log(
-      `  OWN  ${chalk.green("████████████████████████████████")}`,
-    );
+    console.log(`  OWN  ${chalk.green("████████████████████████████████")}`);
     console.log(
       chalk.gray(
         `       → ${ownOutput.meta.filesAnalyzed} files analyzed, ${ownOutput.meta.vacuumCount} ownership vacuums  (${ownMs}ms)`,
@@ -237,9 +229,7 @@ export const tcgSubcommand = new Command("tcg")
       (s) => s.severity === "warning",
     ).length;
 
-    console.log(
-      `  STL  ${chalk.green("████████████████████████████████")}`,
-    );
+    console.log(`  STL  ${chalk.green("████████████████████████████████")}`);
     console.log(
       chalk.gray(
         `       → ${stlOutput.meta.signalCount} stale doc signals (${stlCritical} critical, ${stlWarning} warning)  (${stlMs}ms)`,
@@ -285,9 +275,7 @@ export const tcgSubcommand = new Command("tcg")
         driver = await createNeo4jDriver();
       } catch (err) {
         console.error(
-          chalk.red(
-            `  Neo4j connection failed: ${(err as Error).message}`,
-          ),
+          chalk.red(`  Neo4j connection failed: ${(err as Error).message}`),
         );
         process.exit(1);
       }

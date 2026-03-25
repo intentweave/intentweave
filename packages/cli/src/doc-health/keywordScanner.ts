@@ -28,9 +28,9 @@
  *   - Early termination when all names found
  */
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { spawn as nodeSpawn } from 'node:child_process';
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { spawn as nodeSpawn } from "node:child_process";
 
 // =============================================================================
 // Configuration
@@ -38,21 +38,46 @@ import { spawn as nodeSpawn } from 'node:child_process';
 
 /** Source code file extensions to scan for keyword matches. */
 export const SCAN_CODE_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
-  '.json', '.yaml', '.yml', '.toml',
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
 ]);
 
 /** Directories to skip during scanning. */
 export const SCAN_IGNORE_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.next', '.iw', 'coverage',
-  '.turbo', '.cache', '.output', '.nuxt', '.svelte-kit', '.specstory',
-  '.pnpm', '__pycache__', '.venv', 'vendor',
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  ".iw",
+  "coverage",
+  ".turbo",
+  ".cache",
+  ".output",
+  ".nuxt",
+  ".svelte-kit",
+  ".specstory",
+  ".pnpm",
+  "__pycache__",
+  ".venv",
+  "vendor",
 ]);
 
 /** Individual files to always skip (huge lock files, build artifacts). */
 export const SCAN_IGNORE_FILES = new Set([
-  'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'bun.lockb',
-  'tsconfig.tsbuildinfo',
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "bun.lockb",
+  "tsconfig.tsbuildinfo",
 ]);
 
 /** Max file size to scan (512 KB — skip generated/bundled files). */
@@ -81,52 +106,67 @@ function tryRipgrepFileList(
 ): Promise<string[] | null> {
   return new Promise((resolve) => {
     try {
-      const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const escaped = names.map((n) =>
+        n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      );
 
-      const globIncludes = [...SCAN_CODE_EXTENSIONS].map(ext => `--glob=*${ext}`);
-      const globExcludes = [...SCAN_IGNORE_DIRS].map(dir => `--glob=!${dir}/`);
-      const fileExcludes = [...SCAN_IGNORE_FILES].map(f => `--glob=!${f}`);
+      const globIncludes = [...SCAN_CODE_EXTENSIONS].map(
+        (ext) => `--glob=*${ext}`,
+      );
+      const globExcludes = [...SCAN_IGNORE_DIRS].map(
+        (dir) => `--glob=!${dir}/`,
+      );
+      const fileExcludes = [...SCAN_IGNORE_FILES].map((f) => `--glob=!${f}`);
 
       const args = [
-        '-l',                              // list matching files only
-        '-i',                              // case-insensitive
-        '--no-messages',                   // suppress file-access errors
-        `--max-filesize=${MAX_FILE_SIZE}`,  // skip large files
-        '-f', '-',                         // read patterns from stdin
+        "-l", // list matching files only
+        "-i", // case-insensitive
+        "--no-messages", // suppress file-access errors
+        `--max-filesize=${MAX_FILE_SIZE}`, // skip large files
+        "-f",
+        "-", // read patterns from stdin
         ...globIncludes,
         ...globExcludes,
         ...fileExcludes,
         cwd,
       ];
 
-      const rg = nodeSpawn('rg', args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
+      const rg = nodeSpawn("rg", args, {
+        stdio: ["pipe", "pipe", "pipe"],
       });
 
-      let stdout = '';
+      let stdout = "";
       let killed = false;
 
-      rg.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+      rg.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
 
-      rg.on('error', () => resolve(null));  // rg not found on PATH
+      rg.on("error", () => resolve(null)); // rg not found on PATH
 
-      rg.on('close', (code) => {
-        if (killed) { resolve(null); return; }
+      rg.on("close", (code) => {
+        if (killed) {
+          resolve(null);
+          return;
+        }
         // rg exit codes: 0 = matches found, 1 = no matches, 2 = error
         if (code === 0 || code === 1) {
-          resolve(stdout.trim().split('\n').filter(Boolean));
+          resolve(stdout.trim().split("\n").filter(Boolean));
         } else {
           resolve(null);
         }
       });
 
       // Write patterns (one per line) to rg's stdin
-      rg.stdin.write(escaped.join('\n'));
+      rg.stdin.write(escaped.join("\n"));
       rg.stdin.end();
 
       // Safety timeout
-      const timer = setTimeout(() => { killed = true; rg.kill(); }, RG_TIMEOUT_MS);
-      rg.on('close', () => clearTimeout(timer));
+      const timer = setTimeout(() => {
+        killed = true;
+        rg.kill();
+      }, RG_TIMEOUT_MS);
+      rg.on("close", () => clearTimeout(timer));
     } catch {
       resolve(null);
     }
@@ -196,12 +236,12 @@ export async function scanKeywords(
   entityNames: string[],
   log?: (msg: string) => void,
 ): Promise<Map<string, string[]>> {
-  const names = entityNames.filter(n => n.length >= 3);
+  const names = entityNames.filter((n) => n.length >= 3);
   if (names.length === 0) return new Map();
 
   const t0 = Date.now();
   const found = new Map<string, string[]>();
-  const nameLower = names.map(n => n.toLowerCase());
+  const nameLower = names.map((n) => n.toLowerCase());
   let filesScanned = 0;
   let usedRipgrep = false;
 
@@ -212,15 +252,21 @@ export async function scanKeywords(
   if (rgResult !== null) {
     filesToRead = rgResult;
     usedRipgrep = true;
-    log?.(`  ripgrep: ${rgResult.length} candidate files in ${Date.now() - t0}ms`);
+    log?.(
+      `  ripgrep: ${rgResult.length} candidate files in ${Date.now() - t0}ms`,
+    );
   } else {
     // ── Fallback: collect all paths via parallel readdir walk ────────
     filesToRead = await collectFilePaths(cwd);
-    log?.(`  Collected ${filesToRead.length} source files in ${Date.now() - t0}ms`);
+    log?.(
+      `  Collected ${filesToRead.length} source files in ${Date.now() - t0}ms`,
+    );
   }
 
   if (filesToRead.length === 0) {
-    log?.(`  Keyword scan: 0 files, 0/${names.length} names matched (${Date.now() - t0}ms)`);
+    log?.(
+      `  Keyword scan: 0 files, 0/${names.length} names matched (${Date.now() - t0}ms)`,
+    );
     return found;
   }
 
@@ -231,10 +277,12 @@ export async function scanKeywords(
   const preFilterRegexes: RegExp[] = [];
 
   if (needPreFilter) {
-    const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     const CHUNK = 200;
     for (let i = 0; i < escaped.length; i += CHUNK) {
-      preFilterRegexes.push(new RegExp(escaped.slice(i, i + CHUNK).join('|'), 'i'));
+      preFilterRegexes.push(
+        new RegExp(escaped.slice(i, i + CHUNK).join("|"), "i"),
+      );
     }
   }
 
@@ -252,7 +300,7 @@ export async function scanKeywords(
         if (stat.size > MAX_FILE_SIZE) return;
       }
 
-      const content = await fs.readFile(fullPath, 'utf-8');
+      const content = await fs.readFile(fullPath, "utf-8");
       filesScanned++;
 
       const relPath = path.relative(cwd, fullPath);
@@ -260,7 +308,9 @@ export async function scanKeywords(
       // Progress feedback every 500ms
       const now = Date.now();
       if (now - lastLogTime > 500) {
-        log?.(`  Scanning… ${filesScanned}/${filesToRead.length} files, ${found.size} matches`);
+        log?.(
+          `  Scanning… ${filesScanned}/${filesToRead.length} files, ${found.size} matches`,
+        );
         lastLogTime = now;
       }
 
@@ -268,7 +318,10 @@ export async function scanKeywords(
       if (needPreFilter) {
         let pass = false;
         for (const re of preFilterRegexes) {
-          if (re.test(content)) { pass = true; break; }
+          if (re.test(content)) {
+            pass = true;
+            break;
+          }
         }
         if (!pass) return;
       }
@@ -299,12 +352,14 @@ export async function scanKeywords(
   for (let i = 0; i < filesToRead.length; i += READ_CONCURRENCY) {
     if (allFound) break;
     const batch = filesToRead.slice(i, i + READ_CONCURRENCY);
-    await Promise.all(batch.map(fp => processFile(fp)));
+    await Promise.all(batch.map((fp) => processFile(fp)));
   }
 
   const elapsed = Date.now() - t0;
-  const method = usedRipgrep ? ', rg' : '';
-  log?.(`  Keyword scan: ${filesScanned} files, ${found.size}/${names.length} names matched (${elapsed}ms${method})`);
+  const method = usedRipgrep ? ", rg" : "";
+  log?.(
+    `  Keyword scan: ${filesScanned} files, ${found.size}/${names.length} names matched (${elapsed}ms${method})`,
+  );
 
   return found;
 }

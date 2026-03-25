@@ -125,18 +125,9 @@ export const docHealthCommand = new Command("doc-health")
   .option("-o, --output <path>", "Write output to file")
   .option("-v, --verbose", "Show progress on stderr")
   .option("--neo4j-uri <uri>", "Neo4j connection URI")
-  .option(
-    "--lite",
-    "Lightweight keyword-only mode — no Neo4j or LLM required",
-  )
+  .option("--lite", "Lightweight keyword-only mode — no Neo4j or LLM required")
   .action(async (files: string[], options) => {
-    const {
-      session: sessionId,
-      format,
-      output,
-      verbose,
-      lite,
-    } = options;
+    const { session: sessionId, format, output, verbose, lite } = options;
 
     // ── Lite mode: zero-infrastructure preflight ──────────────────────
     if (lite) {
@@ -237,9 +228,7 @@ export const docHealthCommand = new Command("doc-health")
 
       const hasKwg = kwgEntities.length > 0;
       if (!hasKwg) {
-        log(
-          "No KWG data found — doc-code, doc-doc detectors will be skipped",
-        );
+        log("No KWG data found — doc-code, doc-doc detectors will be skipped");
       }
 
       // ─── Step 2: Run AX extraction (if needed) ────────────────────
@@ -254,7 +243,9 @@ export const docHealthCommand = new Command("doc-health")
             `AX: ${axOutput.totalFiles} files, ${axOutput.totalSymbols} symbols (${((performance.now() - axStart) / 1000).toFixed(1)}s)`,
           );
         } catch (err: any) {
-          log(`AX extraction failed: ${err.message} — skipping code-dependent detectors`);
+          log(
+            `AX extraction failed: ${err.message} — skipping code-dependent detectors`,
+          );
         }
       }
 
@@ -268,7 +259,9 @@ export const docHealthCommand = new Command("doc-health")
           const tcxOutput = await runTcxStage({
             workspaceRoot,
             depth: "full",
-            log: verbose ? (msg: string) => console.error(chalk.gray(`  tcx: ${msg}`)) : undefined,
+            log: verbose
+              ? (msg: string) => console.error(chalk.gray(`  tcx: ${msg}`))
+              : undefined,
           });
           const cocOutput = runCocStage({ tcxOutput });
           const hotOutput = runHotStage({ tcxOutput });
@@ -296,7 +289,9 @@ export const docHealthCommand = new Command("doc-health")
             `TCG: ${tcxOutput.commits.length} commits, ${cocOutput.edges.length} co-change edges (${((performance.now() - tcgStart) / 1000).toFixed(1)}s)`,
           );
         } catch (err: any) {
-          log(`TCG pipeline failed: ${err.message} — skipping temporal detector`);
+          log(
+            `TCG pipeline failed: ${err.message} — skipping temporal detector`,
+          );
         }
       }
 
@@ -335,7 +330,9 @@ export const docHealthCommand = new Command("doc-health")
             signatureMismatchCount: dcReport.stats.signatureMismatchCount,
           },
         };
-        log(`  doc-code: ${dcReport.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+        log(
+          `  doc-code: ${dcReport.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`,
+        );
       } else if (enableDocCode) {
         log("Skipping doc-code: " + (!hasKwg ? "no KWG data" : "no AX output"));
       }
@@ -353,7 +350,9 @@ export const docHealthCommand = new Command("doc-health")
         });
         temporalSignals = result.signals;
         temporalStats = result.stats;
-        log(`  temporal: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+        log(
+          `  temporal: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`,
+        );
       } else if (enableTemporal) {
         log("Skipping temporal: no TCG data");
       }
@@ -371,7 +370,9 @@ export const docHealthCommand = new Command("doc-health")
         });
         depsSignals = result.signals;
         depsStats = result.stats;
-        log(`  deps: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+        log(
+          `  deps: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`,
+        );
       } else if (enableDeps) {
         log("Skipping deps: no AX output");
       }
@@ -387,7 +388,9 @@ export const docHealthCommand = new Command("doc-health")
         });
         docDocSignals = result.signals;
         docDocStats = result.stats;
-        log(`  doc-doc: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+        log(
+          `  doc-doc: ${result.signals.length} signals (${((performance.now() - t0) / 1000).toFixed(1)}s)`,
+        );
       } else if (enableDocDoc) {
         log("Skipping doc-doc: no KWG data");
       }
@@ -418,9 +421,7 @@ export const docHealthCommand = new Command("doc-health")
 
       if (output) {
         writeFileSync(output, formatted, "utf-8");
-        console.error(
-          chalk.green(`Doc health report written to ${output}`),
-        );
+        console.error(chalk.green(`Doc health report written to ${output}`));
       } else {
         console.log(formatted);
       }

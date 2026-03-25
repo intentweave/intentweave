@@ -85,18 +85,23 @@ export async function runEmbedPipeline(
   const skipExisting = opts.skipExisting ?? true;
 
   // Dynamic import of embedding functions
-  let embedBatch: (texts: string[], options?: any) => Promise<Array<{ text: string; embedding: number[] }>>;
+  let embedBatch: (
+    texts: string[],
+    options?: any,
+  ) => Promise<Array<{ text: string; embedding: number[] }>>;
   try {
     const mod = await import("@intentweave/analyzer");
     if (typeof mod.embedBatch === "function") {
       embedBatch = mod.embedBatch;
     } else {
       // Analyzer not rebuilt — import source directly via relative path
-      const srcMod = await import("../../../analyzer/src/providers/embedding/onnxEmbedding.js");
+      const srcMod =
+        await import("../../../analyzer/src/providers/embedding/onnxEmbedding.js");
       embedBatch = srcMod.embedBatch;
     }
   } catch {
-    const srcMod = await import("../../../analyzer/src/providers/embedding/onnxEmbedding.js");
+    const srcMod =
+      await import("../../../analyzer/src/providers/embedding/onnxEmbedding.js");
     embedBatch = srcMod.embedBatch;
   }
 
@@ -110,67 +115,61 @@ export async function runEmbedPipeline(
 
     // ── Step 2: Embed each layer ───────────────────────────────────
     if (layers.includes("kwg")) {
-      const res = await embedLayer(
-        session, driver, embedBatch, {
-          label: "KWEntity",
-          sessionId: opts.sessionId,
-          textFn: (rec: any) => kwEntityText(rec.name, rec.mentionCount),
-          query: skipExisting
-            ? `MATCH (e:KWEntity {session_id: $sid}) WHERE e.embedding IS NULL RETURN e.name AS name, e.mentionCount AS mentionCount, elementId(e) AS eid`
-            : `MATCH (e:KWEntity {session_id: $sid}) RETURN e.name AS name, e.mentionCount AS mentionCount, elementId(e) AS eid`,
-          updateQuery: `
+      const res = await embedLayer(session, driver, embedBatch, {
+        label: "KWEntity",
+        sessionId: opts.sessionId,
+        textFn: (rec: any) => kwEntityText(rec.name, rec.mentionCount),
+        query: skipExisting
+          ? `MATCH (e:KWEntity {session_id: $sid}) WHERE e.embedding IS NULL RETURN e.name AS name, e.mentionCount AS mentionCount, elementId(e) AS eid`
+          : `MATCH (e:KWEntity {session_id: $sid}) RETURN e.name AS name, e.mentionCount AS mentionCount, elementId(e) AS eid`,
+        updateQuery: `
             MATCH (e:KWEntity)
             WHERE elementId(e) = $eid
             SET e.embedding = $embedding
           `,
-          batchSize,
-          log,
-        },
-      );
+        batchSize,
+        log,
+      });
       embedded["KWEntity"] = res.embedded;
       skipped["KWEntity"] = res.skipped;
     }
 
     if (layers.includes("skg")) {
-      const res = await embedLayer(
-        session, driver, embedBatch, {
-          label: "Canon:Entity",
-          sessionId: opts.sessionId,
-          textFn: (rec: any) => canonEntityText(rec.name, rec.type),
-          query: skipExisting
-            ? `MATCH (c:Canon:Entity {session_id: $sid}) WHERE c.embedding IS NULL RETURN c.name AS name, c.type AS type, elementId(c) AS eid`
-            : `MATCH (c:Canon:Entity {session_id: $sid}) RETURN c.name AS name, c.type AS type, elementId(c) AS eid`,
-          updateQuery: `
+      const res = await embedLayer(session, driver, embedBatch, {
+        label: "Canon:Entity",
+        sessionId: opts.sessionId,
+        textFn: (rec: any) => canonEntityText(rec.name, rec.type),
+        query: skipExisting
+          ? `MATCH (c:Canon:Entity {session_id: $sid}) WHERE c.embedding IS NULL RETURN c.name AS name, c.type AS type, elementId(c) AS eid`
+          : `MATCH (c:Canon:Entity {session_id: $sid}) RETURN c.name AS name, c.type AS type, elementId(c) AS eid`,
+        updateQuery: `
             MATCH (c:Canon:Entity)
             WHERE elementId(c) = $eid
             SET c.embedding = $embedding
           `,
-          batchSize,
-          log,
-        },
-      );
+        batchSize,
+        log,
+      });
       embedded["Canon:Entity"] = res.embedded;
       skipped["Canon:Entity"] = res.skipped;
     }
 
     if (layers.includes("cluster")) {
-      const res = await embedLayer(
-        session, driver, embedBatch, {
-          label: "KWCluster",
-          sessionId: opts.sessionId,
-          textFn: (rec: any) => clusterText(rec.label, rec.members ?? []),
-          query: skipExisting
-            ? `MATCH (cl:KWCluster {session_id: $sid}) WHERE cl.embedding IS NULL RETURN cl.label AS label, cl.members AS members, elementId(cl) AS eid`
-            : `MATCH (cl:KWCluster {session_id: $sid}) RETURN cl.label AS label, cl.members AS members, elementId(cl) AS eid`,
-          updateQuery: `
+      const res = await embedLayer(session, driver, embedBatch, {
+        label: "KWCluster",
+        sessionId: opts.sessionId,
+        textFn: (rec: any) => clusterText(rec.label, rec.members ?? []),
+        query: skipExisting
+          ? `MATCH (cl:KWCluster {session_id: $sid}) WHERE cl.embedding IS NULL RETURN cl.label AS label, cl.members AS members, elementId(cl) AS eid`
+          : `MATCH (cl:KWCluster {session_id: $sid}) RETURN cl.label AS label, cl.members AS members, elementId(cl) AS eid`,
+        updateQuery: `
             MATCH (cl:KWCluster)
             WHERE elementId(cl) = $eid
             SET cl.embedding = $embedding
           `,
-          batchSize,
-          log,
-        },
-      );
+        batchSize,
+        log,
+      });
       embedded["KWCluster"] = res.embedded;
       skipped["KWCluster"] = res.skipped;
     }
@@ -203,7 +202,10 @@ interface EmbedLayerOpts {
 async function embedLayer(
   session: any,
   driver: Driver,
-  embedBatch: (texts: string[], options?: any) => Promise<Array<{ text: string; embedding: number[] }>>,
+  embedBatch: (
+    texts: string[],
+    options?: any,
+  ) => Promise<Array<{ text: string; embedding: number[] }>>,
   opts: EmbedLayerOpts,
 ): Promise<{ embedded: number; skipped: number }> {
   const { label, sessionId, textFn, query, updateQuery, batchSize, log } = opts;
@@ -212,7 +214,11 @@ async function embedLayer(
   const result = await session.run(query, { sid: sessionId });
   const records = result.records.map((r: any) => ({
     eid: r.get("eid"),
-    ...Object.fromEntries(r.keys.filter((k: string) => k !== "eid").map((k: string) => [k, toPlain(r.get(k))])),
+    ...Object.fromEntries(
+      r.keys
+        .filter((k: string) => k !== "eid")
+        .map((k: string) => [k, toPlain(r.get(k))]),
+    ),
   }));
 
   if (records.length === 0) {

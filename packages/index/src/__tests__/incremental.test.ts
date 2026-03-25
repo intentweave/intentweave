@@ -63,10 +63,7 @@ function makeSymbol(overrides: Partial<AxSymbol> = {}): AxSymbol {
   };
 }
 
-function makeAxOutput(
-  symbols: AxSymbol[],
-  filePath = "src/foo.ts",
-): AxOutput {
+function makeAxOutput(symbols: AxSymbol[], filePath = "src/foo.ts"): AxOutput {
   return {
     version: "1.0",
     workspaceRoot: tmpDir,
@@ -155,11 +152,7 @@ describe("detectChanges", () => {
     ]);
 
     // Modify the file content
-    fs.writeFileSync(
-      path.join(tmpDir, "docs/README.md"),
-      "# Updated",
-      "utf-8",
-    );
+    fs.writeFileSync(path.join(tmpDir, "docs/README.md"), "# Updated", "utf-8");
 
     const changes = detectChanges(dbPath, tmpDir, [
       path.join(tmpDir, "docs/README.md"),
@@ -274,20 +267,27 @@ describe("applyChanges", () => {
 
     // Seed a symbol in the DB
     const db = new Database(dbPath);
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO symbols (id, name, kind, file_path, line, export)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run("sym1", "doSomething", "function", "src/foo.ts", 10, "exported");
+    `,
+    ).run("sym1", "doSomething", "function", "src/foo.ts", 10, "exported");
     db.close();
 
     const changes: FileChange[] = [
       { path: "src/foo.ts", status: "deleted", isDoc: false },
     ];
 
-    const result = applyChanges(dbPath, changes, {}, {
+    const result = applyChanges(
       dbPath,
-      workspaceRoot: tmpDir,
-    });
+      changes,
+      {},
+      {
+        dbPath,
+        workspaceRoot: tmpDir,
+      },
+    );
 
     expect(result.updated.files).toBe(1);
 
@@ -307,20 +307,27 @@ describe("applyChanges", () => {
 
     // Seed an annotation
     const db = new Database(dbPath);
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO annotations (doc_path, line, text, confidence, source)
       VALUES (?, ?, ?, ?, ?)
-    `).run("docs/README.md", 1, "doSomething", 0.9, "code-span");
+    `,
+    ).run("docs/README.md", 1, "doSomething", 0.9, "code-span");
     db.close();
 
     const changes: FileChange[] = [
       { path: "docs/README.md", status: "deleted", isDoc: true },
     ];
 
-    const result = applyChanges(dbPath, changes, {}, {
+    const result = applyChanges(
       dbPath,
-      workspaceRoot: tmpDir,
-    });
+      changes,
+      {},
+      {
+        dbPath,
+        workspaceRoot: tmpDir,
+      },
+    );
 
     expect(result.updated.files).toBe(1);
 
@@ -350,10 +357,15 @@ describe("applyChanges", () => {
       { path: "src/foo.ts", status: "added", isDoc: false },
     ];
 
-    const result = applyChanges(dbPath, changes, { ax }, {
+    const result = applyChanges(
       dbPath,
-      workspaceRoot: tmpDir,
-    });
+      changes,
+      { ax },
+      {
+        dbPath,
+        workspaceRoot: tmpDir,
+      },
+    );
 
     expect(result.updated.symbols).toBe(1);
 
@@ -412,18 +424,16 @@ describe("applyChanges", () => {
 
     // Seed old annotation
     const db = new Database(dbPath);
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO annotations (doc_path, line, text, confidence, source)
       VALUES (?, ?, ?, ?, ?)
-    `).run("docs/README.md", 1, "oldMention", 0.8, "bold");
+    `,
+    ).run("docs/README.md", 1, "oldMention", 0.8, "bold");
     db.close();
 
     // Modify file
-    fs.writeFileSync(
-      path.join(tmpDir, "docs/README.md"),
-      "# Updated",
-      "utf-8",
-    );
+    fs.writeFileSync(path.join(tmpDir, "docs/README.md"), "# Updated", "utf-8");
 
     const annotations: Annotation[] = [
       {
@@ -473,10 +483,15 @@ describe("applyChanges", () => {
   it("returns duration and change summary", () => {
     const dbPath = makeDbWithFiles(tmpDir, []);
 
-    const result = applyChanges(dbPath, [], {}, {
+    const result = applyChanges(
       dbPath,
-      workspaceRoot: tmpDir,
-    });
+      [],
+      {},
+      {
+        dbPath,
+        workspaceRoot: tmpDir,
+      },
+    );
 
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
     expect(result.changes).toEqual([]);

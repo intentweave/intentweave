@@ -8,19 +8,19 @@
 > [PHASE-B-SPEC.md](PHASE-B-SPEC.md) (TCG built + persisted),
 > [PHASE-C-SPEC.md](PHASE-C-SPEC.md) (Drift detectors + `iw build cheap`),
 > AX stage (AST extraction), existing open-track SKG pipeline (FX → KX → GX)
-> **Scope:** Evidence-guided LLM triage, cross-layer EVIDENCED_BY linking,
+> **Scope:** Evidence-guided LLM triage, cross-layer EVIDENCED*BY linking,
 > embeddings pipeline, multi-layer query router, `iw build full` orchestrator,
-> and verb extraction hints. LLM cost is spent *precisely* where Phases A-C
+> and verb extraction hints. LLM cost is spent \_precisely* where Phases A-C
 > identify high-value gaps.
 
 ---
 
 ## Document Structure
 
-| Part | Purpose | Read when |
-|------|---------|-----------|
-| **Part 1: Build-Now v1** (§1–§12) | Evidence-guided triage, EVIDENCED_BY links, embeddings, query router, `iw build full`. Ship it, prove it works. | Now — this is what we build next. |
-| **Part 2: Target Architecture v2+** (§13–§17) | Additional parsers, cluster summarization, advanced hybrid retrieval, CI quality gates. Reference for future growth. | After v1 is stable and proven. |
+| Part                                          | Purpose                                                                                                              | Read when                         |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| **Part 1: Build-Now v1** (§1–§12)             | Evidence-guided triage, EVIDENCED_BY links, embeddings, query router, `iw build full`. Ship it, prove it works.      | Now — this is what we build next. |
+| **Part 2: Target Architecture v2+** (§13–§17) | Additional parsers, cluster summarization, advanced hybrid retrieval, CI quality gates. Reference for future growth. | After v1 is stable and proven.    |
 
 **Guiding rule:** Nothing from Part 2 enters the codebase until Part 1 is stable, tested, and
 used in anger. Abstractions earn their way in with a concrete second implementation that needs them.
@@ -48,7 +48,8 @@ used in anger. Abstractions earn their way in with a concrete second implementat
 
 > **Note:** D7 (additional language parsers) is deferred to Part 2. It's independently
 > valuable but doesn't depend on — or block — the core Phase D flow. The existing TypeScript
-> + Swift parsers cover the primary use cases.
+>
+> - Swift parsers cover the primary use cases.
 
 ---
 
@@ -104,60 +105,60 @@ on entities already persisted. No stage re-parses source files.
 
 ### 2.1 KWG Layer (Phase A — complete)
 
-| Artifact | Location | Description |
-|----------|----------|-------------|
-| `KWEntity` nodes | Neo4j `:KWEntity` | 2202+ entities with `mentionCount`, `qualifiers` |
-| `KWMention` nodes | Neo4j `:KWMention` | 5286+ mentions with `entityName`, `text`, `heading`, `filePath` |
-| `CO_OCCURS` edges | Neo4j `(:KWEntity)-[:CO_OCCURS]-(:KWEntity)` | 907+ co-occurrence edges with `count`, `score` |
-| `KWCluster` nodes | Neo4j `:KWCluster` | 32+ clusters with `label`, `members` |
-| `KWDoc` nodes | Neo4j `:KWDoc` | Per-document metadata |
+| Artifact          | Location                                     | Description                                                     |
+| ----------------- | -------------------------------------------- | --------------------------------------------------------------- |
+| `KWEntity` nodes  | Neo4j `:KWEntity`                            | 2202+ entities with `mentionCount`, `qualifiers`                |
+| `KWMention` nodes | Neo4j `:KWMention`                           | 5286+ mentions with `entityName`, `text`, `heading`, `filePath` |
+| `CO_OCCURS` edges | Neo4j `(:KWEntity)-[:CO_OCCURS]-(:KWEntity)` | 907+ co-occurrence edges with `count`, `score`                  |
+| `KWCluster` nodes | Neo4j `:KWCluster`                           | 32+ clusters with `label`, `members`                            |
+| `KWDoc` nodes     | Neo4j `:KWDoc`                               | Per-document metadata                                           |
 
 ### 2.2 TCG Layer (Phase B — complete)
 
-| Artifact | Location | Description |
-|----------|----------|-------------|
-| `TCGCommit` nodes | Neo4j `:TCGCommit` | 20+ commits with hash, author, date |
-| `TCGFile` nodes | Neo4j `:TCGFile` | 345+ file nodes with ownership, hotspot scores |
-| `CO_CHANGED_WITH` edges | Neo4j | 60+ temporal co-change edges |
-| Cross-layer links | Neo4j `INTRODUCED_IN`, `LAST_TOUCHED_IN` | 712+ KWEntity ↔ TCGCommit links |
+| Artifact                | Location                                 | Description                                    |
+| ----------------------- | ---------------------------------------- | ---------------------------------------------- |
+| `TCGCommit` nodes       | Neo4j `:TCGCommit`                       | 20+ commits with hash, author, date            |
+| `TCGFile` nodes         | Neo4j `:TCGFile`                         | 345+ file nodes with ownership, hotspot scores |
+| `CO_CHANGED_WITH` edges | Neo4j                                    | 60+ temporal co-change edges                   |
+| Cross-layer links       | Neo4j `INTRODUCED_IN`, `LAST_TOUCHED_IN` | 712+ KWEntity ↔ TCGCommit links                |
 
 ### 2.3 Drift Layer (Phase C — complete)
 
-| Artifact | Location | Description |
-|----------|----------|-------------|
+| Artifact            | Location             | Description                              |
+| ------------------- | -------------------- | ---------------------------------------- |
 | `DriftSignal` nodes | Neo4j `:DriftSignal` | 1684+ signals (11 critical, 628 warning) |
-| 4 detectors | CLI + lib | doc↔code, temporal, deps, doc↔doc |
-| `iw build cheap` | CLI | Full $0 evidence pipeline |
-| `iw doc-health` | CLI | Unified drift report |
+| 4 detectors         | CLI + lib            | doc↔code, temporal, deps, doc↔doc        |
+| `iw build cheap`    | CLI                  | Full $0 evidence pipeline                |
+| `iw doc-health`     | CLI                  | Unified drift report                     |
 
 ### 2.4 SKG Layer (existing open track)
 
-| Artifact | Location | Description |
-|----------|----------|-------------|
-| FX → KX → GX pipeline | `@intentweave/analyzer` | LLM-based semantic extraction |
-| `Canon:Entity` nodes | Neo4j `:Canon:Entity` | Semantic entities with type, confidence, aliases |
-| `CANON_REL` edges | Neo4j `{predicate}` | 30 canonical predicates |
-| `RawTriple` nodes | Neo4j `:RawTriple` | Pre-canonicalization triples |
-| Cross-layer links | Neo4j `REALIZED_BY` | Canon → CodeRef code links |
+| Artifact              | Location                | Description                                      |
+| --------------------- | ----------------------- | ------------------------------------------------ |
+| FX → KX → GX pipeline | `@intentweave/analyzer` | LLM-based semantic extraction                    |
+| `Canon:Entity` nodes  | Neo4j `:Canon:Entity`   | Semantic entities with type, confidence, aliases |
+| `CANON_REL` edges     | Neo4j `{predicate}`     | 30 canonical predicates                          |
+| `RawTriple` nodes     | Neo4j `:RawTriple`      | Pre-canonicalization triples                     |
+| Cross-layer links     | Neo4j `REALIZED_BY`     | Canon → CodeRef code links                       |
 
 ### 2.5 Code Layer (AX/ast-extractor)
 
-| Artifact | Location | Description |
-|----------|----------|-------------|
+| Artifact        | Location                     | Description                       |
+| --------------- | ---------------------------- | --------------------------------- |
 | TS/JS extractor | `@intentweave/ast-extractor` | tree-sitter TypeScript/JavaScript |
-| Swift extractor | `@intentweave/swift-parser` | tree-sitter Swift |
-| AX stage output | `@intentweave/analyzer` | 5021+ code symbols |
-| `CodeRef` nodes | Neo4j `:CodeRef` | Function/class/type references |
+| Swift extractor | `@intentweave/swift-parser`  | tree-sitter Swift                 |
+| AX stage output | `@intentweave/analyzer`      | 5021+ code symbols                |
+| `CodeRef` nodes | Neo4j `:CodeRef`             | Function/class/type references    |
 
 ### 2.6 Embedding Infrastructure (partial)
 
-| Artifact | Location | Description |
-|----------|----------|-------------|
-| `LLMProvider.embed?()` | `packages/core/src/interfaces.ts:48` | Optional method on interface |
-| `supportsEmbeddings` | `packages/core/src/interfaces.ts:133` | Capability flag |
+| Artifact                    | Location                                            | Description                                |
+| --------------------------- | --------------------------------------------------- | ------------------------------------------ |
+| `LLMProvider.embed?()`      | `packages/core/src/interfaces.ts:48`                | Optional method on interface               |
+| `supportsEmbeddings`        | `packages/core/src/interfaces.ts:133`               | Capability flag                            |
 | `OpenAILLMProvider.embed()` | `packages/analyzer/src/providers/llm/openai.ts:312` | Implemented, uses `text-embedding-3-small` |
-| No ONNX provider | — | Not yet implemented |
-| No vector index | Neo4j | Not yet created |
+| No ONNX provider            | —                                                   | Not yet implemented                        |
+| No vector index             | Neo4j                                               | Not yet created                            |
 
 ---
 
@@ -165,9 +166,9 @@ on entities already persisted. No stage re-parses source files.
 
 ### 3.1 Problem
 
-The existing SKG pipeline (FX → KX → GX) runs LLM extraction on *every* chunk blindly —
+The existing SKG pipeline (FX → KX → GX) runs LLM extraction on _every_ chunk blindly —
 equal cost per chunk regardless of whether it contains high-value entities or boilerplate.
-With Phases A-C complete, we know *exactly* which entities are most important:
+With Phases A-C complete, we know _exactly_ which entities are most important:
 
 - **High-degree KWG entities** (many mentions, many co-occurrences)
 - **Entities with drift signals** (signature mismatch, doc divergence)
@@ -184,16 +185,16 @@ interface TriageCandidate {
   sessionId: string;
 
   // ── Evidence signals ──
-  mentionCount: number;         // from KWEntity.mentionCount
-  coOccurrenceDegree: number;   // count of CO_OCCURS edges
-  clusterSize: number;          // size of entity's cluster (0 if singleton)
-  driftSignalCount: number;     // count of DriftSignals that AFFECTS this entity
-  driftMaxSeverity: string;     // "critical" | "warning" | "info" | "none"
-  isInSkg: boolean;             // already has a matching Canon:Entity?
+  mentionCount: number; // from KWEntity.mentionCount
+  coOccurrenceDegree: number; // count of CO_OCCURS edges
+  clusterSize: number; // size of entity's cluster (0 if singleton)
+  driftSignalCount: number; // count of DriftSignals that AFFECTS this entity
+  driftMaxSeverity: string; // "critical" | "warning" | "info" | "none"
+  isInSkg: boolean; // already has a matching Canon:Entity?
 
   // ── Computed ──
-  score: number;                // weighted evidence score
-  rank: number;                 // 1-based rank (1 = highest priority)
+  score: number; // weighted evidence score
+  rank: number; // 1-based rank (1 = highest priority)
 }
 ```
 
@@ -209,6 +210,7 @@ score = mentionCount × 1.0
 ```
 
 **Rationale:**
+
 - `coOccurrenceDegree × 2.0` — entities that co-occur with many others are structural hubs
 - `driftSignalCount × 3.0` — drifted entities are the highest-value extraction targets
 - `isInSkg ? -20` — don't waste LLM budget re-extracting what we already have
@@ -222,8 +224,8 @@ import type { Driver } from "neo4j-driver";
 
 export interface TriageOptions {
   sessionId: string;
-  maxCandidates?: number;   // default: 50
-  minScore?: number;        // default: 5
+  maxCandidates?: number; // default: 50
+  minScore?: number; // default: 5
 }
 
 export interface TriageResult {
@@ -305,7 +307,9 @@ export const triageCommand = new Command("triage")
   .option("-f, --format <fmt>", "Output format: table | json", "table")
   .option("-o, --output <file>", "Write output to file")
   .option("-v, --verbose", "Verbose output", false)
-  .action(async (opts) => { /* ... */ });
+  .action(async (opts) => {
+    /* ... */
+  });
 ```
 
 ### 3.7 Example output
@@ -334,7 +338,7 @@ export const triageCommand = new Command("triage")
 
 SKG Canon entities exist in isolation from the evidence graph. A `Canon:Entity` named
 "Pipeline" has `CANON_REL` edges to other Canon entities, but no link to the 18 KWG mentions
-of "pipeline" that *motivated* its extraction. This means:
+of "pipeline" that _motivated_ its extraction. This means:
 
 - No provenance trail: "Why was this entity extracted?"
 - No confidence boost: entities with 20 KWG mentions + 5 drift signals should rank
@@ -377,7 +381,7 @@ export async function linkEvidencedBy(
 export interface EvidenceLinkResult {
   linksCreated: number;
   canonEntitiesLinked: number;
-  canonEntitiesUnlinked: number;  // Canon entities with no KWG evidence
+  canonEntitiesUnlinked: number; // Canon entities with no KWG evidence
   kwEntitiesLinked: number;
 }
 ```
@@ -412,6 +416,7 @@ RETURN count(ev) AS linksCreated,
 ### 4.5 Persistence integration
 
 `linkEvidencedBy()` runs:
+
 - After `iw persist` (existing SKG persist + evidence linking)
 - After `iw xlink` (code linking + evidence linking)
 - As part of `iw build full` (after SKG + evidence stages)
@@ -442,7 +447,7 @@ in the KWG+ visualization.
 
 ### 5.1 Problem
 
-KWG captures entity *co-occurrence* but not the *verb* connecting them. "Pipeline enables
+KWG captures entity _co-occurrence_ but not the _verb_ connecting them. "Pipeline enables
 caching" and "Pipeline disables caching" both produce a `CO_OCCURS(pipeline, caching)` edge.
 The verb is lost.
 
@@ -469,25 +474,41 @@ const VERB_PATTERNS: Array<{
   direction: "forward" | "backward";
 }> = [
   // Structural
-  { pattern: /\bcontains?\b/i,      predicate: "CONTAINS",     direction: "forward" },
-  { pattern: /\bdepends?\s+on\b/i,  predicate: "DEPENDS_ON",   direction: "forward" },
-  { pattern: /\bextends?\b/i,       predicate: "EXTENDS",      direction: "forward" },
-  { pattern: /\bimplements?\b/i,    predicate: "IMPLEMENTS",    direction: "forward" },
-  { pattern: /\breplaces?\b/i,      predicate: "REPLACES",     direction: "forward" },
-  { pattern: /\brequires?\b/i,      predicate: "REQUIRES",     direction: "forward" },
+  { pattern: /\bcontains?\b/i, predicate: "CONTAINS", direction: "forward" },
+  {
+    pattern: /\bdepends?\s+on\b/i,
+    predicate: "DEPENDS_ON",
+    direction: "forward",
+  },
+  { pattern: /\bextends?\b/i, predicate: "EXTENDS", direction: "forward" },
+  {
+    pattern: /\bimplements?\b/i,
+    predicate: "IMPLEMENTS",
+    direction: "forward",
+  },
+  { pattern: /\breplaces?\b/i, predicate: "REPLACES", direction: "forward" },
+  { pattern: /\brequires?\b/i, predicate: "REQUIRES", direction: "forward" },
 
   // Behavioral
-  { pattern: /\benables?\b/i,       predicate: "ENABLES",      direction: "forward" },
-  { pattern: /\bblocks?\b/i,        predicate: "BLOCKS",       direction: "forward" },
-  { pattern: /\btriggers?\b/i,      predicate: "TRIGGERS",     direction: "forward" },
-  { pattern: /\bproduces?\b/i,      predicate: "PRODUCES",     direction: "forward" },
-  { pattern: /\bconsumes?\b/i,      predicate: "CONSUMES",     direction: "forward" },
-  { pattern: /\buses?\b/i,          predicate: "USES",         direction: "forward" },
-  { pattern: /\bcalls?\b/i,         predicate: "CALLS",        direction: "forward" },
+  { pattern: /\benables?\b/i, predicate: "ENABLES", direction: "forward" },
+  { pattern: /\bblocks?\b/i, predicate: "BLOCKS", direction: "forward" },
+  { pattern: /\btriggers?\b/i, predicate: "TRIGGERS", direction: "forward" },
+  { pattern: /\bproduces?\b/i, predicate: "PRODUCES", direction: "forward" },
+  { pattern: /\bconsumes?\b/i, predicate: "CONSUMES", direction: "forward" },
+  { pattern: /\buses?\b/i, predicate: "USES", direction: "forward" },
+  { pattern: /\bcalls?\b/i, predicate: "CALLS", direction: "forward" },
 
   // Decision
-  { pattern: /\bis\s+(?:an?\s+)?alternative\s+to\b/i, predicate: "ALTERNATIVE_TO", direction: "forward" },
-  { pattern: /\bsupersedes?\b/i,    predicate: "SUPERSEDES",   direction: "forward" },
+  {
+    pattern: /\bis\s+(?:an?\s+)?alternative\s+to\b/i,
+    predicate: "ALTERNATIVE_TO",
+    direction: "forward",
+  },
+  {
+    pattern: /\bsupersedes?\b/i,
+    predicate: "SUPERSEDES",
+    direction: "forward",
+  },
 ];
 ```
 
@@ -585,19 +606,24 @@ iw build full docs/ -s myproject --persist -v
 
 ### 6.3 Selective extraction (triage → FX)
 
-The key innovation: D1 triage identifies *which* entities need LLM extraction. The FX stage
+The key innovation: D1 triage identifies _which_ entities need LLM extraction. The FX stage
 then only processes chunks where those entities appear (based on KWG mentions):
 
 ```typescript
 // Filter chunks to only those containing triage candidates
-const candidateNames = new Set(triageResult.candidates.map(c => c.entityName));
-const targetChunks = allChunks.filter(chunk => {
-  const mentionsInChunk = kwgMentions.filter(m =>
-    m.filePath === chunk.filePath &&
-    m.startLine >= chunk.startLine &&
-    m.startLine <= chunk.endLine
+const candidateNames = new Set(
+  triageResult.candidates.map((c) => c.entityName),
+);
+const targetChunks = allChunks.filter((chunk) => {
+  const mentionsInChunk = kwgMentions.filter(
+    (m) =>
+      m.filePath === chunk.filePath &&
+      m.startLine >= chunk.startLine &&
+      m.startLine <= chunk.endLine,
   );
-  return mentionsInChunk.some(m => candidateNames.has(m.entityName.toLowerCase()));
+  return mentionsInChunk.some((m) =>
+    candidateNames.has(m.entityName.toLowerCase()),
+  );
 });
 ```
 
@@ -642,6 +668,7 @@ iw build full <paths...> [options]
 
 Without embeddings, all matching is string-based (exact, slug, token overlap). This misses
 semantic matches:
+
 - "authentication service" ↔ `AuthenticationManager`
 - "data layer" ↔ `DatabaseRepository`
 - "config management" ↔ `SettingsStore`
@@ -673,7 +700,7 @@ import * as ort from "onnxruntime-node";
 
 export interface EmbeddingResult {
   text: string;
-  embedding: number[];  // 384 dimensions
+  embedding: number[]; // 384 dimensions
 }
 
 /**
@@ -685,8 +712,8 @@ export interface EmbeddingResult {
 export async function embedBatch(
   texts: string[],
   options?: {
-    modelPath?: string;    // default: .iw/models/all-MiniLM-L6-v2.onnx
-    batchSize?: number;    // default: 100
+    modelPath?: string; // default: .iw/models/all-MiniLM-L6-v2.onnx
+    batchSize?: number; // default: 100
   },
 ): Promise<EmbeddingResult[]> {
   // 1. Load model (cached after first call)
@@ -717,12 +744,12 @@ iw embed --list-models        # Show available models
 
 ### 7.5 What gets embedded
 
-| Entity type | Source | Embedding text |
-|-------------|--------|---------------|
-| KWEntity | KWG | `entity.name` (optionally + first mention text) |
-| Canon:Entity | SKG | `entity.name + " (" + entity.type + ")"` |
-| CodeRef | xlink | `codeRef.name + " (" + codeRef.kind + ")"` |
-| KWCluster | KWG | `cluster.label + ": " + cluster.members.join(", ")` |
+| Entity type  | Source | Embedding text                                      |
+| ------------ | ------ | --------------------------------------------------- |
+| KWEntity     | KWG    | `entity.name` (optionally + first mention text)     |
+| Canon:Entity | SKG    | `entity.name + " (" + entity.type + ")"`            |
+| CodeRef      | xlink  | `codeRef.name + " (" + codeRef.kind + ")"`          |
+| KWCluster    | KWG    | `cluster.label + ": " + cluster.members.join(", ")` |
 
 ### 7.6 Neo4j vector index
 
@@ -762,8 +789,8 @@ export async function hybridRetrieve(
   driver: Driver,
   queryText: string,
   options?: {
-    topK?: number;      // default: 10
-    hops?: number;      // default: 2
+    topK?: number; // default: 10
+    hops?: number; // default: 2
     sessionId?: string;
     layers?: ("kwg" | "skg" | "tcg")[];
   },
@@ -920,12 +947,20 @@ function detectLayers(question: string): Set<string> {
   const layers = new Set<string>();
 
   // TCG signals
-  if (/\b(commit|author|change|hot\s?spot|recent|frequently|ownership|co.?change)\b/.test(q)) {
+  if (
+    /\b(commit|author|change|hot\s?spot|recent|frequently|ownership|co.?change)\b/.test(
+      q,
+    )
+  ) {
     layers.add("tcg");
   }
 
   // Drift signals
-  if (/\b(drift|stale|outdated|mismatch|unused|undeclared|contradiction|diverge)\b/.test(q)) {
+  if (
+    /\b(drift|stale|outdated|mismatch|unused|undeclared|contradiction|diverge)\b/.test(
+      q,
+    )
+  ) {
     layers.add("drift");
   }
 
@@ -935,7 +970,11 @@ function detectLayers(question: string): Set<string> {
   }
 
   // SKG signals (default)
-  if (/\b(decision|component|architecture|design|relationship|depends|enables|blocks)\b/.test(q)) {
+  if (
+    /\b(decision|component|architecture|design|relationship|depends|enables|blocks)\b/.test(
+      q,
+    )
+  ) {
     layers.add("skg");
   }
 
@@ -962,6 +1001,7 @@ iw query "..." -s intentweave --layer all                    # All layers
 **File:** `packages/cli/src/commands/query.ts`
 
 Changes:
+
 1. Replace `GRAPH_SCHEMA` with `MULTI_LAYER_SCHEMA`
 2. Add `--layer <kwg|skg|tcg|drift|all>` option
 3. Add layer detection to system prompt
@@ -970,6 +1010,7 @@ Changes:
 **File:** `packages/cli/src/mcp/server.ts`
 
 Changes:
+
 1. Update `GRAPH_SCHEMA_TEXT` to include all layers
 2. Add optional `layer` parameter to `kg_query` tool
 
@@ -979,7 +1020,7 @@ Changes:
 
 ### 9.1 Problem
 
-Phase C's drift detectors are heuristic — they flag signals but can't assess *intent*. A
+Phase C's drift detectors are heuristic — they flag signals but can't assess _intent_. A
 "decision" qualifier in one doc and "alternative" qualifier in another might be a genuine
 contradiction, or it might be correct (the alternative was evaluated, and the decision was
 made separately).
@@ -1031,14 +1072,14 @@ export interface TriagedSignal {
 
 ### 9.5 Cost model
 
-| Parameter | Value |
-|-----------|-------|
-| Signals per run | 10 (default, configurable) |
-| Prompt per signal | ~500 tokens |
-| Completion per signal | ~200 tokens |
-| Total per run | ~7,000 tokens |
-| Cost (GPT-4o-mini) | ~$0.01 |
-| Cost (GPT-4o) | ~$0.07 |
+| Parameter             | Value                      |
+| --------------------- | -------------------------- |
+| Signals per run       | 10 (default, configurable) |
+| Prompt per signal     | ~500 tokens                |
+| Completion per signal | ~200 tokens                |
+| Total per run         | ~7,000 tokens              |
+| Cost (GPT-4o-mini)    | ~$0.01                     |
+| Cost (GPT-4o)         | ~$0.07                     |
 
 ### 9.6 Implementation
 
@@ -1047,7 +1088,7 @@ export interface TriagedSignal {
 ```typescript
 export interface DriftTriageOptions {
   sessionId: string;
-  maxSignals?: number;        // default: 10
+  maxSignals?: number; // default: 10
   provider: LLMProvider;
   verbose?: boolean;
 }
@@ -1058,7 +1099,7 @@ export interface DriftTriageResult {
   falsePositiveCount: number;
   uncertainCount: number;
   totalTokens: { prompt: number; completion: number };
-  costEstimate: string;       // e.g. "$0.01"
+  costEstimate: string; // e.g. "$0.01"
 }
 
 export async function triageDriftSignals(
@@ -1078,20 +1119,20 @@ export async function triageDriftSignals(
 
 ### 10.1 New relationship types
 
-| Relationship | From | To | Properties | Phase |
-|-------------|------|-----|-----------|-------|
-| `EVIDENCED_BY` | `:Canon:Entity` | `:KWEntity` | `mentionCount`, `driftCount`, `confidence` | D2 |
+| Relationship   | From            | To          | Properties                                 | Phase |
+| -------------- | --------------- | ----------- | ------------------------------------------ | ----- |
+| `EVIDENCED_BY` | `:Canon:Entity` | `:KWEntity` | `mentionCount`, `driftCount`, `confidence` | D2    |
 
 ### 10.2 New properties on existing nodes
 
-| Node | Property | Type | Phase |
-|------|----------|------|-------|
-| `:KWEntity` | `embedding` | `float[]` (384-dim) | D5 |
-| `:Canon:Entity` | `embedding` | `float[]` (384-dim) | D5 |
-| `:CO_OCCURS` | `verbHints` | `string[]` | D3 |
-| `:DriftSignal` | `llmAssessment` | `string` | D8 |
-| `:DriftSignal` | `llmSeverity` | `string` | D8 |
-| `:DriftSignal` | `suggestedFix` | `string` | D8 |
+| Node            | Property        | Type                | Phase |
+| --------------- | --------------- | ------------------- | ----- |
+| `:KWEntity`     | `embedding`     | `float[]` (384-dim) | D5    |
+| `:Canon:Entity` | `embedding`     | `float[]` (384-dim) | D5    |
+| `:CO_OCCURS`    | `verbHints`     | `string[]`          | D3    |
+| `:DriftSignal`  | `llmAssessment` | `string`            | D8    |
+| `:DriftSignal`  | `llmSeverity`   | `string`            | D8    |
+| `:DriftSignal`  | `suggestedFix`  | `string`            | D8    |
 
 ### 10.3 New indexes
 
@@ -1120,16 +1161,16 @@ first use (same pattern as Phase A-C).
 
 Use the same `intentweave` session data as Phase A-C golden tests:
 
-| Test | Input | Expected |
-|------|-------|----------|
-| `triage-basic` | KWG + SKG for intentweave | Top candidates sorted by score, none already in SKG |
-| `evidence-link` | Canon entities + KWG entities | EVIDENCED_BY edges created for matching names |
-| `verb-detect` | Markdown with "Pipeline enables caching" | VerbHint `{pipeline, caching, ENABLES}` |
-| `embed-basic` | 10 entity names | 384-dim embeddings, L2-normalized |
-| `query-route-tcg` | "What changed recently?" | Layer detection returns `tcg` |
-| `query-route-drift` | "What's outdated?" | Layer detection returns `drift` |
-| `query-route-kwg` | "Where is pipeline mentioned?" | Layer detection returns `kwg` |
-| `drift-triage` | 3 drift signals + mock LLM | TriagedSignal with fix suggestions |
+| Test                | Input                                    | Expected                                            |
+| ------------------- | ---------------------------------------- | --------------------------------------------------- |
+| `triage-basic`      | KWG + SKG for intentweave                | Top candidates sorted by score, none already in SKG |
+| `evidence-link`     | Canon entities + KWG entities            | EVIDENCED_BY edges created for matching names       |
+| `verb-detect`       | Markdown with "Pipeline enables caching" | VerbHint `{pipeline, caching, ENABLES}`             |
+| `embed-basic`       | 10 entity names                          | 384-dim embeddings, L2-normalized                   |
+| `query-route-tcg`   | "What changed recently?"                 | Layer detection returns `tcg`                       |
+| `query-route-drift` | "What's outdated?"                       | Layer detection returns `drift`                     |
+| `query-route-kwg`   | "Where is pipeline mentioned?"           | Layer detection returns `kwg`                       |
+| `drift-triage`      | 3 drift signals + mock LLM               | TriagedSignal with fix suggestions                  |
 
 ### 11.2 Test layout
 
@@ -1178,30 +1219,30 @@ D8 (LLM Triage) ──────── depends on: Phase C (Drift) + LLM provi
 
 ### Step sequence
 
-| Step | Item | Files to create/modify | Depends on | Testable? |
-|------|------|----------------------|-----------|-----------|
-| **D-1** | Triage scoring + CLI | `packages/cli/src/triage/triageAnalyzer.ts`, `packages/cli/src/commands/triage.ts`, `packages/cli/src/cli.ts` | KWG + Drift in Neo4j | `iw triage -s intentweave -v` → ranked list |
-| **D-2** | EVIDENCED_BY linker | `packages/cli/src/linker/evidenceLinker.ts` | D-1 + existing Canon entities | Cypher verify: `MATCH ()-[:EVIDENCED_BY]->() RETURN count(*)` |
-| **D-3** | Multi-layer GRAPH_SCHEMA | `packages/cli/src/commands/query.ts` (update schema), `packages/cli/src/mcp/server.ts` (update schema) | Layers in Neo4j | `iw query "What changed recently?" -s intentweave` routes correctly |
-| **D-4** | Layer routing + `--layer` flag | `packages/cli/src/commands/query.ts` (add flag + router) | D-3 | `iw query "..." --layer tcg` scopes to TCG |
-| **D-5** | Verb hint detector | `packages/analyzer/src/kwg/verbDetector.ts`, update `runKwxStage` | Phase A | Golden test: markdown → VerbHint[] |
-| **D-6** | ONNX embedding provider | `packages/analyzer/src/providers/embedding/onnxEmbedding.ts` | npm: `onnxruntime-node` | Unit test: embedBatch → 384-dim vectors |
-| **D-7** | Embedding pipeline + persist | `packages/cli/src/embed/embedPipeline.ts`, Neo4j vector indexes | D-6 | `iw embed -s intentweave` → embeddings on entities |
-| **D-8** | `iw build full` orchestrator | `packages/cli/src/commands/buildFull.ts`, update `buildCommand` | D-1 through D-7 | Full pipeline end-to-end |
+| Step    | Item                           | Files to create/modify                                                                                        | Depends on                    | Testable?                                                           |
+| ------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------- |
+| **D-1** | Triage scoring + CLI           | `packages/cli/src/triage/triageAnalyzer.ts`, `packages/cli/src/commands/triage.ts`, `packages/cli/src/cli.ts` | KWG + Drift in Neo4j          | `iw triage -s intentweave -v` → ranked list                         |
+| **D-2** | EVIDENCED_BY linker            | `packages/cli/src/linker/evidenceLinker.ts`                                                                   | D-1 + existing Canon entities | Cypher verify: `MATCH ()-[:EVIDENCED_BY]->() RETURN count(*)`       |
+| **D-3** | Multi-layer GRAPH_SCHEMA       | `packages/cli/src/commands/query.ts` (update schema), `packages/cli/src/mcp/server.ts` (update schema)        | Layers in Neo4j               | `iw query "What changed recently?" -s intentweave` routes correctly |
+| **D-4** | Layer routing + `--layer` flag | `packages/cli/src/commands/query.ts` (add flag + router)                                                      | D-3                           | `iw query "..." --layer tcg` scopes to TCG                          |
+| **D-5** | Verb hint detector             | `packages/analyzer/src/kwg/verbDetector.ts`, update `runKwxStage`                                             | Phase A                       | Golden test: markdown → VerbHint[]                                  |
+| **D-6** | ONNX embedding provider        | `packages/analyzer/src/providers/embedding/onnxEmbedding.ts`                                                  | npm: `onnxruntime-node`       | Unit test: embedBatch → 384-dim vectors                             |
+| **D-7** | Embedding pipeline + persist   | `packages/cli/src/embed/embedPipeline.ts`, Neo4j vector indexes                                               | D-6                           | `iw embed -s intentweave` → embeddings on entities                  |
+| **D-8** | `iw build full` orchestrator   | `packages/cli/src/commands/buildFull.ts`, update `buildCommand`                                               | D-1 through D-7               | Full pipeline end-to-end                                            |
 
 ### Estimated effort
 
-| Step | Effort | Cost per run |
-|------|--------|-------------|
-| D-1 (Triage) | 2-3 hours | $0 |
-| D-2 (Evidence links) | 1-2 hours | $0 |
-| D-3 (Multi-layer schema) | 1-2 hours | $0 |
-| D-4 (Layer routing) | 1-2 hours | $0 |
-| D-5 (Verb hints) | 2-3 hours | $0 |
-| D-6 (ONNX embeddings) | 3-4 hours | $0 |
-| D-7 (Embed pipeline) | 2-3 hours | $0 |
-| D-8 (build full) | 2-3 hours | ~$0.35/run |
-| **Total** | **~16-22 hours** | **$0 for evidence, ~$0.35 for SKG** |
+| Step                     | Effort           | Cost per run                        |
+| ------------------------ | ---------------- | ----------------------------------- |
+| D-1 (Triage)             | 2-3 hours        | $0                                  |
+| D-2 (Evidence links)     | 1-2 hours        | $0                                  |
+| D-3 (Multi-layer schema) | 1-2 hours        | $0                                  |
+| D-4 (Layer routing)      | 1-2 hours        | $0                                  |
+| D-5 (Verb hints)         | 2-3 hours        | $0                                  |
+| D-6 (ONNX embeddings)    | 3-4 hours        | $0                                  |
+| D-7 (Embed pipeline)     | 2-3 hours        | $0                                  |
+| D-8 (build full)         | 2-3 hours        | ~$0.35/run                          |
+| **Total**                | **~16-22 hours** | **$0 for evidence, ~$0.35 for SKG** |
 
 ---
 
@@ -1222,11 +1263,11 @@ Python, Rust, Go, or other languages.
 
 Follow the `@intentweave/swift-parser` pattern: one package per language.
 
-| Package | Parser | Dependencies |
-|---------|--------|-------------|
+| Package                      | Parser             | Dependencies         |
+| ---------------------------- | ------------------ | -------------------- |
 | `@intentweave/python-parser` | tree-sitter-python | `tree-sitter-python` |
-| `@intentweave/rust-parser` | tree-sitter-rust | `tree-sitter-rust` |
-| `@intentweave/go-parser` | tree-sitter-go | `tree-sitter-go` |
+| `@intentweave/rust-parser`   | tree-sitter-rust   | `tree-sitter-rust`   |
+| `@intentweave/go-parser`     | tree-sitter-go     | `tree-sitter-go`     |
 
 Each package exports:
 
@@ -1261,6 +1302,7 @@ iw build kwg docs/ -s intentweave --summarize-clusters -v
 ```
 
 Prompt per cluster:
+
 ```
 Given these related terms from a technical project:
 Members: neo4j, graph, database, cypher, bolt, driver, schema
@@ -1354,13 +1396,21 @@ Phase D adds many new modules. The public API surface should be defined for exte
 // @intentweave/analyzer — public API
 export {
   // KWG stages
-  runKwxStage, runCoxStage, runClxStage,
+  runKwxStage,
+  runCoxStage,
+  runClxStage,
   // TCG stages
-  runTcxStage, runCocStage, runHotStage, runOwnStage, runStlStage,
+  runTcxStage,
+  runCocStage,
+  runHotStage,
+  runOwnStage,
+  runStlStage,
   // Embedding
   embedBatch,
   // Types
-  type KwxStageOutput, type CoxStageOutput, type ClxStageOutput,
+  type KwxStageOutput,
+  type CoxStageOutput,
+  type ClxStageOutput,
   type EmbeddingResult,
 } from "./index.js";
 ```
@@ -1394,22 +1444,22 @@ Phase C (Drift) ─────── COMPLETE
 
 ## Appendix B: Phase E Preview
 
-| Item | Description | Depends on |
-|------|-------------|-----------|
-| E1 | DCG: runtime trace integration (`trace-calls` stage with instrumentation) | D4 |
-| E2 | Neo4j GDS community detection (Leiden/Louvain for clustering at scale) | D5 |
-| E3 | Framework API stabilization (clean exports from all packages) | D |
-| E4 | VS Code extension: inline drift annotations | D2 + D6 |
-| E5 | Auto-fix suggestions (LLM-generated PRs for critical drift) | D8 |
+| Item | Description                                                               | Depends on |
+| ---- | ------------------------------------------------------------------------- | ---------- |
+| E1   | DCG: runtime trace integration (`trace-calls` stage with instrumentation) | D4         |
+| E2   | Neo4j GDS community detection (Leiden/Louvain for clustering at scale)    | D5         |
+| E3   | Framework API stabilization (clean exports from all packages)             | D          |
+| E4   | VS Code extension: inline drift annotations                               | D2 + D6    |
+| E5   | Auto-fix suggestions (LLM-generated PRs for critical drift)               | D8         |
 
 ## Appendix C: Cost Comparison
 
-| Pipeline | Layers Built | LLM Calls | Cost | Time |
-|----------|-------------|-----------|------|------|
-| `iw build cheap` | KWG + TCG + AX + Drift | 0 | $0.00 | ~10s |
-| `iw build full --skip-skg` | Cheap + Embed + Triage | 0 | $0.00 | ~15s |
-| `iw build full` | All layers + Selective SKG | ~50 entities | ~$0.35 | ~50s |
-| `iw run --track open` (old) | SKG only (all chunks) | ~500 chunks | ~$3.50 | ~5min |
+| Pipeline                    | Layers Built               | LLM Calls    | Cost   | Time  |
+| --------------------------- | -------------------------- | ------------ | ------ | ----- |
+| `iw build cheap`            | KWG + TCG + AX + Drift     | 0            | $0.00  | ~10s  |
+| `iw build full --skip-skg`  | Cheap + Embed + Triage     | 0            | $0.00  | ~15s  |
+| `iw build full`             | All layers + Selective SKG | ~50 entities | ~$0.35 | ~50s  |
+| `iw run --track open` (old) | SKG only (all chunks)      | ~500 chunks  | ~$3.50 | ~5min |
 
 Phase D's selective extraction achieves ~90% of the old pipeline's result quality at ~10% of
 the cost, because the evidence graph identifies precisely which entities are worth the LLM budget.
