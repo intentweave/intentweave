@@ -11,7 +11,7 @@
  * Examples:
  *   iw impact package.json -s planpling
  *   iw impact ui/src/App.tsx -s planpling -v
- *   iw impact src/server/index.ts packages/cli/src/cli.ts -s codegraphchat-v2
+ *   iw impact src/server/index.ts packages/cli/src/cli.ts -s my-project
  *   iw impact package.json -s planpling --hops 3 --format json -o impact.json
  */
 
@@ -45,7 +45,7 @@ async function connectNeo4j(uri?: string): Promise<Neo4jConnection> {
   if (!password) {
     throw new Error(
       "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        "Example: export NEO4J_PASSWORD=codegraph",
+        "Example: export NEO4J_PASSWORD=intentweave",
     );
   }
 

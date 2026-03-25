@@ -100,11 +100,11 @@ The `-i` flag enables incremental caching — unchanged files are skipped on re-
 # Start Neo4j (Docker)
 docker run -d --name neo4j \
   -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/codegraph \
+  -e NEO4J_AUTH=neo4j/intentweave \
   neo4j:5
 
 # Persist the latest run
-export NEO4J_PASSWORD=codegraph
+export NEO4J_PASSWORD=intentweave
 iw persist --latest -v
 ```
 
@@ -514,7 +514,7 @@ export OPENAI_API_KEY=sk-...
 iw run docs/**/*.md --track open --provider openai -i -v
 
 # Persist to Neo4j
-export NEO4J_PASSWORD=codegraph
+export NEO4J_PASSWORD=intentweave
 iw persist --latest -v
 
 # Query
@@ -588,7 +588,7 @@ npx @intentweave/cli impact $(git diff --name-only HEAD~1) -s my-project -f json
 ### "Neo4j password required"
 
 ```bash
-export NEO4J_PASSWORD=codegraph
+export NEO4J_PASSWORD=intentweave
 ```
 
 ### Cache not working

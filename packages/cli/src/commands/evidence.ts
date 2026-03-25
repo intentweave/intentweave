@@ -9,7 +9,7 @@
  *
  * Usage:
  *   iw evidence -s planpling -v
- *   iw evidence -s codegraphchat-v2 -f json
+ *   iw evidence -s my-project -f json
  *
  * @see PHASE-D-SPEC.md §4
  * @version 0.1

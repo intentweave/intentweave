@@ -16,7 +16,7 @@
  * Examples:
  *   iw xlink . --session planpling -v
  *   iw xlink ../planpling --session planpling --persist -v
- *   iw xlink . --session codegraphchat-v2 --strategies dep,import -v
+ *   iw xlink . --session my-project --strategies dep,import -v
  */
 
 import { Command } from "commander";
@@ -50,7 +50,7 @@ async function connectNeo4j(uri?: string): Promise<Neo4jConnection> {
   if (!password) {
     throw new Error(
       "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        "Example: export NEO4J_PASSWORD=codegraph",
+        "Example: export NEO4J_PASSWORD=intentweave",
     );
   }
 
@@ -160,7 +160,7 @@ export const xlinkCommand = new Command("xlink")
       console.error("");
       console.error("Examples:");
       console.error("  iw xlink . --session planpling -v");
-      console.error("  iw xlink . --session codegraphchat-v2 --persist -v");
+      console.error("  iw xlink . --session my-project --persist -v");
       process.exit(1);
     }
 

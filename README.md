@@ -66,11 +66,11 @@ iw init
 # Start Neo4j (requires Docker)
 docker run -d --name neo4j \
   -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/codegraph \
+  -e NEO4J_AUTH=neo4j/intentweave \
   neo4j:5
 
 # Run the extraction pipeline on your docs
-export NEO4J_PASSWORD=codegraph
+export NEO4J_PASSWORD=intentweave
 export OPENAI_API_KEY=sk-...
 iw run docs/*.md --track open --provider openai -i --persist -v
 

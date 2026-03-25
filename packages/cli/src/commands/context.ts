@@ -72,7 +72,7 @@ async function connectNeo4j(opts: {
   if (!password) {
     throw new Error(
       "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        "Example: export NEO4J_PASSWORD=codegraph",
+        "Example: export NEO4J_PASSWORD=intentweave",
     );
   }
 

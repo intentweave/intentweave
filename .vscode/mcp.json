@@ -11,7 +11,7 @@
         "--verbose"
       ],
       "env": {
-        "NEO4J_PASSWORD": "codegraph"
+        "NEO4J_PASSWORD": "intentweave"
       }
     }
   }

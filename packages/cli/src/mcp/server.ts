@@ -89,7 +89,7 @@ async function getConnection(uri?: string): Promise<Neo4jConnection> {
 
   if (!password) {
     throw new Error(
-      "NEO4J_PASSWORD environment variable is required. Example: export NEO4J_PASSWORD=codegraph",
+      "NEO4J_PASSWORD environment variable is required. Example: export NEO4J_PASSWORD=intentweave",
     );
   }
 
