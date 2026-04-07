@@ -155,6 +155,10 @@ const mentions = index.mentionsOf({ entityId: "entity:auth-service" });
 const annotations = index.annotationsForFile({ filePath: "docs/AUTH.md" });
 // → [{ mention: 'AuthService', entityId: 'entity:auth-service', entityName: 'AuthService',
 //      entitySource: 'external', line: 52, confidence: 0.95 }]
+
+// Map test files to source files and find untested exports
+const coverage = index.testCoverage();
+// → { totalExported: 45, covered: 38, coveragePercent: 84.4, untested: [...], ... }
 ```
 
 **Low-level API:** Use `registerExternalEntities(dbPath, entities)` from `@intentweave/index`
@@ -340,6 +344,22 @@ const result = index.annotationsForFile({ filePath: "docs/AUTH.md" });
 // Options: minConfidence?: number, limit?: number
 ```
 
+### `testCoverage(params)` — Test → Source Mapping
+
+Map test files to their source files via naming convention and import analysis.
+Identifies exported symbols lacking test coverage.
+
+```typescript
+const result = index.testCoverage({ limit: 20 });
+// result.totalExported: number — total exported symbols in source files
+// result.covered: number — symbols with at least one test mapping
+// result.coveragePercent: number — covered/totalExported * 100
+// result.mappings: Array<{ testFile, sourceFile, strategy, importedNames }>
+//   strategy: "naming" | "import" | "both"
+// result.untested: Array<{ name, filePath, kind, line }>
+// result.byDirectory: Array<{ directory, totalExported, covered, coveragePercent }>
+```
+
 ---
 
 ## 3. Low-Level Mode
@@ -368,7 +388,8 @@ db.close();
 Available functions:
 `retrieve`, `connections`, `check`, `report`, `clones`, `structuralClones`,
 `circularImports`, `unusedExports`, `hotspotPriority`, `todos`,
-`moduleCoverage`, `orphanedSections`, `docCompleteness`, `crossGroupDrift`
+`moduleCoverage`, `orphanedSections`, `docCompleteness`, `crossGroupDrift`,
+`testCoverage`
 
 ### Build Pipeline Functions
 

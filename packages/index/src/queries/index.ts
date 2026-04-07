@@ -23,6 +23,7 @@ export {
 } from "./orphanedSections.js";
 export { docCompleteness, docCompletenessFromDb } from "./docCompleteness.js";
 export { crossGroupDrift, crossGroupDriftFromDb } from "./crossGroupDrift.js";
+export { testCoverage, testCoverageFromDb } from "./testCoverage.js";
 export {
   mentionsOf,
   mentionsOfFromDb,

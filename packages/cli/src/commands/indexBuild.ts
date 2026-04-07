@@ -168,6 +168,7 @@ import {
   mentionsOf,
   annotationsForFile,
   registerExternalEntities,
+  testCoverage,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -1246,6 +1247,84 @@ const indexRegisterEntitiesSubcommand = new Command("register-entities")
     );
   });
 
+const indexTestCoverageSubcommand = new Command("test-coverage")
+  .description(
+    "Map test files to source files and find untested exported symbols",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Max untested symbols to show", parseInt)
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .option("-v, --verbose", "Show test→source mappings", false)
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = testCoverage(dbPath, { limit: opts.limit });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const color =
+      result.coveragePercent >= 80
+        ? chalk.green
+        : result.coveragePercent >= 50
+          ? chalk.yellow
+          : chalk.red;
+    console.log(
+      chalk.blue("\n  ▸ Test Coverage: ") +
+        color(
+          `${result.covered}/${result.totalExported} exported symbols (${result.coveragePercent}%)`,
+        ),
+    );
+
+    if (opts.verbose && result.mappings.length > 0) {
+      console.log(chalk.gray("\n    Mappings:"));
+      for (const m of result.mappings) {
+        const strat =
+          m.strategy === "both"
+            ? chalk.cyan("naming+import")
+            : m.strategy === "naming"
+              ? chalk.blue("naming")
+              : chalk.magenta("import");
+        console.log(
+          chalk.gray(
+            `      ${m.testFile} → ${m.sourceFile}  [${strat}${chalk.gray("]")}`,
+          ),
+        );
+      }
+    }
+
+    if (result.untested.length > 0) {
+      console.log(chalk.gray("\n    Untested exported symbols:"));
+      for (const u of result.untested) {
+        console.log(
+          chalk.gray(`      ${u.kind} `) +
+            chalk.white(u.name) +
+            chalk.gray(` (${u.filePath}:${u.line})`),
+        );
+      }
+    }
+
+    if (result.byDirectory.length > 0) {
+      console.log(chalk.gray("\n    Per-directory coverage:"));
+      for (const d of result.byDirectory) {
+        const dColor =
+          d.coveragePercent >= 80
+            ? chalk.green
+            : d.coveragePercent >= 50
+              ? chalk.yellow
+              : chalk.red;
+        console.log(
+          chalk.gray(`      ${d.directory.padEnd(48)} `) +
+            dColor(
+              `${d.covered}/${d.totalExported} (${d.coveragePercent.toFixed(0)}%)`,
+            ),
+        );
+      }
+    }
+    console.log();
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
@@ -1266,4 +1345,5 @@ export const indexCommand = new Command("index")
   .addCommand(indexCrossGroupDriftSubcommand)
   .addCommand(indexMentionsOfSubcommand)
   .addCommand(indexAnnotationsForSubcommand)
-  .addCommand(indexRegisterEntitiesSubcommand);
+  .addCommand(indexRegisterEntitiesSubcommand)
+  .addCommand(indexTestCoverageSubcommand);

@@ -24,6 +24,7 @@ intentweave/
 │   ├── core/             # Shared types, LLM interfaces, utilities
 │   ├── index/            # CARI — SQLite index (annotator, IDF, queries, incremental)
 │   ├── profiles/         # Profile packs for domain-specific extraction
+│   ├── python-parser/    # tree-sitter Python extraction
 │   ├── server-core/      # Fastify + Neo4j + middleware
 │   ├── server-open/      # Open track API routes
 │   └── swift-parser/     # tree-sitter Swift extraction
@@ -102,30 +103,32 @@ See `docs/LIBRARY-API.md` for full documentation.
 
 ### Key Files
 
-| File                                              | Purpose                                                 |
-| ------------------------------------------------- | ------------------------------------------------------- |
-| `packages/index/src/facade.ts`                    | CariIndex facade class + buildFromPaths orchestration   |
-| `packages/index/src/writer.ts`                    | SQLite index builder                                    |
-| `packages/index/src/annotator.ts`                 | Document→code annotation engine (IDF penalty)           |
-| `packages/index/src/idf.ts`                       | IDF scorer + stopword baseline (50 terms, ceiling 0.15) |
-| `packages/index/src/schema.ts`                    | SQLite table definitions                                |
-| `packages/index/src/queries/retrieve.ts`          | Ranked file retrieval                                   |
-| `packages/index/src/queries/connections.ts`       | Cross-layer connection discovery                        |
-| `packages/index/src/queries/check.ts`             | CI drift detection                                      |
-| `packages/index/src/queries/report.ts`            | Corpus-wide health report                               |
-| `packages/index/src/queries/clones.ts`            | Exact + structural clone detection                      |
-| `packages/index/src/queries/imports.ts`           | Circular imports + unused exports                       |
-| `packages/index/src/queries/hotspotPriority.ts`   | High-churn low-doc file ranking                         |
-| `packages/index/src/queries/todos.ts`             | TODO/FIXME/HACK/XXX inventory                           |
-| `packages/index/src/queries/moduleCoverage.ts`    | Documentation coverage per directory                    |
-| `packages/index/src/queries/orphanedSections.ts`  | Doc sections with all-ungrounded mentions               |
-| `packages/index/src/queries/docCompleteness.ts`   | Per-doc completeness vs. referenced exports             |
-| `packages/index/src/queries/crossGroupDrift.ts`   | Cross-group entity coverage conflicts                   |
-| `packages/index/src/incremental.ts`               | Content-hash incremental updates                        |
-| `packages/analyzer/src/kwg/heuristicExtractor.ts` | Keyword extraction (dictionary, depth)                  |
-| `packages/analyzer/src/kwg/kwxStage.ts`           | KWX stage options (depth, dictionary)                   |
-| `packages/cli/src/commands/indexBuild.ts`         | `iw index build` CLI orchestrator                       |
-| `packages/cli/src/mcp/server.ts`                  | MCP server (6 KG + 13 CARI tools)                       |
+| File                                               | Purpose                                                 |
+| -------------------------------------------------- | ------------------------------------------------------- |
+| `packages/index/src/facade.ts`                     | CariIndex facade class + buildFromPaths orchestration   |
+| `packages/index/src/writer.ts`                     | SQLite index builder                                    |
+| `packages/index/src/annotator.ts`                  | Document→code annotation engine (IDF penalty)           |
+| `packages/index/src/idf.ts`                        | IDF scorer + stopword baseline (50 terms, ceiling 0.15) |
+| `packages/index/src/schema.ts`                     | SQLite table definitions                                |
+| `packages/index/src/queries/retrieve.ts`           | Ranked file retrieval                                   |
+| `packages/index/src/queries/connections.ts`        | Cross-layer connection discovery                        |
+| `packages/index/src/queries/check.ts`              | CI drift detection                                      |
+| `packages/index/src/queries/report.ts`             | Corpus-wide health report                               |
+| `packages/index/src/queries/clones.ts`             | Exact + structural clone detection                      |
+| `packages/index/src/queries/imports.ts`            | Circular imports + unused exports                       |
+| `packages/index/src/queries/hotspotPriority.ts`    | High-churn low-doc file ranking                         |
+| `packages/index/src/queries/todos.ts`              | TODO/FIXME/HACK/XXX inventory                           |
+| `packages/index/src/queries/moduleCoverage.ts`     | Documentation coverage per directory                    |
+| `packages/index/src/queries/orphanedSections.ts`   | Doc sections with all-ungrounded mentions               |
+| `packages/index/src/queries/docCompleteness.ts`    | Per-doc completeness vs. referenced exports             |
+| `packages/index/src/queries/crossGroupDrift.ts`    | Cross-group entity coverage conflicts                   |
+| `packages/index/src/incremental.ts`                | Content-hash incremental updates                        |
+| `packages/analyzer/src/kwg/heuristicExtractor.ts`  | Keyword extraction (dictionary, depth)                  |
+| `packages/analyzer/src/kwg/kwxStage.ts`            | KWX stage options (depth, dictionary)                   |
+| `packages/analyzer/src/stages/languageRegistry.ts` | LanguageAdapter interface + LanguageRegistry class      |
+| `packages/python-parser/src/extractor.ts`          | Python AST extractor (tree-sitter-python)               |
+| `packages/cli/src/commands/indexBuild.ts`          | `iw index build` CLI orchestrator                       |
+| `packages/cli/src/mcp/server.ts`                   | MCP server (6 KG + 13 CARI tools)                       |
 
 ### SQLite Schema (`.iw/index.db`)
 
@@ -218,6 +221,7 @@ programmatic API.
 | `cari_cross_group_drift` | Cross-group conflicts       | _(none)_                               |
 | `cari_mentions_of`       | Entity → doc mentions       | `entityId`, `minConfidence?`, `limit?` |
 | `cari_annotations_for`   | File → all annotations      | `filePath`, `minConfidence?`, `limit?` |
+| `cari_test_coverage`     | Test→source mapping + gaps  | `limit?`                               |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
@@ -237,6 +241,7 @@ All CARI query functions are available as direct API calls, MCP tools, and CLI s
 | `crossGroupDrift()`    | `iw index cross-group-drift` | Entity coverage conflicts across doc groups              |
 | `mentionsOf()`         | `iw index mentions-of`       | Find doc mentions of a code or external entity           |
 | `annotationsForFile()` | `iw index annotations-for`   | List all annotations for a documentation file            |
+| `testCoverage()`       | `iw index test-coverage`     | Map test files to source files, find untested exports    |
 
 ### Entity Bridge
 

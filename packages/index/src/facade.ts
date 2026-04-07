@@ -55,6 +55,7 @@ import {
   orphanedSectionsFromDb,
   docCompletenessFromDb,
   crossGroupDriftFromDb,
+  testCoverageFromDb,
   mentionsOfFromDb,
   annotationsForFileFromDb,
 } from "./queries/index.js";
@@ -80,6 +81,8 @@ import type {
   OrphanedSectionsResult,
   DocCompletenessResult,
   CrossGroupDriftResult,
+  TestCoverageParams,
+  TestCoverageResult,
   ExternalEntity,
   MentionsOfParams,
   MentionsOfResult,
@@ -605,6 +608,11 @@ export class CariIndex {
   /** Cross-group entity coverage conflicts. */
   crossGroupDrift(): CrossGroupDriftResult {
     return crossGroupDriftFromDb(this.db);
+  }
+
+  /** Map test files to source files and find untested exported symbols. */
+  testCoverage(params: TestCoverageParams = {}): TestCoverageResult {
+    return testCoverageFromDb(this.db, params);
   }
 
   // ---------------------------------------------------------------------------

@@ -194,7 +194,7 @@ old behaviour.
 
 ## 7. Language Support
 
-### 7.1 Python AST Extractor _(AX, M)_
+### 7.1 Python AST Extractor _(AX, M)_ ✅ Done
 
 Create `packages/python-parser/` using `tree-sitter-python`. Extract: functions, classes,
 methods, decorators, imports (`import X`, `from X import Y`), module-level variables,
@@ -205,9 +205,9 @@ downstream stages (KWX, COX, Annotate, CARI queries) work without changes.
 TS/JS files → `ast-extractor`, `.swift` → `swift-parser`. Adding Python requires a
 third branch — or better, the generic dispatch in 7.2.
 
-### 7.2 Language-Agnostic AX Dispatch _(AX, M)_
+### 7.2 Language-Agnostic AX Dispatch _(AX, M)_ ✅ Done
 
-Replace the hardcoded if/else in the AX stage with a **language registry**:
+Replaced the hardcoded if/else in the AX stage with a **language registry**:
 
 ```typescript
 // .iw/languages.ts or built-in registry
@@ -563,7 +563,7 @@ CLI: `iw index export --obsidian`.
 | 1.7  | Doc completeness scoring         | CARI | S      | Medium | None                 | ✅      |
 | 2.2  | Structural clones                | CARI | M      | High   | 2.1                  | ✅      |
 | 1.2  | Cross-group drift                | CARI | M      | High   | 1.1                  | ✅      |
-| 6.2  | Test coverage mapping            | CARI | M      | High   | AX imports (exists)  |         |
+| 6.2  | Test coverage mapping            | CARI | M      | High   | AX imports (exists)  | ✅      |
 | 3.3  | Dependency depth                 | CARI | S      | Medium | AX imports (exists)  |         |
 | 4.4  | Bus factor per module            | CARI | M      | Medium | TCG data (exists)    |         |
 | 3.4  | Package boundary violations      | CARI | M      | Medium | 5.1 concept          |         |
@@ -579,8 +579,8 @@ CLI: `iw index export --obsidian`.
 | 2.4  | Clone lineage tracking           | CARI | M      | Low    | 2.1                  |         |
 | 1.6  | Decision lifecycle               | KG   | M      | Medium | Neo4j pipeline       |         |
 | 2.3  | Semantic clone detection         | KG   | L      | Medium | LLM embeddings       |         |
-| 7.1  | Python AST extractor             | AX   | M      | High   | tree-sitter-python   |         |
-| 7.2  | Language-agnostic AX dispatch    | AX   | M      | High   | 7.1                  |         |
+| 7.1  | Python AST extractor             | AX   | M      | High   | tree-sitter-python   | ✅ Done |
+| 7.2  | Language-agnostic AX dispatch    | AX   | M      | High   | 7.1                  | ✅ Done |
 | 7.3  | Go / Rust / Java extractors      | AX   | M each | Medium | 7.2                  |         |
 | 8.0  | CariIndex facade + orchestration | CARI | M      | High   | None (refactor)      | ✅ Done |
 | 8.0a | Entity bridge                    | CARI | M      | High   | 8.0                  | ✅ Done |

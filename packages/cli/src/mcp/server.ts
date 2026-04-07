@@ -1688,6 +1688,94 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     },
   );
 
+  // ── cari_test_coverage ─────────────────────────────────────────────
+  server.tool(
+    "cari_test_coverage",
+    `Map test files to source files and find untested exported symbols. Uses naming conventions (foo.test.ts → foo.ts, foo.spec.ts, __tests__/) and import analysis to determine coverage.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .optional()
+        .describe("Max untested symbols to return (default: all)"),
+    },
+    async ({ limit }) => {
+      log("cari_test_coverage", { limit });
+      try {
+        const { testCoverage } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = testCoverage(dbPath, { limit });
+
+        if (result.totalExported === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No exported symbols found in the index.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Test Coverage: ${result.covered}/${result.totalExported} exported symbols (${result.coveragePercent}%)`,
+          "",
+        ];
+
+        if (result.mappings.length > 0) {
+          lines.push(
+            "### Test → Source Mappings",
+            "",
+            "| Test File | Source File | Strategy | Imported Names |",
+            "|-----------|------------|----------|----------------|",
+          );
+          for (const m of result.mappings) {
+            const names =
+              m.importedNames.length > 0 ? m.importedNames.join(", ") : "—";
+            lines.push(
+              `| ${m.testFile} | ${m.sourceFile} | ${m.strategy} | ${names} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        if (result.untested.length > 0) {
+          lines.push(
+            "### Untested Exported Symbols",
+            "",
+            "| Symbol | File | Kind | Line |",
+            "|--------|------|------|------|",
+          );
+          for (const u of result.untested) {
+            lines.push(`| ${u.name} | ${u.filePath} | ${u.kind} | ${u.line} |`);
+          }
+          lines.push("");
+        }
+
+        if (result.byDirectory.length > 0) {
+          lines.push(
+            "### Per-Directory Coverage",
+            "",
+            "| Directory | Covered | Total | Coverage |",
+            "|-----------|---------|-------|----------|",
+          );
+          for (const d of result.byDirectory) {
+            lines.push(
+              `| ${d.directory} | ${d.covered} | ${d.totalExported} | ${d.coveragePercent.toFixed(0)}% |`,
+            );
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
   // ── Connect via stdio ───────────────────────────────────────────────
   const transport = new StdioServerTransport();
   await server.connect(transport);

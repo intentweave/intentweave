@@ -507,6 +507,54 @@ export interface CrossGroupDriftResult {
 }
 
 // =============================================================================
+// Test Coverage Mapping
+// =============================================================================
+
+/** Parameters for test coverage mapping. */
+export interface TestCoverageParams {
+  /** Limit number of untested symbols returned (default: all) */
+  limit?: number;
+}
+
+/** A single test→source file mapping. */
+export interface TestMapping {
+  /** Path to the test file */
+  testFile: string;
+  /** Path to the source file it tests */
+  sourceFile: string;
+  /** How the mapping was discovered */
+  strategy: "naming" | "import" | "both";
+  /** Symbol names imported by the test from the source */
+  importedNames: string[];
+}
+
+/** Result of test coverage mapping analysis. */
+export interface TestCoverageResult {
+  /** Total number of exported symbols in non-test files */
+  totalExported: number;
+  /** Number of exported symbols that are referenced by at least one test */
+  covered: number;
+  /** Coverage percentage (0–100) */
+  coveragePercent: number;
+  /** Exported symbols with no test coverage */
+  untested: Array<{
+    name: string;
+    filePath: string;
+    kind: string;
+    line: number;
+  }>;
+  /** Discovered test→source mappings */
+  mappings: TestMapping[];
+  /** Per-directory coverage summary */
+  byDirectory: Array<{
+    directory: string;
+    totalExported: number;
+    covered: number;
+    coveragePercent: number;
+  }>;
+}
+
+// =============================================================================
 // External Entity (Entity Bridge)
 // =============================================================================
 

@@ -4,16 +4,19 @@
 /**
  * AX Stage - AST Extraction
  *
- * Extracts code symbols from TypeScript/JavaScript and Swift files using tree-sitter.
- * Produces deterministic, per-file symbol tables for spec-code linking.
+ * Extracts code symbols from source files using tree-sitter via a
+ * language-agnostic adapter registry. Built-in adapters support
+ * TypeScript/JavaScript, Swift, and Python. Adding a new language
+ * requires one adapter factory + one `registry.register()` call.
  *
  * Design principles:
  * - Per-file processing (stable provenance, incremental updates)
  * - Deterministic output (heuristic source, no LLM)
  * - Stable IDs (impl:<path>#<kind>:<name>)
  * - Debug-friendly (jump-to-source support)
+ * - Language-agnostic dispatch via LanguageRegistry
  *
- * Input: Workspace with TypeScript/JavaScript files
+ * Input: Workspace with source files
  * Output: ax.json (workspace summary + per-file symbols)
  */
 
@@ -32,6 +35,19 @@ import {
   type SwiftSymbol,
   type SwiftFileResult,
 } from "@intentweave/swift-parser";
+
+import {
+  createPythonExtractor,
+  type PythonSymbol,
+  type PythonFileResult,
+} from "@intentweave/python-parser";
+
+import {
+  LanguageRegistry,
+  type LanguageAdapter,
+  type LanguageAdapterOptions,
+  type LanguageAdapterFactory,
+} from "./languageRegistry.js";
 
 // ============================================================================
 // AX Output Types
@@ -144,7 +160,14 @@ export interface AxFileResult {
   contentHash: string;
 
   /** Detected language */
-  language: "typescript" | "javascript" | "tsx" | "jsx" | "swift";
+  language:
+    | "typescript"
+    | "javascript"
+    | "tsx"
+    | "jsx"
+    | "swift"
+    | "python"
+    | (string & {});
 
   /** Symbols in this file */
   symbols: AxSymbol[];
@@ -400,6 +423,69 @@ function convertSwiftSymbol(
 }
 
 // ============================================================================
+// Python Symbol Mapping
+// ============================================================================
+
+/**
+ * Map Python SymbolKind to AX SymbolKind
+ */
+function mapPythonSymbolKind(
+  kind: PythonSymbol["kind"],
+): AxSymbol["kind"] | null {
+  switch (kind) {
+    case "function":
+      return "function";
+    case "class":
+      return "class";
+    case "method":
+      return "method";
+    case "property":
+      return "property";
+    // Skip module-level variables (like Swift)
+    case "variable":
+    case "module":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Convert Python symbol to AX symbol
+ */
+function convertPythonSymbol(
+  symbol: PythonSymbol,
+  filePath: string,
+): AxSymbol | null {
+  const kind = mapPythonSymbolKind(symbol.kind);
+  if (!kind) return null;
+
+  return {
+    id: generateSymbolId(
+      filePath,
+      kind,
+      symbol.name,
+      symbol.parent,
+      symbol.signature,
+    ),
+    kind,
+    name: symbol.name,
+    container: symbol.parent,
+    signature: symbol.signature,
+    filePath,
+    span: {
+      startLine: symbol.range.startLine,
+      startCol: symbol.range.startColumn,
+      endLine: symbol.range.endLine,
+      endCol: symbol.range.endColumn,
+    },
+    export: symbol.isExported ? "exported" : "internal",
+    parameters: symbol.parameters,
+    docSummary: symbol.docSummary,
+  };
+}
+
+// ============================================================================
 // Body Hash / Import / TODO Helpers
 // ============================================================================
 
@@ -584,7 +670,7 @@ function extractTodos(lines: string[]): AxTodo[] {
 // ============================================================================
 
 /**
- * Find source files in workspace (TypeScript, JavaScript, Swift)
+ * Find source files in workspace (TypeScript, JavaScript, Swift, Python)
  */
 async function discoverFiles(
   workspaceRoot: string,
@@ -594,6 +680,7 @@ async function discoverFiles(
     "**/*.js",
     "**/*.jsx",
     "**/*.swift",
+    "**/*.py",
   ],
   exclude: string[] = [
     "**/node_modules/**",
@@ -681,6 +768,13 @@ function isSwiftFile(filePath: string): boolean {
 }
 
 /**
+ * Check whether a file path looks like a Python source file
+ */
+function isPythonFile(filePath: string): boolean {
+  return filePath.endsWith(".py");
+}
+
+/**
  * Process a single Swift file
  */
 async function processSwiftFile(
@@ -724,6 +818,168 @@ async function processSwiftFile(
 }
 
 /**
+ * Process a single Python file
+ */
+async function processPythonFile(
+  pythonExtractor: ReturnType<typeof createPythonExtractor>,
+  workspaceRoot: string,
+  relativePath: string,
+): Promise<AxFileResult> {
+  const absolutePath = path.join(workspaceRoot, relativePath);
+
+  // Read file content for hash
+  const content = await fs.promises.readFile(absolutePath, "utf-8");
+  const contentHash = hashFileContent(content);
+  const lines = content.split("\n");
+
+  // Extract symbols
+  const result = await pythonExtractor.extractFile(absolutePath);
+
+  // Convert symbols + compute body hashes
+  const symbols: AxSymbol[] = [];
+  for (const symbol of result.symbols) {
+    const axSymbol = convertPythonSymbol(symbol, relativePath);
+    if (axSymbol) {
+      computeBodyHash(axSymbol, lines);
+      symbols.push(axSymbol);
+    }
+  }
+
+  // Convert Python imports to AX imports
+  const imports: AxImport[] = result.imports.map((imp) => ({
+    moduleSpecifier: imp.moduleName,
+    isRelative: imp.isRelative,
+    importedNames: imp.isWholeModule
+      ? [imp.alias || imp.moduleName]
+      : imp.importedNames.map((n) => n.alias || n.name),
+  }));
+
+  // Extract TODOs
+  const todos = extractTodos(lines);
+
+  return {
+    filePath: relativePath,
+    contentHash,
+    language: "python",
+    symbols,
+    imports,
+    todos,
+    extractedAt: Date.now(),
+    errors: result.errors,
+  };
+}
+
+// ============================================================================
+// Language Adapter Factories
+// ============================================================================
+
+/**
+ * Create a TypeScript/JavaScript language adapter.
+ */
+export function createTypeScriptAdapter(
+  options: LanguageAdapterOptions,
+): LanguageAdapter {
+  let extractor: ReturnType<typeof createExtractor> | null = null;
+
+  function getExtractor() {
+    if (!extractor) {
+      extractor = createExtractor(options.workspaceRoot, {
+        includePrivate: options.includePrivate,
+        includeMembers: options.includeMembers,
+        maxDepth: options.maxDepth,
+        includeDocSummary: true,
+        includeParameters: true,
+      });
+    }
+    return extractor;
+  }
+
+  return {
+    extensions: [".ts", ".tsx", ".js", ".jsx"],
+
+    async processFile(workspaceRoot, relativePath) {
+      return processFile(getExtractor(), workspaceRoot, relativePath);
+    },
+  };
+}
+
+/**
+ * Create a Swift language adapter.
+ */
+export function createSwiftAdapter(
+  options: LanguageAdapterOptions,
+): LanguageAdapter {
+  let extractor: ReturnType<typeof createSwiftExtractor> | null = null;
+
+  function getExtractor() {
+    if (!extractor) {
+      extractor = createSwiftExtractor(options.workspaceRoot, {
+        includePrivate: options.includePrivate,
+        includeMembers: options.includeMembers,
+        maxDepth: options.maxDepth,
+        includeDocSummary: true,
+        includeParameters: true,
+      });
+    }
+    return extractor;
+  }
+
+  return {
+    extensions: [".swift"],
+
+    async processFile(workspaceRoot, relativePath) {
+      return processSwiftFile(getExtractor(), workspaceRoot, relativePath);
+    },
+  };
+}
+
+/**
+ * Create a Python language adapter.
+ */
+export function createPythonAdapter(
+  options: LanguageAdapterOptions,
+): LanguageAdapter {
+  let extractor: ReturnType<typeof createPythonExtractor> | null = null;
+
+  function getExtractor() {
+    if (!extractor) {
+      extractor = createPythonExtractor(options.workspaceRoot, {
+        includePrivate: options.includePrivate,
+        includeMembers: options.includeMembers,
+        maxDepth: options.maxDepth,
+        includeDocSummary: true,
+        includeParameters: true,
+      });
+    }
+    return extractor;
+  }
+
+  return {
+    extensions: [".py"],
+
+    async processFile(workspaceRoot, relativePath) {
+      return processPythonFile(getExtractor(), workspaceRoot, relativePath);
+    },
+  };
+}
+
+/**
+ * Create a LanguageRegistry with all built-in language adapters.
+ *
+ * Built-in adapters: TypeScript/JavaScript, Swift, Python.
+ * Use `registry.register()` to add custom adapters.
+ */
+export function createLanguageRegistry(
+  options: LanguageAdapterOptions,
+): LanguageRegistry {
+  const registry = new LanguageRegistry();
+  registry.register(createTypeScriptAdapter(options));
+  registry.register(createSwiftAdapter(options));
+  registry.register(createPythonAdapter(options));
+  return registry;
+}
+
+/**
  * Run AX stage on workspace
  */
 export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
@@ -736,35 +992,33 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
     maxDepth = 2,
   } = options;
 
-  // Create TS/JS extractor
-  const tsExtractor = createExtractor(workspaceRoot, {
+  // Create language registry with all built-in adapters
+  const registry = createLanguageRegistry({
+    workspaceRoot,
     includePrivate,
     includeMembers,
     maxDepth,
-    includeDocSummary: true,
-    includeParameters: true,
   });
 
-  // Create Swift extractor (lazy — only if Swift files are found)
-  let swiftExtractor: ReturnType<typeof createSwiftExtractor> | null = null;
+  // Discover files (use registry patterns if no explicit include)
+  const files = await discoverFiles(
+    workspaceRoot,
+    include ?? registry.includePatterns(),
+    exclude,
+  );
 
-  // Discover files
-  const files = await discoverFiles(workspaceRoot, include, exclude);
-
-  // Split files by language
-  const swiftFiles = files.filter(isSwiftFile);
-  const tsFiles = files.filter((f) => !isSwiftFile(f));
-
-  // Process files
+  // Process files through the registry
   const fileResults: AxFileResult[] = [];
   let totalSymbols = 0;
   const byKind: Record<string, number> = {};
   let exported = 0;
   let internal = 0;
 
-  // Process TS/JS files
-  for (const file of tsFiles) {
-    const result = await processFile(tsExtractor, workspaceRoot, file);
+  for (const file of files) {
+    const adapter = registry.adapterFor(file);
+    if (!adapter) continue;
+
+    const result = await adapter.processFile(workspaceRoot, file);
     fileResults.push(result);
 
     for (const symbol of result.symbols) {
@@ -774,36 +1028,6 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
         exported++;
       } else {
         internal++;
-      }
-    }
-  }
-
-  // Process Swift files
-  if (swiftFiles.length > 0) {
-    swiftExtractor = createSwiftExtractor(workspaceRoot, {
-      includePrivate,
-      includeMembers,
-      maxDepth,
-      includeDocSummary: true,
-      includeParameters: true,
-    });
-
-    for (const file of swiftFiles) {
-      const result = await processSwiftFile(
-        swiftExtractor,
-        workspaceRoot,
-        file,
-      );
-      fileResults.push(result);
-
-      for (const symbol of result.symbols) {
-        totalSymbols++;
-        byKind[symbol.kind] = (byKind[symbol.kind] || 0) + 1;
-        if (symbol.export === "exported") {
-          exported++;
-        } else {
-          internal++;
-        }
       }
     }
   }
@@ -873,32 +1097,20 @@ export async function runAxStageIncremental(
     previousHashes.set(file.filePath, file.contentHash);
   }
 
-  // Create TS/JS extractor
-  const tsExtractor = createExtractor(workspaceRoot, {
+  // Create language registry with all built-in adapters (lazy initialization)
+  const registry = createLanguageRegistry({
+    workspaceRoot,
     includePrivate,
     includeMembers,
     maxDepth,
-    includeDocSummary: true,
-    includeParameters: true,
   });
 
-  // Create Swift extractor (lazy)
-  let swiftExt: ReturnType<typeof createSwiftExtractor> | null = null;
-  function getSwiftExtractor() {
-    if (!swiftExt) {
-      swiftExt = createSwiftExtractor(workspaceRoot, {
-        includePrivate,
-        includeMembers,
-        maxDepth,
-        includeDocSummary: true,
-        includeParameters: true,
-      });
-    }
-    return swiftExt;
-  }
-
   // Discover current files
-  const currentFiles = await discoverFiles(workspaceRoot, include, exclude);
+  const currentFiles = await discoverFiles(
+    workspaceRoot,
+    include ?? registry.includePatterns(),
+    exclude,
+  );
 
   // Determine what to process
   const fileResults: AxFileResult[] = [];
@@ -915,35 +1127,23 @@ export async function runAxStageIncremental(
     // Check if file changed
     const previousHash = previousHashes.get(file);
 
-    let result: AxFileResult;
+    let result: AxFileResult | undefined;
 
     if (previousHash === contentHash) {
-      // File unchanged - reuse previous result
+      // File unchanged — reuse previous result if available
       const previousFile = previousOutput.files.find(
         (f) => f.filePath === file,
       );
       if (previousFile) {
         result = previousFile;
-      } else if (isSwiftFile(file)) {
-        result = await processSwiftFile(
-          getSwiftExtractor(),
-          workspaceRoot,
-          file,
-        );
-      } else {
-        result = await processFile(tsExtractor, workspaceRoot, file);
       }
-    } else {
-      // File changed - re-extract
-      if (isSwiftFile(file)) {
-        result = await processSwiftFile(
-          getSwiftExtractor(),
-          workspaceRoot,
-          file,
-        );
-      } else {
-        result = await processFile(tsExtractor, workspaceRoot, file);
-      }
+    }
+
+    // File changed or no previous result — re-extract via registry
+    if (!result) {
+      const adapter = registry.adapterFor(file);
+      if (!adapter) continue;
+      result = await adapter.processFile(workspaceRoot, file);
     }
 
     fileResults.push(result);
@@ -973,3 +1173,11 @@ export async function runAxStageIncremental(
     },
   };
 }
+
+// Re-export language registry types for external consumers
+export {
+  LanguageRegistry,
+  type LanguageAdapter,
+  type LanguageAdapterOptions,
+  type LanguageAdapterFactory,
+} from "./languageRegistry.js";
