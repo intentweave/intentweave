@@ -1,6 +1,6 @@
 ---
 name: iw-checks
-description: 'Run IntentWeave CARI checks locally and set up GitHub Actions CI. Use when: running iw index commands, checking documentation drift, setting up CI drift detection, diagnosing iw failures, adding drift checks to a pipeline, running code quality analysis with CARI.'
+description: "Run IntentWeave CARI checks locally and set up GitHub Actions CI. Use when: running iw index commands, checking documentation drift, setting up CI drift detection, diagnosing iw failures, adding drift checks to a pipeline, running code quality analysis with CARI."
 ---
 
 # IntentWeave Checks
@@ -30,6 +30,7 @@ iw index update -v
 ```
 
 **Depth modes:**
+
 - `structured` (default): headings, bold, code-spans — fast, baseline coverage
 - `full`: adds body text + IDF scoring — +72% annotations, slower
 
@@ -124,6 +125,7 @@ jobs:
 ```
 
 `--format github` outputs annotations on the PR diff:
+
 ```
 ::warning file=docs/auth.md::References changed code: AuthService (12 annotations)
 ```
@@ -133,16 +135,16 @@ jobs:
 Cache the `.iw/` directory for faster repeat builds:
 
 ```yaml
-      - uses: actions/cache@v4
-        with:
-          path: .iw
-          key: iw-index-${{ hashFiles('**/*.ts', '**/*.md') }}
-          restore-keys: iw-index-
+- uses: actions/cache@v4
+  with:
+    path: .iw
+    key: iw-index-${{ hashFiles('**/*.ts', '**/*.md') }}
+    restore-keys: iw-index-
 
-      - name: Build or update index
-        run: |
-          npx @intentweave/cli init
-          npx @intentweave/cli index build --depth structured
+- name: Build or update index
+  run: |
+    npx @intentweave/cli init
+    npx @intentweave/cli index build --depth structured
 ```
 
 ### Full Quality Gate
@@ -150,18 +152,18 @@ Cache the `.iw/` directory for faster repeat builds:
 Add code quality checks alongside drift detection:
 
 ```yaml
-      - name: Check documentation drift
-        run: |
-          CHANGED=$(git diff --name-only origin/main...HEAD)
-          if [ -n "$CHANGED" ]; then
-            npx @intentweave/cli index check --changed $CHANGED --format github
-          fi
+- name: Check documentation drift
+  run: |
+    CHANGED=$(git diff --name-only origin/main...HEAD)
+    if [ -n "$CHANGED" ]; then
+      npx @intentweave/cli index check --changed $CHANGED --format github
+    fi
 
-      - name: Check circular imports
-        run: npx @intentweave/cli index circular-imports -f json
+- name: Check circular imports
+  run: npx @intentweave/cli index circular-imports -f json
 
-      - name: Check unused exports
-        run: npx @intentweave/cli index unused-exports --limit 50 -f json
+- name: Check unused exports
+  run: npx @intentweave/cli index unused-exports --limit 50 -f json
 ```
 
 ### Existing CI Integration
@@ -170,24 +172,24 @@ To add drift checking to an existing CI workflow, add these steps after
 the checkout and Node.js setup:
 
 ```yaml
-      - name: CARI drift check
-        run: |
-          npx @intentweave/cli init
-          npx @intentweave/cli index build
-          npx @intentweave/cli index check \
-            --changed $(git diff --name-only origin/main...HEAD) \
-            --format github
+- name: CARI drift check
+  run: |
+    npx @intentweave/cli init
+    npx @intentweave/cli index build
+    npx @intentweave/cli index check \
+      --changed $(git diff --name-only origin/main...HEAD) \
+      --format github
 ```
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-| ------- | ----- | --- |
-| `No document files found` | Wrong paths or all excluded | Check path arguments and `.iwignore` |
-| `Database not found` | Index not built | Run `iw index build` first |
-| Exit code 1 in CI | Drift detected (expected) | Review findings, update docs or suppress |
-| Slow builds | Full depth on large repo | Use `--depth structured` or enable caching |
-| `git diff` empty | Shallow clone | Add `fetch-depth: 0` to checkout |
+| Symptom                   | Cause                       | Fix                                        |
+| ------------------------- | --------------------------- | ------------------------------------------ |
+| `No document files found` | Wrong paths or all excluded | Check path arguments and `.iwignore`       |
+| `Database not found`      | Index not built             | Run `iw index build` first                 |
+| Exit code 1 in CI         | Drift detected (expected)   | Review findings, update docs or suppress   |
+| Slow builds               | Full depth on large repo    | Use `--depth structured` or enable caching |
+| `git diff` empty          | Shallow clone               | Add `fetch-depth: 0` to checkout           |
 
 ## Reference
 
