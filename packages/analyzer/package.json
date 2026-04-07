@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/analyzer",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Analysis engine for IntentWeave knowledge extraction — pipeline stages IN, FX, KX, GX",
   "type": "module",
   "main": "./dist/index.js",
