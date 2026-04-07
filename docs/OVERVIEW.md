@@ -1,4 +1,4 @@
-# IntentWeave — Executive Summary
+# IntentWeave — Overview
 
 > **One-line:** IntentWeave turns your docs, code, and git history into a queryable
 > knowledge index — no LLM calls, no database server, no configuration.
@@ -62,12 +62,21 @@ document body text with dictionary matching and IDF-based noise filtering.
 
 ### For Developers
 
-| Task                   | Command                                | What You Get                                                |
-| ---------------------- | -------------------------------------- | ----------------------------------------------------------- |
-| Find relevant files    | `iw index retrieve "auth"`             | Ranked files with confidence scores and reasons             |
-| Understand connections | `iw index connections "AuthService"`   | Co-mentions, co-changes, structural links, and **gaps**     |
-| Check before PR        | `iw index check --changed src/auth.ts` | Docs that reference changed code and may need updating      |
-| Health dashboard       | `iw index report`                      | Coverage %, stale docs, hidden couplings, undocumented deps |
+| Task                    | Command / API                          | What You Get                                                |
+| ----------------------- | -------------------------------------- | ----------------------------------------------------------- |
+| Find relevant files     | `iw index retrieve "auth"`             | Ranked files with confidence scores and reasons             |
+| Understand connections  | `iw index connections "AuthService"`   | Co-mentions, co-changes, structural links, and **gaps**     |
+| Check before PR         | `iw index check --changed src/auth.ts` | Docs that reference changed code and may need updating      |
+| Health dashboard        | `iw index report`                      | Coverage %, stale docs, hidden couplings, undocumented deps |
+| Find code clones        | `clones()` / `structuralClones()`      | Exact (Type 1) and structural (Type 2) duplicate detection  |
+| Circular imports        | `circularImports()`                    | Import cycles: A → B → C → A                               |
+| Unused exports          | `unusedExports()`                      | Exported symbols never imported anywhere                    |
+| Hotspot priorities      | `hotspotPriority()`                    | High-churn, low-doc files ranked by documentation urgency   |
+| TODO/FIXME inventory    | `todos()`                              | All inline markers with file, line, and kind                |
+| Coverage by module      | `moduleCoverage()`                     | Documentation coverage % rolled up per directory            |
+| Orphaned doc sections   | `orphanedSections()`                   | Doc headings where all mentions are unresolved              |
+| Doc completeness        | `docCompleteness()`                    | Per-doc score: how many referenced exports are covered      |
+| Cross-group drift       | `crossGroupDrift()`                    | Entity coverage conflicts across doc groups                 |
 
 ### For CI/CD
 
@@ -84,12 +93,19 @@ Exit code 0 = clean, 1 = warnings (stale docs, missing coverage).
 IntentWeave exposes tools via the Model Context Protocol, usable by GitHub Copilot
 and other LLM agents:
 
+**CARI tools** (local SQLite — no LLM or Neo4j needed):
+
 | Tool               | Purpose                                                    |
 | ------------------ | ---------------------------------------------------------- |
 | `cari_retrieve`    | "Find files about X" → ranked results                      |
 | `cari_connections` | "What's related to X?" → cross-layer connections           |
 | `cari_check`       | "I changed X — what else needs updating?" → drift findings |
-| `kg_query`         | Natural-language graph query (requires Neo4j)              |
+
+**Knowledge Graph tools** (require Neo4j):
+
+| Tool               | Purpose                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `kg_query`         | Natural-language graph query                               |
 | `kg_context`       | Build RAG context from knowledge graph                     |
 | `kg_impact`        | Semantic impact analysis for file changes                  |
 
@@ -104,16 +120,17 @@ Markdown Docs ──► Keyword Extraction ──►│──► Annotation Engi
                                         │         │                    │
 Git History ──► Co-change Analysis ─────┘    IDF Filtering        .iw/index.db
                                                                        │
-                                                    ┌──────────────────┤
-                                                    │                  │
-                                              CLI Queries        MCP Tools
-                                          (retrieve, check,   (cari_retrieve,
-                                           connections,         cari_connections,
-                                           report)              cari_check)
+                                              ┌────────────────────────┤
+                                              │                        │
+                                        CLI Queries               MCP Tools
+                                    (retrieve, check,          (cari_retrieve,
+                                     connections, report,       cari_connections,
+                                     clones, todos,             cari_check)
+                                     moduleCoverage, ...)
 ```
 
-**No servers to run.** The index is a single SQLite file. Queries are predefined
-SQL — < 100ms latency. The entire build pipeline is local and deterministic.
+**No servers to run.** The index is a single SQLite file. 14 built-in query modes,
+all predefined SQL — < 100ms latency. The entire pipeline is local and deterministic.
 
 ---
 
@@ -156,4 +173,5 @@ For full documentation, see:
 
 - [CLI Usage Guide](CLI-USAGE.md)
 - [CARI Technical Specification](CODE-AWARE-RETRIEVAL-INDEX.md)
+- [Website](https://intentweave.org)
 - [README](../README.md)

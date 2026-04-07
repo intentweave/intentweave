@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS symbols (
   line INTEGER NOT NULL,
   end_line INTEGER,
   export TEXT NOT NULL,
-  doc_summary TEXT
+  doc_summary TEXT,
+  body_hash TEXT,
+  body_lines INTEGER,
+  structure_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS annotations (
@@ -70,19 +73,44 @@ CREATE TABLE IF NOT EXISTS files (
   primary_owner TEXT,
   bus_factor INTEGER,
   is_doc BOOLEAN,
-  content_hash TEXT
+  content_hash TEXT,
+  doc_group TEXT
+);
+
+CREATE TABLE IF NOT EXISTS imports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_file TEXT NOT NULL,
+  target_file TEXT,
+  module_specifier TEXT NOT NULL,
+  is_relative BOOLEAN NOT NULL,
+  imported_names TEXT
+);
+
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL
 );
 
 -- Indexes for retrieval
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
+CREATE INDEX IF NOT EXISTS idx_symbols_body_hash ON symbols(body_hash);
+CREATE INDEX IF NOT EXISTS idx_symbols_structure_hash ON symbols(structure_hash);
 CREATE INDEX IF NOT EXISTS idx_annotations_doc ON annotations(doc_path);
 CREATE INDEX IF NOT EXISTS idx_annotations_symbol ON annotations(symbol_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_confidence ON annotations(confidence);
 CREATE INDEX IF NOT EXISTS idx_co_occurrences_score ON co_occurrences(score);
 CREATE INDEX IF NOT EXISTS idx_co_changes_jaccard ON co_changes(jaccard);
 CREATE INDEX IF NOT EXISTS idx_files_doc ON files(is_doc);
+CREATE INDEX IF NOT EXISTS idx_files_doc_group ON files(doc_group);
+CREATE INDEX IF NOT EXISTS idx_imports_source ON imports(source_file);
+CREATE INDEX IF NOT EXISTS idx_imports_target ON imports(target_file);
+CREATE INDEX IF NOT EXISTS idx_todos_file ON todos(file_path);
+CREATE INDEX IF NOT EXISTS idx_todos_kind ON todos(kind);
 
 -- Full-text search
 
@@ -115,6 +143,6 @@ export function initSchema(db: Database.Database): void {
 
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '1')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '3')`,
   ).run();
 }

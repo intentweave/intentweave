@@ -91,6 +91,46 @@ export interface AxSymbol {
 
   /** JSDoc summary (first line) */
   docSummary?: string;
+
+  /** SHA-256 hash of normalised body (whitespace-collapsed, comments stripped) */
+  bodyHash?: string;
+
+  /** Number of lines in the symbol body */
+  bodyLines?: number;
+
+  /** SHA-256 hash of structural body (identifiers/literals replaced with placeholders) */
+  structureHash?: string;
+}
+
+/**
+ * Import statement extracted from source
+ */
+export interface AxImport {
+  /** Module specifier (e.g., './utils', 'lodash') */
+  moduleSpecifier: string;
+
+  /** Resolved target file path (relative to workspace; undefined for package imports) */
+  resolvedPath?: string;
+
+  /** Is this a relative import? */
+  isRelative: boolean;
+
+  /** Names imported (e.g., ['foo', 'bar']) */
+  importedNames: string[];
+}
+
+/**
+ * TODO / FIXME / HACK marker extracted from source
+ */
+export interface AxTodo {
+  /** Line number (1-based) */
+  line: number;
+
+  /** Marker kind */
+  kind: "todo" | "fixme" | "hack" | "xxx";
+
+  /** The comment text after the marker */
+  text: string;
 }
 
 /**
@@ -108,6 +148,12 @@ export interface AxFileResult {
 
   /** Symbols in this file */
   symbols: AxSymbol[];
+
+  /** Import statements in this file */
+  imports: AxImport[];
+
+  /** TODO / FIXME / HACK markers found in this file */
+  todos: AxTodo[];
 
   /** Extraction timestamp */
   extractedAt: number;
@@ -354,6 +400,146 @@ function convertSwiftSymbol(
 }
 
 // ============================================================================
+// Body Hash / Import / TODO Helpers
+// ============================================================================
+
+/** Minimum body lines to qualify for clone detection */
+const MIN_BODY_LINES = 4;
+
+/** Regex matching TODO / FIXME / HACK / XXX markers in comments */
+const TODO_PATTERN =
+  /(?:\/\/|\/\*|^\s*\*)\s*(TODO|FIXME|HACK|XXX)\b[:\s]*(.*)/i;
+
+/**
+ * Compute a normalised body hash for clone detection.
+ * Modifies the symbol in place (sets bodyHash / bodyLines).
+ */
+function computeBodyHash(sym: AxSymbol, lines: string[]): void {
+  const bodyLineCount = sym.span.endLine - sym.span.startLine + 1;
+  if (bodyLineCount < MIN_BODY_LINES) return;
+
+  const body = lines
+    .slice(sym.span.startLine - 1, sym.span.endLine)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith("//"))
+    .join("\n");
+
+  if (body.length === 0) return;
+
+  sym.bodyHash = crypto
+    .createHash("sha256")
+    .update(body)
+    .digest("hex")
+    .slice(0, 16);
+  sym.bodyLines = bodyLineCount;
+
+  // Also compute structural hash (Type 2 clone detection)
+  computeStructureHash(sym, body);
+}
+
+/** Regex patterns for normalising identifiers and literals to placeholders */
+const STRING_LITERAL = /(['"`])(?:(?!\1|\\).|\\.)*\1/g;
+const NUMERIC_LITERAL = /\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi;
+const IDENTIFIER = /\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g;
+
+/** Reserved words that should NOT be replaced (they define structure) */
+const RESERVED = new Set([
+  "async", "await", "break", "case", "catch", "class", "const", "continue",
+  "debugger", "default", "delete", "do", "else", "enum", "export", "extends",
+  "false", "finally", "for", "function", "if", "implements", "import", "in",
+  "instanceof", "interface", "let", "new", "null", "of", "return", "static",
+  "super", "switch", "this", "throw", "true", "try", "type", "typeof",
+  "undefined", "var", "void", "while", "with", "yield",
+]);
+
+/**
+ * Compute a structural hash by replacing identifiers and literals with
+ * placeholders. Catches renamed-variable copies (Type 2 clones).
+ */
+function computeStructureHash(sym: AxSymbol, normalisedBody: string): void {
+  const structural = normalisedBody
+    .replace(STRING_LITERAL, '"S"')
+    .replace(NUMERIC_LITERAL, "0")
+    .replace(IDENTIFIER, (match) => (RESERVED.has(match) ? match : "_"));
+
+  sym.structureHash = crypto
+    .createHash("sha256")
+    .update(structural)
+    .digest("hex")
+    .slice(0, 16);
+}
+
+/**
+ * Convert ast-extractor imports to AxImport[].
+ */
+function extractImports(
+  result: FileExtractionResult,
+  relativePath: string,
+  workspaceRoot: string,
+): AxImport[] {
+  if (!result.imports || result.imports.length === 0) return [];
+
+  return result.imports.map((imp) => ({
+    moduleSpecifier: imp.moduleSpecifier,
+    resolvedPath: imp.isRelative
+      ? resolveImportPath(relativePath, imp.moduleSpecifier, workspaceRoot)
+      : undefined,
+    isRelative: imp.isRelative,
+    importedNames: imp.imports.map((s) =>
+      s.isNamespace ? "*" : s.isDefault ? "default" : s.name,
+    ),
+  }));
+}
+
+/**
+ * Resolve a relative import specifier to a workspace-relative file path.
+ */
+function resolveImportPath(
+  importingFile: string,
+  specifier: string,
+  workspaceRoot: string,
+): string | undefined {
+  const dir = path.dirname(path.join(workspaceRoot, importingFile));
+  const base = path.join(dir, specifier);
+  const extensions = [".ts", ".tsx", ".js", ".jsx"];
+
+  // Try direct file with extension
+  for (const ext of extensions) {
+    if (fs.existsSync(base + ext)) {
+      return path.relative(workspaceRoot, base + ext);
+    }
+  }
+
+  // Try index file in directory
+  for (const ext of extensions) {
+    const idx = path.join(base, "index" + ext);
+    if (fs.existsSync(idx)) {
+      return path.relative(workspaceRoot, idx);
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract TODO / FIXME / HACK / XXX markers from source lines.
+ */
+function extractTodos(lines: string[]): AxTodo[] {
+  const todos: AxTodo[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = TODO_PATTERN.exec(lines[i]);
+    if (m) {
+      todos.push({
+        line: i + 1,
+        kind: m[1].toLowerCase() as AxTodo["kind"],
+        text: m[2].trim(),
+      });
+    }
+  }
+  return todos;
+}
+
+// ============================================================================
 // File Discovery
 // ============================================================================
 
@@ -414,24 +600,34 @@ async function processFile(
   // Read file content for hash
   const content = await fs.promises.readFile(absolutePath, "utf-8");
   const contentHash = hashFileContent(content);
+  const lines = content.split("\n");
 
   // Extract symbols
   const result = await extractor.extractFile(absolutePath);
 
-  // Convert symbols
+  // Convert symbols + compute body hashes
   const symbols: AxSymbol[] = [];
   for (const symbol of result.symbols) {
     const axSymbol = convertSymbol(symbol, relativePath);
     if (axSymbol) {
+      computeBodyHash(axSymbol, lines);
       symbols.push(axSymbol);
     }
   }
+
+  // Convert imports
+  const imports = extractImports(result, relativePath, workspaceRoot);
+
+  // Extract TODOs
+  const todos = extractTodos(lines);
 
   return {
     filePath: relativePath,
     contentHash,
     language: result.language,
     symbols,
+    imports,
+    todos,
     extractedAt: Date.now(),
     errors: result.errors,
   };
@@ -457,24 +653,31 @@ async function processSwiftFile(
   // Read file content for hash
   const content = await fs.promises.readFile(absolutePath, "utf-8");
   const contentHash = hashFileContent(content);
+  const lines = content.split("\n");
 
   // Extract symbols
   const result = await swiftExtractor.extractFile(absolutePath);
 
-  // Convert symbols
+  // Convert symbols + compute body hashes
   const symbols: AxSymbol[] = [];
   for (const symbol of result.symbols) {
     const axSymbol = convertSwiftSymbol(symbol, relativePath);
     if (axSymbol) {
+      computeBodyHash(axSymbol, lines);
       symbols.push(axSymbol);
     }
   }
+
+  // Extract TODOs (no imports for Swift yet)
+  const todos = extractTodos(lines);
 
   return {
     filePath: relativePath,
     contentHash,
     language: "swift",
     symbols,
+    imports: [],
+    todos,
     extractedAt: Date.now(),
     errors: result.errors,
   };

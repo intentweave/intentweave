@@ -87,6 +87,14 @@ iw index update                       # only changed files
 | `packages/index/src/queries/connections.ts`       | Cross-layer connection discovery                        |
 | `packages/index/src/queries/check.ts`             | CI drift detection                                      |
 | `packages/index/src/queries/report.ts`            | Corpus-wide health report                               |
+| `packages/index/src/queries/clones.ts`            | Exact + structural clone detection                      |
+| `packages/index/src/queries/imports.ts`           | Circular imports + unused exports                       |
+| `packages/index/src/queries/hotspotPriority.ts`   | High-churn low-doc file ranking                         |
+| `packages/index/src/queries/todos.ts`             | TODO/FIXME/HACK/XXX inventory                           |
+| `packages/index/src/queries/moduleCoverage.ts`    | Documentation coverage per directory                    |
+| `packages/index/src/queries/orphanedSections.ts`  | Doc sections with all-ungrounded mentions                |
+| `packages/index/src/queries/docCompleteness.ts`   | Per-doc completeness vs. referenced exports              |
+| `packages/index/src/queries/crossGroupDrift.ts`   | Cross-group entity coverage conflicts                   |
 | `packages/index/src/incremental.ts`               | Content-hash incremental updates                        |
 | `packages/analyzer/src/kwg/heuristicExtractor.ts` | Keyword extraction (dictionary, depth)                  |
 | `packages/analyzer/src/kwg/kwxStage.ts`           | KWX stage options (depth, dictionary)                   |
@@ -95,11 +103,13 @@ iw index update                       # only changed files
 
 ### SQLite Schema (`.iw/index.db`)
 
-- `symbols` — Code symbols from AST (name, kind, file, line, export)
-- `annotations` — Doc spans → code symbols (confidence, source, IDF score)
+- `symbols` — Code symbols from AST (name, kind, file, line, export, body_hash, structure_hash)
+- `annotations` — Doc spans → code symbols (confidence, source, qualifier, IDF score)
 - `co_occurrences` — Entity pairs co-mentioned in docs or co-imported in code
 - `co_changes` — File pairs that change together in git (Jaccard + recency)
-- `files` — Per-file metadata (last modified, churn, hotspot, owner, content hash)
+- `files` — Per-file metadata (last modified, churn, hotspot, owner, doc_group)
+- `imports` — Import relationships between files
+- `todos` — Inline TODO/FIXME/HACK/XXX markers
 
 ### Depth Modes
 
@@ -146,7 +156,10 @@ iw doc-health --neo4j -s my-project                         # Doc health (full K
 
 ## MCP Tools
 
-The MCP server exposes 9 tools for GitHub Copilot:
+The MCP server exposes 9 tools for GitHub Copilot (6 KG + 3 CARI).
+
+10 additional CARI query functions are available via the `@intentweave/index` API
+but not yet exposed as MCP tools:
 
 ### KG Tools (require Neo4j)
 
@@ -166,6 +179,21 @@ The MCP server exposes 9 tools for GitHub Copilot:
 | `cari_retrieve`    | Ranked file retrieval       | `query`, `scope?`, `limit?`    |
 | `cari_connections` | Connection discovery + gaps | `entity`, `include?`, `limit?` |
 | `cari_check`       | CI drift detection          | `changed`, `severity?`         |
+
+### CARI Programmatic Queries (via `@intentweave/index`)
+
+| Function               | Purpose                                                     |
+| ---------------------- | ----------------------------------------------------------- |
+| `clones()`             | Exact clone detection (identical body hash)                  |
+| `structuralClones()`   | Type 2 clones (same control flow, different identifiers)     |
+| `circularImports()`    | Import cycle detection                                       |
+| `unusedExports()`      | Exported symbols never imported                              |
+| `hotspotPriority()`    | High-churn low-doc files ranked by urgency                   |
+| `todos()`              | TODO/FIXME/HACK/XXX inventory                                |
+| `moduleCoverage()`     | Documentation coverage % per directory                       |
+| `orphanedSections()`   | Doc sections with all-ungrounded mentions                    |
+| `docCompleteness()`    | Per-doc completeness vs. referenced exports                  |
+| `crossGroupDrift()`    | Entity coverage conflicts across doc groups                  |
 
 ### Usage Patterns
 

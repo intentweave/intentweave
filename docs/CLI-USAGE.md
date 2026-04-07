@@ -307,6 +307,10 @@ GitHub Copilot in VS Code.
 | `cari_connections` | Cross-layer connections + gap detection |
 | `cari_check`       | CI drift detection for changed files    |
 
+10 additional CARI query functions are available via the `@intentweave/index`
+programmatic API (see the [CARI Programmatic Queries](#cari-programmatic-queries)
+section below).
+
 **VS Code auto-discovery:** Add this to `.vscode/mcp.json`:
 
 ```json
@@ -462,6 +466,29 @@ Incremental index update. Re-indexes only files whose content hash has changed.
 | `-v`   | off     | Show what changed |
 
 Typical update time: < 1 second for small changes.
+
+#### CARI Programmatic Queries
+
+Beyond the CLI subcommands, the `@intentweave/index` package exports additional
+query functions accessible via the programmatic API:
+
+```typescript
+import { openIndex } from "@intentweave/index";
+const db = openIndex(".iw/index.db");
+```
+
+| Function               | Purpose                                                  |
+| ---------------------- | -------------------------------------------------------- |
+| `db.clones()`          | Exact clone detection (identical body hash)               |
+| `db.structuralClones()`| Type 2 clones (same control flow, different identifiers)  |
+| `db.circularImports()` | Import cycle detection                                    |
+| `db.unusedExports()`   | Exported symbols never imported                           |
+| `db.hotspotPriority()` | High-churn low-doc files ranked by urgency                |
+| `db.todos()`           | TODO/FIXME/HACK/XXX inventory                             |
+| `db.moduleCoverage()`  | Documentation coverage % per directory                    |
+| `db.orphanedSections()`| Doc sections with all-ungrounded mentions                 |
+| `db.docCompleteness()` | Per-doc completeness vs. referenced exports               |
+| `db.crossGroupDrift()` | Cross-group entity coverage conflicts                     |
 
 ---
 

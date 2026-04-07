@@ -30,13 +30,15 @@ iw index build
 
 ## SQLite Schema
 
-| Table            | Purpose                                                                  |
-| ---------------- | ------------------------------------------------------------------------ |
-| `symbols`        | Code symbols from AST extraction (name, kind, file, line, export status) |
-| `annotations`    | Document spans linked to code symbols (confidence-scored, source-tagged) |
-| `co_occurrences` | Entity pairs that appear together in docs or code                        |
-| `co_changes`     | File pairs that change together in git (Jaccard + recency)               |
-| `files`          | Per-file metadata (last modified, churn, hotspot, owner, content hash)   |
+| Table            | Purpose                                                                           |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `symbols`        | Code symbols from AST (name, kind, file, line, export, body_hash, structure_hash) |
+| `annotations`    | Document spans linked to code symbols (confidence, source, qualifier, IDF score)  |
+| `co_occurrences` | Entity pairs that appear together in docs or code                                 |
+| `co_changes`     | File pairs that change together in git (Jaccard + recency)                        |
+| `files`          | Per-file metadata (last modified, churn, hotspot, owner, doc_group)               |
+| `imports`        | Import relationships between files                                                |
+| `todos`          | Inline TODO/FIXME/HACK/XXX markers with file, line, and kind                      |
 
 ## API
 
@@ -94,6 +96,36 @@ const findings = db.check({ changed: ["src/auth.ts"] });
 
 // Corpus-wide report
 const report = db.report();
+
+// Exact clone detection (identical body hash)
+const exactClones = db.clones();
+
+// Structural clone detection (same control flow, different identifiers)
+const structClones = db.structuralClones();
+
+// Circular import detection
+const cycles = db.circularImports();
+
+// Exported symbols never imported anywhere
+const unused = db.unusedExports();
+
+// High-churn, low-doc files ranked by urgency
+const hotspots = db.hotspotPriority();
+
+// TODO/FIXME/HACK/XXX inventory
+const todoItems = db.todos();
+
+// Documentation coverage percentage per directory
+const coverage = db.moduleCoverage();
+
+// Doc sections where all entity mentions are ungrounded
+const orphans = db.orphanedSections();
+
+// Per-doc completeness vs. referenced exports
+const completeness = db.docCompleteness();
+
+// Cross-group entity coverage conflicts
+const drift = db.crossGroupDrift();
 ```
 
 ## Depth Modes

@@ -77,6 +77,8 @@ export function buildIndex(
       coOccurrences: writeCoOccurrences(db, cox),
       coChanges: writeCoChanges(db, tcg),
       files: writeFiles(db, ax, tcg),
+      imports: writeImports(db, ax),
+      todos: writeTodos(db, ax),
     };
 
     // Populate FTS indexes
@@ -95,7 +97,8 @@ export function buildIndex(
     opts.log?.(`Index built in ${durationMs}ms → ${dbPath}`);
     opts.log?.(
       `  symbols=${counts.symbols} annotations=${counts.annotations} ` +
-        `co_occurrences=${counts.coOccurrences} co_changes=${counts.coChanges} files=${counts.files}`,
+        `co_occurrences=${counts.coOccurrences} co_changes=${counts.coChanges} ` +
+        `files=${counts.files} imports=${counts.imports} todos=${counts.todos}`,
     );
 
     return { dbPath, counts, durationMs };
@@ -110,8 +113,9 @@ export function buildIndex(
 
 function writeSymbols(db: Database.Database, ax: AxOutput): number {
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO symbols (id, name, kind, container, signature, file_path, line, end_line, export, doc_summary)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO symbols
+      (id, name, kind, container, signature, file_path, line, end_line, export, doc_summary, body_hash, body_lines, structure_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let count = 0;
@@ -131,6 +135,9 @@ function writeSymbols(db: Database.Database, ax: AxOutput): number {
           sym.span.endLine ?? null,
           sym.export,
           sym.docSummary ?? null,
+          sym.bodyHash ?? null,
+          sym.bodyLines ?? null,
+          sym.structureHash ?? null,
         );
         count++;
       }
@@ -277,8 +284,8 @@ function writeFiles(
   tcg: TcgPipelineOutput,
 ): number {
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash, doc_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Build lookup maps from TCG data
@@ -317,6 +324,7 @@ function writeFiles(
           own ? countBusFactor(own) : null,
           isDoc ? 1 : 0,
           axFile?.contentHash ?? null,
+          isDoc ? classifyDocGroup(fp) : null,
         );
         count++;
       }
@@ -334,6 +342,120 @@ function isDocFile(filePath: string): boolean {
 function countBusFactor(own: OwnershipRecord): number {
   // Bus factor: number of authors contributing ≥10% of commits
   return own.authors.filter((a) => a.percentage >= 10).length;
+}
+
+// =============================================================================
+// Imports
+// =============================================================================
+
+function writeImports(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.imports || file.imports.length === 0) continue;
+    for (let i = 0; i < file.imports.length; i += BATCH_SIZE) {
+      const batch = file.imports.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const imp of batch) {
+          stmt.run(
+            file.filePath,
+            imp.resolvedPath ?? null,
+            imp.moduleSpecifier,
+            imp.isRelative ? 1 : 0,
+            JSON.stringify(imp.importedNames),
+          );
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// TODOs
+// =============================================================================
+
+function writeTodos(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO todos (file_path, line, kind, text)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.todos || file.todos.length === 0) continue;
+    for (let i = 0; i < file.todos.length; i += BATCH_SIZE) {
+      const batch = file.todos.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const todo of batch) {
+          stmt.run(file.filePath, todo.line, todo.kind, todo.text);
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// Doc-Group Classification
+// =============================================================================
+
+/**
+ * Classify a document file into a semantic group based on its path.
+ */
+function classifyDocGroup(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  const base = path.basename(lower);
+
+  // README files
+  if (base.startsWith("readme")) return "readme";
+
+  // Changelog / release notes
+  if (base.startsWith("changelog") || base.startsWith("release"))
+    return "changelog";
+
+  // Contributing / code of conduct
+  if (base.startsWith("contributing") || base.startsWith("code_of_conduct"))
+    return "contributing";
+
+  // License
+  if (base.startsWith("license") || base.startsWith("licence"))
+    return "license";
+
+  // API / reference docs
+  if (lower.includes("/api/") || lower.includes("/reference/"))
+    return "api-reference";
+
+  // Architecture / design decisions
+  if (
+    lower.includes("/architecture") ||
+    lower.includes("/design") ||
+    lower.includes("/decisions") ||
+    lower.includes("/adr")
+  )
+    return "architecture";
+
+  // Specs / requirements
+  if (lower.includes("/spec") || lower.includes("/requirement"))
+    return "specification";
+
+  // Guides / tutorials
+  if (lower.includes("/guide") || lower.includes("/tutorial"))
+    return "guide";
+
+  // General docs
+  if (lower.includes("/docs/") || lower.includes("/doc/"))
+    return "project-docs";
+
+  return "other";
 }
 
 // =============================================================================

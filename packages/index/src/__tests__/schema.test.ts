@@ -31,6 +31,8 @@ describe("initSchema", () => {
     expect(tables).toContain("co_occurrences");
     expect(tables).toContain("co_changes");
     expect(tables).toContain("files");
+    expect(tables).toContain("imports");
+    expect(tables).toContain("todos");
     expect(tables).toContain("_meta");
   });
 
@@ -66,6 +68,12 @@ describe("initSchema", () => {
     expect(indexes).toContain("idx_co_occurrences_score");
     expect(indexes).toContain("idx_co_changes_jaccard");
     expect(indexes).toContain("idx_files_doc");
+    expect(indexes).toContain("idx_symbols_body_hash");
+    expect(indexes).toContain("idx_files_doc_group");
+    expect(indexes).toContain("idx_imports_source");
+    expect(indexes).toContain("idx_imports_target");
+    expect(indexes).toContain("idx_todos_file");
+    expect(indexes).toContain("idx_todos_kind");
   });
 
   it("stores schema version in _meta", () => {
@@ -75,7 +83,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("1");
+    expect(row?.value).toBe("3");
   });
 
   it("sets WAL journal mode", () => {

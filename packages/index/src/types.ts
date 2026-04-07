@@ -187,6 +187,8 @@ export interface IndexBuildResult {
     coOccurrences: number;
     coChanges: number;
     files: number;
+    imports: number;
+    todos: number;
   };
 
   /** Build duration in ms */
@@ -328,4 +330,167 @@ export interface ReportResult {
     coChangeCount: number;
     docMentions: number;
   }>;
+}
+
+// =============================================================================
+// Query: clones
+// =============================================================================
+
+export interface ClonesResult {
+  /** Groups of symbols sharing identical normalised bodies */
+  cloneGroups: Array<{
+    bodyHash: string;
+    bodyLines: number;
+    symbols: Array<{ name: string; filePath: string; line: number; kind: string }>;
+  }>;
+  totalCloneGroups: number;
+  totalClonedSymbols: number;
+}
+
+// =============================================================================
+// Query: circular imports
+// =============================================================================
+
+export interface CircularImportsResult {
+  cycles: Array<{
+    files: string[];
+    length: number;
+  }>;
+  totalCycles: number;
+}
+
+// =============================================================================
+// Query: unused exports
+// =============================================================================
+
+export interface UnusedExportsResult {
+  unused: Array<{
+    name: string;
+    filePath: string;
+    kind: string;
+    line: number;
+  }>;
+  totalUnused: number;
+  totalExported: number;
+}
+
+// =============================================================================
+// Query: hotspot priority
+// =============================================================================
+
+export interface HotspotPriorityResult {
+  priorities: Array<{
+    filePath: string;
+    churn: number;
+    documentedSymbols: number;
+    totalExportedSymbols: number;
+    coveragePercent: number;
+    /** Higher = more urgent to document (churn × (1 − coverage)) */
+    priorityScore: number;
+  }>;
+}
+
+// =============================================================================
+// Query: todos
+// =============================================================================
+
+export interface TodosResult {
+  todos: Array<{
+    filePath: string;
+    line: number;
+    kind: string;
+    text: string;
+  }>;
+  totalCount: number;
+  byKind: Record<string, number>;
+}
+
+// =============================================================================
+// Query: module coverage (1.4)
+// =============================================================================
+
+export interface ModuleCoverageResult {
+  modules: Array<{
+    /** Directory path (e.g., "packages/analyzer/src") */
+    module: string;
+    /** Total exported symbols in this module */
+    totalExported: number;
+    /** Exported symbols with at least one annotation */
+    documented: number;
+    /** Coverage percentage */
+    coveragePercent: number;
+  }>;
+}
+
+// =============================================================================
+// Query: orphaned sections (1.3)
+// =============================================================================
+
+export interface OrphanedSectionsResult {
+  sections: Array<{
+    /** Document file path */
+    docPath: string;
+    /** Heading text */
+    heading: string;
+    /** Line number of the heading */
+    line: number;
+    /** Number of ungrounded mentions in this section */
+    ungroundedMentions: number;
+  }>;
+  totalOrphaned: number;
+}
+
+// =============================================================================
+// Query: doc completeness (1.7)
+// =============================================================================
+
+export interface DocCompletenessResult {
+  docs: Array<{
+    /** Document file path */
+    docPath: string;
+    /** Exported symbols referenced from the files this doc covers */
+    totalRelevantExports: number;
+    /** How many of those are actually mentioned in this doc */
+    coveredExports: number;
+    /** Completeness percentage */
+    completenessPercent: number;
+    /** Symbols missing from the doc */
+    missing: Array<{ name: string; filePath: string; kind: string }>;
+  }>;
+}
+
+// =============================================================================
+// Query: structural clones (2.2)
+// =============================================================================
+
+export interface StructuralClonesResult {
+  /** Groups of symbols sharing identical AST structure (ignoring identifiers/literals) */
+  cloneGroups: Array<{
+    structureHash: string;
+    bodyLines: number;
+    symbols: Array<{ name: string; filePath: string; line: number; kind: string }>;
+  }>;
+  totalCloneGroups: number;
+  totalClonedSymbols: number;
+}
+
+// =============================================================================
+// Query: cross-group drift (1.2)
+// =============================================================================
+
+export interface CrossGroupDriftResult {
+  drifts: Array<{
+    /** Entity name mentioned in multiple doc groups */
+    entity: string;
+    /** Groups that mention this entity, with coverage details */
+    groups: Array<{
+      docGroup: string;
+      docPaths: string[];
+      mentionCount: number;
+      qualifiers: string[];
+    }>;
+    /** Drift description */
+    reason: string;
+  }>;
+  totalDrifts: number;
 }

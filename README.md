@@ -292,6 +292,21 @@ iw index report                            # corpus-wide health dashboard
 iw index update
 ```
 
+Additional CARI queries are available via the programmatic API:
+
+| Query                | What It Does                                                    |
+| -------------------- | --------------------------------------------------------------- |
+| `clones()`           | Exact code clone detection (identical body hash)                |
+| `structuralClones()` | Type 2 clones (same control flow, different identifiers)        |
+| `circularImports()`  | Detect import cycles (A → B → C → A)                            |
+| `unusedExports()`    | Exported symbols never imported anywhere                        |
+| `hotspotPriority()`  | High-churn + low-doc files ranked by documentation urgency      |
+| `todos()`            | TODO/FIXME/HACK/XXX inventory with file, line, and kind         |
+| `moduleCoverage()`   | Documentation coverage % per directory                          |
+| `orphanedSections()` | Doc sections where all mentions are unresolved                  |
+| `docCompleteness()`  | Per-doc score: covered vs. total exports from referenced files  |
+| `crossGroupDrift()`  | Entity coverage conflicts between doc groups                    |
+
 > See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
 
 ### MCP (GitHub Copilot Integration)
@@ -314,6 +329,10 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `cari_retrieve`    | Ranked file retrieval by topic or symbol | `query`, `scope?`, `limit?`    |
 | `cari_connections` | Cross-layer connection discovery + gaps  | `entity`, `include?`, `limit?` |
 | `cari_check`       | CI drift detection for changed files     | `changed`, `severity?`         |
+
+Additional CARI query functions (`clones`, `structuralClones`, `circularImports`, `unusedExports`,
+`hotspotPriority`, `todos`, `moduleCoverage`, `orphanedSections`, `docCompleteness`, `crossGroupDrift`)
+are available via the `@intentweave/index` programmatic API.
 
 Start the MCP server:
 
