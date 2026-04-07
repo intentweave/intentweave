@@ -15,13 +15,21 @@ import type Database from "better-sqlite3";
 import type { ReportResult } from "../types.js";
 import { openIndex } from "./shared.js";
 
+/** Options for report generation. */
+export interface ReportOptions {
+  /** Minimum co-occurrence score to count as "documented" (default: 0.3) */
+  coocThreshold?: number;
+  /** Minimum co-change jaccard to surface (default: 0.3) */
+  cochangeThreshold?: number;
+}
+
 /**
  * Generate a corpus-wide report from the index.
  */
-export function report(dbPath: string): ReportResult {
+export function report(dbPath: string, opts?: ReportOptions): ReportResult {
   const db = openIndex(dbPath);
   try {
-    return reportFromDb(db);
+    return reportFromDb(db, opts);
   } finally {
     db.close();
   }
@@ -30,12 +38,14 @@ export function report(dbPath: string): ReportResult {
 /**
  * Core report logic against an open database.
  */
-export function reportFromDb(db: Database.Database): ReportResult {
+export function reportFromDb(db: Database.Database, opts?: ReportOptions): ReportResult {
+  const coocThreshold = opts?.coocThreshold ?? 0.3;
+  const cochangeThreshold = opts?.cochangeThreshold ?? 0.3;
   return {
     coverage: computeCoverage(db),
     staleness: computeStaleness(db),
-    hiddenCouplings: computeHiddenCouplings(db),
-    undocumentedDeps: computeUndocumentedDeps(db),
+    hiddenCouplings: computeHiddenCouplings(db, coocThreshold),
+    undocumentedDeps: computeUndocumentedDeps(db, cochangeThreshold),
   };
 }
 
@@ -171,6 +181,7 @@ function computeStaleness(db: Database.Database): ReportResult["staleness"] {
 
 function computeHiddenCouplings(
   db: Database.Database,
+  coocThreshold: number,
 ): ReportResult["hiddenCouplings"] {
   // Entities that co-occur in docs but have no symbols in the same code files
   // (a proxy for "no code dependency")
@@ -180,12 +191,12 @@ function computeHiddenCouplings(
       SELECT entity_a, entity_b, score
       FROM co_occurrences
       WHERE source = 'doc_cooc'
-        AND score >= 0.3
+        AND score >= ?
       ORDER BY score DESC
       LIMIT 100
     `,
     )
-    .all() as Array<{
+    .all(coocThreshold) as Array<{
     entity_a: string;
     entity_b: string;
     score: number;
@@ -260,6 +271,7 @@ function computeHiddenCouplings(
 
 function computeUndocumentedDeps(
   db: Database.Database,
+  cochangeThreshold: number,
 ): ReportResult["undocumentedDeps"] {
   // Files with high co-change but no doc co-mentions for their entities
   const cochanges = db
@@ -267,12 +279,12 @@ function computeUndocumentedDeps(
       `
       SELECT file_a, file_b, count, jaccard
       FROM co_changes
-      WHERE jaccard >= 0.3
+      WHERE jaccard >= ?
       ORDER BY jaccard DESC
       LIMIT 100
     `,
     )
-    .all() as Array<{
+    .all(cochangeThreshold) as Array<{
     file_a: string;
     file_b: string;
     count: number;

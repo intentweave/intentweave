@@ -47,12 +47,103 @@ import { detectChanges, applyChanges, hashFile } from "@intentweave/index";
 import type { IndexBuildOptions } from "@intentweave/index";
 
 // =============================================================================
+// Default Excludes & .iwignore
+// =============================================================================
+
+/** Directories excluded by default (similar to .gitignore defaults). */
+const DEFAULT_EXCLUDES = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/.output/**",
+  "**/coverage/**",
+  "**/.git/**",
+  "**/.iw/**",
+  "**/.next/**",
+  "**/.nuxt/**",
+  "**/build/**",
+  "**/__pycache__/**",
+];
+
+/**
+ * Load `.iwignore` from workspace root (if it exists).
+ * Format: one glob pattern per line. Lines starting with `#` are comments.
+ */
+async function loadIwIgnore(cwd: string): Promise<string[]> {
+  const ignorePath = path.join(cwd, ".iwignore");
+  try {
+    const content = await fs.readFile(ignorePath, "utf-8");
+    return content
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("#"));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Build the effective exclude list from defaults + .iwignore + CLI --exclude.
+ * Passing `--no-default-excludes` disables the built-in list.
+ */
+function buildExcludeList(
+  cliExcludes: string[],
+  iwIgnorePatterns: string[],
+  useDefaults: boolean,
+): string[] {
+  const excludes: string[] = [];
+  if (useDefaults) excludes.push(...DEFAULT_EXCLUDES);
+  excludes.push(...iwIgnorePatterns);
+  excludes.push(...cliExcludes);
+  return excludes;
+}
+
+// =============================================================================
 // File Discovery
 // =============================================================================
 
 const SUPPORTED_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst"]);
 
-async function discoverFiles(paths: string[], cwd: string): Promise<string[]> {
+interface DiscoverOptions {
+  /** Glob patterns to include (if empty, include all supported files) */
+  include?: string[];
+  /** Glob patterns to exclude */
+  exclude?: string[];
+}
+
+async function discoverFiles(
+  paths: string[],
+  cwd: string,
+  opts: DiscoverOptions = {},
+): Promise<string[]> {
+  const { exclude = [] } = opts;
+
+  // If include patterns are provided, use glob-based discovery instead
+  if (opts.include && opts.include.length > 0) {
+    const { minimatch } = await import("minimatch");
+    const includeMatchers = opts.include.map(
+      (p) => (file: string) => minimatch(file, p),
+    );
+    const files = await discoverFilesRecursive(paths, cwd, exclude);
+    return files.filter((f) => {
+      const rel = path.relative(cwd, f);
+      return includeMatchers.some((m) => m(rel));
+    });
+  }
+
+  return discoverFilesRecursive(paths, cwd, exclude);
+}
+
+async function discoverFilesRecursive(
+  paths: string[],
+  cwd: string,
+  excludePatterns: string[],
+): Promise<string[]> {
+  let minimatchFn: ((file: string, pattern: string) => boolean) | null = null;
+  if (excludePatterns.length > 0) {
+    const { minimatch } = await import("minimatch");
+    minimatchFn = minimatch;
+  }
+
   const files: string[] = [];
   for (const p of paths) {
     const abs = path.isAbsolute(p) ? p : path.resolve(cwd, p);
@@ -61,15 +152,42 @@ async function discoverFiles(paths: string[], cwd: string): Promise<string[]> {
 
     if (stat.isFile()) {
       if (SUPPORTED_EXTENSIONS.has(path.extname(abs).toLowerCase())) {
-        files.push(abs);
+        const rel = path.relative(cwd, abs);
+        if (!isExcluded(rel, excludePatterns, minimatchFn)) {
+          files.push(abs);
+        }
       }
     } else if (stat.isDirectory()) {
+      const dirName = path.basename(abs);
+      // Fast-path: skip well-known excluded directories without glob matching
+      if (
+        dirName === "node_modules" ||
+        dirName === ".git" ||
+        dirName === ".iw"
+      ) {
+        continue;
+      }
+      const rel = path.relative(cwd, abs);
+      if (rel && isExcluded(rel + "/", excludePatterns, minimatchFn)) {
+        continue;
+      }
       const entries = await fs.readdir(abs, { withFileTypes: true });
       const subPaths = entries.map((e) => path.join(abs, e.name));
-      files.push(...(await discoverFiles(subPaths, cwd)));
+      files.push(
+        ...(await discoverFilesRecursive(subPaths, cwd, excludePatterns)),
+      );
     }
   }
   return [...new Set(files)].sort();
+}
+
+function isExcluded(
+  relPath: string,
+  patterns: string[],
+  minimatchFn: ((file: string, pattern: string, opts?: { dot?: boolean }) => boolean) | null,
+): boolean {
+  if (!minimatchFn || patterns.length === 0) return false;
+  return patterns.some((p) => minimatchFn(relPath, p, { dot: true }));
 }
 
 function toArtifactId(filePath: string, cwd: string): string {
@@ -98,17 +216,32 @@ function createMinimalContext(verbose: boolean) {
 const indexBuildSubcommand = new Command("build")
   .description("Build CARI index: KWG + TCG + AX → SQLite (.iw/index.db)")
   .argument("<paths...>", "Document file(s) or directories to analyze")
-  .requiredOption("-s, --session <name>", "Session name")
+  .option("-s, --session <name>", "Session name (default: directory name)")
   .option(
     "--depth <depth>",
     "Annotation depth: structured (default) or full (includes IDF scoring)",
     "structured",
   )
+  .option("--include <patterns...>", "Only include files matching these globs")
+  .option("--exclude <patterns...>", "Exclude files matching these globs (added to defaults)")
+  .option("--no-default-excludes", "Disable built-in excludes (node_modules, dist, etc.)")
   .option("-o, --output <path>", "Output path for the SQLite database")
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
-    const { session, depth, output, verbose } = opts;
+    const depth = opts.depth;
+    const output = opts.output;
+    const verbose = opts.verbose;
     const cwd = process.cwd();
+
+    // Resolve session: explicit flag > directory name
+    const session = opts.session ?? path.basename(cwd);
+
+    // Build exclude list: defaults + .iwignore + --exclude
+    const iwIgnorePatterns = await loadIwIgnore(cwd);
+    const cliExcludes: string[] = opts.exclude ?? [];
+    const useDefaults = opts.defaultExcludes !== false;
+    const excludePatterns = buildExcludeList(cliExcludes, iwIgnorePatterns, useDefaults);
+
     const log = verbose
       ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
       : () => {};
@@ -123,7 +256,13 @@ const indexBuildSubcommand = new Command("build")
     try {
       // ── 1. Discover doc files ──────────────────────────────────
       log("Discovering document files...");
-      const docFiles = await discoverFiles(paths, cwd);
+      if (excludePatterns.length > 0 && verbose) {
+        log(`Excluding: ${excludePatterns.join(", ")}`);
+      }
+      const docFiles = await discoverFiles(paths, cwd, {
+        include: opts.include,
+        exclude: excludePatterns,
+      });
       if (docFiles.length === 0) {
         console.error(chalk.red("No document files found in the given paths."));
         process.exit(1);
@@ -312,6 +451,16 @@ import {
   check,
   formatCheck,
   report,
+  clones,
+  structuralClones,
+  circularImports,
+  unusedExports,
+  hotspotPriority,
+  todos,
+  moduleCoverage,
+  orphanedSections,
+  docCompleteness,
+  crossGroupDrift,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -452,21 +601,56 @@ const indexCheckSubcommand = new Command("check")
     "Minimum severity: info, warning, or critical",
     "info",
   )
+  .option("--exclude <patterns...>", "Exclude findings matching these globs")
   .option(
     "-f, --format <format>",
     "Output format: text, json, or github",
     "text",
   )
   .option("--db <path>", "Path to index.db")
-  .action((changed: string[], opts) => {
+  .action(async (changed: string[], opts) => {
     const dbPath = resolveDbPath(opts.db);
+    const cwd = process.cwd();
+
+    // Filter changed files through .iwignore + --exclude + defaults
+    const iwIgnorePatterns = await loadIwIgnore(cwd);
+    const cliExcludes: string[] = opts.exclude ?? [];
+    const allExcludes = buildExcludeList(cliExcludes, iwIgnorePatterns, true);
+
+    let filteredChanged = changed;
+    if (allExcludes.length > 0) {
+      const { minimatch } = await import("minimatch");
+      filteredChanged = changed.filter(
+        (f) =>
+          !allExcludes.some((p) =>
+            minimatch(f.replace(/^\.\//, ""), p, { dot: true }),
+          ),
+      );
+    }
+
+    if (filteredChanged.length === 0) {
+      console.log(chalk.green("\n  ✓ No relevant changed files (after filtering).\n"));
+      return;
+    }
+
     const params: CheckParams = {
-      changed,
+      changed: filteredChanged,
       severity: opts.severity,
       format: opts.format,
     };
 
     const result = check(dbPath, params);
+
+    // Also filter findings whose file or related paths match excludes
+    if (allExcludes.length > 0) {
+      const { minimatch } = await import("minimatch");
+      result.findings = result.findings.filter(
+        (f) =>
+          !allExcludes.some((p) =>
+            minimatch(f.file.replace(/^\.\//, ""), p, { dot: true }),
+          ),
+      );
+    }
 
     if (opts.format === "json" || opts.format === "github") {
       console.log(formatCheck(result, opts.format));
@@ -490,10 +674,15 @@ const indexCheckSubcommand = new Command("check")
 const indexReportSubcommand = new Command("report")
   .description("Corpus-wide insights: coverage, staleness, couplings")
   .option("--db <path>", "Path to index.db")
+  .option("--threshold <n>", "Minimum co-occurrence/co-change score (default: 0.3)", "0.3")
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action((opts) => {
     const dbPath = resolveDbPath(opts.db);
-    const result = report(dbPath);
+    const threshold = parseFloat(opts.threshold);
+    const result = report(dbPath, {
+      coocThreshold: threshold,
+      cochangeThreshold: threshold,
+    });
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));
@@ -576,6 +765,7 @@ const indexUpdateSubcommand = new Command("update")
     "-s, --session <name>",
     "Session name (reads from existing DB if omitted)",
   )
+  .option("--exclude <patterns...>", "Exclude files matching these globs")
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
     const cwd = process.cwd();
@@ -584,6 +774,11 @@ const indexUpdateSubcommand = new Command("update")
     const log = verbose
       ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
       : () => {};
+
+    // Build exclude list
+    const iwIgnorePatterns = await loadIwIgnore(cwd);
+    const cliExcludes: string[] = opts.exclude ?? [];
+    const excludePatterns = buildExcludeList(cliExcludes, iwIgnorePatterns, true);
 
     try {
       // Verify existing index
@@ -602,7 +797,9 @@ const indexUpdateSubcommand = new Command("update")
 
       // ── 1. Discover current files ────────────────────────────
       const scanPaths = paths.length > 0 ? paths : [cwd];
-      const docFiles = await discoverFiles(scanPaths, cwd);
+      const docFiles = await discoverFiles(scanPaths, cwd, {
+        exclude: excludePatterns,
+      });
       // Also discover code files via AX
       const axOutput = await runAxStage({ workspaceRoot: cwd });
       const allCodeFiles = axOutput.files.map((f) =>
@@ -732,6 +929,424 @@ const indexUpdateSubcommand = new Command("update")
     }
   });
 
+// ── iw index clones ────────────────────────────────────────────
+
+const indexClonesSubcommand = new Command("clones")
+  .description("Detect exact code clones (identical body hash)")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = clones(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalCloneGroups === 0) {
+      console.log(chalk.green("\n  ✓ No exact clones found.\n"));
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalCloneGroups} clone group(s), ${result.totalClonedSymbols} symbol(s)`,
+      ),
+    );
+
+    for (const group of result.cloneGroups) {
+      console.log(
+        chalk.cyan(
+          `\n    Clone group (${group.bodyLines} lines, ${group.symbols.length} copies):`,
+        ),
+      );
+      for (const s of group.symbols) {
+        console.log(chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`));
+      }
+    }
+    console.log();
+  });
+
+// ── iw index structural-clones ─────────────────────────────────
+
+const indexStructuralClonesSubcommand = new Command("structural-clones")
+  .description("Detect structural code clones (same AST structure, different identifiers)")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = structuralClones(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalCloneGroups === 0) {
+      console.log(chalk.green("\n  ✓ No structural clones found.\n"));
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalCloneGroups} structural clone group(s), ${result.totalClonedSymbols} symbol(s)`,
+      ),
+    );
+
+    for (const group of result.cloneGroups) {
+      console.log(
+        chalk.cyan(
+          `\n    Clone group (${group.bodyLines} lines, ${group.symbols.length} copies):`,
+        ),
+      );
+      for (const s of group.symbols) {
+        console.log(chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`));
+      }
+    }
+    console.log();
+  });
+
+// ── iw index circular-imports ──────────────────────────────────
+
+const indexCircularImportsSubcommand = new Command("circular-imports")
+  .description("Detect circular import cycles")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = circularImports(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalCycles === 0) {
+      console.log(chalk.green("\n  ✓ No circular imports detected.\n"));
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ ${result.totalCycles} circular import cycle(s)`),
+    );
+
+    for (const cycle of result.cycles) {
+      console.log(
+        chalk.yellow(
+          `\n    ${cycle.length}-file cycle: ${cycle.files.join(" → ")} → ${cycle.files[0]}`,
+        ),
+      );
+    }
+    console.log();
+  });
+
+// ── iw index unused-exports ────────────────────────────────────
+
+const indexUnusedExportsSubcommand = new Command("unused-exports")
+  .description("Find exported symbols never imported anywhere")
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "50")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = unusedExports(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalUnused === 0) {
+      console.log(
+        chalk.green(
+          `\n  ✓ All ${result.totalExported} exported symbols are imported somewhere.\n`,
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalUnused} of ${result.totalExported} exported symbols are unused`,
+      ),
+    );
+
+    const limit = parseInt(opts.limit, 10);
+    for (const u of result.unused.slice(0, limit)) {
+      console.log(
+        chalk.yellow(`    ${u.kind} ${u.name} (${u.filePath}:${u.line})`),
+      );
+    }
+    if (result.totalUnused > limit) {
+      console.log(
+        chalk.gray(`    ...and ${result.totalUnused - limit} more`),
+      );
+    }
+    console.log();
+  });
+
+// ── iw index hotspot-priority ──────────────────────────────────
+
+const indexHotspotPrioritySubcommand = new Command("hotspot-priority")
+  .description("Rank files by documentation urgency (high churn × low coverage)")
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "20")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = hotspotPriority(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.priorities.length === 0) {
+      console.log(
+        chalk.gray("\n  No hotspot data — ensure index was built with git history.\n"),
+      );
+      return;
+    }
+
+    const limit = parseInt(opts.limit, 10);
+    const items = result.priorities.slice(0, limit);
+
+    console.log(
+      chalk.blue(`\n  ▸ Hotspot Priority — top ${items.length} files`),
+    );
+    console.log(
+      chalk.gray("    File                                          Churn  Coverage  Priority"),
+    );
+
+    for (const p of items) {
+      const file = p.filePath.padEnd(48);
+      console.log(
+        `    ${file} ${String(p.churn).padStart(5)}  ${(p.coveragePercent.toFixed(0) + "%").padStart(8)}  ${p.priorityScore.toFixed(2)}`,
+      );
+    }
+    console.log();
+  });
+
+// ── iw index todos ─────────────────────────────────────────────
+
+const indexTodosSubcommand = new Command("todos")
+  .description("List TODO/FIXME/HACK/XXX comments")
+  .option("--db <path>", "Path to index.db")
+  .option("--kind <kind>", "Filter by kind: TODO, FIXME, HACK, XXX")
+  .option("-n, --limit <n>", "Maximum results", "50")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = todos(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    let items = result.todos;
+    if (opts.kind) {
+      items = items.filter(
+        (t) => t.kind.toLowerCase() === opts.kind.toLowerCase(),
+      );
+    }
+
+    if (items.length === 0) {
+      console.log(
+        chalk.green(
+          opts.kind
+            ? `\n  ✓ No ${opts.kind} comments found.\n`
+            : "\n  ✓ No TODO/FIXME/HACK/XXX comments found.\n",
+        ),
+      );
+      return;
+    }
+
+    const kindSummary = Object.entries(result.byKind)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(", ");
+    console.log(
+      chalk.blue(`\n  ▸ ${result.totalCount} total (${kindSummary})`),
+    );
+
+    const limit = parseInt(opts.limit, 10);
+    for (const t of items.slice(0, limit)) {
+      const kindColor =
+        t.kind === "FIXME" || t.kind === "HACK" ? chalk.red : chalk.yellow;
+      console.log(
+        `    ${kindColor(t.kind.padEnd(5))} ${chalk.gray(t.filePath + ":" + t.line)} ${t.text}`,
+      );
+    }
+    if (items.length > limit) {
+      console.log(chalk.gray(`    ...and ${items.length - limit} more`));
+    }
+    console.log();
+  });
+
+// ── iw index module-coverage ───────────────────────────────────
+
+const indexModuleCoverageSubcommand = new Command("module-coverage")
+  .description("Documentation coverage percentage per directory")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = moduleCoverage(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.modules.length === 0) {
+      console.log(chalk.gray("\n  No module coverage data available.\n"));
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ Module Coverage — ${result.modules.length} module(s)`),
+    );
+    console.log(
+      chalk.gray("    Module                                        Documented  Total  Coverage"),
+    );
+
+    for (const m of result.modules) {
+      const mod = m.module.padEnd(48);
+      const pct = m.coveragePercent.toFixed(0) + "%";
+      const color = m.coveragePercent >= 80 ? chalk.green : m.coveragePercent >= 50 ? chalk.yellow : chalk.red;
+      console.log(
+        `    ${mod} ${String(m.documented).padStart(10)}  ${String(m.totalExported).padStart(5)}  ${color(pct.padStart(8))}`,
+      );
+    }
+    console.log();
+  });
+
+// ── iw index orphaned-sections ─────────────────────────────────
+
+const indexOrphanedSectionsSubcommand = new Command("orphaned-sections")
+  .description("Find doc sections where all mentions are ungrounded")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = orphanedSections(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalOrphaned === 0) {
+      console.log(
+        chalk.green("\n  ✓ No orphaned sections — all sections have grounded mentions.\n"),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ ${result.totalOrphaned} orphaned section(s)`),
+    );
+
+    for (const s of result.sections) {
+      console.log(
+        chalk.yellow(
+          `    ${s.docPath}:${s.line} — "${s.heading}" (${s.ungroundedMentions} ungrounded)`,
+        ),
+      );
+    }
+    console.log();
+  });
+
+// ── iw index doc-completeness ──────────────────────────────────
+
+const indexDocCompletenessSubcommand = new Command("doc-completeness")
+  .description("Per-doc completeness vs. referenced exports")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = docCompleteness(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.docs.length === 0) {
+      console.log(chalk.gray("\n  No doc completeness data available.\n"));
+      return;
+    }
+
+    console.log(chalk.blue("\n  ▸ Doc Completeness"));
+    console.log(
+      chalk.gray("    Document                                      Covered  Total  Completeness"),
+    );
+
+    for (const d of result.docs) {
+      const doc = d.docPath.padEnd(48);
+      const pct = d.completenessPercent.toFixed(0) + "%";
+      const color = d.completenessPercent >= 80 ? chalk.green : d.completenessPercent >= 50 ? chalk.yellow : chalk.red;
+      console.log(
+        `    ${doc} ${String(d.coveredExports).padStart(7)}  ${String(d.totalRelevantExports).padStart(5)}  ${color(pct.padStart(12))}`,
+      );
+
+      if (d.missing.length > 0 && d.missing.length <= 5) {
+        for (const m of d.missing) {
+          console.log(
+            chalk.gray(`      missing: ${m.kind} ${m.name} (${m.filePath})`),
+          );
+        }
+      } else if (d.missing.length > 5) {
+        console.log(
+          chalk.gray(`      ${d.missing.length} exported symbols missing`),
+        );
+      }
+    }
+    console.log();
+  });
+
+// ── iw index cross-group-drift ─────────────────────────────────
+
+const indexCrossGroupDriftSubcommand = new Command("cross-group-drift")
+  .description("Cross-group entity coverage conflicts")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = crossGroupDrift(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalDrifts === 0) {
+      console.log(
+        chalk.green("\n  ✓ No cross-group drift — entity coverage is consistent.\n"),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ ${result.totalDrifts} cross-group drift finding(s)`),
+    );
+
+    for (const drift of result.drifts) {
+      console.log(chalk.yellow(`\n    ${drift.entity}: ${drift.reason}`));
+      for (const g of drift.groups) {
+        const quals =
+          g.qualifiers.length > 0 ? ` [${g.qualifiers.join(", ")}]` : "";
+        console.log(
+          chalk.gray(
+            `      ${g.docGroup}: ${g.mentionCount} mention(s) in ${g.docPaths.join(", ")}${quals}`,
+          ),
+        );
+      }
+    }
+    console.log();
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
@@ -739,4 +1354,26 @@ export const indexCommand = new Command("index")
   .addCommand(indexRetrieveSubcommand)
   .addCommand(indexConnectionsSubcommand)
   .addCommand(indexCheckSubcommand)
-  .addCommand(indexReportSubcommand);
+  .addCommand(indexReportSubcommand)
+  .addCommand(indexClonesSubcommand)
+  .addCommand(indexStructuralClonesSubcommand)
+  .addCommand(indexCircularImportsSubcommand)
+  .addCommand(indexUnusedExportsSubcommand)
+  .addCommand(indexHotspotPrioritySubcommand)
+  .addCommand(indexTodosSubcommand)
+  .addCommand(indexModuleCoverageSubcommand)
+  .addCommand(indexOrphanedSectionsSubcommand)
+  .addCommand(indexDocCompletenessSubcommand)
+  .addCommand(indexCrossGroupDriftSubcommand);
+
+// =============================================================================
+// @internal — Exported for testing only
+// =============================================================================
+
+export {
+  DEFAULT_EXCLUDES,
+  loadIwIgnore,
+  buildExcludeList,
+  discoverFiles,
+  isExcluded,
+};

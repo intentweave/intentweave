@@ -15,6 +15,16 @@
  *   - cari_retrieve:    Ranked file retrieval from CARI index (SQLite)
  *   - cari_connections: Interconnection discovery + gap detection
  *   - cari_check:       CI drift detection for changed files
+ *   - cari_clones:      Exact clone detection (identical body hash)
+ *   - cari_structural_clones: Type 2 clone detection (same structure, different identifiers)
+ *   - cari_circular_imports:  Import cycle detection
+ *   - cari_unused_exports:    Exported symbols never imported
+ *   - cari_hotspot_priority:  High-churn low-doc files ranked by urgency
+ *   - cari_todos:       TODO/FIXME/HACK/XXX inventory
+ *   - cari_module_coverage:   Documentation coverage % per directory
+ *   - cari_orphaned_sections: Doc sections with all-ungrounded mentions
+ *   - cari_doc_completeness:  Per-doc completeness vs. referenced exports
+ *   - cari_cross_group_drift: Cross-group entity coverage conflicts
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
@@ -504,6 +514,16 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function handleCariError(err: { message?: string }): string {
+  if (
+    err.message?.includes("SQLITE_CANTOPEN") ||
+    err.message?.includes("does not exist")
+  ) {
+    return "CARI index not found. Run `iw index build` first to create .iw/index.db.";
+  }
+  return `Error: ${err.message}`;
+}
+
 // =============================================================================
 // MCP Server setup
 // =============================================================================
@@ -839,11 +859,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg =
-          err.message?.includes("SQLITE_CANTOPEN") ||
-          err.message?.includes("does not exist")
-            ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
-            : `Error: ${err.message}`;
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -952,11 +968,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg =
-          err.message?.includes("SQLITE_CANTOPEN") ||
-          err.message?.includes("does not exist")
-            ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
-            : `Error: ${err.message}`;
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1010,11 +1022,531 @@ Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
         const body = formatCheck(result, "text");
         return { content: [{ type: "text", text: header + body }] };
       } catch (err: any) {
-        const msg =
-          err.message?.includes("SQLITE_CANTOPEN") ||
-          err.message?.includes("does not exist")
-            ? "CARI index not found. Run `iw index build` first to create .iw/index.db."
-            : `Error: ${err.message}`;
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_clones ───────────────────────────────────────────
+  server.tool(
+    "cari_clones",
+    `Detect exact code clones (Type 1). Finds functions/methods with identical normalised bodies (same body hash). Returns clone groups with file locations.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_clones");
+      try {
+        const { clones } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = clones(dbPath);
+
+        if (result.totalCloneGroups === 0) {
+          return {
+            content: [
+              { type: "text", text: "No exact clones found in the codebase." },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Exact Clones — ${result.totalCloneGroups} group(s), ${result.totalClonedSymbols} symbol(s)`,
+          "",
+        ];
+
+        for (const group of result.cloneGroups) {
+          lines.push(
+            `### Clone group (${group.bodyLines} lines, ${group.symbols.length} copies)`,
+            "",
+            "| Symbol | File | Line | Kind |",
+            "|--------|------|------|------|",
+          );
+          for (const s of group.symbols) {
+            lines.push(`| ${s.name} | ${s.filePath} | ${s.line} | ${s.kind} |`);
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_structural_clones ────────────────────────────────
+  server.tool(
+    "cari_structural_clones",
+    `Detect structural code clones (Type 2). Finds functions/methods with the same control-flow structure but different identifiers or literals. Excludes groups that are already exact clones.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_structural_clones");
+      try {
+        const { structuralClones } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = structuralClones(dbPath);
+
+        if (result.totalCloneGroups === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No structural clones found in the codebase.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Structural Clones — ${result.totalCloneGroups} group(s), ${result.totalClonedSymbols} symbol(s)`,
+          "",
+        ];
+
+        for (const group of result.cloneGroups) {
+          lines.push(
+            `### Clone group (${group.bodyLines} lines, ${group.symbols.length} copies)`,
+            "",
+            "| Symbol | File | Line | Kind |",
+            "|--------|------|------|------|",
+          );
+          for (const s of group.symbols) {
+            lines.push(`| ${s.name} | ${s.filePath} | ${s.line} | ${s.kind} |`);
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_circular_imports ─────────────────────────────────
+  server.tool(
+    "cari_circular_imports",
+    `Detect circular import cycles in the codebase. Returns each cycle as an ordered list of files forming the loop.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_circular_imports");
+      try {
+        const { circularImports } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = circularImports(dbPath);
+
+        if (result.totalCycles === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No circular import cycles detected.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Circular Imports — ${result.totalCycles} cycle(s)`,
+          "",
+        ];
+
+        for (const cycle of result.cycles) {
+          lines.push(
+            `- **${cycle.length}-file cycle:** ${cycle.files.join(" → ")} → ${cycle.files[0]}`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_unused_exports ───────────────────────────────────
+  server.tool(
+    "cari_unused_exports",
+    `Find exported symbols that are never imported anywhere in the codebase. Helps identify dead public API surface.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(`cari_unused_exports: limit=${args.limit}`);
+      try {
+        const { unusedExports } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = unusedExports(dbPath);
+
+        if (result.totalUnused === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `All ${result.totalExported} exported symbols are imported somewhere.`,
+              },
+            ],
+          };
+        }
+
+        const items = result.unused.slice(0, args.limit ?? 50);
+        const lines = [
+          `## Unused Exports — ${result.totalUnused} of ${result.totalExported} exported symbols`,
+          "",
+          "| Symbol | File | Line | Kind |",
+          "|--------|------|------|------|",
+          ...items.map(
+            (u) => `| ${u.name} | ${u.filePath} | ${u.line} | ${u.kind} |`,
+          ),
+        ];
+
+        if (result.totalUnused > items.length) {
+          lines.push(
+            "",
+            `_Showing ${items.length} of ${result.totalUnused}. Increase limit to see more._`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_hotspot_priority ─────────────────────────────────
+  server.tool(
+    "cari_hotspot_priority",
+    `Rank files by documentation urgency: high churn × low documentation coverage = high priority. Helps focus documentation effort where it matters most.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .optional()
+        .default(20)
+        .describe("Maximum files to return"),
+    },
+    async (args) => {
+      log(`cari_hotspot_priority: limit=${args.limit}`);
+      try {
+        const { hotspotPriority } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = hotspotPriority(dbPath);
+
+        if (result.priorities.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No hotspot data available. Ensure the index was built with git history.",
+              },
+            ],
+          };
+        }
+
+        const items = result.priorities.slice(0, args.limit ?? 20);
+        const lines = [
+          `## Hotspot Priority — Top ${items.length} files needing documentation`,
+          "",
+          "| File | Churn | Documented | Total | Coverage | Priority |",
+          "|------|-------|------------|-------|----------|----------|",
+          ...items.map(
+            (p) =>
+              `| ${p.filePath} | ${p.churn} | ${p.documentedSymbols} | ${p.totalExportedSymbols} | ${p.coveragePercent.toFixed(0)}% | ${p.priorityScore.toFixed(2)} |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_todos ────────────────────────────────────────────
+  server.tool(
+    "cari_todos",
+    `List all TODO, FIXME, HACK, and XXX comments found in the codebase. Returns file, line, kind, and comment text.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      kind: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by kind: TODO, FIXME, HACK, or XXX (omit for all)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(`cari_todos: kind=${args.kind ?? "all"} limit=${args.limit}`);
+      try {
+        const { todos } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = todos(dbPath);
+
+        let items = result.todos;
+        if (args.kind) {
+          items = items.filter(
+            (t) => t.kind.toLowerCase() === args.kind!.toLowerCase(),
+          );
+        }
+        const limited = items.slice(0, args.limit ?? 50);
+
+        if (limited.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: args.kind
+                  ? `No ${args.kind} comments found.`
+                  : "No TODO/FIXME/HACK/XXX comments found.",
+              },
+            ],
+          };
+        }
+
+        const kindSummary = Object.entries(result.byKind)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(", ");
+
+        const lines = [
+          `## TODOs — ${result.totalCount} total (${kindSummary})`,
+          "",
+          "| Kind | File | Line | Text |",
+          "|------|------|------|------|",
+          ...limited.map(
+            (t) => `| ${t.kind} | ${t.filePath} | ${t.line} | ${t.text} |`,
+          ),
+        ];
+
+        if (items.length > limited.length) {
+          lines.push(
+            "",
+            `_Showing ${limited.length} of ${items.length}. Increase limit to see more._`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_module_coverage ──────────────────────────────────
+  server.tool(
+    "cari_module_coverage",
+    `Show documentation coverage percentage per directory/module. Lists how many exported symbols in each directory have at least one documentation mention.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_module_coverage");
+      try {
+        const { moduleCoverage } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = moduleCoverage(dbPath);
+
+        if (result.modules.length === 0) {
+          return {
+            content: [
+              { type: "text", text: "No module coverage data available." },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Module Coverage — ${result.modules.length} module(s)`,
+          "",
+          "| Module | Documented | Total | Coverage |",
+          "|--------|------------|-------|----------|",
+          ...result.modules.map(
+            (m) =>
+              `| ${m.module} | ${m.documented} | ${m.totalExported} | ${m.coveragePercent.toFixed(0)}% |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_orphaned_sections ────────────────────────────────
+  server.tool(
+    "cari_orphaned_sections",
+    `Find documentation sections where all entity mentions are ungrounded (not linked to any code symbol). These sections may reference stale, renamed, or fictional entities.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_orphaned_sections");
+      try {
+        const { orphanedSections } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = orphanedSections(dbPath);
+
+        if (result.totalOrphaned === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No orphaned documentation sections found. All sections have grounded mentions.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Orphaned Sections — ${result.totalOrphaned} section(s)`,
+          "",
+          "| Document | Heading | Line | Ungrounded Mentions |",
+          "|----------|---------|------|---------------------|",
+          ...result.sections.map(
+            (s) =>
+              `| ${s.docPath} | ${s.heading} | ${s.line} | ${s.ungroundedMentions} |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_doc_completeness ─────────────────────────────────
+  server.tool(
+    "cari_doc_completeness",
+    `Score each document by how completely it covers the exports from the code files it references. Shows which exported symbols are missing from each doc.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_doc_completeness");
+      try {
+        const { docCompleteness } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = docCompleteness(dbPath);
+
+        if (result.docs.length === 0) {
+          return {
+            content: [
+              { type: "text", text: "No document completeness data available." },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Doc Completeness`,
+          "",
+          "| Document | Covered | Total | Completeness |",
+          "|----------|---------|-------|--------------|",
+          ...result.docs.map(
+            (d) =>
+              `| ${d.docPath} | ${d.coveredExports} | ${d.totalRelevantExports} | ${d.completenessPercent.toFixed(0)}% |`,
+          ),
+        ];
+
+        // Show missing symbols for incomplete docs
+        for (const doc of result.docs) {
+          if (doc.missing.length > 0) {
+            lines.push(
+              "",
+              `### Missing from ${doc.docPath}`,
+              "",
+              "| Symbol | File | Kind |",
+              "|--------|------|------|",
+              ...doc.missing.slice(0, 20).map(
+                (m) => `| ${m.name} | ${m.filePath} | ${m.kind} |`,
+              ),
+            );
+            if (doc.missing.length > 20) {
+              lines.push(
+                `_...and ${doc.missing.length - 20} more._`,
+              );
+            }
+          }
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_cross_group_drift ────────────────────────────────
+  server.tool(
+    "cari_cross_group_drift",
+    `Detect entities mentioned in multiple documentation groups with conflicting qualifiers or coverage patterns. Reveals inconsistencies across docs.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_cross_group_drift");
+      try {
+        const { crossGroupDrift } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = crossGroupDrift(dbPath);
+
+        if (result.totalDrifts === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No cross-group drift detected. Entity coverage is consistent across doc groups.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Cross-Group Drift — ${result.totalDrifts} finding(s)`,
+          "",
+        ];
+
+        for (const drift of result.drifts) {
+          lines.push(`### ${drift.entity}`, "", `**Reason:** ${drift.reason}`, "");
+          for (const g of drift.groups) {
+            const quals =
+              g.qualifiers.length > 0 ? ` [${g.qualifiers.join(", ")}]` : "";
+            lines.push(
+              `- **${g.docGroup}**: ${g.mentionCount} mention(s) in ${g.docPaths.join(", ")}${quals}`,
+            );
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },

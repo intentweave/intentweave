@@ -292,20 +292,20 @@ iw index report                            # corpus-wide health dashboard
 iw index update
 ```
 
-Additional CARI queries are available via the programmatic API:
+Additional CARI queries are available as CLI subcommands, MCP tools, and via the programmatic API:
 
-| Query                | What It Does                                                    |
-| -------------------- | --------------------------------------------------------------- |
-| `clones()`           | Exact code clone detection (identical body hash)                |
-| `structuralClones()` | Type 2 clones (same control flow, different identifiers)        |
-| `circularImports()`  | Detect import cycles (A → B → C → A)                            |
-| `unusedExports()`    | Exported symbols never imported anywhere                        |
-| `hotspotPriority()`  | High-churn + low-doc files ranked by documentation urgency      |
-| `todos()`            | TODO/FIXME/HACK/XXX inventory with file, line, and kind         |
-| `moduleCoverage()`   | Documentation coverage % per directory                          |
-| `orphanedSections()` | Doc sections where all mentions are unresolved                  |
-| `docCompleteness()`  | Per-doc score: covered vs. total exports from referenced files  |
-| `crossGroupDrift()`  | Entity coverage conflicts between doc groups                    |
+| CLI Command                  | MCP Tool                 | What It Does                                                    |
+| ---------------------------- | ------------------------ | --------------------------------------------------------------- |
+| `iw index clones`            | `cari_clones`            | Exact code clone detection (identical body hash)                |
+| `iw index structural-clones` | `cari_structural_clones` | Type 2 clones (same control flow, different identifiers)        |
+| `iw index circular-imports`  | `cari_circular_imports`  | Detect import cycles (A → B → C → A)                            |
+| `iw index unused-exports`    | `cari_unused_exports`    | Exported symbols never imported anywhere                        |
+| `iw index hotspot-priority`  | `cari_hotspot_priority`  | High-churn + low-doc files ranked by documentation urgency      |
+| `iw index todos`             | `cari_todos`             | TODO/FIXME/HACK/XXX inventory with file, line, and kind         |
+| `iw index module-coverage`   | `cari_module_coverage`   | Documentation coverage % per directory                          |
+| `iw index orphaned-sections` | `cari_orphaned_sections` | Doc sections where all mentions are unresolved                  |
+| `iw index doc-completeness`  | `cari_doc_completeness`  | Per-doc score: covered vs. total exports from referenced files  |
+| `iw index cross-group-drift` | `cari_cross_group_drift` | Entity coverage conflicts between doc groups                    |
 
 > See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
 
@@ -326,13 +326,19 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 
 | Tool               | Purpose                                  | Key Parameters                 |
 | ------------------ | ---------------------------------------- | ------------------------------ |
-| `cari_retrieve`    | Ranked file retrieval by topic or symbol | `query`, `scope?`, `limit?`    |
-| `cari_connections` | Cross-layer connection discovery + gaps  | `entity`, `include?`, `limit?` |
-| `cari_check`       | CI drift detection for changed files     | `changed`, `severity?`         |
-
-Additional CARI query functions (`clones`, `structuralClones`, `circularImports`, `unusedExports`,
-`hotspotPriority`, `todos`, `moduleCoverage`, `orphanedSections`, `docCompleteness`, `crossGroupDrift`)
-are available via the `@intentweave/index` programmatic API.
+| `cari_retrieve`          | Ranked file retrieval by topic or symbol         | `query`, `scope?`, `limit?`    |
+| `cari_connections`       | Cross-layer connection discovery + gaps          | `entity`, `include?`, `limit?` |
+| `cari_check`             | CI drift detection for changed files             | `changed`, `severity?`         |
+| `cari_clones`            | Exact code clone detection                       | _(none)_                       |
+| `cari_structural_clones` | Type 2 clone detection                           | _(none)_                       |
+| `cari_circular_imports`  | Import cycle detection                           | _(none)_                       |
+| `cari_unused_exports`    | Unused exported symbols                          | `limit?`                       |
+| `cari_hotspot_priority`  | High-churn low-doc file ranking                  | `limit?`                       |
+| `cari_todos`             | TODO/FIXME/HACK/XXX inventory                    | `kind?`, `limit?`              |
+| `cari_module_coverage`   | Documentation coverage % per directory           | _(none)_                       |
+| `cari_orphaned_sections` | Doc sections with all-ungrounded mentions         | _(none)_                       |
+| `cari_doc_completeness`  | Per-doc completeness vs. referenced exports      | _(none)_                       |
+| `cari_cross_group_drift` | Cross-group entity coverage conflicts            | _(none)_                       |
 
 Start the MCP server:
 

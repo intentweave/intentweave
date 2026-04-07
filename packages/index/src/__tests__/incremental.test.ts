@@ -502,4 +502,77 @@ describe("applyChanges", () => {
       files: 0,
     });
   });
+
+  it("handles large co-occurrence deletion via batching", () => {
+    // Regression test: >500 co-occurrences should be batched to avoid
+    // exceeding SQLITE_MAX_VARIABLE_NUMBER (999).
+    const dbPath = makeDbWithFiles(tmpDir, [
+      { path: "docs/README.md", content: "# Hello", isDoc: true },
+    ]);
+
+    const db = new Database(dbPath);
+    // Insert 600 co-occurrence rows referencing the doc file
+    const insert = db.prepare(`
+      INSERT INTO co_occurrences (entity_a, entity_b, count, score, source, file_paths)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const txn = db.transaction(() => {
+      for (let i = 0; i < 600; i++) {
+        insert.run(
+          `entityA_${i}`,
+          `entityB_${i}`,
+          1,
+          0.5,
+          "doc_cooc",
+          '["docs/README.md"]',
+        );
+      }
+    });
+    txn();
+    db.close();
+
+    // Modify the file
+    fs.writeFileSync(
+      path.join(tmpDir, "docs/README.md"),
+      "# Updated",
+      "utf-8",
+    );
+
+    const changes: FileChange[] = [
+      { path: "docs/README.md", status: "modified", isDoc: true },
+    ];
+
+    // Pass an empty cox result so the co-occurrence deletion path is triggered
+    const cox = {
+      $schema: "intentweave://schemas/cox/v1" as const,
+      stage: "COX" as const,
+      edges: [],
+      meta: {
+        edgeCount: 0,
+        pairsConsidered: 0,
+        windowType: "document",
+        processingTimeMs: 0,
+      },
+    };
+
+    // Should not throw (previously crashed with >999 SQL variables)
+    const result = applyChanges(
+      dbPath,
+      changes,
+      { cox },
+      { dbPath, workspaceRoot: tmpDir },
+    );
+
+    expect(result.updated.files).toBe(1);
+
+    // Verify co-occurrences for that file were deleted
+    const db2 = new Database(dbPath, { readonly: true });
+    const remaining = db2
+      .prepare(
+        "SELECT COUNT(*) AS cnt FROM co_occurrences WHERE source = 'doc_cooc'",
+      )
+      .get() as { cnt: number };
+    db2.close();
+    expect(remaining.cnt).toBe(0);
+  });
 });

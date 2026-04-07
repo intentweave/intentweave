@@ -418,10 +418,14 @@ function deleteCoOccurrencesForFiles(
   }
 
   if (toDelete.length > 0) {
-    const placeholders = toDelete.map(() => "?").join(",");
-    db.prepare(
-      `DELETE FROM co_occurrences WHERE rowid IN (${placeholders})`,
-    ).run(...toDelete);
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
+      const batch = toDelete.slice(i, i + BATCH_SIZE);
+      const placeholders = batch.map(() => "?").join(",");
+      db.prepare(
+        `DELETE FROM co_occurrences WHERE rowid IN (${placeholders})`,
+      ).run(...batch);
+    }
   }
 }
 

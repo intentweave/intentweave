@@ -95,11 +95,21 @@ and other LLM agents:
 
 **CARI tools** (local SQLite — no LLM or Neo4j needed):
 
-| Tool               | Purpose                                                    |
-| ------------------ | ---------------------------------------------------------- |
-| `cari_retrieve`    | "Find files about X" → ranked results                      |
-| `cari_connections` | "What's related to X?" → cross-layer connections           |
-| `cari_check`       | "I changed X — what else needs updating?" → drift findings |
+| Tool                     | Purpose                                                    |
+| ------------------------ | ---------------------------------------------------------- |
+| `cari_retrieve`          | "Find files about X" → ranked results                      |
+| `cari_connections`       | "What's related to X?" → cross-layer connections           |
+| `cari_check`             | "I changed X — what else needs updating?" → drift findings |
+| `cari_clones`            | Exact code clone detection                                 |
+| `cari_structural_clones` | Type 2 clone detection                                     |
+| `cari_circular_imports`  | Import cycle detection                                     |
+| `cari_unused_exports`    | Unused exported symbols                                    |
+| `cari_hotspot_priority`  | High-churn low-doc file ranking                            |
+| `cari_todos`             | TODO/FIXME/HACK/XXX inventory                              |
+| `cari_module_coverage`   | Documentation coverage per directory                       |
+| `cari_orphaned_sections` | Doc sections with ungrounded mentions                      |
+| `cari_doc_completeness`  | Per-doc completeness scoring                               |
+| `cari_cross_group_drift` | Cross-group entity coverage conflicts                      |
 
 **Knowledge Graph tools** (require Neo4j):
 
@@ -125,8 +135,8 @@ Git History ──► Co-change Analysis ─────┘    IDF Filtering    
                                         CLI Queries               MCP Tools
                                     (retrieve, check,          (cari_retrieve,
                                      connections, report,       cari_connections,
-                                     clones, todos,             cari_check)
-                                     moduleCoverage, ...)
+                                     clones, todos,             cari_check, cari_clones,
+                                     moduleCoverage, ...)       cari_todos, ...13 total)
 ```
 
 **No servers to run.** The index is a single SQLite file. 14 built-in query modes,

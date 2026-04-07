@@ -99,7 +99,7 @@ iw index update                       # only changed files
 | `packages/analyzer/src/kwg/heuristicExtractor.ts` | Keyword extraction (dictionary, depth)                  |
 | `packages/analyzer/src/kwg/kwxStage.ts`           | KWX stage options (depth, dictionary)                   |
 | `packages/cli/src/commands/indexBuild.ts`         | `iw index build` CLI orchestrator                       |
-| `packages/cli/src/mcp/server.ts`                  | MCP server (6 KG + 3 CARI tools)                        |
+| `packages/cli/src/mcp/server.ts`                  | MCP server (6 KG + 13 CARI tools)                       |
 
 ### SQLite Schema (`.iw/index.db`)
 
@@ -156,10 +156,11 @@ iw doc-health --neo4j -s my-project                         # Doc health (full K
 
 ## MCP Tools
 
-The MCP server exposes 9 tools for GitHub Copilot (6 KG + 3 CARI).
+The MCP server exposes 19 tools for GitHub Copilot (6 KG + 13 CARI).
 
-10 additional CARI query functions are available via the `@intentweave/index` API
-but not yet exposed as MCP tools:
+All CARI query functions are also available as CLI subcommands
+(e.g., `iw index clones`, `iw index todos`) and via the `@intentweave/index`
+programmatic API.
 
 ### KG Tools (require Neo4j)
 
@@ -179,26 +180,42 @@ but not yet exposed as MCP tools:
 | `cari_retrieve`    | Ranked file retrieval       | `query`, `scope?`, `limit?`    |
 | `cari_connections` | Connection discovery + gaps | `entity`, `include?`, `limit?` |
 | `cari_check`       | CI drift detection          | `changed`, `severity?`         |
+| `cari_clones`      | Exact clone detection       | _(none)_                       |
+| `cari_structural_clones` | Type 2 clone detection | _(none)_                      |
+| `cari_circular_imports`  | Import cycle detection | _(none)_                      |
+| `cari_unused_exports`    | Unused exported symbols | `limit?`                     |
+| `cari_hotspot_priority`  | High-churn low-doc files | `limit?`                     |
+| `cari_todos`       | TODO/FIXME/HACK/XXX list    | `kind?`, `limit?`              |
+| `cari_module_coverage`   | Coverage % per directory | _(none)_                     |
+| `cari_orphaned_sections` | Ungrounded doc sections | _(none)_                      |
+| `cari_doc_completeness`  | Per-doc completeness    | _(none)_                      |
+| `cari_cross_group_drift` | Cross-group conflicts   | _(none)_                      |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
-| Function               | Purpose                                                     |
-| ---------------------- | ----------------------------------------------------------- |
-| `clones()`             | Exact clone detection (identical body hash)                  |
-| `structuralClones()`   | Type 2 clones (same control flow, different identifiers)     |
-| `circularImports()`    | Import cycle detection                                       |
-| `unusedExports()`      | Exported symbols never imported                              |
-| `hotspotPriority()`    | High-churn low-doc files ranked by urgency                   |
-| `todos()`              | TODO/FIXME/HACK/XXX inventory                                |
-| `moduleCoverage()`     | Documentation coverage % per directory                       |
-| `orphanedSections()`   | Doc sections with all-ungrounded mentions                    |
-| `docCompleteness()`    | Per-doc completeness vs. referenced exports                  |
-| `crossGroupDrift()`    | Entity coverage conflicts across doc groups                  |
+All CARI query functions are available as direct API calls, MCP tools, and CLI subcommands:
+
+| Function               | CLI Command                | Purpose                                                     |
+| ---------------------- | -------------------------- | ----------------------------------------------------------- |
+| `clones()`             | `iw index clones`          | Exact clone detection (identical body hash)                  |
+| `structuralClones()`   | `iw index structural-clones` | Type 2 clones (same control flow, different identifiers)  |
+| `circularImports()`    | `iw index circular-imports`  | Import cycle detection                                    |
+| `unusedExports()`      | `iw index unused-exports`    | Exported symbols never imported                           |
+| `hotspotPriority()`    | `iw index hotspot-priority`  | High-churn low-doc files ranked by urgency                |
+| `todos()`              | `iw index todos`             | TODO/FIXME/HACK/XXX inventory                             |
+| `moduleCoverage()`     | `iw index module-coverage`   | Documentation coverage % per directory                    |
+| `orphanedSections()`   | `iw index orphaned-sections` | Doc sections with all-ungrounded mentions                 |
+| `docCompleteness()`    | `iw index doc-completeness`  | Per-doc completeness vs. referenced exports               |
+| `crossGroupDrift()`    | `iw index cross-group-drift` | Entity coverage conflicts across doc groups               |
 
 ### Usage Patterns
 
 - "Find files about auth" → `cari_retrieve` with query="authentication"
 - "What's connected to AuthService?" → `cari_connections` with entity="AuthService"
 - "I changed auth.ts — what docs need updating?" → `cari_check` with changed files
+- "Find duplicate code" → `cari_clones`
+- "Show circular dependencies" → `cari_circular_imports`
+- "What TODOs exist?" → `cari_todos`
+- "Which modules lack documentation?" → `cari_module_coverage`
 - "What decisions were made?" → `kg_query` with NL question
 - "Build context about authentication" → `kg_context` with topic

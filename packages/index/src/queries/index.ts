@@ -5,6 +5,7 @@ export { retrieve, retrieveFromDb } from "./retrieve.js";
 export { connections, connectionsFromDb } from "./connections.js";
 export { check, checkFromDb, formatCheck } from "./check.js";
 export { report, reportFromDb } from "./report.js";
+export type { ReportOptions } from "./report.js";
 export { clones, clonesFromDb } from "./clones.js";
 export { structuralClones, structuralClonesFromDb } from "./clones.js";
 export {

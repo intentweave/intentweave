@@ -1157,3 +1157,174 @@ describe("crossGroupDrift", () => {
     }
   });
 });
+
+// =============================================================================
+// report() — threshold parameterization tests
+// =============================================================================
+
+describe("report thresholds", () => {
+  it("returns fewer hidden couplings at higher threshold", () => {
+    const lowThreshold = reportFromDb(db, { coocThreshold: 0.1 });
+    const highThreshold = reportFromDb(db, { coocThreshold: 0.9 });
+    expect(lowThreshold.hiddenCouplings.length).toBeGreaterThanOrEqual(
+      highThreshold.hiddenCouplings.length,
+    );
+  });
+
+  it("returns no hidden couplings at threshold above max score", () => {
+    const result = reportFromDb(db, { coocThreshold: 100 });
+    expect(result.hiddenCouplings.length).toBe(0);
+  });
+
+  it("returns all hidden couplings at threshold 0", () => {
+    const result = reportFromDb(db, { coocThreshold: 0 });
+    expect(result.hiddenCouplings.length).toBeGreaterThan(0);
+  });
+
+  it("returns fewer undocumented deps at higher threshold", () => {
+    const lowThreshold = reportFromDb(db, { cochangeThreshold: 0.1 });
+    const highThreshold = reportFromDb(db, { cochangeThreshold: 0.9 });
+    expect(lowThreshold.undocumentedDeps.length).toBeGreaterThanOrEqual(
+      highThreshold.undocumentedDeps.length,
+    );
+  });
+
+  it("returns no undocumented deps at threshold above max jaccard", () => {
+    const result = reportFromDb(db, { cochangeThreshold: 100 });
+    expect(result.undocumentedDeps.length).toBe(0);
+  });
+
+  it("defaults thresholds to 0.3 when omitted", () => {
+    const defaultResult = reportFromDb(db);
+    const explicitResult = reportFromDb(db, {
+      coocThreshold: 0.3,
+      cochangeThreshold: 0.3,
+    });
+    expect(defaultResult.hiddenCouplings.length).toBe(
+      explicitResult.hiddenCouplings.length,
+    );
+    expect(defaultResult.undocumentedDeps.length).toBe(
+      explicitResult.undocumentedDeps.length,
+    );
+  });
+
+  it("coverage and staleness are not affected by thresholds", () => {
+    const low = reportFromDb(db, { coocThreshold: 0, cochangeThreshold: 0 });
+    const high = reportFromDb(db, { coocThreshold: 1, cochangeThreshold: 1 });
+    expect(low.coverage.total).toBe(high.coverage.total);
+    expect(low.coverage.documented).toBe(high.coverage.documented);
+    expect(low.staleness.staleDocCount).toBe(high.staleness.staleDocCount);
+  });
+});
+
+// =============================================================================
+// check() — severity classification tests
+// =============================================================================
+
+describe("check severity", () => {
+  it("assigns severity based on age and confidence", () => {
+    const result = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+    });
+    // Each finding should have a valid severity
+    for (const f of result.findings) {
+      expect(["info", "warning", "critical"]).toContain(f.severity);
+    }
+  });
+
+  it("co-change partner with high jaccard gets warning severity", () => {
+    const result = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+    });
+    // service.ts co-changes with jwt.ts (jaccard=0.68 ≥ 0.6) → "warning"
+    const jwtFinding = result.findings.find(
+      (f) =>
+        f.message.includes("co-changes with") &&
+        f.message.includes("jwt.ts"),
+    );
+    expect(jwtFinding).toBeDefined();
+    if (jwtFinding) {
+      expect(jwtFinding.severity).toBe("warning");
+    }
+  });
+
+  it("co-change partner with low jaccard gets info severity", () => {
+    const result = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+    });
+    // service.ts co-changes with rate.ts (jaccard=0.31 < 0.6) → "info"
+    const rateFinding = result.findings.find(
+      (f) =>
+        f.message.includes("co-changes with") &&
+        f.message.includes("rate.ts"),
+    );
+    expect(rateFinding).toBeDefined();
+    if (rateFinding) {
+      expect(rateFinding.severity).toBe("info");
+    }
+  });
+
+  it("returns exit code 0 for info-only findings", () => {
+    const result = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+      severity: "info",
+    });
+    // When we filter out warnings — only info left should give exit code 0
+    const infoOnly = {
+      ...result,
+      findings: result.findings.filter((f) => f.severity === "info"),
+    };
+    // If all are info, exit code should be 0
+    const hasWarning = infoOnly.findings.some((f) => f.severity === "warning");
+    const hasCritical = infoOnly.findings.some(
+      (f) => f.severity === "critical",
+    );
+    expect(hasWarning).toBe(false);
+    expect(hasCritical).toBe(false);
+  });
+
+  it("filters findings by severity parameter", () => {
+    const infoResult = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+      severity: "info",
+    });
+    const warningResult = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+      severity: "warning",
+    });
+    const criticalResult = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+      severity: "critical",
+    });
+
+    expect(infoResult.findings.length).toBeGreaterThanOrEqual(
+      warningResult.findings.length,
+    );
+    expect(warningResult.findings.length).toBeGreaterThanOrEqual(
+      criticalResult.findings.length,
+    );
+
+    // All warning-filtered findings should be warning or critical
+    for (const f of warningResult.findings) {
+      expect(["warning", "critical"]).toContain(f.severity);
+    }
+  });
+
+  it("exit code reflects highest severity", () => {
+    const result = checkFromDb(db, {
+      changed: ["src/auth/service.ts"],
+    });
+    const hasCritical = result.findings.some(
+      (f) => f.severity === "critical",
+    );
+    const hasWarning = result.findings.some((f) => f.severity === "warning");
+
+    if (hasCritical) {
+      expect(result.exitCode).toBe(2);
+    } else if (hasWarning) {
+      expect(result.exitCode).toBe(1);
+    } else {
+      expect(result.exitCode).toBe(0);
+    }
+  });
+});

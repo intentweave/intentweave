@@ -57,6 +57,8 @@ export {
   openIndex,
 } from "./queries/index.js";
 
+export type { ReportOptions } from "./queries/index.js";
+
 export type {
   // Core types
   Annotation,

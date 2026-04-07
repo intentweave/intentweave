@@ -75,8 +75,15 @@ export function checkFromDb(
       const daysBehind = computeDaysBehind(ann.doc_modified, ann.code_modified);
 
       if (daysBehind !== null && daysBehind > 7) {
+        const severity: CheckFinding["severity"] =
+          daysBehind > 90 && ann.confidence >= 0.8
+            ? "critical"
+            : daysBehind > 30
+              ? "warning"
+              : "info";
+
         findings.push({
-          severity: daysBehind > 30 ? "warning" : "info",
+          severity,
           message:
             `${ann.doc_path} references "${ann.text}" (line ${ann.line}, confidence ${ann.confidence.toFixed(2)}) ` +
             `but was last modified ${daysBehind} days before ${changedFile}`,
@@ -127,7 +134,7 @@ export function checkFromDb(
 
       if (!changedSet.has(otherFile)) {
         findings.push({
-          severity: "info",
+          severity: partner.jaccard >= 0.6 ? "warning" : "info",
           message:
             `${changedFile} co-changes with ${otherFile} ` +
             `(jaccard=${partner.jaccard.toFixed(2)}, ${partner.count} commits) ` +
