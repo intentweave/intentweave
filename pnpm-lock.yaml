@@ -207,6 +207,9 @@ importers:
       better-sqlite3:
         specifier: ^11.7.0
         version: 11.10.0
+      minimatch:
+        specifier: ^10.0.1
+        version: 10.2.4
     devDependencies:
       '@intentweave/analyzer':
         specifier: workspace:*

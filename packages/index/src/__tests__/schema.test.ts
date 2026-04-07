@@ -16,7 +16,7 @@ describe("initSchema", () => {
     db.close();
   });
 
-  it("creates all 5 core tables", () => {
+  it("creates all core tables", () => {
     initSchema(db);
 
     const tables = db
@@ -33,6 +33,7 @@ describe("initSchema", () => {
     expect(tables).toContain("files");
     expect(tables).toContain("imports");
     expect(tables).toContain("todos");
+    expect(tables).toContain("external_entities");
     expect(tables).toContain("_meta");
   });
 
@@ -83,7 +84,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("3");
+    expect(row?.value).toBe("4");
   });
 
   it("sets WAL journal mode", () => {

@@ -21,6 +21,7 @@ import type {
   IndexCoChange,
   IndexFile,
   IndexSymbol,
+  ExternalEntity,
 } from "./types.js";
 import type { AxOutput, AxSymbol, AxFileResult } from "@intentweave/analyzer";
 import type {
@@ -455,6 +456,158 @@ function classifyDocGroup(filePath: string): string {
     return "project-docs";
 
   return "other";
+}
+
+// =============================================================================
+// External Entities (Entity Bridge)
+// =============================================================================
+
+/**
+ * Register external entities into the index and create annotations from
+ * matching doc mentions.
+ *
+ * Opens the DB in read-write mode, writes entities + derived annotations,
+ * then closes.
+ */
+export function registerExternalEntities(
+  dbPath: string,
+  entities: ExternalEntity[],
+  opts?: { log?: (msg: string) => void },
+): { entitiesWritten: number; annotationsCreated: number } {
+  if (entities.length === 0) {
+    return { entitiesWritten: 0, annotationsCreated: 0 };
+  }
+
+  const db = new Database(dbPath);
+  try {
+    db.pragma("journal_mode = WAL");
+    // Disable FK checks — external entity IDs are not in the symbols table
+    db.pragma("foreign_keys = OFF");
+
+    // Ensure the external_entities table exists (for indexes upgraded from v3)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS external_entities (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        aliases TEXT,
+        metadata TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_external_entities_name ON external_entities(name);
+      CREATE INDEX IF NOT EXISTS idx_external_entities_type ON external_entities(type);
+    `);
+
+    const entitiesWritten = writeExternalEntities(db, entities);
+    const annotationsCreated = annotateExternalEntities(db, entities);
+
+    // Rebuild FTS to include new annotations
+    rebuildFts(db);
+
+    opts?.log?.(
+      `Entity bridge: ${entitiesWritten} entities, ${annotationsCreated} annotations`,
+    );
+
+    return { entitiesWritten, annotationsCreated };
+  } finally {
+    db.close();
+  }
+}
+
+function writeExternalEntities(
+  db: Database.Database,
+  entities: ExternalEntity[],
+): number {
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO external_entities (id, name, type, aliases, metadata)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (let i = 0; i < entities.length; i += BATCH_SIZE) {
+    const batch = entities.slice(i, i + BATCH_SIZE);
+    const tx = db.transaction(() => {
+      for (const ent of batch) {
+        stmt.run(
+          ent.id,
+          ent.name,
+          ent.type,
+          ent.aliases ? JSON.stringify(ent.aliases) : null,
+          ent.metadata ? JSON.stringify(ent.metadata) : null,
+        );
+        count++;
+      }
+    });
+    tx();
+  }
+  return count;
+}
+
+/**
+ * Scan existing annotations for mentions that match external entity names
+ * or aliases, and insert new annotations linking them.
+ */
+function annotateExternalEntities(
+  db: Database.Database,
+  entities: ExternalEntity[],
+): number {
+  // Build name → entity lookup (lowercased)
+  const nameToEntity = new Map<string, ExternalEntity>();
+  for (const ent of entities) {
+    nameToEntity.set(ent.name.toLowerCase(), ent);
+    if (ent.aliases) {
+      for (const alias of ent.aliases) {
+        nameToEntity.set(alias.toLowerCase(), ent);
+      }
+    }
+  }
+
+  // Find ungrounded annotations whose text matches an external entity
+  const ungrounded = db
+    .prepare(
+      `SELECT id, doc_path, line, text, confidence, source, qualifier, idf_score
+       FROM annotations
+       WHERE symbol_id IS NULL`,
+    )
+    .all() as Array<{
+    id: number;
+    doc_path: string;
+    line: number;
+    text: string;
+    confidence: number;
+    source: string;
+    qualifier: string | null;
+    idf_score: number | null;
+  }>;
+
+  const insertStmt = db.prepare(`
+    INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source, qualifier, idf_score)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const row of ungrounded) {
+      const textLower = row.text.toLowerCase().trim();
+      const match = nameToEntity.get(textLower);
+      if (match) {
+        // Insert a new annotation linked to the external entity
+        insertStmt.run(
+          row.doc_path,
+          row.line,
+          row.text,
+          match.id,
+          Math.max(row.confidence, 0.8), // external match gets at least 0.8
+          "external",
+          row.qualifier,
+          row.idf_score,
+        );
+        count++;
+      }
+    }
+  });
+  tx();
+
+  return count;
 }
 
 // =============================================================================

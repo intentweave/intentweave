@@ -23,4 +23,10 @@ export {
 } from "./orphanedSections.js";
 export { docCompleteness, docCompletenessFromDb } from "./docCompleteness.js";
 export { crossGroupDrift, crossGroupDriftFromDb } from "./crossGroupDrift.js";
+export {
+  mentionsOf,
+  mentionsOfFromDb,
+  annotationsForFile,
+  annotationsForFileFromDb,
+} from "./entityBridge.js";
 export { openIndex } from "./shared.js";

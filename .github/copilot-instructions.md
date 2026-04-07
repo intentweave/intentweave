@@ -75,10 +75,36 @@ iw index report                       # corpus-wide health dashboard
 iw index update                       # only changed files
 ```
 
+### Library API (Facade)
+
+```typescript
+import { CariIndex } from "@intentweave/index";
+
+// Build: runs AX → KWX → COX → TCG → annotate → write
+const index = await CariIndex.build({
+  paths: ["docs/"],
+  workspaceRoot: process.cwd(),
+  depth: "full",
+});
+
+// Or load existing
+const index = CariIndex.load(".iw/index.db");
+
+// Typed queries
+const results = index.retrieve({ query: "auth" });
+const drift = index.check({ changed: ["src/auth.ts"] });
+const conns = index.connections({ entity: "AuthService" });
+
+index.close();
+```
+
+See `docs/LIBRARY-API.md` for full documentation.
+
 ### Key Files
 
 | File                                              | Purpose                                                 |
 | ------------------------------------------------- | ------------------------------------------------------- |
+| `packages/index/src/facade.ts`                    | CariIndex facade class + buildFromPaths orchestration   |
 | `packages/index/src/writer.ts`                    | SQLite index builder                                    |
 | `packages/index/src/annotator.ts`                 | Document→code annotation engine (IDF penalty)           |
 | `packages/index/src/idf.ts`                       | IDF scorer + stopword baseline (50 terms, ceiling 0.15) |
@@ -175,38 +201,64 @@ programmatic API.
 
 ### CARI Tools (local SQLite, no Neo4j or LLM)
 
-| Tool                     | Purpose                     | Key Parameters                 |
-| ------------------------ | --------------------------- | ------------------------------ |
-| `cari_retrieve`          | Ranked file retrieval       | `query`, `scope?`, `limit?`    |
-| `cari_connections`       | Connection discovery + gaps | `entity`, `include?`, `limit?` |
-| `cari_check`             | CI drift detection          | `changed`, `severity?`         |
-| `cari_clones`            | Exact clone detection       | _(none)_                       |
-| `cari_structural_clones` | Type 2 clone detection      | _(none)_                       |
-| `cari_circular_imports`  | Import cycle detection      | _(none)_                       |
-| `cari_unused_exports`    | Unused exported symbols     | `limit?`                       |
-| `cari_hotspot_priority`  | High-churn low-doc files    | `limit?`                       |
-| `cari_todos`             | TODO/FIXME/HACK/XXX list    | `kind?`, `limit?`              |
-| `cari_module_coverage`   | Coverage % per directory    | _(none)_                       |
-| `cari_orphaned_sections` | Ungrounded doc sections     | _(none)_                       |
-| `cari_doc_completeness`  | Per-doc completeness        | _(none)_                       |
-| `cari_cross_group_drift` | Cross-group conflicts       | _(none)_                       |
+| Tool                     | Purpose                     | Key Parameters                         |
+| ------------------------ | --------------------------- | -------------------------------------- |
+| `cari_retrieve`          | Ranked file retrieval       | `query`, `scope?`, `limit?`            |
+| `cari_connections`       | Connection discovery + gaps | `entity`, `include?`, `limit?`         |
+| `cari_check`             | CI drift detection          | `changed`, `severity?`                 |
+| `cari_clones`            | Exact clone detection       | _(none)_                               |
+| `cari_structural_clones` | Type 2 clone detection      | _(none)_                               |
+| `cari_circular_imports`  | Import cycle detection      | _(none)_                               |
+| `cari_unused_exports`    | Unused exported symbols     | `limit?`                               |
+| `cari_hotspot_priority`  | High-churn low-doc files    | `limit?`                               |
+| `cari_todos`             | TODO/FIXME/HACK/XXX list    | `kind?`, `limit?`                      |
+| `cari_module_coverage`   | Coverage % per directory    | _(none)_                               |
+| `cari_orphaned_sections` | Ungrounded doc sections     | _(none)_                               |
+| `cari_doc_completeness`  | Per-doc completeness        | _(none)_                               |
+| `cari_cross_group_drift` | Cross-group conflicts       | _(none)_                               |
+| `cari_mentions_of`       | Entity → doc mentions       | `entityId`, `minConfidence?`, `limit?` |
+| `cari_annotations_for`   | File → all annotations      | `filePath`, `minConfidence?`, `limit?` |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
 All CARI query functions are available as direct API calls, MCP tools, and CLI subcommands:
 
-| Function             | CLI Command                  | Purpose                                                  |
-| -------------------- | ---------------------------- | -------------------------------------------------------- |
-| `clones()`           | `iw index clones`            | Exact clone detection (identical body hash)              |
-| `structuralClones()` | `iw index structural-clones` | Type 2 clones (same control flow, different identifiers) |
-| `circularImports()`  | `iw index circular-imports`  | Import cycle detection                                   |
-| `unusedExports()`    | `iw index unused-exports`    | Exported symbols never imported                          |
-| `hotspotPriority()`  | `iw index hotspot-priority`  | High-churn low-doc files ranked by urgency               |
-| `todos()`            | `iw index todos`             | TODO/FIXME/HACK/XXX inventory                            |
-| `moduleCoverage()`   | `iw index module-coverage`   | Documentation coverage % per directory                   |
-| `orphanedSections()` | `iw index orphaned-sections` | Doc sections with all-ungrounded mentions                |
-| `docCompleteness()`  | `iw index doc-completeness`  | Per-doc completeness vs. referenced exports              |
-| `crossGroupDrift()`  | `iw index cross-group-drift` | Entity coverage conflicts across doc groups              |
+| Function               | CLI Command                  | Purpose                                                  |
+| ---------------------- | ---------------------------- | -------------------------------------------------------- |
+| `clones()`             | `iw index clones`            | Exact clone detection (identical body hash)              |
+| `structuralClones()`   | `iw index structural-clones` | Type 2 clones (same control flow, different identifiers) |
+| `circularImports()`    | `iw index circular-imports`  | Import cycle detection                                   |
+| `unusedExports()`      | `iw index unused-exports`    | Exported symbols never imported                          |
+| `hotspotPriority()`    | `iw index hotspot-priority`  | High-churn low-doc files ranked by urgency               |
+| `todos()`              | `iw index todos`             | TODO/FIXME/HACK/XXX inventory                            |
+| `moduleCoverage()`     | `iw index module-coverage`   | Documentation coverage % per directory                   |
+| `orphanedSections()`   | `iw index orphaned-sections` | Doc sections with all-ungrounded mentions                |
+| `docCompleteness()`    | `iw index doc-completeness`  | Per-doc completeness vs. referenced exports              |
+| `crossGroupDrift()`    | `iw index cross-group-drift` | Entity coverage conflicts across doc groups              |
+| `mentionsOf()`         | `iw index mentions-of`       | Find doc mentions of a code or external entity           |
+| `annotationsForFile()` | `iw index annotations-for`   | List all annotations for a documentation file            |
+
+### Entity Bridge
+
+The Entity Bridge lets consumers inject external entities (domain concepts, pipeline
+entities, third-party models) so that annotation matching works beyond AST-extracted
+code symbols.
+
+```typescript
+import { CariIndex, type ExternalEntity } from "@intentweave/index";
+const index = CariIndex.load(".iw/index.db");
+index.registerEntities([
+  {
+    id: "entity:auth",
+    name: "AuthService",
+    type: "component",
+    aliases: ["auth service"],
+  },
+]);
+const mentions = index.mentionsOf({ entityId: "entity:auth" });
+```
+
+CLI: `iw index register-entities entities.json` (reads JSON array of ExternalEntity objects)
 
 ### Usage Patterns
 
@@ -218,4 +270,6 @@ All CARI query functions are available as direct API calls, MCP tools, and CLI s
 - "What TODOs exist?" → `cari_todos`
 - "Which modules lack documentation?" → `cari_module_coverage`
 - "What decisions were made?" → `kg_query` with NL question
+- "Where is AuthService mentioned?" → `cari_mentions_of` with entityId
+- "What entities appear in AUTH.md?" → `cari_annotations_for` with filePath
 - "Build context about authentication" → `kg_context` with topic

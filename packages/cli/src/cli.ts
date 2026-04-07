@@ -19,6 +19,19 @@ process.on("unhandledRejection", (reason) => {
   process.exitCode = 1;
 });
 
+// ─── SIGPIPE handling ────────────────────────────────────────────────────────
+// When piped to `head`, `grep`, etc. the downstream process may close its stdin
+// before we finish writing.  Node does NOT raise SIGPIPE by default — instead
+// stdout emits an EPIPE error.  Swallow it and exit cleanly.
+process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EPIPE") process.exit(0);
+  throw err;
+});
+process.stderr.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EPIPE") process.exit(0);
+  throw err;
+});
+
 import { Command } from "commander";
 import { createRequire } from "node:module";
 import { aggregateCommand } from "./commands/aggregate.js";

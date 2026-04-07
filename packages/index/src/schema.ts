@@ -124,6 +124,19 @@ CREATE VIRTUAL TABLE IF NOT EXISTS annotations_fts USING fts5(
   content=annotations
 );
 
+-- External entities (Entity Bridge)
+
+CREATE TABLE IF NOT EXISTS external_entities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  aliases TEXT,
+  metadata TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_entities_name ON external_entities(name);
+CREATE INDEX IF NOT EXISTS idx_external_entities_type ON external_entities(type);
+
 -- Metadata table for schema version tracking
 
 CREATE TABLE IF NOT EXISTS _meta (
@@ -143,6 +156,6 @@ export function initSchema(db: Database.Database): void {
 
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '3')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '4')`,
   ).run();
 }

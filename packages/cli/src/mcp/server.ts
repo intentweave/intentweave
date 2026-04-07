@@ -25,6 +25,8 @@
  *   - cari_orphaned_sections: Doc sections with all-ungrounded mentions
  *   - cari_doc_completeness:  Per-doc completeness vs. referenced exports
  *   - cari_cross_group_drift: Cross-group entity coverage conflicts
+ *   - cari_mentions_of:       Find doc mentions of an entity (Entity Bridge)
+ *   - cari_annotations_for:   List annotations for a document file
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
@@ -1547,6 +1549,136 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           }
           lines.push("");
         }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_mentions_of ──────────────────────────────────────
+  server.tool(
+    "cari_mentions_of",
+    `Find all document mentions that reference a given entity (code symbol or external entity). Returns document paths, lines, confidence scores, and match types.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      entityId: z
+        .string()
+        .describe("Entity ID (symbol ID or external entity ID)"),
+      minConfidence: z
+        .number()
+        .optional()
+        .default(0)
+        .describe("Minimum confidence threshold (0-1)"),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(
+        `cari_mentions_of: entity=${args.entityId} minConf=${args.minConfidence} limit=${args.limit}`,
+      );
+      try {
+        const { mentionsOf } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = mentionsOf(dbPath, {
+          entityId: args.entityId,
+          minConfidence: args.minConfidence,
+          limit: args.limit,
+        });
+
+        if (result.totalCount === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No mentions found for "${args.entityId}".`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Mentions of "${args.entityId}" — ${result.totalCount} found`,
+          "",
+          "| File | Line | Text | Confidence | Source |",
+          "|------|------|------|------------|--------|",
+          ...result.mentions.map(
+            (m) =>
+              `| ${m.docPath} | ${m.line} | ${m.text} | ${m.confidence.toFixed(2)} | ${m.source}${m.qualifier ? ` [${m.qualifier}]` : ""} |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_annotations_for ──────────────────────────────────
+  server.tool(
+    "cari_annotations_for",
+    `List all annotations in a document file, showing which code symbols or external entities each mention maps to. Useful for understanding doc-to-code coverage.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      filePath: z
+        .string()
+        .describe("Document file path (relative to workspace)"),
+      minConfidence: z
+        .number()
+        .optional()
+        .default(0)
+        .describe("Minimum confidence threshold (0-1)"),
+      limit: z
+        .number()
+        .optional()
+        .default(100)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(
+        `cari_annotations_for: file=${args.filePath} minConf=${args.minConfidence} limit=${args.limit}`,
+      );
+      try {
+        const { annotationsForFile } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = annotationsForFile(dbPath, {
+          filePath: args.filePath,
+          minConfidence: args.minConfidence,
+          limit: args.limit,
+        });
+
+        if (result.totalCount === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No annotations found for "${args.filePath}".`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Annotations in "${args.filePath}" — ${result.totalCount} found`,
+          "",
+          "| Line | Text | Entity | Source | Confidence |",
+          "|------|------|--------|--------|------------|",
+          ...result.annotations.map((a) => {
+            const entity = a.entityName
+              ? `${a.entityName} (${a.entitySource})`
+              : "_ungrounded_";
+            return `| ${a.line} | ${a.text} | ${entity} | ${a.source}${a.qualifier ? ` [${a.qualifier}]` : ""} | ${a.confidence.toFixed(2)} |`;
+          }),
+        ];
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {

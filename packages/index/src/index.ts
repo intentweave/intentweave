@@ -10,7 +10,7 @@
 
 // Phase 1: Core index
 export { initSchema } from "./schema.js";
-export { buildIndex } from "./writer.js";
+export { buildIndex, registerExternalEntities } from "./writer.js";
 export { annotate, toSlug, tokenize } from "./annotator.js";
 export type { AnnotateOptions } from "./annotator.js";
 export { computeIdf } from "./idf.js";
@@ -22,6 +22,19 @@ export type {
   IncrementalUpdateResult,
   FileChange,
 } from "./incremental.js";
+
+// Facade: CariIndex class + buildFromPaths orchestration
+export { CariIndex, buildFromPaths } from "./facade.js";
+export type { CariConfig, CariStageProgress } from "./facade.js";
+
+// Facade: file discovery utilities (also used by CLI)
+export {
+  DEFAULT_EXCLUDES,
+  loadIwIgnore,
+  buildExcludeList,
+  discoverFiles,
+  isExcluded,
+} from "./facade.js";
 
 // Phase 2: Predefined queries
 export {
@@ -54,6 +67,10 @@ export {
   docCompletenessFromDb,
   crossGroupDrift,
   crossGroupDriftFromDb,
+  mentionsOf,
+  mentionsOfFromDb,
+  annotationsForFile,
+  annotationsForFileFromDb,
   openIndex,
 } from "./queries/index.js";
 
@@ -94,4 +111,9 @@ export type {
   DocCompletenessResult,
   StructuralClonesResult,
   CrossGroupDriftResult,
+  ExternalEntity,
+  MentionsOfParams,
+  MentionsOfResult,
+  AnnotationsForFileParams,
+  AnnotationsForFileResult,
 } from "./types.js";

@@ -247,40 +247,157 @@ Each maps to `ExtractedSymbol` + `ExtractedImport`. Downstream pipeline unchange
 ## 8. Embedded / Integration Mode
 
 IntentWeave's packages (`@intentweave/index`, `@intentweave/core`, `@intentweave/ast-extractor`)
-already export programmatic APIs. This section covers packaging them for use **inside**
-documentation systems rather than just alongside them.
+already export programmatic APIs — but the **query** side is library-ready while the
+**build** side is not. The pipeline orchestration (AX → KWX → COX → TCG → annotate → write)
+lives inside the CLI's `.action()` handler, requiring consumers to either shell out or
+re-implement ~200 lines of stage wiring. This section restructures the embedding story
+around a proper **library facade** first, then builds integrations on top.
 
-### 8.1 Programmatic CARI API Documentation _(Docs, S)_
+### Current API Surface
 
-Write a guide showing how to use the index API without the CLI:
+| Layer                                        | Status                                                            | Package              |
+| -------------------------------------------- | ----------------------------------------------------------------- | -------------------- |
+| Query (retrieve, check, connections, …)      | ✅ Library-ready — 14 dual-signature functions                    | `@intentweave/index` |
+| Build (full pipeline orchestration)          | ❌ Locked in CLI `.action()` handler                              | `@intentweave/cli`   |
+| Incremental (detectChanges, applyChanges)    | ⚠️ Exported but requires pre-computed stage outputs               | `@intentweave/index` |
+| Entity bridge (external entity → annotation) | ✅ `registerEntities()` + `mentionsOf()` + `annotationsForFile()` | `@intentweave/index` |
+
+### 8.0 `CariIndex` Facade + Orchestration Extraction _(CARI, M)_ ✅
+
+Extract the pipeline orchestration from `indexBuild.ts` into an exported, consumer-friendly
+facade. This is the **prerequisite** for all embedded use cases.
+
+**Step 1 — Extract `buildFromPaths()`:** Move the ~200-line pipeline
+(file discovery → AX → KWX → COX → TCG → IDF → annotate → write) out of the Commander
+`.action()` into an exported async function in `@intentweave/index` (or a new
+`@intentweave/embed` package). The CLI handler becomes a thin wrapper.
+
+**Step 2 — `CariIndex` class:** Stateful wrapper that manages the DB lifecycle and
+exposes typed query methods. Consumers open one handle at startup and query throughout.
 
 ```typescript
-import {
-  buildIndex,
-  retrieve,
-  check,
-  report,
-  openIndex,
-} from "@intentweave/index";
+import { CariIndex } from "@intentweave/index";
 
-// Build once (e.g., in a doc pipeline prebuild step)
-await buildIndex({ root: "./docs", depth: "full" });
+// High-level build (runs AX → KWX → COX → TCG → annotate → SQLite)
+const index = await CariIndex.build({
+  paths: ["docs/", "packages/", "apps/"],
+  exclude: ["**/node_modules/**"],
+  depth: "full",
+  workspaceRoot: process.cwd(),
+});
 
-// Query at any time
+// Or load existing index
+const index = CariIndex.load(".iw/index.db");
+
+// Typed queries — no raw SQL, no dbPath juggling
+const results = index.retrieve({ query: "authentication", limit: 10 });
+const findings = index.check({ changed: ["src/auth.ts"] });
+const conns = index.connections({ entity: "AuthService" });
+const health = index.report();
+
+// Incremental update — consumer passes file paths, facade runs stages internally
+await index.updateFiles(["src/auth.ts", "docs/AUTH.md"]);
+
+// Partial build modes — trade completeness for speed
+const symbols = await CariIndex.buildSymbolsOnly({ workspaceRoot: "." });
+```
+
+**What this unlocks:** Any Node.js consumer (`npm install @intentweave/index`) gets
+full CARI capability with a single `build()` call — no subprocess spawning, no stdout
+parsing, no raw SQL. The CLI becomes a thin shell over this facade.
+
+### 8.0a Entity Bridge _(CARI, M)_ ✅
+
+The **killer feature** for pipeline integration. Today CARI only knows about
+`AxSymbol` (AST-extracted code entities). The entity bridge lets consumers inject
+arbitrary entities (domain concepts, pipeline entities, third-party models) so that
+annotation matching and `mentionsOf()` work across both code symbols and external
+entities.
+
+```typescript
+import { CariIndex, type ExternalEntity } from "@intentweave/index";
+
+const index = CariIndex.load(".iw/index.db");
+
+// Inject external entities alongside AST-extracted symbols
+index.registerEntities([
+  {
+    id: "entity:auth-service",
+    name: "AuthService",
+    type: "component",
+    aliases: ["auth service", "authentication module"],
+  },
+  {
+    id: "entity:adr-005",
+    name: "ADR-005",
+    type: "decision",
+    aliases: ["token rotation decision"],
+  },
+]);
+
+// Now annotations link doc mentions to external entities, not just code symbols
+const mentions = index.mentionsOf("entity:auth-service");
+// → [{ docPath: 'docs/AUTH.md', line: 52, text: 'AuthService', confidence: 0.95 },
+//    { docPath: 'copilot-instructions.md', line: 172, text: 'authentication module', confidence: 0.82 }]
+
+// File-level annotation lookup
+const annotations = index.annotationsForFile("docs/AUTH.md");
+// → [{ mention: 'AuthService', entityId: 'entity:auth-service', line: 52, confidence: 0.95 }]
+```
+
+**Implementation:** New `external_entities` table in SQLite. New annotation source type
+`"external"`. The `annotate()` function gains an optional `externalEntities` parameter.
+`mentionsOf(entityId)` is a new query function that joins annotations on entity ID.
+
+**Why this matters:** Consumers operating on entities (not files) — like pipeline workers,
+domain-driven tools, or AI agents — can bridge _"this entity is mentioned in these docs"_
+without building their own mention scanner. The integration analysis shows this cuts
+effort from ~3d to ~1.5d for a typical pipeline consumer.
+
+### 8.1 Programmatic CARI API Documentation _(Docs, S)_ ✅
+
+Write a guide showing how to use the `CariIndex` facade (from 8.0) and the raw
+query functions. Cover three usage patterns:
+
+1. **Facade mode** (recommended): `CariIndex.build()` → typed methods
+2. **Low-level mode**: `openIndex()` + `retrieveFromDb()` / `checkFromDb()` etc.
+3. **Incremental mode**: `detectChanges()` + `applyChanges()` for CI/CD pipelines
+
+```typescript
+// Pattern 1: Facade (high-level, depends on 8.0)
+import { CariIndex } from "@intentweave/index";
+const index = await CariIndex.build({ paths: ["docs/"], depth: "full" });
+const drift = index.check({ changed: ["src/auth.ts"] });
+
+// Pattern 2: Low-level (works today)
+import { openIndex, retrieveFromDb, checkFromDb } from "@intentweave/index";
 const db = openIndex(".iw/index.db");
-const results = retrieve(db, { query: "authentication", limit: 10 });
-const health = report(db);
-const drift = check(db, { changed: ["src/auth.ts"] });
+const results = retrieveFromDb(db, { query: "authentication", limit: 10 });
+const findings = checkFromDb(db, { changed: ["src/auth.ts"] });
+db.close();
+
+// Pattern 3: Incremental (works today)
+import { detectChanges, applyChanges } from "@intentweave/index";
+const changes = detectChanges(".iw/index.db", process.cwd(), currentFiles);
+await applyChanges(
+  ".iw/index.db",
+  changes,
+  { ax, kwxOutputs, annotations },
+  opts,
+);
 ```
 
 ### 8.2 Docusaurus / Starlight Plugin _(INT, M)_
 
-A plugin that runs `buildIndex` + `report` during the doc build and:
+A plugin that runs `CariIndex.build()` + `index.report()` during the doc build and:
 
 - **Warns** on stale references (symbol renamed / deleted but doc still mentions it)
 - **Blocks** the build on critical drift (configurable threshold)
 - **Injects** a coverage badge per page: _"This page covers 8/12 exported symbols"_
 - **Sidebar widget** showing documentation health score
+
+Depends on **8.0** for the build facade. Without it, this plugin would need to shell
+out to `iw index build` (slow, untyped) or re-implement the pipeline internally.
 
 ```js
 // docusaurus.config.js
@@ -322,6 +439,7 @@ GitHub Action / GitLab CI template that:
 ```
 
 Already partially possible with `iw index check` — this wraps it for CI ergonomics.
+CI mode uses CLI (not library) — no dependency on 8.0.
 
 ### 8.5 REST API for External Doc Systems _(INT, S)_
 
@@ -341,43 +459,142 @@ Compose with `@intentweave/index` `detectChanges` + `applyChanges` (already expo
 
 ---
 
+## 9. Graph Topology & Structure _(inspired by [graphify](https://github.com/safishamsi/graphify))_
+
+### 9.1 Community Detection _(CARI, M)_
+
+Run Leiden community detection on the combined co-occurrence + import + co-change graph.
+Automatically discover natural module clusters without user-defined layers. Surface:
+_"5 communities detected — auth cluster (12 entities), data layer (8 entities), ..."_.
+Visualise in the React UI as colour-coded groups. Use an existing JS implementation
+(e.g., `graphology-communities-louvain`) to keep this $0/no-LLM.
+
+**Data sources** (all in SQLite already):
+
+- `co_occurrences` — doc co-mention edges
+- `imports` — structural code edges
+- `co_changes` — temporal coupling edges
+
+CLI: `iw index communities`. MCP: `cari_communities`.
+
+### 9.2 God-Node / Hub Analysis _(CARI, S)_
+
+Compute degree centrality across all edge types (annotations, imports, co-occurrences,
+co-changes). Rank entities by total degree. Surface: _"Top hubs: AuthService (42 edges),
+DatabasePool (28 edges), AppConfig (19 edges)"_. God nodes are the entities everything
+connects through — highest architectural risk and highest documentation priority.
+
+CLI: `iw index hubs`. MCP: `cari_hubs`.
+
+### 9.3 Surprising Connection Ranking _(CARI, M)_
+
+Extend the existing hidden-couplings analysis with a composite surprise score. Rank
+by: (a) cross-layer weight (code↔doc edges score higher than code↔code), (b) community
+distance (connections spanning different communities from 9.1 rank higher),
+(c) inverse frequency (rare co-occurrences are more surprising). Each result includes
+a plain-English _why_ explanation.
+
+Builds on: 9.1 (communities), existing `co_occurrences` + `co_changes` data.
+
+CLI: `iw index surprises`. MCP: `cari_surprises`.
+
+### 9.4 Rationale Extraction _(AX, S)_
+
+Extract `// WHY:`, `// NOTE:`, `// IMPORTANT:`, `// DESIGN:` comments during AX as
+first-class knowledge nodes (alongside existing TODO/FIXME/HACK extraction). Store in
+a `rationale` table with file, line, kind, text, and linked symbol. Surface: _"14
+rationale comments found — 3 explain architectural decisions, 2 document workarounds."_
+
+Not just _what_ the code does — _why_ it was written that way.
+
+CLI: `iw index rationale`. MCP: `cari_rationale`.
+
+---
+
+## 10. Output & Export
+
+### 10.1 Standalone HTML Graph Report _(CARI, M)_
+
+Generate a self-contained `graph.html` that visualises the entity graph with interactive
+exploration (click nodes, filter by community, search). Uses vis.js or D3 bundled inline —
+no server required. Complements the full React UI with a zero-dependency sharable artifact.
+
+CLI: `iw index export --html`.
+
+### 10.2 Watch Mode _(CARI, M)_
+
+Run `iw index watch` in a background terminal. On file save: code files trigger instant
+AST re-extraction (no LLM), doc changes re-run annotation matching. Keeps `.iw/index.db`
+continuously up to date. Compose with `detectChanges` + `applyChanges` (already exported).
+
+CLI: `iw index watch`.
+
+### 10.3 Git Hooks Integration _(CARI, S)_
+
+`iw hook install` adds `post-commit` and `post-checkout` git hooks that run
+`iw index update` automatically. Graph stays current without manual intervention.
+`iw hook uninstall` removes them cleanly.
+
+CLI: `iw hook install`, `iw hook uninstall`, `iw hook status`.
+
+### 10.4 Obsidian Vault Export _(CARI, M)_
+
+Export the knowledge graph as a set of interlinked markdown files — one per community
+(from 9.1) plus an `index.md` entry point. Each file lists entities, relationships,
+and links to related communities. Directly importable into Obsidian, Logseq, or any
+markdown-based knowledge base.
+
+CLI: `iw index export --obsidian`.
+
+---
+
 ## Priority Matrix
 
-| #   | Feature                       | Tier | Size   | Value  | Dependencies         | Status |
-| --- | ----------------------------- | ---- | ------ | ------ | -------------------- | ------ |
-| 2.1 | Exact clone detection         | CARI | S      | High   | AX body_hash         | ✅     |
-| 1.1 | Doc-group classification      | CARI | S      | High   | None                 | ✅     |
-| 3.1 | Circular import detection     | CARI | S      | High   | AX imports (exists)  | ✅     |
-| 3.2 | Unused export detection       | CARI | S      | High   | AX imports (exists)  | ✅     |
-| 4.3 | Hotspot → doc priority        | CARI | S      | High   | TCG data (exists)    | ✅     |
-| 6.3 | TODO/FIXME inventory          | CARI | S      | High   | None                 | ✅     |
-| 1.4 | Coverage by module            | CARI | S      | Medium | None                 | ✅     |
-| 1.3 | Orphaned doc sections         | CARI | S      | Medium | None                 | ✅     |
-| 1.7 | Doc completeness scoring      | CARI | S      | Medium | None                 | ✅     |
-| 2.2 | Structural clones             | CARI | M      | High   | 2.1                  | ✅     |
-| 1.2 | Cross-group drift             | CARI | M      | High   | 1.1                  | ✅     |
-| 6.2 | Test coverage mapping         | CARI | M      | High   | AX imports (exists)  |        |
-| 3.3 | Dependency depth              | CARI | S      | Medium | AX imports (exists)  |        |
-| 4.4 | Bus factor per module         | CARI | M      | Medium | TCG data (exists)    |        |
-| 3.4 | Package boundary violations   | CARI | M      | Medium | 5.1 concept          |        |
-| 5.3 | Dead feature detection        | CARI | M      | Medium | 3.2, 1.3             |        |
-| 4.1 | Ownership drift               | CARI | S      | Medium | TCG data (exists)    |        |
-| 4.2 | Change coupling anomalies     | CARI | S      | Medium | TCG data (exists)    |        |
-| 1.5 | Terminology inconsistency     | CARI | M      | Medium | None                 |        |
-| 5.1 | Layer violation detection     | CARI | M      | Medium | User config          |        |
-| 6.1 | Naming convention checks      | CARI | S      | Low    | None                 |        |
-| 6.4 | Comment-to-code ratio         | CARI | S      | Low    | None                 |        |
-| 5.4 | API surface changelog         | CARI | M      | Medium | Git history          |        |
-| 5.2 | Interface conformance         | AX   | M      | Medium | None                 |        |
-| 2.4 | Clone lineage tracking        | CARI | M      | Low    | 2.1                  |        |
-| 1.6 | Decision lifecycle            | KG   | M      | Medium | Neo4j pipeline       |        |
-| 2.3 | Semantic clone detection      | KG   | L      | Medium | LLM embeddings       |        |
-| 7.1 | Python AST extractor          | AX   | M      | High   | tree-sitter-python   |        |
-| 7.2 | Language-agnostic AX dispatch | AX   | M      | High   | 7.1                  |        |
-| 7.3 | Go / Rust / Java extractors   | AX   | M each | Medium | 7.2                  |        |
-| 8.1 | Programmatic CARI API docs    | Docs | S      | High   | None                 |        |
-| 8.2 | Docusaurus/Starlight plugin   | INT  | M      | High   | 8.1                  |        |
-| 8.3 | Sphinx / MkDocs integration   | INT  | M      | Medium | 8.1                  |        |
-| 8.4 | CI artifact validation action | INT  | M      | High   | `iw index check`     |        |
-| 8.5 | REST API for doc systems      | INT  | S      | Medium | server-core (exists) |        |
-| 8.6 | Webhook-triggered re-index    | INT  | M      | Medium | 8.5                  |        |
+| #    | Feature                          | Tier | Size   | Value  | Dependencies         | Status  |
+| ---- | -------------------------------- | ---- | ------ | ------ | -------------------- | ------- |
+| 2.1  | Exact clone detection            | CARI | S      | High   | AX body_hash         | ✅      |
+| 1.1  | Doc-group classification         | CARI | S      | High   | None                 | ✅      |
+| 3.1  | Circular import detection        | CARI | S      | High   | AX imports (exists)  | ✅      |
+| 3.2  | Unused export detection          | CARI | S      | High   | AX imports (exists)  | ✅      |
+| 4.3  | Hotspot → doc priority           | CARI | S      | High   | TCG data (exists)    | ✅      |
+| 6.3  | TODO/FIXME inventory             | CARI | S      | High   | None                 | ✅      |
+| 1.4  | Coverage by module               | CARI | S      | Medium | None                 | ✅      |
+| 1.3  | Orphaned doc sections            | CARI | S      | Medium | None                 | ✅      |
+| 1.7  | Doc completeness scoring         | CARI | S      | Medium | None                 | ✅      |
+| 2.2  | Structural clones                | CARI | M      | High   | 2.1                  | ✅      |
+| 1.2  | Cross-group drift                | CARI | M      | High   | 1.1                  | ✅      |
+| 6.2  | Test coverage mapping            | CARI | M      | High   | AX imports (exists)  |         |
+| 3.3  | Dependency depth                 | CARI | S      | Medium | AX imports (exists)  |         |
+| 4.4  | Bus factor per module            | CARI | M      | Medium | TCG data (exists)    |         |
+| 3.4  | Package boundary violations      | CARI | M      | Medium | 5.1 concept          |         |
+| 5.3  | Dead feature detection           | CARI | M      | Medium | 3.2, 1.3             |         |
+| 4.1  | Ownership drift                  | CARI | S      | Medium | TCG data (exists)    |         |
+| 4.2  | Change coupling anomalies        | CARI | S      | Medium | TCG data (exists)    |         |
+| 1.5  | Terminology inconsistency        | CARI | M      | Medium | None                 |         |
+| 5.1  | Layer violation detection        | CARI | M      | Medium | User config          |         |
+| 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
+| 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |
+| 5.4  | API surface changelog            | CARI | M      | Medium | Git history          |         |
+| 5.2  | Interface conformance            | AX   | M      | Medium | None                 |         |
+| 2.4  | Clone lineage tracking           | CARI | M      | Low    | 2.1                  |         |
+| 1.6  | Decision lifecycle               | KG   | M      | Medium | Neo4j pipeline       |         |
+| 2.3  | Semantic clone detection         | KG   | L      | Medium | LLM embeddings       |         |
+| 7.1  | Python AST extractor             | AX   | M      | High   | tree-sitter-python   |         |
+| 7.2  | Language-agnostic AX dispatch    | AX   | M      | High   | 7.1                  |         |
+| 7.3  | Go / Rust / Java extractors      | AX   | M each | Medium | 7.2                  |         |
+| 8.0  | CariIndex facade + orchestration | CARI | M      | High   | None (refactor)      | ✅ Done |
+| 8.0a | Entity bridge                    | CARI | M      | High   | 8.0                  | ✅ Done |
+| 8.1  | Programmatic CARI API docs       | Docs | S      | High   | 8.0                  | ✅ Done |
+| 8.2  | Docusaurus/Starlight plugin      | INT  | M      | High   | 8.0                  |         |
+| 8.3  | Sphinx / MkDocs integration      | INT  | M      | Medium | 8.0                  |         |
+| 8.4  | CI artifact validation action    | INT  | M      | High   | `iw index check`     |         |
+| 8.5  | REST API for doc systems         | INT  | S      | Medium | server-core (exists) |         |
+| 8.6  | Webhook-triggered re-index       | INT  | M      | Medium | 8.5                  |         |
+| 9.1  | Community detection              | CARI | M      | High   | co_occ + imports     |         |
+| 9.2  | God-node / hub analysis          | CARI | S      | High   | None                 |         |
+| 9.3  | Surprising connection ranking    | CARI | M      | High   | 9.1                  |         |
+| 9.4  | Rationale extraction             | AX   | S      | Medium | TODO infra (exists)  |         |
+| 10.1 | Standalone HTML graph report     | CARI | M      | Medium | 9.1                  |         |
+| 10.2 | Watch mode                       | CARI | M      | Medium | incremental (exists) |         |
+| 10.3 | Git hooks integration            | CARI | S      | Medium | 10.2                 |         |
+| 10.4 | Obsidian vault export            | CARI | M      | Low    | 9.1                  |         |

@@ -4,8 +4,9 @@
 /**
  * iw index build — Build the Code-Aware Retrieval Index (CARI).
  *
- * Runs the full non-LLM pipeline and writes results to a SQLite database:
- *   KWG (IN→KWX→COX) + TCG (TCX→COC→HOT→OWN→STL) + AX → annotate → IDF → SQLite
+ * Thin CLI wrapper over `buildFromPaths()` from @intentweave/index.
+ * All pipeline orchestration lives in the facade — this file only
+ * handles argument parsing and formatted console output.
  *
  * Output: .iw/index.db
  *
@@ -13,16 +14,16 @@
  *   iw index build docs/ -s my-project -v
  *   iw index build docs/ -s my-project --depth full -v
  *
- * @version 0.1
+ * @version 0.2
  */
 
 import { Command } from "commander";
 import chalk from "chalk";
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import * as fs from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 
-// Analyzer stages
+// Analyzer stages (used by update subcommand)
 import {
   runInStage,
   runKwxStage,
@@ -38,182 +39,39 @@ import {
 } from "@intentweave/analyzer";
 import type { InStageInput } from "@intentweave/analyzer";
 
-// Core types
+// Core types (used by update subcommand TCG assembly)
 import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
 
-// Index package
-import { buildIndex, annotate, computeIdf } from "@intentweave/index";
+// Index package — facade + queries
+import {
+  buildFromPaths,
+  type CariStageProgress,
+  annotate,
+} from "@intentweave/index";
 import { detectChanges, applyChanges, hashFile } from "@intentweave/index";
-import type { IndexBuildOptions } from "@intentweave/index";
 
-// =============================================================================
-// Default Excludes & .iwignore
-// =============================================================================
+// Import facade utilities for local use + re-export for test access
+import {
+  DEFAULT_EXCLUDES,
+  loadIwIgnore,
+  buildExcludeList,
+  discoverFiles,
+  isExcluded,
+} from "@intentweave/index";
 
-/** Directories excluded by default (similar to .gitignore defaults). */
-const DEFAULT_EXCLUDES = [
-  "**/node_modules/**",
-  "**/dist/**",
-  "**/.output/**",
-  "**/coverage/**",
-  "**/.git/**",
-  "**/.iw/**",
-  "**/.next/**",
-  "**/.nuxt/**",
-  "**/build/**",
-  "**/__pycache__/**",
-];
-
-/**
- * Load `.iwignore` from workspace root (if it exists).
- * Format: one glob pattern per line. Lines starting with `#` are comments.
- */
-async function loadIwIgnore(cwd: string): Promise<string[]> {
-  const ignorePath = path.join(cwd, ".iwignore");
-  try {
-    const content = await fs.readFile(ignorePath, "utf-8");
-    return content
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0 && !l.startsWith("#"));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Build the effective exclude list from defaults + .iwignore + CLI --exclude.
- * Passing `--no-default-excludes` disables the built-in list.
- */
-function buildExcludeList(
-  cliExcludes: string[],
-  iwIgnorePatterns: string[],
-  useDefaults: boolean,
-): string[] {
-  const excludes: string[] = [];
-  if (useDefaults) excludes.push(...DEFAULT_EXCLUDES);
-  excludes.push(...iwIgnorePatterns);
-  excludes.push(...cliExcludes);
-  return excludes;
-}
-
-// =============================================================================
-// File Discovery
-// =============================================================================
-
-const SUPPORTED_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst"]);
-
-interface DiscoverOptions {
-  /** Glob patterns to include (if empty, include all supported files) */
-  include?: string[];
-  /** Glob patterns to exclude */
-  exclude?: string[];
-}
-
-async function discoverFiles(
-  paths: string[],
-  cwd: string,
-  opts: DiscoverOptions = {},
-): Promise<string[]> {
-  const { exclude = [] } = opts;
-
-  // If include patterns are provided, use glob-based discovery instead
-  if (opts.include && opts.include.length > 0) {
-    const { minimatch } = await import("minimatch");
-    const includeMatchers = opts.include.map(
-      (p) => (file: string) => minimatch(file, p),
-    );
-    const files = await discoverFilesRecursive(paths, cwd, exclude);
-    return files.filter((f) => {
-      const rel = path.relative(cwd, f);
-      return includeMatchers.some((m) => m(rel));
-    });
-  }
-
-  return discoverFilesRecursive(paths, cwd, exclude);
-}
-
-async function discoverFilesRecursive(
-  paths: string[],
-  cwd: string,
-  excludePatterns: string[],
-): Promise<string[]> {
-  let minimatchFn: ((file: string, pattern: string) => boolean) | null = null;
-  if (excludePatterns.length > 0) {
-    const { minimatch } = await import("minimatch");
-    minimatchFn = minimatch;
-  }
-
-  const files: string[] = [];
-  for (const p of paths) {
-    const abs = path.isAbsolute(p) ? p : path.resolve(cwd, p);
-    const stat = await fs.stat(abs).catch(() => null);
-    if (!stat) continue;
-
-    if (stat.isFile()) {
-      if (SUPPORTED_EXTENSIONS.has(path.extname(abs).toLowerCase())) {
-        const rel = path.relative(cwd, abs);
-        if (!isExcluded(rel, excludePatterns, minimatchFn)) {
-          files.push(abs);
-        }
-      }
-    } else if (stat.isDirectory()) {
-      const dirName = path.basename(abs);
-      // Fast-path: skip well-known excluded directories without glob matching
-      if (
-        dirName === "node_modules" ||
-        dirName === ".git" ||
-        dirName === ".iw"
-      ) {
-        continue;
-      }
-      const rel = path.relative(cwd, abs);
-      if (rel && isExcluded(rel + "/", excludePatterns, minimatchFn)) {
-        continue;
-      }
-      const entries = await fs.readdir(abs, { withFileTypes: true });
-      const subPaths = entries.map((e) => path.join(abs, e.name));
-      files.push(
-        ...(await discoverFilesRecursive(subPaths, cwd, excludePatterns)),
-      );
-    }
-  }
-  return [...new Set(files)].sort();
-}
-
-function isExcluded(
-  relPath: string,
-  patterns: string[],
-  minimatchFn:
-    | ((file: string, pattern: string, opts?: { dot?: boolean }) => boolean)
-    | null,
-): boolean {
-  if (!minimatchFn || patterns.length === 0) return false;
-  return patterns.some((p) => minimatchFn(relPath, p, { dot: true }));
-}
-
-function toArtifactId(filePath: string, cwd: string): string {
-  const rel = path.relative(cwd, filePath);
-  return rel.replace(/[/\\]/g, ".").replace(/\.[^.]+$/, "");
-}
-
-function createMinimalContext(verbose: boolean) {
-  const logger = verbose ? new ConsoleLogger("[index]") : new NoopLogger();
-  return {
-    logger,
-    workspace: { root: process.cwd(), key: "index" },
-    runId: `index-${Date.now()}`,
-    store: null as any,
-    profile: null as any,
-    providers: null as any,
-    now: () => new Date(),
-    timestamp: () => new Date().toISOString(),
-  };
-}
+export {
+  DEFAULT_EXCLUDES,
+  loadIwIgnore,
+  buildExcludeList,
+  discoverFiles,
+  isExcluded,
+};
 
 // =============================================================================
 // Subcommand: iw index build
 // =============================================================================
+
+const BAR = "████████████████████████████████";
 
 const indexBuildSubcommand = new Command("build")
   .description("Build CARI index: KWG + TCG + AX → SQLite (.iw/index.db)")
@@ -236,207 +94,39 @@ const indexBuildSubcommand = new Command("build")
   .option("-o, --output <path>", "Output path for the SQLite database")
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
-    const depth = opts.depth;
-    const output = opts.output;
-    const verbose = opts.verbose;
     const cwd = process.cwd();
-
-    // Resolve session: explicit flag > directory name
     const session = opts.session ?? path.basename(cwd);
-
-    // Build exclude list: defaults + .iwignore + --exclude
-    const iwIgnorePatterns = await loadIwIgnore(cwd);
-    const cliExcludes: string[] = opts.exclude ?? [];
-    const useDefaults = opts.defaultExcludes !== false;
-    const excludePatterns = buildExcludeList(
-      cliExcludes,
-      iwIgnorePatterns,
-      useDefaults,
-    );
-
-    const log = verbose
-      ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
-      : () => {};
+    const verbose = opts.verbose;
 
     console.log(chalk.blue(`\n  ▸ CARI Index Build — session: ${session}`));
     console.log(
-      chalk.blue(`  ▸ depth: ${depth} | output: ${output ?? ".iw/index.db"}\n`),
+      chalk.blue(
+        `  ▸ depth: ${opts.depth} | output: ${opts.output ?? ".iw/index.db"}\n`,
+      ),
     );
 
-    const pipelineStart = performance.now();
-
     try {
-      // ── 1. Discover doc files ──────────────────────────────────
-      log("Discovering document files...");
-      if (excludePatterns.length > 0 && verbose) {
-        log(`Excluding: ${excludePatterns.join(", ")}`);
-      }
-      const docFiles = await discoverFiles(paths, cwd, {
+      const result = await buildFromPaths({
+        paths,
+        workspaceRoot: cwd,
+        depth: opts.depth as "structured" | "full",
+        exclude: opts.exclude,
         include: opts.include,
-        exclude: excludePatterns,
-      });
-      if (docFiles.length === 0) {
-        console.error(chalk.red("No document files found in the given paths."));
-        process.exit(1);
-      }
-      log(`Found ${docFiles.length} document files`);
-
-      const ctx = createMinimalContext(verbose);
-
-      // ── 2. AX: code symbol extraction (runs first for dictionary) ─
-      const axStart = performance.now();
-      const axOutput = await runAxStage({ workspaceRoot: cwd });
-      const axMs = performance.now() - axStart;
-      console.log(
-        `  AXE  ${chalk.green("████████████████████████████████")}  ${(axMs / 1000).toFixed(1)}s`,
-      );
-      console.log(
-        chalk.gray(
-          `       → ${axOutput.totalFiles} files, ${axOutput.totalSymbols} code symbols`,
-        ),
-      );
-
-      // Build symbol dictionary for body-text matching (--depth full)
-      const symbolDictionary =
-        depth === "full"
-          ? new Set(
-              axOutput.files.flatMap((f) =>
-                f.symbols.map((s) => s.name.toLowerCase()),
-              ),
-            )
-          : undefined;
-
-      // ── 3. KWG: IN → KWX → COX ───────────────────────────────
-      const kwgStart = performance.now();
-      const kwxOutputs: KwxStageOutput[] = [];
-
-      for (const filePath of docFiles) {
-        const relPath = path.relative(cwd, filePath);
-        log(`  KWX: ${relPath}`);
-
-        const content = await fs.readFile(filePath, "utf-8");
-        const artifactId = toArtifactId(filePath, cwd);
-
-        const inInput: InStageInput = {
-          artifactId,
-          filePath: relPath,
-          content,
-        };
-        const inOutput = await runInStage(inInput, ctx as any);
-        const kwxOutput = await runKwxStage(
-          { inOutput },
-          {
-            depth: depth as "structured" | "full",
-            dictionary: symbolDictionary,
-          },
-        );
-        kwxOutputs.push(kwxOutput);
-      }
-
-      const coxOutput = await runCoxStage({ kwxOutputs });
-
-      const kwgMs = performance.now() - kwgStart;
-      const totalMentions = kwxOutputs.reduce(
-        (acc, o) => acc + o.mentions.length,
-        0,
-      );
-      console.log(
-        `  KWG  ${chalk.green("████████████████████████████████")}  ${(kwgMs / 1000).toFixed(1)}s`,
-      );
-      console.log(
-        chalk.gray(
-          `       → ${kwxOutputs.reduce((a, o) => a + o.entities.length, 0)} entities, ${totalMentions} mentions, ${coxOutput.edges.length} co-occ edges`,
-        ),
-      );
-
-      // ── 4. TCG: TCX → COC → HOT → OWN → STL ─────────────────
-      const tcgStart = performance.now();
-      const tcxOutput = await runTcxStage({
-        workspaceRoot: cwd,
-        depth: "full",
-        log: verbose
-          ? (msg: string) => console.log(chalk.gray(`  tcx: ${msg}`))
-          : undefined,
-      });
-      const cocOutput = runCocStage({ tcxOutput });
-      const hotOutput = runHotStage({ tcxOutput });
-      const ownOutput = runOwnStage({ tcxOutput });
-      const stlOutput = runStlStage({
-        tcxOutput,
-        kwgEntities: kwxOutputs.flatMap((o) => o.entities).map((e) => e.name),
-        workspaceRoot: cwd,
-      });
-
-      const tcgOutput: TcgPipelineOutput = {
-        tcx: tcxOutput,
-        coc: cocOutput,
-        hot: hotOutput,
-        own: ownOutput,
-        stl: stlOutput,
-        meta: {
-          session,
-          workspaceRoot: cwd,
-          gitDepth: "full history",
-          totalDurationMs: performance.now() - tcgStart,
-        },
-      };
-
-      const tcgMs = performance.now() - tcgStart;
-      console.log(
-        `  TCG  ${chalk.green("████████████████████████████████")}  ${(tcgMs / 1000).toFixed(1)}s`,
-      );
-      console.log(
-        chalk.gray(
-          `       → ${tcxOutput.commits.length} commits, ${cocOutput.edges.length} co-change edges, ${hotOutput.hotspots.length} hotspots`,
-        ),
-      );
-
-      // ── 5. IDF scoring (for "full" depth) ─────────────────────
-      const idfScores = depth === "full" ? computeIdf(kwxOutputs) : undefined;
-
-      if (idfScores) {
-        log(`IDF computed: ${idfScores.size} terms`);
-      }
-
-      // ── 6. Annotate: match KWX mentions → AX symbols ─────────
-      const annStart = performance.now();
-      const annotations = annotate(axOutput, kwxOutputs, {
-        idfScores,
-        applyIdfPenalty: depth === "full",
-        log,
-      });
-      const annMs = performance.now() - annStart;
-      console.log(
-        `  ANN  ${chalk.green("████████████████████████████████")}  ${(annMs / 1000).toFixed(1)}s`,
-      );
-      console.log(
-        chalk.gray(
-          `       → ${annotations.length} annotations (${annotations.filter((a) => a.symbolId).length} grounded)`,
-        ),
-      );
-
-      // ── 7. Write SQLite index ─────────────────────────────────
-      const buildOpts: IndexBuildOptions = {
         session,
-        workspaceRoot: cwd,
-        depth: depth as "structured" | "full",
-        outputPath: output,
-        log,
-      };
+        outputPath: opts.output,
+        log: verbose
+          ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
+          : undefined,
+        onProgress: (p) => {
+          const label = p.stage.toUpperCase().padEnd(4);
+          console.log(
+            `  ${label} ${chalk.green(BAR)}  ${(p.durationMs / 1000).toFixed(1)}s`,
+          );
+          console.log(chalk.gray(`       → ${p.detail}`));
+        },
+      });
 
-      const result = buildIndex(
-        axOutput,
-        kwxOutputs,
-        coxOutput,
-        tcgOutput,
-        annotations,
-        buildOpts,
-      );
-
-      const totalMs = performance.now() - pipelineStart;
-      console.log(
-        `\n  ${chalk.green("✓")} Index built in ${(totalMs / 1000).toFixed(1)}s → ${result.dbPath}`,
-      );
+      console.log(`\n  ${chalk.green("✓")} Index built → ${result.dbPath}`);
       console.log(
         chalk.gray(
           `    symbols=${result.counts.symbols} annotations=${result.counts.annotations} ` +
@@ -444,10 +134,12 @@ const indexBuildSubcommand = new Command("build")
             `files=${result.counts.files}`,
         ),
       );
-    } catch (err: any) {
-      console.error(chalk.red(`\n  ✗ Index build failed: ${err.message}`));
-      if (verbose && err.stack) {
-        console.error(chalk.gray(err.stack));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      console.error(chalk.red(`\n  ✗ Index build failed: ${msg}`));
+      if (verbose && stack) {
+        console.error(chalk.gray(stack));
       }
       process.exit(1);
     }
@@ -473,11 +165,15 @@ import {
   orphanedSections,
   docCompleteness,
   crossGroupDrift,
+  mentionsOf,
+  annotationsForFile,
+  registerExternalEntities,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
   ConnectionsParams,
   CheckParams,
+  ExternalEntity,
 } from "@intentweave/index";
 
 function resolveDbPath(output?: string): string {
@@ -769,6 +465,26 @@ const indexReportSubcommand = new Command("report")
 
     console.log();
   });
+
+// Helpers for update subcommand
+function toArtifactId(filePath: string, cwd: string): string {
+  const rel = path.relative(cwd, filePath);
+  return rel.replace(/[/\\]/g, ".").replace(/\.[^.]+$/, "");
+}
+
+function createMinimalContext(verbose: boolean) {
+  const logger = verbose ? new ConsoleLogger("[index]") : new NoopLogger();
+  return {
+    logger,
+    workspace: { root: process.cwd(), key: "index" },
+    runId: `index-${Date.now()}`,
+    store: null as any,
+    profile: null as any,
+    providers: null as any,
+    now: () => new Date(),
+    timestamp: () => new Date().toISOString(),
+  };
+}
 
 // ── iw index update ────────────────────────────────────────────
 
@@ -1397,6 +1113,139 @@ const indexCrossGroupDriftSubcommand = new Command("cross-group-drift")
     console.log();
   });
 
+// ── iw index mentions-of ──────────────────────────────────────
+
+const indexMentionsOfSubcommand = new Command("mentions-of")
+  .description("Find all document mentions referencing an entity")
+  .argument("<entityId>", "Entity ID (symbol or external entity)")
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "100")
+  .option("--min-confidence <n>", "Minimum confidence threshold (0-1)", "0")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((entityId, opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = mentionsOf(dbPath, {
+      entityId,
+      limit: parseInt(opts.limit, 10),
+      minConfidence: parseFloat(opts.minConfidence),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalCount === 0) {
+      console.log(chalk.green(`\n  ✓ No mentions found for "${entityId}".\n`));
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ ${result.totalCount} mention(s) of "${entityId}"`),
+    );
+
+    for (const m of result.mentions) {
+      const qual = m.qualifier ? ` [${m.qualifier}]` : "";
+      console.log(
+        `    ${chalk.gray(m.docPath + ":" + m.line)} ${m.text} ${chalk.dim(`(${m.confidence.toFixed(2)})`)}${qual}`,
+      );
+    }
+    console.log();
+  });
+
+// ── iw index annotations-for ──────────────────────────────────
+
+const indexAnnotationsForSubcommand = new Command("annotations-for")
+  .description("List all annotations for a document file")
+  .argument("<filePath>", "Document file path (relative to workspace)")
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "500")
+  .option("--min-confidence <n>", "Minimum confidence threshold (0-1)", "0")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((filePath, opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = annotationsForFile(dbPath, {
+      filePath,
+      limit: parseInt(opts.limit, 10),
+      minConfidence: parseFloat(opts.minConfidence),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalCount === 0) {
+      console.log(
+        chalk.green(`\n  ✓ No annotations found for "${filePath}".\n`),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ ${result.totalCount} annotation(s) in "${filePath}"`),
+    );
+
+    console.log(
+      "    " +
+        chalk.gray(
+          "Line".padEnd(6) +
+            "Confidence".padEnd(12) +
+            "Source".padEnd(12) +
+            "Entity".padEnd(30) +
+            "Text",
+        ),
+    );
+
+    for (const a of result.annotations) {
+      const entityLabel = a.entityName
+        ? `${a.entityName} (${a.entitySource})`
+        : chalk.dim("ungrounded");
+      console.log(
+        `    ${String(a.line).padEnd(6)}${a.confidence.toFixed(2).padEnd(12)}${a.source.padEnd(12)}${entityLabel.padEnd(30)}${a.text}`,
+      );
+    }
+    console.log();
+  });
+
+// ── iw index register-entities ────────────────────────────────
+
+const indexRegisterEntitiesSubcommand = new Command("register-entities")
+  .description("Register external entities from a JSON file")
+  .argument("<file>", "Path to JSON file containing an array of entities")
+  .option("--db <path>", "Path to index.db")
+  .action(async (file, opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const content = await fs.readFile(file, "utf-8");
+    let entities: ExternalEntity[];
+    try {
+      entities = JSON.parse(content);
+    } catch {
+      console.error(chalk.red(`  ✗ Failed to parse ${file} as JSON.`));
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!Array.isArray(entities)) {
+      console.error(
+        chalk.red("  ✗ JSON file must contain an array of entities."),
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    const result = registerExternalEntities(dbPath, entities, {
+      log: (msg) => console.log(chalk.gray(`  ${msg}`)),
+    });
+
+    console.log(
+      chalk.green(
+        `\n  ✓ Registered ${result.entitiesWritten} entities, ` +
+          `created ${result.annotationsCreated} annotations.\n`,
+      ),
+    );
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
@@ -1414,16 +1263,7 @@ export const indexCommand = new Command("index")
   .addCommand(indexModuleCoverageSubcommand)
   .addCommand(indexOrphanedSectionsSubcommand)
   .addCommand(indexDocCompletenessSubcommand)
-  .addCommand(indexCrossGroupDriftSubcommand);
-
-// =============================================================================
-// @internal — Exported for testing only
-// =============================================================================
-
-export {
-  DEFAULT_EXCLUDES,
-  loadIwIgnore,
-  buildExcludeList,
-  discoverFiles,
-  isExcluded,
-};
+  .addCommand(indexCrossGroupDriftSubcommand)
+  .addCommand(indexMentionsOfSubcommand)
+  .addCommand(indexAnnotationsForSubcommand)
+  .addCommand(indexRegisterEntitiesSubcommand);

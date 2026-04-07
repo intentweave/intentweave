@@ -46,7 +46,8 @@ export interface Annotation {
     | "code-span"
     | "identifier"
     | "dictionary"
-    | "custom-pattern";
+    | "custom-pattern"
+    | "external";
 
   /** Signal qualifier (decision, deprecated, planned, etc.) */
   qualifier?: string;
@@ -503,4 +504,91 @@ export interface CrossGroupDriftResult {
     reason: string;
   }>;
   totalDrifts: number;
+}
+
+// =============================================================================
+// External Entity (Entity Bridge)
+// =============================================================================
+
+/**
+ * An external entity injected via the Entity Bridge.
+ * Not derived from AST — comes from domain models, pipeline entities, etc.
+ */
+export interface ExternalEntity {
+  /** Unique entity identifier (e.g., "entity:auth-service") */
+  id: string;
+
+  /** Display name */
+  name: string;
+
+  /** Entity type (e.g., "component", "decision", "concept") */
+  type: string;
+
+  /** Alternative names for alias matching */
+  aliases?: string[];
+
+  /** Arbitrary metadata (serialised as JSON) */
+  metadata?: Record<string, unknown>;
+}
+
+// =============================================================================
+// Query: mentionsOf
+// =============================================================================
+
+export interface MentionsOfParams {
+  /** Entity ID (external entity or code symbol) */
+  entityId: string;
+
+  /** Minimum confidence threshold (default: 0) */
+  minConfidence?: number;
+
+  /** Maximum results (default: 100) */
+  limit?: number;
+}
+
+export interface MentionsOfResult {
+  entityId: string;
+  mentions: Array<{
+    docPath: string;
+    line: number;
+    text: string;
+    confidence: number;
+    source: string;
+    qualifier?: string;
+  }>;
+  totalCount: number;
+}
+
+// =============================================================================
+// Query: annotationsForFile
+// =============================================================================
+
+export interface AnnotationsForFileParams {
+  /** Document file path (relative to workspace) */
+  filePath: string;
+
+  /** Minimum confidence threshold (default: 0) */
+  minConfidence?: number;
+
+  /** Maximum results (default: 500) */
+  limit?: number;
+}
+
+export interface AnnotationsForFileResult {
+  filePath: string;
+  annotations: Array<{
+    /** Mention text */
+    text: string;
+    /** Matched entity ID (symbol or external entity) */
+    entityId: string | null;
+    /** Entity name (resolved from external_entities or symbols table) */
+    entityName?: string;
+    /** Entity source: "symbol" or "external" */
+    entitySource?: "symbol" | "external";
+    line: number;
+    confidence: number;
+    source: string;
+    qualifier?: string;
+  }>;
+  totalCount: number;
 }
