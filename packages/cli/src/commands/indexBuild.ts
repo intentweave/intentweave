@@ -184,7 +184,9 @@ async function discoverFilesRecursive(
 function isExcluded(
   relPath: string,
   patterns: string[],
-  minimatchFn: ((file: string, pattern: string, opts?: { dot?: boolean }) => boolean) | null,
+  minimatchFn:
+    | ((file: string, pattern: string, opts?: { dot?: boolean }) => boolean)
+    | null,
 ): boolean {
   if (!minimatchFn || patterns.length === 0) return false;
   return patterns.some((p) => minimatchFn(relPath, p, { dot: true }));
@@ -223,8 +225,14 @@ const indexBuildSubcommand = new Command("build")
     "structured",
   )
   .option("--include <patterns...>", "Only include files matching these globs")
-  .option("--exclude <patterns...>", "Exclude files matching these globs (added to defaults)")
-  .option("--no-default-excludes", "Disable built-in excludes (node_modules, dist, etc.)")
+  .option(
+    "--exclude <patterns...>",
+    "Exclude files matching these globs (added to defaults)",
+  )
+  .option(
+    "--no-default-excludes",
+    "Disable built-in excludes (node_modules, dist, etc.)",
+  )
   .option("-o, --output <path>", "Output path for the SQLite database")
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
@@ -240,7 +248,11 @@ const indexBuildSubcommand = new Command("build")
     const iwIgnorePatterns = await loadIwIgnore(cwd);
     const cliExcludes: string[] = opts.exclude ?? [];
     const useDefaults = opts.defaultExcludes !== false;
-    const excludePatterns = buildExcludeList(cliExcludes, iwIgnorePatterns, useDefaults);
+    const excludePatterns = buildExcludeList(
+      cliExcludes,
+      iwIgnorePatterns,
+      useDefaults,
+    );
 
     const log = verbose
       ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
@@ -629,7 +641,9 @@ const indexCheckSubcommand = new Command("check")
     }
 
     if (filteredChanged.length === 0) {
-      console.log(chalk.green("\n  ✓ No relevant changed files (after filtering).\n"));
+      console.log(
+        chalk.green("\n  ✓ No relevant changed files (after filtering).\n"),
+      );
       return;
     }
 
@@ -674,7 +688,11 @@ const indexCheckSubcommand = new Command("check")
 const indexReportSubcommand = new Command("report")
   .description("Corpus-wide insights: coverage, staleness, couplings")
   .option("--db <path>", "Path to index.db")
-  .option("--threshold <n>", "Minimum co-occurrence/co-change score (default: 0.3)", "0.3")
+  .option(
+    "--threshold <n>",
+    "Minimum co-occurrence/co-change score (default: 0.3)",
+    "0.3",
+  )
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action((opts) => {
     const dbPath = resolveDbPath(opts.db);
@@ -778,7 +796,11 @@ const indexUpdateSubcommand = new Command("update")
     // Build exclude list
     const iwIgnorePatterns = await loadIwIgnore(cwd);
     const cliExcludes: string[] = opts.exclude ?? [];
-    const excludePatterns = buildExcludeList(cliExcludes, iwIgnorePatterns, true);
+    const excludePatterns = buildExcludeList(
+      cliExcludes,
+      iwIgnorePatterns,
+      true,
+    );
 
     try {
       // Verify existing index
@@ -962,7 +984,9 @@ const indexClonesSubcommand = new Command("clones")
         ),
       );
       for (const s of group.symbols) {
-        console.log(chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`));
+        console.log(
+          chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`),
+        );
       }
     }
     console.log();
@@ -971,7 +995,9 @@ const indexClonesSubcommand = new Command("clones")
 // ── iw index structural-clones ─────────────────────────────────
 
 const indexStructuralClonesSubcommand = new Command("structural-clones")
-  .description("Detect structural code clones (same AST structure, different identifiers)")
+  .description(
+    "Detect structural code clones (same AST structure, different identifiers)",
+  )
   .option("--db <path>", "Path to index.db")
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action((opts) => {
@@ -1001,7 +1027,9 @@ const indexStructuralClonesSubcommand = new Command("structural-clones")
         ),
       );
       for (const s of group.symbols) {
-        console.log(chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`));
+        console.log(
+          chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`),
+        );
       }
     }
     console.log();
@@ -1079,9 +1107,7 @@ const indexUnusedExportsSubcommand = new Command("unused-exports")
       );
     }
     if (result.totalUnused > limit) {
-      console.log(
-        chalk.gray(`    ...and ${result.totalUnused - limit} more`),
-      );
+      console.log(chalk.gray(`    ...and ${result.totalUnused - limit} more`));
     }
     console.log();
   });
@@ -1089,7 +1115,9 @@ const indexUnusedExportsSubcommand = new Command("unused-exports")
 // ── iw index hotspot-priority ──────────────────────────────────
 
 const indexHotspotPrioritySubcommand = new Command("hotspot-priority")
-  .description("Rank files by documentation urgency (high churn × low coverage)")
+  .description(
+    "Rank files by documentation urgency (high churn × low coverage)",
+  )
   .option("--db <path>", "Path to index.db")
   .option("-n, --limit <n>", "Maximum results", "20")
   .option("-f, --format <format>", "Output format: text or json", "text")
@@ -1104,7 +1132,9 @@ const indexHotspotPrioritySubcommand = new Command("hotspot-priority")
 
     if (result.priorities.length === 0) {
       console.log(
-        chalk.gray("\n  No hotspot data — ensure index was built with git history.\n"),
+        chalk.gray(
+          "\n  No hotspot data — ensure index was built with git history.\n",
+        ),
       );
       return;
     }
@@ -1116,7 +1146,9 @@ const indexHotspotPrioritySubcommand = new Command("hotspot-priority")
       chalk.blue(`\n  ▸ Hotspot Priority — top ${items.length} files`),
     );
     console.log(
-      chalk.gray("    File                                          Churn  Coverage  Priority"),
+      chalk.gray(
+        "    File                                          Churn  Coverage  Priority",
+      ),
     );
 
     for (const p of items) {
@@ -1208,13 +1240,20 @@ const indexModuleCoverageSubcommand = new Command("module-coverage")
       chalk.blue(`\n  ▸ Module Coverage — ${result.modules.length} module(s)`),
     );
     console.log(
-      chalk.gray("    Module                                        Documented  Total  Coverage"),
+      chalk.gray(
+        "    Module                                        Documented  Total  Coverage",
+      ),
     );
 
     for (const m of result.modules) {
       const mod = m.module.padEnd(48);
       const pct = m.coveragePercent.toFixed(0) + "%";
-      const color = m.coveragePercent >= 80 ? chalk.green : m.coveragePercent >= 50 ? chalk.yellow : chalk.red;
+      const color =
+        m.coveragePercent >= 80
+          ? chalk.green
+          : m.coveragePercent >= 50
+            ? chalk.yellow
+            : chalk.red;
       console.log(
         `    ${mod} ${String(m.documented).padStart(10)}  ${String(m.totalExported).padStart(5)}  ${color(pct.padStart(8))}`,
       );
@@ -1239,7 +1278,9 @@ const indexOrphanedSectionsSubcommand = new Command("orphaned-sections")
 
     if (result.totalOrphaned === 0) {
       console.log(
-        chalk.green("\n  ✓ No orphaned sections — all sections have grounded mentions.\n"),
+        chalk.green(
+          "\n  ✓ No orphaned sections — all sections have grounded mentions.\n",
+        ),
       );
       return;
     }
@@ -1280,13 +1321,20 @@ const indexDocCompletenessSubcommand = new Command("doc-completeness")
 
     console.log(chalk.blue("\n  ▸ Doc Completeness"));
     console.log(
-      chalk.gray("    Document                                      Covered  Total  Completeness"),
+      chalk.gray(
+        "    Document                                      Covered  Total  Completeness",
+      ),
     );
 
     for (const d of result.docs) {
       const doc = d.docPath.padEnd(48);
       const pct = d.completenessPercent.toFixed(0) + "%";
-      const color = d.completenessPercent >= 80 ? chalk.green : d.completenessPercent >= 50 ? chalk.yellow : chalk.red;
+      const color =
+        d.completenessPercent >= 80
+          ? chalk.green
+          : d.completenessPercent >= 50
+            ? chalk.yellow
+            : chalk.red;
       console.log(
         `    ${doc} ${String(d.coveredExports).padStart(7)}  ${String(d.totalRelevantExports).padStart(5)}  ${color(pct.padStart(12))}`,
       );
@@ -1323,7 +1371,9 @@ const indexCrossGroupDriftSubcommand = new Command("cross-group-drift")
 
     if (result.totalDrifts === 0) {
       console.log(
-        chalk.green("\n  ✓ No cross-group drift — entity coverage is consistent.\n"),
+        chalk.green(
+          "\n  ✓ No cross-group drift — entity coverage is consistent.\n",
+        ),
       );
       return;
     }

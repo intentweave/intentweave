@@ -341,7 +341,12 @@ export interface ClonesResult {
   cloneGroups: Array<{
     bodyHash: string;
     bodyLines: number;
-    symbols: Array<{ name: string; filePath: string; line: number; kind: string }>;
+    symbols: Array<{
+      name: string;
+      filePath: string;
+      line: number;
+      kind: string;
+    }>;
   }>;
   totalCloneGroups: number;
   totalClonedSymbols: number;
@@ -468,7 +473,12 @@ export interface StructuralClonesResult {
   cloneGroups: Array<{
     structureHash: string;
     bodyLines: number;
-    symbols: Array<{ name: string; filePath: string; line: number; kind: string }>;
+    symbols: Array<{
+      name: string;
+      filePath: string;
+      line: number;
+      kind: string;
+    }>;
   }>;
   totalCloneGroups: number;
   totalClonedSymbols: number;

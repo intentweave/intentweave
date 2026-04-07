@@ -64,8 +64,7 @@ export function hotspotPriorityFromDb(
 
     const documented = (documentedStmt.get(file.path) as { cnt: number }).cnt;
     const coveragePercent = (documented / totalExported) * 100;
-    const priorityScore =
-      file.churn * (1 - coveragePercent / 100);
+    const priorityScore = file.churn * (1 - coveragePercent / 100);
 
     priorities.push({
       filePath: file.path,

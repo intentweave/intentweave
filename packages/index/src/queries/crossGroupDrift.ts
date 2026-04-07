@@ -113,14 +113,10 @@ export function crossGroupDriftFromDb(
     // Build reason
     const reasons: string[] = [];
     if (allQualifiers.size > 1) {
-      reasons.push(
-        `conflicting qualifiers: ${[...allQualifiers].join(", ")}`,
-      );
+      reasons.push(`conflicting qualifiers: ${[...allQualifiers].join(", ")}`);
     }
     if (imbalance > 0.5) {
-      reasons.push(
-        `coverage imbalance: ${minCount} vs ${maxCount} mentions`,
-      );
+      reasons.push(`coverage imbalance: ${minCount} vs ${maxCount} mentions`);
     }
     if (reasons.length === 0) {
       reasons.push(

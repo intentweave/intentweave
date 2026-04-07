@@ -51,16 +51,28 @@ describe("DEFAULT_EXCLUDES", () => {
   });
 
   it("matches paths inside node_modules", () => {
-    expect(minimatch("node_modules/foo/README.md", "**/node_modules/**", { dot: true })).toBe(true);
-    expect(minimatch("packages/cli/node_modules/bar/docs.md", "**/node_modules/**", { dot: true })).toBe(true);
+    expect(
+      minimatch("node_modules/foo/README.md", "**/node_modules/**", {
+        dot: true,
+      }),
+    ).toBe(true);
+    expect(
+      minimatch("packages/cli/node_modules/bar/docs.md", "**/node_modules/**", {
+        dot: true,
+      }),
+    ).toBe(true);
   });
 
   it("matches paths inside dist", () => {
-    expect(minimatch("dist/docs/README.md", "**/dist/**", { dot: true })).toBe(true);
+    expect(minimatch("dist/docs/README.md", "**/dist/**", { dot: true })).toBe(
+      true,
+    );
   });
 
   it("matches .git subdirectories", () => {
-    expect(minimatch(".git/hooks/pre-commit", "**/.git/**", { dot: true })).toBe(true);
+    expect(
+      minimatch(".git/hooks/pre-commit", "**/.git/**", { dot: true }),
+    ).toBe(true);
   });
 });
 
@@ -170,21 +182,19 @@ describe("isExcluded", () => {
   });
 
   it("returns true for matching pattern", () => {
-    expect(
-      isExcluded("dist/docs/README.md", ["**/dist/**"], minimatch),
-    ).toBe(true);
+    expect(isExcluded("dist/docs/README.md", ["**/dist/**"], minimatch)).toBe(
+      true,
+    );
   });
 
   it("returns false for non-matching pattern", () => {
-    expect(
-      isExcluded("docs/README.md", ["**/dist/**"], minimatch),
-    ).toBe(false);
+    expect(isExcluded("docs/README.md", ["**/dist/**"], minimatch)).toBe(false);
   });
 
   it("matches dot-files with { dot: true }", () => {
-    expect(
-      isExcluded(".iw/cache/data.txt", ["**/.iw/**"], minimatch),
-    ).toBe(true);
+    expect(isExcluded(".iw/cache/data.txt", ["**/.iw/**"], minimatch)).toBe(
+      true,
+    );
   });
 
   it("matches any of multiple patterns", () => {

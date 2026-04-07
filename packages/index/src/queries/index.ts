@@ -17,7 +17,10 @@ export {
 export { hotspotPriority, hotspotPriorityFromDb } from "./hotspotPriority.js";
 export { todos, todosFromDb } from "./todos.js";
 export { moduleCoverage, moduleCoverageFromDb } from "./moduleCoverage.js";
-export { orphanedSections, orphanedSectionsFromDb } from "./orphanedSections.js";
+export {
+  orphanedSections,
+  orphanedSectionsFromDb,
+} from "./orphanedSections.js";
 export { docCompleteness, docCompletenessFromDb } from "./docCompleteness.js";
 export { crossGroupDrift, crossGroupDriftFromDb } from "./crossGroupDrift.js";
 export { openIndex } from "./shared.js";

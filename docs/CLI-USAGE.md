@@ -301,21 +301,21 @@ GitHub Copilot in VS Code.
 
 **CARI tools** (local SQLite, no Neo4j or LLM needed):
 
-| Tool                   | Purpose                                 |
-| ---------------------- | --------------------------------------- |
-| `cari_retrieve`        | Ranked file retrieval by topic          |
-| `cari_connections`     | Cross-layer connections + gap detection |
-| `cari_check`           | CI drift detection for changed files    |
-| `cari_clones`          | Exact code clone detection              |
-| `cari_structural_clones` | Type 2 clone detection                |
-| `cari_circular_imports`  | Import cycle detection                |
-| `cari_unused_exports`  | Unused exported symbols                 |
-| `cari_hotspot_priority`| High-churn low-doc file ranking         |
-| `cari_todos`           | TODO/FIXME/HACK/XXX inventory           |
-| `cari_module_coverage` | Documentation coverage per directory    |
-| `cari_orphaned_sections` | Doc sections with ungrounded mentions |
-| `cari_doc_completeness`  | Per-doc completeness scoring          |
-| `cari_cross_group_drift` | Cross-group entity coverage conflicts |
+| Tool                     | Purpose                                 |
+| ------------------------ | --------------------------------------- |
+| `cari_retrieve`          | Ranked file retrieval by topic          |
+| `cari_connections`       | Cross-layer connections + gap detection |
+| `cari_check`             | CI drift detection for changed files    |
+| `cari_clones`            | Exact code clone detection              |
+| `cari_structural_clones` | Type 2 clone detection                  |
+| `cari_circular_imports`  | Import cycle detection                  |
+| `cari_unused_exports`    | Unused exported symbols                 |
+| `cari_hotspot_priority`  | High-churn low-doc file ranking         |
+| `cari_todos`             | TODO/FIXME/HACK/XXX inventory           |
+| `cari_module_coverage`   | Documentation coverage per directory    |
+| `cari_orphaned_sections` | Doc sections with ungrounded mentions   |
+| `cari_doc_completeness`  | Per-doc completeness scoring            |
+| `cari_cross_group_drift` | Cross-group entity coverage conflicts   |
 
 **VS Code auto-discovery:** Add this to `.vscode/mcp.json`:
 
@@ -499,18 +499,18 @@ import { openIndex } from "@intentweave/index";
 const db = openIndex(".iw/index.db");
 ```
 
-| CLI Command                    | API Function               | Purpose                                                  |
-| ------------------------------ | -------------------------- | -------------------------------------------------------- |
-| `iw index clones`              | `db.clones()`              | Exact clone detection (identical body hash)               |
-| `iw index structural-clones`   | `db.structuralClones()`    | Type 2 clones (same control flow, different identifiers)  |
-| `iw index circular-imports`    | `db.circularImports()`     | Import cycle detection                                    |
-| `iw index unused-exports`      | `db.unusedExports()`       | Exported symbols never imported                           |
-| `iw index hotspot-priority`    | `db.hotspotPriority()`     | High-churn low-doc files ranked by urgency                |
-| `iw index todos`               | `db.todos()`               | TODO/FIXME/HACK/XXX inventory                             |
-| `iw index module-coverage`     | `db.moduleCoverage()`      | Documentation coverage % per directory                    |
-| `iw index orphaned-sections`   | `db.orphanedSections()`    | Doc sections with all-ungrounded mentions                 |
-| `iw index doc-completeness`    | `db.docCompleteness()`     | Per-doc completeness vs. referenced exports               |
-| `iw index cross-group-drift`   | `db.crossGroupDrift()`     | Cross-group entity coverage conflicts                     |
+| CLI Command                  | API Function            | Purpose                                                  |
+| ---------------------------- | ----------------------- | -------------------------------------------------------- |
+| `iw index clones`            | `db.clones()`           | Exact clone detection (identical body hash)              |
+| `iw index structural-clones` | `db.structuralClones()` | Type 2 clones (same control flow, different identifiers) |
+| `iw index circular-imports`  | `db.circularImports()`  | Import cycle detection                                   |
+| `iw index unused-exports`    | `db.unusedExports()`    | Exported symbols never imported                          |
+| `iw index hotspot-priority`  | `db.hotspotPriority()`  | High-churn low-doc files ranked by urgency               |
+| `iw index todos`             | `db.todos()`            | TODO/FIXME/HACK/XXX inventory                            |
+| `iw index module-coverage`   | `db.moduleCoverage()`   | Documentation coverage % per directory                   |
+| `iw index orphaned-sections` | `db.orphanedSections()` | Doc sections with all-ungrounded mentions                |
+| `iw index doc-completeness`  | `db.docCompleteness()`  | Per-doc completeness vs. referenced exports              |
+| `iw index cross-group-drift` | `db.crossGroupDrift()`  | Cross-group entity coverage conflicts                    |
 
 ---
 

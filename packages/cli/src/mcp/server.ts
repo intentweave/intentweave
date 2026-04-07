@@ -1289,9 +1289,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
       kind: z
         .string()
         .optional()
-        .describe(
-          "Filter by kind: TODO, FIXME, HACK, or XXX (omit for all)",
-        ),
+        .describe("Filter by kind: TODO, FIXME, HACK, or XXX (omit for all)"),
       limit: z
         .number()
         .optional()
@@ -1457,7 +1455,10 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         if (result.docs.length === 0) {
           return {
             content: [
-              { type: "text", text: "No document completeness data available." },
+              {
+                type: "text",
+                text: "No document completeness data available.",
+              },
             ],
           };
         }
@@ -1482,14 +1483,12 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
               "",
               "| Symbol | File | Kind |",
               "|--------|------|------|",
-              ...doc.missing.slice(0, 20).map(
-                (m) => `| ${m.name} | ${m.filePath} | ${m.kind} |`,
-              ),
+              ...doc.missing
+                .slice(0, 20)
+                .map((m) => `| ${m.name} | ${m.filePath} | ${m.kind} |`),
             );
             if (doc.missing.length > 20) {
-              lines.push(
-                `_...and ${doc.missing.length - 20} more._`,
-              );
+              lines.push(`_...and ${doc.missing.length - 20} more._`);
             }
           }
         }
@@ -1533,7 +1532,12 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         ];
 
         for (const drift of result.drifts) {
-          lines.push(`### ${drift.entity}`, "", `**Reason:** ${drift.reason}`, "");
+          lines.push(
+            `### ${drift.entity}`,
+            "",
+            `**Reason:** ${drift.reason}`,
+            "",
+          );
           for (const g of drift.groups) {
             const quals =
               g.qualifiers.length > 0 ? ` [${g.qualifiers.join(", ")}]` : "";

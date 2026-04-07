@@ -57,10 +57,7 @@ export function moduleCoverageFromDb(
   }
 
   // Group by directory
-  const moduleMap = new Map<
-    string,
-    { total: number; documented: number }
-  >();
+  const moduleMap = new Map<string, { total: number; documented: number }>();
 
   for (const sym of rows) {
     const dir = sym.file_path.includes("/")

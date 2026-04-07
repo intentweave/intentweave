@@ -10,10 +10,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type {
-  CircularImportsResult,
-  UnusedExportsResult,
-} from "../types.js";
+import type { CircularImportsResult, UnusedExportsResult } from "../types.js";
 import { openIndex } from "./shared.js";
 
 // =============================================================================
@@ -70,9 +67,7 @@ export function circularImportsFromDb(
       if (cycleStart >= 0) {
         const cycle = path.slice(cycleStart);
         // Normalise: rotate so smallest path is first (deduplicates)
-        const minIdx = cycle.indexOf(
-          cycle.reduce((a, b) => (a < b ? a : b)),
-        );
+        const minIdx = cycle.indexOf(cycle.reduce((a, b) => (a < b ? a : b)));
         const normalised = [...cycle.slice(minIdx), ...cycle.slice(0, minIdx)];
         const key = normalised.join(" → ");
         if (!seenCycles.has(key)) {

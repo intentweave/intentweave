@@ -62,21 +62,21 @@ document body text with dictionary matching and IDF-based noise filtering.
 
 ### For Developers
 
-| Task                    | Command / API                          | What You Get                                                |
-| ----------------------- | -------------------------------------- | ----------------------------------------------------------- |
-| Find relevant files     | `iw index retrieve "auth"`             | Ranked files with confidence scores and reasons             |
-| Understand connections  | `iw index connections "AuthService"`   | Co-mentions, co-changes, structural links, and **gaps**     |
-| Check before PR         | `iw index check --changed src/auth.ts` | Docs that reference changed code and may need updating      |
-| Health dashboard        | `iw index report`                      | Coverage %, stale docs, hidden couplings, undocumented deps |
-| Find code clones        | `clones()` / `structuralClones()`      | Exact (Type 1) and structural (Type 2) duplicate detection  |
-| Circular imports        | `circularImports()`                    | Import cycles: A → B → C → A                               |
-| Unused exports          | `unusedExports()`                      | Exported symbols never imported anywhere                    |
-| Hotspot priorities      | `hotspotPriority()`                    | High-churn, low-doc files ranked by documentation urgency   |
-| TODO/FIXME inventory    | `todos()`                              | All inline markers with file, line, and kind                |
-| Coverage by module      | `moduleCoverage()`                     | Documentation coverage % rolled up per directory            |
-| Orphaned doc sections   | `orphanedSections()`                   | Doc headings where all mentions are unresolved              |
-| Doc completeness        | `docCompleteness()`                    | Per-doc score: how many referenced exports are covered      |
-| Cross-group drift       | `crossGroupDrift()`                    | Entity coverage conflicts across doc groups                 |
+| Task                   | Command / API                          | What You Get                                                |
+| ---------------------- | -------------------------------------- | ----------------------------------------------------------- |
+| Find relevant files    | `iw index retrieve "auth"`             | Ranked files with confidence scores and reasons             |
+| Understand connections | `iw index connections "AuthService"`   | Co-mentions, co-changes, structural links, and **gaps**     |
+| Check before PR        | `iw index check --changed src/auth.ts` | Docs that reference changed code and may need updating      |
+| Health dashboard       | `iw index report`                      | Coverage %, stale docs, hidden couplings, undocumented deps |
+| Find code clones       | `clones()` / `structuralClones()`      | Exact (Type 1) and structural (Type 2) duplicate detection  |
+| Circular imports       | `circularImports()`                    | Import cycles: A → B → C → A                                |
+| Unused exports         | `unusedExports()`                      | Exported symbols never imported anywhere                    |
+| Hotspot priorities     | `hotspotPriority()`                    | High-churn, low-doc files ranked by documentation urgency   |
+| TODO/FIXME inventory   | `todos()`                              | All inline markers with file, line, and kind                |
+| Coverage by module     | `moduleCoverage()`                     | Documentation coverage % rolled up per directory            |
+| Orphaned doc sections  | `orphanedSections()`                   | Doc headings where all mentions are unresolved              |
+| Doc completeness       | `docCompleteness()`                    | Per-doc score: how many referenced exports are covered      |
+| Cross-group drift      | `crossGroupDrift()`                    | Entity coverage conflicts across doc groups                 |
 
 ### For CI/CD
 
@@ -113,11 +113,11 @@ and other LLM agents:
 
 **Knowledge Graph tools** (require Neo4j):
 
-| Tool               | Purpose                                                    |
-| ------------------ | ---------------------------------------------------------- |
-| `kg_query`         | Natural-language graph query                               |
-| `kg_context`       | Build RAG context from knowledge graph                     |
-| `kg_impact`        | Semantic impact analysis for file changes                  |
+| Tool         | Purpose                                   |
+| ------------ | ----------------------------------------- |
+| `kg_query`   | Natural-language graph query              |
+| `kg_context` | Build RAG context from knowledge graph    |
+| `kg_impact`  | Semantic impact analysis for file changes |
 
 ---
 

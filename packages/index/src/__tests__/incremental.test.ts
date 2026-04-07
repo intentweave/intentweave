@@ -532,11 +532,7 @@ describe("applyChanges", () => {
     db.close();
 
     // Modify the file
-    fs.writeFileSync(
-      path.join(tmpDir, "docs/README.md"),
-      "# Updated",
-      "utf-8",
-    );
+    fs.writeFileSync(path.join(tmpDir, "docs/README.md"), "# Updated", "utf-8");
 
     const changes: FileChange[] = [
       { path: "docs/README.md", status: "modified", isDoc: true },

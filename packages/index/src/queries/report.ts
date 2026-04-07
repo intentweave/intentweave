@@ -38,7 +38,10 @@ export function report(dbPath: string, opts?: ReportOptions): ReportResult {
 /**
  * Core report logic against an open database.
  */
-export function reportFromDb(db: Database.Database, opts?: ReportOptions): ReportResult {
+export function reportFromDb(
+  db: Database.Database,
+  opts?: ReportOptions,
+): ReportResult {
   const coocThreshold = opts?.coocThreshold ?? 0.3;
   const cochangeThreshold = opts?.cochangeThreshold ?? 0.3;
   return {

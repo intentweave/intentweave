@@ -448,8 +448,7 @@ function classifyDocGroup(filePath: string): string {
     return "specification";
 
   // Guides / tutorials
-  if (lower.includes("/guide") || lower.includes("/tutorial"))
-    return "guide";
+  if (lower.includes("/guide") || lower.includes("/tutorial")) return "guide";
 
   // General docs
   if (lower.includes("/docs/") || lower.includes("/doc/"))

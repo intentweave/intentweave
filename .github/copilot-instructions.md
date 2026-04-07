@@ -92,8 +92,8 @@ iw index update                       # only changed files
 | `packages/index/src/queries/hotspotPriority.ts`   | High-churn low-doc file ranking                         |
 | `packages/index/src/queries/todos.ts`             | TODO/FIXME/HACK/XXX inventory                           |
 | `packages/index/src/queries/moduleCoverage.ts`    | Documentation coverage per directory                    |
-| `packages/index/src/queries/orphanedSections.ts`  | Doc sections with all-ungrounded mentions                |
-| `packages/index/src/queries/docCompleteness.ts`   | Per-doc completeness vs. referenced exports              |
+| `packages/index/src/queries/orphanedSections.ts`  | Doc sections with all-ungrounded mentions               |
+| `packages/index/src/queries/docCompleteness.ts`   | Per-doc completeness vs. referenced exports             |
 | `packages/index/src/queries/crossGroupDrift.ts`   | Cross-group entity coverage conflicts                   |
 | `packages/index/src/incremental.ts`               | Content-hash incremental updates                        |
 | `packages/analyzer/src/kwg/heuristicExtractor.ts` | Keyword extraction (dictionary, depth)                  |
@@ -175,38 +175,38 @@ programmatic API.
 
 ### CARI Tools (local SQLite, no Neo4j or LLM)
 
-| Tool               | Purpose                     | Key Parameters                 |
-| ------------------ | --------------------------- | ------------------------------ |
-| `cari_retrieve`    | Ranked file retrieval       | `query`, `scope?`, `limit?`    |
-| `cari_connections` | Connection discovery + gaps | `entity`, `include?`, `limit?` |
-| `cari_check`       | CI drift detection          | `changed`, `severity?`         |
-| `cari_clones`      | Exact clone detection       | _(none)_                       |
-| `cari_structural_clones` | Type 2 clone detection | _(none)_                      |
-| `cari_circular_imports`  | Import cycle detection | _(none)_                      |
-| `cari_unused_exports`    | Unused exported symbols | `limit?`                     |
-| `cari_hotspot_priority`  | High-churn low-doc files | `limit?`                     |
-| `cari_todos`       | TODO/FIXME/HACK/XXX list    | `kind?`, `limit?`              |
-| `cari_module_coverage`   | Coverage % per directory | _(none)_                     |
-| `cari_orphaned_sections` | Ungrounded doc sections | _(none)_                      |
-| `cari_doc_completeness`  | Per-doc completeness    | _(none)_                      |
-| `cari_cross_group_drift` | Cross-group conflicts   | _(none)_                      |
+| Tool                     | Purpose                     | Key Parameters                 |
+| ------------------------ | --------------------------- | ------------------------------ |
+| `cari_retrieve`          | Ranked file retrieval       | `query`, `scope?`, `limit?`    |
+| `cari_connections`       | Connection discovery + gaps | `entity`, `include?`, `limit?` |
+| `cari_check`             | CI drift detection          | `changed`, `severity?`         |
+| `cari_clones`            | Exact clone detection       | _(none)_                       |
+| `cari_structural_clones` | Type 2 clone detection      | _(none)_                       |
+| `cari_circular_imports`  | Import cycle detection      | _(none)_                       |
+| `cari_unused_exports`    | Unused exported symbols     | `limit?`                       |
+| `cari_hotspot_priority`  | High-churn low-doc files    | `limit?`                       |
+| `cari_todos`             | TODO/FIXME/HACK/XXX list    | `kind?`, `limit?`              |
+| `cari_module_coverage`   | Coverage % per directory    | _(none)_                       |
+| `cari_orphaned_sections` | Ungrounded doc sections     | _(none)_                       |
+| `cari_doc_completeness`  | Per-doc completeness        | _(none)_                       |
+| `cari_cross_group_drift` | Cross-group conflicts       | _(none)_                       |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
 All CARI query functions are available as direct API calls, MCP tools, and CLI subcommands:
 
-| Function               | CLI Command                | Purpose                                                     |
-| ---------------------- | -------------------------- | ----------------------------------------------------------- |
-| `clones()`             | `iw index clones`          | Exact clone detection (identical body hash)                  |
-| `structuralClones()`   | `iw index structural-clones` | Type 2 clones (same control flow, different identifiers)  |
-| `circularImports()`    | `iw index circular-imports`  | Import cycle detection                                    |
-| `unusedExports()`      | `iw index unused-exports`    | Exported symbols never imported                           |
-| `hotspotPriority()`    | `iw index hotspot-priority`  | High-churn low-doc files ranked by urgency                |
-| `todos()`              | `iw index todos`             | TODO/FIXME/HACK/XXX inventory                             |
-| `moduleCoverage()`     | `iw index module-coverage`   | Documentation coverage % per directory                    |
-| `orphanedSections()`   | `iw index orphaned-sections` | Doc sections with all-ungrounded mentions                 |
-| `docCompleteness()`    | `iw index doc-completeness`  | Per-doc completeness vs. referenced exports               |
-| `crossGroupDrift()`    | `iw index cross-group-drift` | Entity coverage conflicts across doc groups               |
+| Function             | CLI Command                  | Purpose                                                  |
+| -------------------- | ---------------------------- | -------------------------------------------------------- |
+| `clones()`           | `iw index clones`            | Exact clone detection (identical body hash)              |
+| `structuralClones()` | `iw index structural-clones` | Type 2 clones (same control flow, different identifiers) |
+| `circularImports()`  | `iw index circular-imports`  | Import cycle detection                                   |
+| `unusedExports()`    | `iw index unused-exports`    | Exported symbols never imported                          |
+| `hotspotPriority()`  | `iw index hotspot-priority`  | High-churn low-doc files ranked by urgency               |
+| `todos()`            | `iw index todos`             | TODO/FIXME/HACK/XXX inventory                            |
+| `moduleCoverage()`   | `iw index module-coverage`   | Documentation coverage % per directory                   |
+| `orphanedSections()` | `iw index orphaned-sections` | Doc sections with all-ungrounded mentions                |
+| `docCompleteness()`  | `iw index doc-completeness`  | Per-doc completeness vs. referenced exports              |
+| `crossGroupDrift()`  | `iw index cross-group-drift` | Entity coverage conflicts across doc groups              |
 
 ### Usage Patterns
 

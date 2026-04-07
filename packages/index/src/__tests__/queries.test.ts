@@ -443,11 +443,41 @@ function seedFixtures(db: Database.Database) {
     ["src/middleware/rate.ts", "2026-02-20", 80, 0, "bob", 1, 0, "hash3", null],
     ["src/db/pool.ts", "2026-03-01", 200, 1, "charlie", 1, 0, "hash4", null],
     ["src/utils/logger.ts", "2026-01-15", 30, 0, "alice", 1, 0, "hash5", null],
-    ["src/utils/helpers.ts", "2026-01-10", 10, 0, "alice", 1, 0, "hash10", null],
+    [
+      "src/utils/helpers.ts",
+      "2026-01-10",
+      10,
+      0,
+      "alice",
+      1,
+      0,
+      "hash10",
+      null,
+    ],
     ["src/config.ts", "2026-02-10", 50, 0, "bob", 1, 0, "hash6", null],
-    ["docs/auth.md", "2026-02-01", 40, 0, "alice", 1, 1, "hash7", "project-docs"],
+    [
+      "docs/auth.md",
+      "2026-02-01",
+      40,
+      0,
+      "alice",
+      1,
+      1,
+      "hash7",
+      "project-docs",
+    ],
     ["docs/api.md", "2026-01-20", 25, 0, "bob", 1, 1, "hash8", "api-reference"],
-    ["docs/database.md", "2026-03-05", 15, 0, "charlie", 1, 1, "hash9", "project-docs"],
+    [
+      "docs/database.md",
+      "2026-03-05",
+      15,
+      0,
+      "charlie",
+      1,
+      1,
+      "hash9",
+      "project-docs",
+    ],
   ];
 
   const tx5 = db.transaction(() => {
@@ -465,13 +495,37 @@ function seedFixtures(db: Database.Database) {
 
   const imports = [
     // service.ts → jwt.ts (resolved)
-    ["src/auth/service.ts", "src/auth/jwt.ts", "./jwt", 1, '["signToken","verifyToken"]'],
+    [
+      "src/auth/service.ts",
+      "src/auth/jwt.ts",
+      "./jwt",
+      1,
+      '["signToken","verifyToken"]',
+    ],
     // service.ts → pool.ts (resolved)
-    ["src/auth/service.ts", "src/db/pool.ts", "../db/pool", 1, '["DatabasePool"]'],
+    [
+      "src/auth/service.ts",
+      "src/db/pool.ts",
+      "../db/pool",
+      1,
+      '["DatabasePool"]',
+    ],
     // rate.ts → service.ts (resolved) — creates a cycle: service → jwt, service → pool, rate → service
-    ["src/middleware/rate.ts", "src/auth/service.ts", "../auth/service", 1, '["AuthService"]'],
+    [
+      "src/middleware/rate.ts",
+      "src/auth/service.ts",
+      "../auth/service",
+      1,
+      '["AuthService"]',
+    ],
     // service.ts → rate.ts (resolved) — creates cycle: service → rate → service
-    ["src/auth/service.ts", "src/middleware/rate.ts", "../middleware/rate", 1, '["RateLimiter"]'],
+    [
+      "src/auth/service.ts",
+      "src/middleware/rate.ts",
+      "../middleware/rate",
+      1,
+      '["RateLimiter"]',
+    ],
     // External import (no target_file)
     ["src/auth/jwt.ts", null, "jsonwebtoken", 0, '["sign","verify"]'],
     // logger.ts → config.ts
@@ -1239,8 +1293,7 @@ describe("check severity", () => {
     // service.ts co-changes with jwt.ts (jaccard=0.68 ≥ 0.6) → "warning"
     const jwtFinding = result.findings.find(
       (f) =>
-        f.message.includes("co-changes with") &&
-        f.message.includes("jwt.ts"),
+        f.message.includes("co-changes with") && f.message.includes("jwt.ts"),
     );
     expect(jwtFinding).toBeDefined();
     if (jwtFinding) {
@@ -1255,8 +1308,7 @@ describe("check severity", () => {
     // service.ts co-changes with rate.ts (jaccard=0.31 < 0.6) → "info"
     const rateFinding = result.findings.find(
       (f) =>
-        f.message.includes("co-changes with") &&
-        f.message.includes("rate.ts"),
+        f.message.includes("co-changes with") && f.message.includes("rate.ts"),
     );
     expect(rateFinding).toBeDefined();
     if (rateFinding) {
@@ -1314,9 +1366,7 @@ describe("check severity", () => {
     const result = checkFromDb(db, {
       changed: ["src/auth/service.ts"],
     });
-    const hasCritical = result.findings.some(
-      (f) => f.severity === "critical",
-    );
+    const hasCritical = result.findings.some((f) => f.severity === "critical");
     const hasWarning = result.findings.some((f) => f.severity === "warning");
 
     if (hasCritical) {
