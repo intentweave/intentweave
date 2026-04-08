@@ -80,6 +80,7 @@ export function buildIndex(
       files: writeFiles(db, ax, tcg),
       imports: writeImports(db, ax),
       todos: writeTodos(db, ax),
+      rationale: writeRationale(db, ax),
     };
 
     // Populate FTS indexes
@@ -99,7 +100,7 @@ export function buildIndex(
     opts.log?.(
       `  symbols=${counts.symbols} annotations=${counts.annotations} ` +
         `co_occurrences=${counts.coOccurrences} co_changes=${counts.coChanges} ` +
-        `files=${counts.files} imports=${counts.imports} todos=${counts.todos}`,
+        `files=${counts.files} imports=${counts.imports} todos=${counts.todos} rationale=${counts.rationale}`,
     );
 
     return { dbPath, counts, durationMs };
@@ -396,6 +397,33 @@ function writeTodos(db: Database.Database, ax: AxOutput): number {
       const tx = db.transaction(() => {
         for (const todo of batch) {
           stmt.run(file.filePath, todo.line, todo.kind, todo.text);
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// Rationale
+// =============================================================================
+
+function writeRationale(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO rationale (file_path, line, kind, text, symbol)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.rationale || file.rationale.length === 0) continue;
+    for (let i = 0; i < file.rationale.length; i += BATCH_SIZE) {
+      const batch = file.rationale.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const item of batch) {
+          stmt.run(file.filePath, item.line, item.kind, item.text, null);
           count++;
         }
       });

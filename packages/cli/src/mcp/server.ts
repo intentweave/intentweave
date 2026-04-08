@@ -1776,6 +1776,230 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     },
   );
 
+  // ── Tool: cari_hubs ─────────────────────────────────────────────────
+  server.tool(
+    "cari_hubs",
+    `Rank entities by degree centrality across all edge types (annotations, imports, co-occurrences, co-changes). God nodes are entities everything connects through — highest architectural risk and documentation priority.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .optional()
+        .default(20)
+        .describe("Maximum hubs to return"),
+    },
+    async (args) => {
+      log(`cari_hubs: limit=${args.limit}`);
+      try {
+        const { hubs } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = hubs(dbPath);
+
+        if (result.hubs.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No hub data available. Ensure the index is built.",
+              },
+            ],
+          };
+        }
+
+        const items = result.hubs.slice(0, args.limit ?? 20);
+        const lines = [
+          `## Top ${items.length} Hubs (God-Node Analysis)`,
+          "",
+          "| Entity | Kind | Annotations | Imports | Co-occurrences | Co-changes | Total |",
+          "|--------|------|------------|---------|----------------|------------|-------|",
+          ...items.map(
+            (h) =>
+              `| ${h.name} | ${h.kind} | ${h.annotationDegree} | ${h.importDegree} | ${h.coOccurrenceDegree} | ${h.coChangeDegree} | **${h.totalDegree}** |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_communities ──────────────────────────────────────────
+  server.tool(
+    "cari_communities",
+    `Detect natural module clusters via label propagation on the combined co-occurrence + import + co-change graph. Discover how your codebase naturally groups into functional areas.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_communities");
+      try {
+        const { communities } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = communities(dbPath);
+
+        if (result.communities.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No communities detected. Ensure the index has co-occurrence or import data.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## ${result.totalCommunities} Communities Detected (${result.totalNodes} nodes)`,
+          "",
+        ];
+
+        for (const c of result.communities) {
+          lines.push(`### Community ${c.id}: ${c.label} (${c.size} members)`);
+          lines.push("");
+          const display = c.members.slice(0, 15);
+          for (const m of display) {
+            lines.push(
+              `- **${m.name}**${m.kind !== "unknown" ? ` [${m.kind}]` : ""}`,
+            );
+          }
+          if (c.members.length > 15) {
+            lines.push(`- _…and ${c.members.length - 15} more_`);
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_surprises ────────────────────────────────────────────
+  server.tool(
+    "cari_surprises",
+    `Rank connections by composite surprise score — cross-layer weight (code↔doc), community distance, and inverse frequency. Finds unexpected couplings in your codebase.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .optional()
+        .default(20)
+        .describe("Maximum surprising connections to return"),
+    },
+    async (args) => {
+      log(`cari_surprises: limit=${args.limit}`);
+      try {
+        const { surprises } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = surprises(dbPath);
+
+        if (result.surprises.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No surprising connections found. Ensure the index has edges.",
+              },
+            ],
+          };
+        }
+
+        const items = result.surprises.slice(0, args.limit ?? 20);
+        const lines = [
+          `## Top ${items.length} Surprising Connections (of ${result.totalEvaluated} evaluated)`,
+          "",
+          "| Entity A | Entity B | Score | Reason |",
+          "|----------|----------|-------|--------|",
+          ...items.map(
+            (s) =>
+              `| ${s.entityA} | ${s.entityB} | ${s.score} | ${s.reason} |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_rationale ────────────────────────────────────────────
+  server.tool(
+    "cari_rationale",
+    `List WHY/NOTE/IMPORTANT/DESIGN rationale comments found in the codebase. Not just what the code does — why it was written that way.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      kind: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by kind: WHY, NOTE, IMPORTANT, or DESIGN (omit for all)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(`cari_rationale: kind=${args.kind ?? "all"} limit=${args.limit}`);
+      try {
+        const { rationale } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = rationale(dbPath);
+
+        let items = result.rationale;
+        if (args.kind) {
+          items = items.filter(
+            (r) => r.kind.toLowerCase() === args.kind!.toLowerCase(),
+          );
+        }
+        const limited = items.slice(0, args.limit ?? 50);
+
+        if (limited.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: args.kind
+                  ? `No ${args.kind} rationale comments found.`
+                  : "No WHY/NOTE/IMPORTANT/DESIGN rationale comments found.",
+              },
+            ],
+          };
+        }
+
+        const kindSummary = Object.entries(result.byKind)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(", ");
+        const lines = [
+          `## ${result.totalCount} Rationale Comments (${kindSummary})`,
+          "",
+          "| File | Line | Kind | Text |",
+          "|------|------|------|------|",
+          ...limited.map(
+            (r) =>
+              `| ${r.filePath} | ${r.line} | ${r.kind.toUpperCase()} | ${r.text} |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
   // ── Connect via stdio ───────────────────────────────────────────────
   const transport = new StdioServerTransport();
   await server.connect(transport);

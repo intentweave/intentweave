@@ -640,3 +640,115 @@ export interface AnnotationsForFileResult {
   }>;
   totalCount: number;
 }
+
+// =============================================================================
+// 9.2 Hub Analysis
+// =============================================================================
+
+export interface HubAnalysisResult {
+  hubs: Array<{
+    /** Entity name */
+    name: string;
+
+    /** Entity kind: symbol kind or 'file' */
+    kind: string;
+
+    /** File path containing (or being) this entity */
+    filePath: string;
+
+    /** Number of annotation edges referencing this entity */
+    annotationDegree: number;
+
+    /** Number of import edges (incoming + outgoing) */
+    importDegree: number;
+
+    /** Number of co-occurrence edges */
+    coOccurrenceDegree: number;
+
+    /** Number of co-change edges */
+    coChangeDegree: number;
+
+    /** Sum of all edge degrees */
+    totalDegree: number;
+  }>;
+}
+
+// =============================================================================
+// 9.1 Community Detection
+// =============================================================================
+
+export interface CommunityMember {
+  name: string;
+  kind: string;
+  filePath?: string;
+}
+
+export interface Community {
+  /** Community identifier (0-based) */
+  id: number;
+
+  /** Auto-generated label from most central member */
+  label: string;
+
+  /** Members of this community */
+  members: CommunityMember[];
+
+  /** Number of members */
+  size: number;
+}
+
+export interface CommunityDetectionResult {
+  /** Detected communities sorted by size descending */
+  communities: Community[];
+
+  /** Total number of communities */
+  totalCommunities: number;
+
+  /** Total number of nodes in the graph */
+  totalNodes: number;
+}
+
+// =============================================================================
+// 9.3 Surprising Connections
+// =============================================================================
+
+export interface SurprisingConnection {
+  entityA: string;
+  entityB: string;
+
+  /** Composite surprise score (higher = more surprising) */
+  score: number;
+
+  /** Cross-layer weight component (code↔doc edges score higher) */
+  crossLayerWeight: number;
+
+  /** Community distance component (cross-community = higher) */
+  communityDistance: number;
+
+  /** Inverse frequency component (rare = higher) */
+  inverseFrequency: number;
+
+  /** Human-readable explanation of why this connection is surprising */
+  reason: string;
+}
+
+export interface SurprisingConnectionsResult {
+  surprises: SurprisingConnection[];
+  totalEvaluated: number;
+}
+
+// =============================================================================
+// 9.4 Rationale Extraction
+// =============================================================================
+
+export interface RationaleResult {
+  rationale: Array<{
+    filePath: string;
+    line: number;
+    kind: string;
+    text: string;
+    symbol?: string;
+  }>;
+  totalCount: number;
+  byKind: Record<string, number>;
+}

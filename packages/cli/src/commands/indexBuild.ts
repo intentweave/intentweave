@@ -169,6 +169,10 @@ import {
   annotationsForFile,
   registerExternalEntities,
   testCoverage,
+  hubs,
+  communities,
+  surprises,
+  rationale,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -1325,6 +1329,220 @@ const indexTestCoverageSubcommand = new Command("test-coverage")
     console.log();
   });
 
+// ── iw index hubs ─────────────────────────────────────────────
+
+const indexHubsSubcommand = new Command("hubs")
+  .description(
+    "Rank entities by degree centrality across all edge types (god-node analysis)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "20")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = hubs(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.hubs.length === 0) {
+      console.log(
+        chalk.gray("\n  No hub data available. Ensure the index is built.\n"),
+      );
+      return;
+    }
+
+    const limit = parseInt(opts.limit, 10);
+    const items = result.hubs.slice(0, limit);
+
+    console.log(
+      chalk.blue(`\n  ▸ Top ${items.length} hubs (by total degree)`),
+    );
+    console.log(
+      chalk.gray(
+        "    Entity                                        Kind       Ann  Imp  CoOcc  CoChg  Total",
+      ),
+    );
+
+    for (const h of items) {
+      const name = h.name.length > 48 ? h.name.slice(0, 45) + "..." : h.name;
+      console.log(
+        `    ${name.padEnd(48)} ${h.kind.padEnd(10)} ${String(h.annotationDegree).padStart(4)} ${String(h.importDegree).padStart(4)} ${String(h.coOccurrenceDegree).padStart(5)} ${String(h.coChangeDegree).padStart(5)} ${String(h.totalDegree).padStart(6)}`,
+      );
+    }
+    console.log();
+  });
+
+// ── iw index communities ──────────────────────────────────────
+
+const indexCommunitiesSubcommand = new Command("communities")
+  .description(
+    "Detect natural module clusters via label propagation on the combined graph",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = communities(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.communities.length === 0) {
+      console.log(
+        chalk.gray(
+          "\n  No communities detected. Ensure the index has co-occurrence or import data.\n",
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalCommunities} communities detected (${result.totalNodes} nodes)`,
+      ),
+    );
+
+    for (const c of result.communities) {
+      console.log(
+        chalk.cyan(`\n    Community ${c.id}: ${c.label} (${c.size} members)`),
+      );
+      const display = c.members.slice(0, 10);
+      for (const m of display) {
+        console.log(
+          chalk.gray(`      • ${m.name}`) +
+            (m.kind !== "unknown" ? chalk.gray(` [${m.kind}]`) : ""),
+        );
+      }
+      if (c.members.length > 10) {
+        console.log(
+          chalk.gray(`      … and ${c.members.length - 10} more`),
+        );
+      }
+    }
+    console.log();
+  });
+
+// ── iw index surprises ────────────────────────────────────────
+
+const indexSurprisesSubcommand = new Command("surprises")
+  .description(
+    "Rank connections by composite surprise score (cross-layer, community distance, rarity)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "20")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = surprises(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.surprises.length === 0) {
+      console.log(
+        chalk.gray(
+          "\n  No surprising connections found. Ensure the index has edges.\n",
+        ),
+      );
+      return;
+    }
+
+    const limit = parseInt(opts.limit, 10);
+    const items = result.surprises.slice(0, limit);
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ Top ${items.length} surprising connections (of ${result.totalEvaluated} evaluated)`,
+      ),
+    );
+
+    for (const s of items) {
+      console.log(
+        chalk.white(`\n    ${s.entityA} ↔ ${s.entityB}`) +
+          chalk.yellow(` (score: ${s.score})`),
+      );
+      console.log(
+        chalk.gray(`      ${s.reason}`),
+      );
+      console.log(
+        chalk.gray(
+          `      cross-layer=${s.crossLayerWeight} community=${s.communityDistance} rarity=${s.inverseFrequency}`,
+        ),
+      );
+    }
+    console.log();
+  });
+
+// ── iw index rationale ────────────────────────────────────────
+
+const indexRationaleSubcommand = new Command("rationale")
+  .description(
+    "List WHY/NOTE/IMPORTANT/DESIGN rationale comments found in the codebase",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("--kind <kind>", "Filter by kind: WHY, NOTE, IMPORTANT, DESIGN")
+  .option("-n, --limit <n>", "Maximum results", "50")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = rationale(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    let items = result.rationale;
+    if (opts.kind) {
+      items = items.filter(
+        (r) => r.kind.toLowerCase() === opts.kind.toLowerCase(),
+      );
+    }
+
+    if (items.length === 0) {
+      console.log(
+        chalk.gray(
+          opts.kind
+            ? `\n  No ${opts.kind} rationale comments found.\n`
+            : "\n  No WHY/NOTE/IMPORTANT/DESIGN rationale comments found.\n",
+        ),
+      );
+      return;
+    }
+
+    const limit = parseInt(opts.limit, 10);
+    const limited = items.slice(0, limit);
+
+    const kindSummary = Object.entries(result.byKind)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(", ");
+    console.log(
+      chalk.blue(`\n  ▸ ${result.totalCount} rationale comments (${kindSummary})`),
+    );
+
+    for (const r of limited) {
+      const kindColor =
+        r.kind === "why"
+          ? chalk.yellow
+          : r.kind === "important"
+            ? chalk.red
+            : r.kind === "design"
+              ? chalk.cyan
+              : chalk.gray;
+      console.log(
+        `    ${chalk.gray(r.filePath + ":" + r.line)} ${kindColor(r.kind.toUpperCase())} ${r.text}`,
+      );
+    }
+    console.log();
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
@@ -1346,4 +1564,8 @@ export const indexCommand = new Command("index")
   .addCommand(indexMentionsOfSubcommand)
   .addCommand(indexAnnotationsForSubcommand)
   .addCommand(indexRegisterEntitiesSubcommand)
-  .addCommand(indexTestCoverageSubcommand);
+  .addCommand(indexTestCoverageSubcommand)
+  .addCommand(indexHubsSubcommand)
+  .addCommand(indexCommunitiesSubcommand)
+  .addCommand(indexSurprisesSubcommand)
+  .addCommand(indexRationaleSubcommand);

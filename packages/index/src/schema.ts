@@ -94,6 +94,15 @@ CREATE TABLE IF NOT EXISTS todos (
   text TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rationale (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  symbol TEXT
+);
+
 -- Indexes for retrieval
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
@@ -111,6 +120,8 @@ CREATE INDEX IF NOT EXISTS idx_imports_source ON imports(source_file);
 CREATE INDEX IF NOT EXISTS idx_imports_target ON imports(target_file);
 CREATE INDEX IF NOT EXISTS idx_todos_file ON todos(file_path);
 CREATE INDEX IF NOT EXISTS idx_todos_kind ON todos(kind);
+CREATE INDEX IF NOT EXISTS idx_rationale_file ON rationale(file_path);
+CREATE INDEX IF NOT EXISTS idx_rationale_kind ON rationale(kind);
 
 -- Full-text search
 

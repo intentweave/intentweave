@@ -73,6 +73,15 @@ export {
   mentionsOfFromDb,
   annotationsForFile,
   annotationsForFileFromDb,
+  hubs,
+  hubsFromDb,
+  communities,
+  communitiesFromDb,
+  communityLabelsFromDb,
+  surprises,
+  surprisesFromDb,
+  rationale,
+  rationaleFromDb,
   openIndex,
 } from "./queries/index.js";
 
@@ -121,4 +130,11 @@ export type {
   MentionsOfResult,
   AnnotationsForFileParams,
   AnnotationsForFileResult,
+  HubAnalysisResult,
+  CommunityDetectionResult,
+  Community,
+  CommunityMember,
+  SurprisingConnectionsResult,
+  SurprisingConnection,
+  RationaleResult,
 } from "./types.js";

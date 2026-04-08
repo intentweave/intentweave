@@ -149,6 +149,17 @@ export interface AxTodo {
   text: string;
 }
 
+export interface AxRationale {
+  /** Line number (1-based) */
+  line: number;
+
+  /** Marker kind */
+  kind: "why" | "note" | "important" | "design";
+
+  /** The comment text after the marker */
+  text: string;
+}
+
 /**
  * Per-file extraction result
  */
@@ -177,6 +188,9 @@ export interface AxFileResult {
 
   /** TODO / FIXME / HACK markers found in this file */
   todos: AxTodo[];
+
+  /** WHY / NOTE / IMPORTANT / DESIGN rationale comments found in this file */
+  rationale: AxRationale[];
 
   /** Extraction timestamp */
   extractedAt: number;
@@ -496,6 +510,10 @@ const MIN_BODY_LINES = 4;
 const TODO_PATTERN =
   /(?:\/\/|\/\*|^\s*\*)\s*(TODO|FIXME|HACK|XXX)\b[:\s]*(.*)/i;
 
+/** Regex matching WHY / NOTE / IMPORTANT / DESIGN rationale markers in comments */
+const RATIONALE_PATTERN =
+  /(?:\/\/|\/\*|^\s*\*|#)\s*(WHY|NOTE|IMPORTANT|DESIGN)\b[:\s]*(.*)/i;
+
 /**
  * Compute a normalised body hash for clone detection.
  * Modifies the symbol in place (sets bodyHash / bodyLines).
@@ -665,6 +683,24 @@ function extractTodos(lines: string[]): AxTodo[] {
   return todos;
 }
 
+/**
+ * Extract WHY / NOTE / IMPORTANT / DESIGN rationale markers from source lines.
+ */
+function extractRationale(lines: string[]): AxRationale[] {
+  const items: AxRationale[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = RATIONALE_PATTERN.exec(lines[i]);
+    if (m) {
+      items.push({
+        line: i + 1,
+        kind: m[1].toLowerCase() as AxRationale["kind"],
+        text: m[2].trim(),
+      });
+    }
+  }
+  return items;
+}
+
 // ============================================================================
 // File Discovery
 // ============================================================================
@@ -745,8 +781,9 @@ async function processFile(
   // Convert imports
   const imports = extractImports(result, relativePath, workspaceRoot);
 
-  // Extract TODOs
+  // Extract TODOs and rationale
   const todos = extractTodos(lines);
+  const rationale = extractRationale(lines);
 
   return {
     filePath: relativePath,
@@ -755,6 +792,7 @@ async function processFile(
     symbols,
     imports,
     todos,
+    rationale,
     extractedAt: Date.now(),
     errors: result.errors,
   };
@@ -802,8 +840,9 @@ async function processSwiftFile(
     }
   }
 
-  // Extract TODOs (no imports for Swift yet)
+  // Extract TODOs and rationale (no imports for Swift yet)
   const todos = extractTodos(lines);
+  const rationale = extractRationale(lines);
 
   return {
     filePath: relativePath,
@@ -812,6 +851,7 @@ async function processSwiftFile(
     symbols,
     imports: [],
     todos,
+    rationale,
     extractedAt: Date.now(),
     errors: result.errors,
   };
@@ -854,8 +894,9 @@ async function processPythonFile(
       : imp.importedNames.map((n) => n.alias || n.name),
   }));
 
-  // Extract TODOs
+  // Extract TODOs and rationale
   const todos = extractTodos(lines);
+  const rationale = extractRationale(lines);
 
   return {
     filePath: relativePath,
@@ -864,6 +905,7 @@ async function processPythonFile(
     symbols,
     imports,
     todos,
+    rationale,
     extractedAt: Date.now(),
     errors: result.errors,
   };

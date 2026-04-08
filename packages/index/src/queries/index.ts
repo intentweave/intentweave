@@ -30,4 +30,12 @@ export {
   annotationsForFile,
   annotationsForFileFromDb,
 } from "./entityBridge.js";
+export { hubs, hubsFromDb } from "./hubs.js";
+export {
+  communities,
+  communitiesFromDb,
+  communityLabelsFromDb,
+} from "./communities.js";
+export { surprises, surprisesFromDb } from "./surprises.js";
+export { rationale, rationaleFromDb } from "./rationale.js";
 export { openIndex } from "./shared.js";

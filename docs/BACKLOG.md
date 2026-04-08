@@ -590,10 +590,10 @@ CLI: `iw index export --obsidian`.
 | 8.4  | CI artifact validation action    | INT  | M      | High   | `iw index check`     |         |
 | 8.5  | REST API for doc systems         | INT  | S      | Medium | server-core (exists) |         |
 | 8.6  | Webhook-triggered re-index       | INT  | M      | Medium | 8.5                  |         |
-| 9.1  | Community detection              | CARI | M      | High   | co_occ + imports     |         |
-| 9.2  | God-node / hub analysis          | CARI | S      | High   | None                 |         |
-| 9.3  | Surprising connection ranking    | CARI | M      | High   | 9.1                  |         |
-| 9.4  | Rationale extraction             | AX   | S      | Medium | TODO infra (exists)  |         |
+| 9.1  | Community detection              | CARI | M      | High   | co_occ + imports     | ✅ Done |
+| 9.2  | God-node / hub analysis          | CARI | S      | High   | None                 | ✅ Done |
+| 9.3  | Surprising connection ranking    | CARI | M      | High   | 9.1                  | ✅ Done |
+| 9.4  | Rationale extraction             | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
 | 10.1 | Standalone HTML graph report     | CARI | M      | Medium | 9.1                  |         |
 | 10.2 | Watch mode                       | CARI | M      | Medium | incremental (exists) |         |
 | 10.3 | Git hooks integration            | CARI | S      | Medium | 10.2                 |         |

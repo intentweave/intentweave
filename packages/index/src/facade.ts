@@ -58,6 +58,10 @@ import {
   testCoverageFromDb,
   mentionsOfFromDb,
   annotationsForFileFromDb,
+  hubsFromDb,
+  communitiesFromDb,
+  surprisesFromDb,
+  rationaleFromDb,
 } from "./queries/index.js";
 import type { ReportOptions } from "./queries/index.js";
 
@@ -88,6 +92,10 @@ import type {
   MentionsOfResult,
   AnnotationsForFileParams,
   AnnotationsForFileResult,
+  HubAnalysisResult,
+  CommunityDetectionResult,
+  SurprisingConnectionsResult,
+  RationaleResult,
 } from "./types.js";
 
 import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
@@ -613,6 +621,30 @@ export class CariIndex {
   /** Map test files to source files and find untested exported symbols. */
   testCoverage(params: TestCoverageParams = {}): TestCoverageResult {
     return testCoverageFromDb(this.db, params);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Graph Topology & Structure (Section 9)
+  // ---------------------------------------------------------------------------
+
+  /** Degree centrality across all edge types — find god-nodes / hubs. */
+  hubs(): HubAnalysisResult {
+    return hubsFromDb(this.db);
+  }
+
+  /** Label-propagation community detection on the combined graph. */
+  communities(): CommunityDetectionResult {
+    return communitiesFromDb(this.db);
+  }
+
+  /** Rank connections by surprise score (cross-layer, community distance, rarity). */
+  surprises(): SurprisingConnectionsResult {
+    return surprisesFromDb(this.db);
+  }
+
+  /** WHY/NOTE/IMPORTANT/DESIGN rationale comments inventory. */
+  rationale(): RationaleResult {
+    return rationaleFromDb(this.db);
   }
 
   // ---------------------------------------------------------------------------

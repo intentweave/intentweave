@@ -122,13 +122,17 @@ See `docs/LIBRARY-API.md` for full documentation.
 | `packages/index/src/queries/orphanedSections.ts`   | Doc sections with all-ungrounded mentions               |
 | `packages/index/src/queries/docCompleteness.ts`    | Per-doc completeness vs. referenced exports             |
 | `packages/index/src/queries/crossGroupDrift.ts`    | Cross-group entity coverage conflicts                   |
+| `packages/index/src/queries/hubs.ts`               | God-node / hub analysis (degree centrality)             |
+| `packages/index/src/queries/communities.ts`        | Label-propagation community detection                   |
+| `packages/index/src/queries/surprises.ts`          | Surprising connection ranking (composite score)         |
+| `packages/index/src/queries/rationale.ts`          | WHY/NOTE/IMPORTANT/DESIGN rationale inventory           |
 | `packages/index/src/incremental.ts`                | Content-hash incremental updates                        |
 | `packages/analyzer/src/kwg/heuristicExtractor.ts`  | Keyword extraction (dictionary, depth)                  |
 | `packages/analyzer/src/kwg/kwxStage.ts`            | KWX stage options (depth, dictionary)                   |
 | `packages/analyzer/src/stages/languageRegistry.ts` | LanguageAdapter interface + LanguageRegistry class      |
 | `packages/python-parser/src/extractor.ts`          | Python AST extractor (tree-sitter-python)               |
 | `packages/cli/src/commands/indexBuild.ts`          | `iw index build` CLI orchestrator                       |
-| `packages/cli/src/mcp/server.ts`                   | MCP server (6 KG + 13 CARI tools)                       |
+| `packages/cli/src/mcp/server.ts`                   | MCP server (6 KG + 17 CARI tools)                       |
 
 ### SQLite Schema (`.iw/index.db`)
 
@@ -139,6 +143,7 @@ See `docs/LIBRARY-API.md` for full documentation.
 - `files` — Per-file metadata (last modified, churn, hotspot, owner, doc_group)
 - `imports` — Import relationships between files
 - `todos` — Inline TODO/FIXME/HACK/XXX markers
+- `rationale` — WHY/NOTE/IMPORTANT/DESIGN rationale comments
 
 ### Depth Modes
 
@@ -185,7 +190,7 @@ iw doc-health --neo4j -s my-project                         # Doc health (full K
 
 ## MCP Tools
 
-The MCP server exposes 19 tools for GitHub Copilot (6 KG + 13 CARI).
+The MCP server exposes 23 tools for GitHub Copilot (6 KG + 17 CARI).
 
 All CARI query functions are also available as CLI subcommands
 (e.g., `iw index clones`, `iw index todos`) and via the `@intentweave/index`
@@ -222,6 +227,10 @@ programmatic API.
 | `cari_mentions_of`       | Entity → doc mentions       | `entityId`, `minConfidence?`, `limit?` |
 | `cari_annotations_for`   | File → all annotations      | `filePath`, `minConfidence?`, `limit?` |
 | `cari_test_coverage`     | Test→source mapping + gaps  | `limit?`                               |
+| `cari_hubs`              | God-node / hub analysis     | `limit?`                               |
+| `cari_communities`       | Community detection         | _(none)_                               |
+| `cari_surprises`         | Surprising connections      | `limit?`                               |
+| `cari_rationale`         | WHY/NOTE/IMPORTANT/DESIGN   | `kind?`, `limit?`                      |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
@@ -242,6 +251,10 @@ All CARI query functions are available as direct API calls, MCP tools, and CLI s
 | `mentionsOf()`         | `iw index mentions-of`       | Find doc mentions of a code or external entity           |
 | `annotationsForFile()` | `iw index annotations-for`   | List all annotations for a documentation file            |
 | `testCoverage()`       | `iw index test-coverage`     | Map test files to source files, find untested exports    |
+| `hubs()`               | `iw index hubs`              | Degree centrality across all edge types (god-node)       |
+| `communities()`        | `iw index communities`       | Label-propagation community detection                    |
+| `surprises()`          | `iw index surprises`         | Surprising connection ranking (composite score)          |
+| `rationale()`          | `iw index rationale`         | WHY/NOTE/IMPORTANT/DESIGN rationale inventory            |
 
 ### Entity Bridge
 
@@ -278,3 +291,7 @@ CLI: `iw index register-entities entities.json` (reads JSON array of ExternalEnt
 - "Where is AuthService mentioned?" → `cari_mentions_of` with entityId
 - "What entities appear in AUTH.md?" → `cari_annotations_for` with filePath
 - "Build context about authentication" → `kg_context` with topic
+- "What are the central entities?" → `cari_hubs` for god-node analysis
+- "Show me code clusters" → `cari_communities` for community detection
+- "Find unexpected connections" → `cari_surprises` for surprising couplings
+- "Why was this code written?" → `cari_rationale` for design rationale
