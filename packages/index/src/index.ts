@@ -82,6 +82,8 @@ export {
   surprisesFromDb,
   rationale,
   rationaleFromDb,
+  terminologyInconsistency,
+  terminologyInconsistencyFromDb,
   openIndex,
 } from "./queries/index.js";
 
@@ -137,4 +139,7 @@ export type {
   SurprisingConnectionsResult,
   SurprisingConnection,
   RationaleResult,
+  TerminologyInconsistencyResult,
+  TerminologyInconsistency,
+  TerminologyVariant,
 } from "./types.js";

@@ -752,3 +752,57 @@ export interface RationaleResult {
   totalCount: number;
   byKind: Record<string, number>;
 }
+
+// =============================================================================
+// 1.5 Terminology Inconsistency Detection
+// =============================================================================
+
+/** A single mention variant for a symbol. */
+export interface TerminologyVariant {
+  /** The mention text as it appears in documents */
+  text: string;
+
+  /** How many times this variant appears across all docs */
+  count: number;
+
+  /** Average confidence of annotations using this variant */
+  avgConfidence: number;
+
+  /** Documents where this variant appears */
+  docPaths: string[];
+}
+
+/** An entity with inconsistent terminology across docs. */
+export interface TerminologyInconsistency {
+  /** Code symbol ID */
+  symbolId: string;
+
+  /** The actual symbol name from code (canonical name) */
+  symbolName: string;
+
+  /** Symbol kind (class, function, etc.) */
+  kind: string;
+
+  /** File containing the symbol */
+  filePath: string;
+
+  /** All distinct mention variants found in docs */
+  variants: TerminologyVariant[];
+
+  /** Consistency score 0–1 (1 = all mentions use exact symbol name) */
+  consistency: number;
+
+  /** Severity based on variant count and consistency */
+  severity: "info" | "warning" | "critical";
+}
+
+export interface TerminologyInconsistencyResult {
+  /** Entities with inconsistent terminology, sorted by severity */
+  inconsistencies: TerminologyInconsistency[];
+
+  /** Total entities flagged */
+  totalInconsistencies: number;
+
+  /** Total entities analyzed (with ≥1 annotation) */
+  totalAnalyzed: number;
+}

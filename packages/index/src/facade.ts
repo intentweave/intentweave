@@ -62,6 +62,7 @@ import {
   communitiesFromDb,
   surprisesFromDb,
   rationaleFromDb,
+  terminologyInconsistencyFromDb,
 } from "./queries/index.js";
 import type { ReportOptions } from "./queries/index.js";
 
@@ -96,6 +97,7 @@ import type {
   CommunityDetectionResult,
   SurprisingConnectionsResult,
   RationaleResult,
+  TerminologyInconsistencyResult,
 } from "./types.js";
 
 import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
@@ -645,6 +647,15 @@ export class CariIndex {
   /** WHY/NOTE/IMPORTANT/DESIGN rationale comments inventory. */
   rationale(): RationaleResult {
     return rationaleFromDb(this.db);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Documentation Intelligence (Section 1)
+  // ---------------------------------------------------------------------------
+
+  /** Detect terminology inconsistencies across documentation. */
+  terminologyInconsistency(): TerminologyInconsistencyResult {
+    return terminologyInconsistencyFromDb(this.db);
   }
 
   // ---------------------------------------------------------------------------

@@ -41,7 +41,7 @@ in the codebase. Likely: outdated feature descriptions, removed API docs, dead t
 Roll up symbol coverage per directory/package. Show: `packages/analyzer/: 72% documented,
 packages/cli/: 45% documented`. Identify under-documented modules at a glance.
 
-### 1.5 Terminology Inconsistency Detection _(CARI, M)_
+### 1.5 Terminology Inconsistency Detection _(CARI, M)_ ✅
 
 Detect when docs use different names for the same code symbol (e.g., "auth service",
 "AuthService", "authentication module" all referring to `AuthService` class). Surface
@@ -570,7 +570,7 @@ CLI: `iw index export --obsidian`.
 | 5.3  | Dead feature detection           | CARI | M      | Medium | 3.2, 1.3             |         |
 | 4.1  | Ownership drift                  | CARI | S      | Medium | TCG data (exists)    |         |
 | 4.2  | Change coupling anomalies        | CARI | S      | Medium | TCG data (exists)    |         |
-| 1.5  | Terminology inconsistency        | CARI | M      | Medium | None                 |         |
+| 1.5  | Terminology inconsistency        | CARI | M      | Medium | None                 | ✅ Done |
 | 5.1  | Layer violation detection        | CARI | M      | Medium | User config          |         |
 | 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
 | 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |

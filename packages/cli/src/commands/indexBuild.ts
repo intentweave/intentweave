@@ -173,6 +173,7 @@ import {
   communities,
   surprises,
   rationale,
+  terminologyInconsistency,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -1543,6 +1544,65 @@ const indexRationaleSubcommand = new Command("rationale")
     console.log();
   });
 
+// ── iw index terminology ──────────────────────────────────────
+
+const indexTerminologySubcommand = new Command("terminology")
+  .description(
+    "Detect terminology inconsistencies — different names for the same code symbol across docs",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "20")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = terminologyInconsistency(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalInconsistencies === 0) {
+      console.log(
+        chalk.green(
+          `\n  ✓ No terminology inconsistencies found (${result.totalAnalyzed} entities analyzed).\n`,
+        ),
+      );
+      return;
+    }
+
+    const limit = parseInt(opts.limit, 10);
+    const items = result.inconsistencies.slice(0, limit);
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalInconsistencies} terminology inconsistencies (${result.totalAnalyzed} entities analyzed)`,
+      ),
+    );
+
+    const severityColor = (s: string) =>
+      s === "critical"
+        ? chalk.red(s)
+        : s === "warning"
+          ? chalk.yellow(s)
+          : chalk.gray(s);
+
+    for (const inc of items) {
+      console.log(
+        `\n    ${chalk.bold(inc.symbolName)} ${chalk.gray(`(${inc.kind})`)} — ${severityColor(inc.severity)} — consistency: ${Math.round(inc.consistency * 100)}%`,
+      );
+      console.log(chalk.gray(`    ${inc.filePath}`));
+      console.log(chalk.gray("    Variants:"));
+      for (const v of inc.variants) {
+        const isCanonical = v.text === inc.symbolName ? chalk.green(" ← canonical") : "";
+        console.log(
+          `      "${v.text}" × ${v.count} (avg conf: ${v.avgConfidence})${isCanonical}`,
+        );
+      }
+    }
+    console.log();
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
@@ -1568,4 +1628,5 @@ export const indexCommand = new Command("index")
   .addCommand(indexHubsSubcommand)
   .addCommand(indexCommunitiesSubcommand)
   .addCommand(indexSurprisesSubcommand)
-  .addCommand(indexRationaleSubcommand);
+  .addCommand(indexRationaleSubcommand)
+  .addCommand(indexTerminologySubcommand);

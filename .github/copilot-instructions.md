@@ -126,13 +126,14 @@ See `docs/LIBRARY-API.md` for full documentation.
 | `packages/index/src/queries/communities.ts`        | Label-propagation community detection                   |
 | `packages/index/src/queries/surprises.ts`          | Surprising connection ranking (composite score)         |
 | `packages/index/src/queries/rationale.ts`          | WHY/NOTE/IMPORTANT/DESIGN rationale inventory           |
+| `packages/index/src/queries/terminologyInconsistency.ts` | Terminology inconsistency detection (1.5)        |
 | `packages/index/src/incremental.ts`                | Content-hash incremental updates                        |
 | `packages/analyzer/src/kwg/heuristicExtractor.ts`  | Keyword extraction (dictionary, depth)                  |
 | `packages/analyzer/src/kwg/kwxStage.ts`            | KWX stage options (depth, dictionary)                   |
 | `packages/analyzer/src/stages/languageRegistry.ts` | LanguageAdapter interface + LanguageRegistry class      |
 | `packages/python-parser/src/extractor.ts`          | Python AST extractor (tree-sitter-python)               |
 | `packages/cli/src/commands/indexBuild.ts`          | `iw index build` CLI orchestrator                       |
-| `packages/cli/src/mcp/server.ts`                   | MCP server (6 KG + 17 CARI tools)                       |
+| `packages/cli/src/mcp/server.ts`                   | MCP server (6 KG + 18 CARI tools)                       |
 
 ### SQLite Schema (`.iw/index.db`)
 
@@ -190,7 +191,7 @@ iw doc-health --neo4j -s my-project                         # Doc health (full K
 
 ## MCP Tools
 
-The MCP server exposes 23 tools for GitHub Copilot (6 KG + 17 CARI).
+The MCP server exposes 24 tools for GitHub Copilot (6 KG + 18 CARI).
 
 All CARI query functions are also available as CLI subcommands
 (e.g., `iw index clones`, `iw index todos`) and via the `@intentweave/index`
@@ -231,6 +232,7 @@ programmatic API.
 | `cari_communities`       | Community detection         | _(none)_                               |
 | `cari_surprises`         | Surprising connections      | `limit?`                               |
 | `cari_rationale`         | WHY/NOTE/IMPORTANT/DESIGN   | `kind?`, `limit?`                      |
+| `cari_terminology`       | Terminology inconsistency   | `limit?`                               |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
@@ -255,6 +257,7 @@ All CARI query functions are available as direct API calls, MCP tools, and CLI s
 | `communities()`        | `iw index communities`       | Label-propagation community detection                    |
 | `surprises()`          | `iw index surprises`         | Surprising connection ranking (composite score)          |
 | `rationale()`          | `iw index rationale`         | WHY/NOTE/IMPORTANT/DESIGN rationale inventory            |
+| `terminologyInconsistency()` | `iw index terminology` | Detect different doc names for the same code symbol      |
 
 ### Entity Bridge
 
@@ -295,3 +298,4 @@ CLI: `iw index register-entities entities.json` (reads JSON array of ExternalEnt
 - "Show me code clusters" → `cari_communities` for community detection
 - "Find unexpected connections" → `cari_surprises` for surprising couplings
 - "Why was this code written?" → `cari_rationale` for design rationale
+- "Do docs use consistent names?" → `cari_terminology` for naming inconsistencies

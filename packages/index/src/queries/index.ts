@@ -38,4 +38,8 @@ export {
 } from "./communities.js";
 export { surprises, surprisesFromDb } from "./surprises.js";
 export { rationale, rationaleFromDb } from "./rationale.js";
+export {
+  terminologyInconsistency,
+  terminologyInconsistencyFromDb,
+} from "./terminologyInconsistency.js";
 export { openIndex } from "./shared.js";

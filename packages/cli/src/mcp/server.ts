@@ -2000,6 +2000,68 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     },
   );
 
+  // ── Tool: cari_terminology ──────────────────────────────────────────
+  server.tool(
+    "cari_terminology",
+    `Detect terminology inconsistencies — when docs use different names for the same code symbol (e.g., "auth service", "AuthService", "authentication module" all referring to the same class). Suggests the canonical name for each entity.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .optional()
+        .default(20)
+        .describe("Maximum inconsistencies to return"),
+    },
+    async (args) => {
+      log(`cari_terminology: limit=${args.limit}`);
+      try {
+        const { terminologyInconsistency } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = terminologyInconsistency(dbPath);
+
+        if (result.totalInconsistencies === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No terminology inconsistencies found (${result.totalAnalyzed} entities analyzed).`,
+              },
+            ],
+          };
+        }
+
+        const items = result.inconsistencies.slice(0, args.limit ?? 20);
+        const lines = [
+          `## ${result.totalInconsistencies} Terminology Inconsistencies (${result.totalAnalyzed} entities analyzed)`,
+          "",
+        ];
+
+        for (const inc of items) {
+          lines.push(
+            `### ${inc.symbolName} _(${inc.kind})_ — ${inc.severity} — consistency: ${Math.round(inc.consistency * 100)}%`,
+          );
+          lines.push(`File: \`${inc.filePath}\``);
+          lines.push("");
+          lines.push("| Variant | Count | Avg Confidence | Documents |");
+          lines.push("|---------|-------|----------------|-----------|");
+          for (const v of inc.variants) {
+            const canonical = v.text === inc.symbolName ? " ✓" : "";
+            lines.push(
+              `| ${v.text}${canonical} | ${v.count} | ${v.avgConfidence} | ${v.docPaths.join(", ")} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
   // ── Connect via stdio ───────────────────────────────────────────────
   const transport = new StdioServerTransport();
   await server.connect(transport);
