@@ -6,7 +6,7 @@ If you discover a security vulnerability in IntentWeave, please report it respon
 
 **Do NOT open a public issue.**
 
-Instead, email: **security@intentweave.dev**
+Instead, email: **security@intentweave.org**
 
 (If the email is not yet set up, please open a private security advisory via
 GitHub's "Report a vulnerability" feature on this repository.)

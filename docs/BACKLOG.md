@@ -98,12 +98,12 @@ Build import graph from `ExtractedImport` data already captured by AX. Run cycle
 Cross-reference exported symbols against all import statements. Flag exports that are
 never imported anywhere in the workspace. Distinguish: truly unused vs. entry-point exports.
 
-### 3.3 Dependency Depth Analysis _(AX + CARI, S)_
+### 3.3 Dependency Depth Analysis _(AX + CARI, S)_ ✅
 
 For each file, compute transitive import depth. Flag files with excessive fan-in (many
 dependents — high-risk to change) or fan-out (many dependencies — fragile).
 
-### 3.4 Package Boundary Violations _(AX + CARI, M)_
+### 3.4 Package Boundary Violations _(AX + CARI, M)_ ✅
 
 In monorepos, detect when a file imports from another package's internal modules
 (not the package's public API). Surface: _"analyzer/src/stages/fx.ts imports from
@@ -564,9 +564,9 @@ CLI: `iw index export --obsidian`.
 | 2.2  | Structural clones                | CARI | M      | High   | 2.1                  | ✅      |
 | 1.2  | Cross-group drift                | CARI | M      | High   | 1.1                  | ✅      |
 | 6.2  | Test coverage mapping            | CARI | M      | High   | AX imports (exists)  | ✅      |
-| 3.3  | Dependency depth                 | CARI | S      | Medium | AX imports (exists)  |         |
+| 3.3  | Dependency depth                 | CARI | S      | Medium | AX imports (exists)  | ✅ Done |
 | 4.4  | Bus factor per module            | CARI | M      | Medium | TCG data (exists)    |         |
-| 3.4  | Package boundary violations      | CARI | M      | Medium | 5.1 concept          |         |
+| 3.4  | Package boundary violations      | CARI | M      | Medium | 5.1 concept          | ✅ Done |
 | 5.3  | Dead feature detection           | CARI | M      | Medium | 3.2, 1.3             |         |
 | 4.1  | Ownership drift                  | CARI | S      | Medium | TCG data (exists)    |         |
 | 4.2  | Change coupling anomalies        | CARI | S      | Medium | TCG data (exists)    |         |

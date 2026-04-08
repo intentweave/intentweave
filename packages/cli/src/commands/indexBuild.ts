@@ -174,6 +174,8 @@ import {
   surprises,
   rationale,
   terminologyInconsistency,
+  dependencyDepth,
+  boundaryViolations,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -1603,6 +1605,115 @@ const indexTerminologySubcommand = new Command("terminology")
     console.log();
   });
 
+// ── iw index dep-depth ────────────────────────────────────────
+
+const indexDepDepthSubcommand = new Command("dep-depth")
+  .description(
+    "Compute transitive import depth per file — flag excessive fan-in/fan-out",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "20")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = dependencyDepth(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalFiles === 0) {
+      console.log(
+        chalk.gray("\n  No import graph data available. Ensure the index is built.\n"),
+      );
+      return;
+    }
+
+    const limit = parseInt(opts.limit, 10);
+    const items = result.files.slice(0, limit);
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalFiles} files in import graph (${result.highRiskCount} high/critical risk)`,
+      ),
+    );
+    console.log(
+      chalk.gray(
+        "    File                                         DirDep  TransDep  DirIn  TransIn  Depth  Risk",
+      ),
+    );
+
+    const riskColor = (r: string) =>
+      r === "critical"
+        ? chalk.red(r)
+        : r === "high"
+          ? chalk.yellow(r)
+          : r === "medium"
+            ? chalk.cyan(r)
+            : chalk.gray(r);
+
+    for (const f of items) {
+      const name =
+        f.filePath.length > 46
+          ? "…" + f.filePath.slice(f.filePath.length - 45)
+          : f.filePath;
+      console.log(
+        `    ${name.padEnd(48)} ${String(f.directDependencies).padStart(5)} ${String(f.transitiveDependencies).padStart(9)} ${String(f.directDependents).padStart(6)} ${String(f.transitiveDependents).padStart(8)} ${String(f.maxDepth).padStart(6)}  ${riskColor(f.risk)}`,
+      );
+    }
+    console.log();
+  });
+
+// ── iw index boundary-violations ──────────────────────────────
+
+const indexBoundaryViolationsSubcommand = new Command("boundary-violations")
+  .description(
+    "Detect when files import from another package's internal modules",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = boundaryViolations(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalViolations === 0) {
+      console.log(
+        chalk.green("\n  ✓ No package boundary violations detected.\n"),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalViolations} package boundary violation${result.totalViolations === 1 ? "" : "s"}`,
+      ),
+    );
+
+    if (result.byPackagePair.length > 0) {
+      console.log(chalk.gray("\n    Summary by package pair:"));
+      for (const pair of result.byPackagePair) {
+        console.log(
+          `    ${pair.sourcePackage} → ${pair.targetPackage}: ${pair.count} violation${pair.count === 1 ? "" : "s"}`,
+        );
+      }
+    }
+
+    console.log(chalk.gray("\n    Details:"));
+    for (const v of result.violations) {
+      console.log(
+        `    ${chalk.yellow("⚠")} ${v.sourceFile} → ${v.targetFile}`,
+      );
+      console.log(chalk.gray(`      ${v.reason}`));
+    }
+    console.log();
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
@@ -1629,4 +1740,6 @@ export const indexCommand = new Command("index")
   .addCommand(indexCommunitiesSubcommand)
   .addCommand(indexSurprisesSubcommand)
   .addCommand(indexRationaleSubcommand)
-  .addCommand(indexTerminologySubcommand);
+  .addCommand(indexTerminologySubcommand)
+  .addCommand(indexDepDepthSubcommand)
+  .addCommand(indexBoundaryViolationsSubcommand);

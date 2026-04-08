@@ -294,18 +294,28 @@ iw index update
 
 Additional CARI queries are available as CLI subcommands, MCP tools, and via the programmatic API:
 
-| CLI Command                  | MCP Tool                 | What It Does                                                   |
-| ---------------------------- | ------------------------ | -------------------------------------------------------------- |
-| `iw index clones`            | `cari_clones`            | Exact code clone detection (identical body hash)               |
-| `iw index structural-clones` | `cari_structural_clones` | Type 2 clones (same control flow, different identifiers)       |
-| `iw index circular-imports`  | `cari_circular_imports`  | Detect import cycles (A → B → C → A)                           |
-| `iw index unused-exports`    | `cari_unused_exports`    | Exported symbols never imported anywhere                       |
-| `iw index hotspot-priority`  | `cari_hotspot_priority`  | High-churn + low-doc files ranked by documentation urgency     |
-| `iw index todos`             | `cari_todos`             | TODO/FIXME/HACK/XXX inventory with file, line, and kind        |
-| `iw index module-coverage`   | `cari_module_coverage`   | Documentation coverage % per directory                         |
-| `iw index orphaned-sections` | `cari_orphaned_sections` | Doc sections where all mentions are unresolved                 |
-| `iw index doc-completeness`  | `cari_doc_completeness`  | Per-doc score: covered vs. total exports from referenced files |
-| `iw index cross-group-drift` | `cari_cross_group_drift` | Entity coverage conflicts between doc groups                   |
+| CLI Command                      | MCP Tool                   | What It Does                                                   |
+| -------------------------------- | -------------------------- | -------------------------------------------------------------- |
+| `iw index clones`                | `cari_clones`              | Exact code clone detection (identical body hash)               |
+| `iw index structural-clones`     | `cari_structural_clones`   | Type 2 clones (same control flow, different identifiers)       |
+| `iw index circular-imports`      | `cari_circular_imports`    | Detect import cycles (A → B → C → A)                           |
+| `iw index unused-exports`        | `cari_unused_exports`      | Exported symbols never imported anywhere                       |
+| `iw index hotspot-priority`      | `cari_hotspot_priority`    | High-churn + low-doc files ranked by documentation urgency     |
+| `iw index todos`                 | `cari_todos`               | TODO/FIXME/HACK/XXX inventory with file, line, and kind        |
+| `iw index module-coverage`       | `cari_module_coverage`     | Documentation coverage % per directory                         |
+| `iw index orphaned-sections`     | `cari_orphaned_sections`   | Doc sections where all mentions are unresolved                 |
+| `iw index doc-completeness`      | `cari_doc_completeness`    | Per-doc score: covered vs. total exports from referenced files |
+| `iw index cross-group-drift`     | `cari_cross_group_drift`   | Entity coverage conflicts between doc groups                   |
+| `iw index mentions-of <id>`      | `cari_mentions_of`         | Find doc mentions of a code or external entity                 |
+| `iw index annotations-for <file>`| `cari_annotations_for`     | List all annotations for a documentation file                  |
+| `iw index test-coverage`         | `cari_test_coverage`       | Map test files to source files, find untested exports          |
+| `iw index hubs`                  | `cari_hubs`                | God-node / hub analysis (degree centrality)                    |
+| `iw index communities`           | `cari_communities`         | Label-propagation community detection                          |
+| `iw index surprises`             | `cari_surprises`           | Surprising connection ranking (composite score)                |
+| `iw index rationale`             | `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                  |
+| `iw index terminology`           | `cari_terminology`         | Terminology inconsistency detection                            |
+| `iw index dep-depth`             | `cari_dep_depth`           | Transitive import depth + fan-in/fan-out risk                  |
+| `iw index boundary-violations`   | `cari_boundary_violations` | Cross-package internal import detection                        |
 
 > See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
 
@@ -339,6 +349,16 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `cari_orphaned_sections` | Doc sections with all-ungrounded mentions   | _(none)_                       |
 | `cari_doc_completeness`  | Per-doc completeness vs. referenced exports | _(none)_                       |
 | `cari_cross_group_drift` | Cross-group entity coverage conflicts       | _(none)_                       |
+| `cari_mentions_of`       | Entity → doc mentions                       | `entityId`, `minConfidence?`   |
+| `cari_annotations_for`   | File → all annotations                      | `filePath`, `minConfidence?`   |
+| `cari_test_coverage`     | Test→source mapping + gaps                  | `limit?`                       |
+| `cari_hubs`              | God-node / hub analysis                     | `limit?`                       |
+| `cari_communities`       | Label-propagation community detection       | _(none)_                       |
+| `cari_surprises`         | Surprising connection ranking               | `limit?`                       |
+| `cari_rationale`         | WHY/NOTE/IMPORTANT/DESIGN inventory         | `kind?`, `limit?`              |
+| `cari_terminology`       | Terminology inconsistency detection         | `limit?`                       |
+| `cari_dep_depth`         | Transitive import depth analysis            | `limit?`                       |
+| `cari_boundary_violations` | Package boundary violation detection      | _(none)_                       |
 
 Start the MCP server:
 

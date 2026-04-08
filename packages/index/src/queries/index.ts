@@ -42,4 +42,12 @@ export {
   terminologyInconsistency,
   terminologyInconsistencyFromDb,
 } from "./terminologyInconsistency.js";
+export {
+  dependencyDepth,
+  dependencyDepthFromDb,
+} from "./dependencyDepth.js";
+export {
+  boundaryViolations,
+  boundaryViolationsFromDb,
+} from "./boundaryViolations.js";
 export { openIndex } from "./shared.js";

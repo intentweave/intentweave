@@ -63,6 +63,8 @@ import {
   surprisesFromDb,
   rationaleFromDb,
   terminologyInconsistencyFromDb,
+  dependencyDepthFromDb,
+  boundaryViolationsFromDb,
 } from "./queries/index.js";
 import type { ReportOptions } from "./queries/index.js";
 
@@ -98,6 +100,8 @@ import type {
   SurprisingConnectionsResult,
   RationaleResult,
   TerminologyInconsistencyResult,
+  DependencyDepthResult,
+  BoundaryViolationsResult,
 } from "./types.js";
 
 import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
@@ -656,6 +660,16 @@ export class CariIndex {
   /** Detect terminology inconsistencies across documentation. */
   terminologyInconsistency(): TerminologyInconsistencyResult {
     return terminologyInconsistencyFromDb(this.db);
+  }
+
+  /** Compute transitive import depth and fan-in/fan-out per file. */
+  dependencyDepth(): DependencyDepthResult {
+    return dependencyDepthFromDb(this.db);
+  }
+
+  /** Detect cross-package internal module imports. */
+  boundaryViolations(): BoundaryViolationsResult {
+    return boundaryViolationsFromDb(this.db);
   }
 
   // ---------------------------------------------------------------------------

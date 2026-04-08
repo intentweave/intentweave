@@ -806,3 +806,79 @@ export interface TerminologyInconsistencyResult {
   /** Total entities analyzed (with ≥1 annotation) */
   totalAnalyzed: number;
 }
+
+// =============================================================================
+// 3.3 Dependency Depth Analysis
+// =============================================================================
+
+/** Per-file dependency depth metrics. */
+export interface DependencyDepthEntry {
+  /** File path */
+  filePath: string;
+
+  /** Direct outgoing imports (fan-out) */
+  directDependencies: number;
+
+  /** Transitive closure of outgoing imports */
+  transitiveDependencies: number;
+
+  /** Direct incoming dependents (fan-in) */
+  directDependents: number;
+
+  /** Transitive closure of incoming dependents */
+  transitiveDependents: number;
+
+  /** Max depth in the dependency chain (longest path from this file) */
+  maxDepth: number;
+
+  /** Risk assessment based on fan-in/fan-out */
+  risk: "low" | "medium" | "high" | "critical";
+
+  /** Human-readable risk reason */
+  reason: string;
+}
+
+export interface DependencyDepthResult {
+  files: DependencyDepthEntry[];
+  totalFiles: number;
+
+  /** Files flagged as high or critical risk */
+  highRiskCount: number;
+}
+
+// =============================================================================
+// 3.4 Package Boundary Violations
+// =============================================================================
+
+/** A single import that crosses a package boundary into internal modules. */
+export interface BoundaryViolation {
+  /** File that contains the violating import */
+  sourceFile: string;
+
+  /** Package the source file belongs to */
+  sourcePackage: string;
+
+  /** Target file being imported (internal module of another package) */
+  targetFile: string;
+
+  /** Package the target file belongs to */
+  targetPackage: string;
+
+  /** The module specifier used in the import */
+  moduleSpecifier: string;
+
+  /** Human-readable description */
+  reason: string;
+}
+
+export interface BoundaryViolationsResult {
+  violations: BoundaryViolation[];
+  totalViolations: number;
+
+  /** Violations grouped by source→target package pair */
+  byPackagePair: Array<{
+    sourcePackage: string;
+    targetPackage: string;
+    count: number;
+  }>;
+}

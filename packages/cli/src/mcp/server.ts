@@ -2062,6 +2062,116 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     },
   );
 
+  // ── Tool: cari_dep_depth ──────────────────────────────────────────
+  server.tool(
+    "cari_dep_depth",
+    `Compute transitive import depth per file — flag excessive fan-in (many dependents) or fan-out (many dependencies). Helps identify god-modules, fragile bottlenecks, and deeply-chained imports.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .optional()
+        .default(20)
+        .describe("Maximum files to return"),
+    },
+    async (args) => {
+      log(`cari_dep_depth: limit=${args.limit}`);
+      try {
+        const { dependencyDepth } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = dependencyDepth(dbPath);
+
+        if (result.totalFiles === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No import graph data available. Ensure the index is built.",
+              },
+            ],
+          };
+        }
+
+        const items = result.files.slice(0, args.limit ?? 20);
+        const lines = [
+          `## Dependency Depth — ${result.totalFiles} files (${result.highRiskCount} high/critical risk)`,
+          "",
+          "| File | Dir Deps | Trans Deps | Dir In | Trans In | Depth | Risk |",
+          "|------|----------|------------|--------|----------|-------|------|",
+        ];
+
+        for (const f of items) {
+          lines.push(
+            `| ${f.filePath} | ${f.directDependencies} | ${f.transitiveDependencies} | ${f.directDependents} | ${f.transitiveDependents} | ${f.maxDepth} | ${f.risk} |`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_boundary_violations ──────────────────────────────────
+  server.tool(
+    "cari_boundary_violations",
+    `Detect when files import from another package's internal modules instead of using the public API (index barrel). Finds cross-package coupling violations in monorepos.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_boundary_violations");
+      try {
+        const { boundaryViolations } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = boundaryViolations(dbPath);
+
+        if (result.totalViolations === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "✓ No package boundary violations detected.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## ${result.totalViolations} Package Boundary Violation${result.totalViolations === 1 ? "" : "s"}`,
+          "",
+        ];
+
+        if (result.byPackagePair.length > 0) {
+          lines.push("### By package pair");
+          lines.push("| Source Package | Target Package | Count |");
+          lines.push("|---------------|----------------|-------|");
+          for (const pair of result.byPackagePair) {
+            lines.push(
+              `| ${pair.sourcePackage} | ${pair.targetPackage} | ${pair.count} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        lines.push("### Details");
+        lines.push("| Source | Target | Reason |");
+        lines.push("|--------|--------|--------|");
+        for (const v of result.violations) {
+          lines.push(`| ${v.sourceFile} | ${v.targetFile} | ${v.reason} |`);
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
   // ── Connect via stdio ───────────────────────────────────────────────
   const transport = new StdioServerTransport();
   await server.connect(transport);

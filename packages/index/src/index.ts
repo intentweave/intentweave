@@ -84,6 +84,10 @@ export {
   rationaleFromDb,
   terminologyInconsistency,
   terminologyInconsistencyFromDb,
+  dependencyDepth,
+  dependencyDepthFromDb,
+  boundaryViolations,
+  boundaryViolationsFromDb,
   openIndex,
 } from "./queries/index.js";
 
@@ -142,4 +146,8 @@ export type {
   TerminologyInconsistencyResult,
   TerminologyInconsistency,
   TerminologyVariant,
+  DependencyDepthResult,
+  DependencyDepthEntry,
+  BoundaryViolationsResult,
+  BoundaryViolation,
 } from "./types.js";
