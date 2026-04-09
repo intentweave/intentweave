@@ -527,9 +527,10 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function parseLayersYamlForMcp(
-  content: string,
-): { layers: Array<{ name: string; patterns: string[] }>; allowSkipLayer?: boolean } {
+function parseLayersYamlForMcp(content: string): {
+  layers: Array<{ name: string; patterns: string[] }>;
+  allowSkipLayer?: boolean;
+} {
   const layers: Array<{ name: string; patterns: string[] }> = [];
   let current: { name: string; patterns: string[] } | null = null;
   let inPatterns = false;
@@ -543,7 +544,12 @@ function parseLayersYamlForMcp(
     } else if (line === "patterns:" && current) {
       inPatterns = true;
     } else if (line.startsWith("- ") && inPatterns && current) {
-      current.patterns.push(line.slice(2).trim().replace(/^["']|["']$/g, ""));
+      current.patterns.push(
+        line
+          .slice(2)
+          .trim()
+          .replace(/^["']|["']$/g, ""),
+      );
     }
   }
   if (current) layers.push(current);
@@ -1952,8 +1958,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           "| Entity A | Entity B | Score | Reason |",
           "|----------|----------|-------|--------|",
           ...items.map(
-            (s) =>
-              `| ${s.entityA} | ${s.entityB} | ${s.score} | ${s.reason} |`,
+            (s) => `| ${s.entityA} | ${s.entityB} | ${s.score} | ${s.reason} |`,
           ),
         ];
 
@@ -2287,11 +2292,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         // Read layers.yaml from workspace
         const fs = await import("node:fs");
         const path = await import("node:path");
-        const configPath = path.join(
-          process.cwd(),
-          ".iw",
-          "layers.yaml",
-        );
+        const configPath = path.join(process.cwd(), ".iw", "layers.yaml");
 
         if (!fs.existsSync(configPath)) {
           return {
@@ -2341,8 +2342,12 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           lines.push("");
         }
 
-        lines.push("| Source | Source Layer | Target | Target Layer | Type | Reason |");
-        lines.push("|--------|-------------|--------|--------------|------|--------|");
+        lines.push(
+          "| Source | Source Layer | Target | Target Layer | Type | Reason |",
+        );
+        lines.push(
+          "|--------|-------------|--------|--------------|------|--------|",
+        );
         for (const v of result.violations) {
           lines.push(
             `| ${v.sourceFile} | ${v.sourceLayer} | ${v.targetFile} | ${v.targetLayer} | ${v.type} | ${v.reason} |`,
@@ -2399,9 +2404,8 @@ Requires an OpenAI API key (OPENAI_API_KEY env var or api_key parameter).`,
           };
         }
 
-        const { OpenAILLMProvider, SmartMockLLMProvider } = await import(
-          "@intentweave/analyzer/llm"
-        );
+        const { OpenAILLMProvider, SmartMockLLMProvider } =
+          await import("@intentweave/analyzer/llm");
         let llm;
         if (args.provider === "openai") {
           const apiKey = args.api_key ?? process.env.OPENAI_API_KEY;

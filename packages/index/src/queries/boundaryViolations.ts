@@ -17,18 +17,13 @@
  */
 
 import type Database from "better-sqlite3";
-import type {
-  BoundaryViolationsResult,
-  BoundaryViolation,
-} from "../types.js";
+import type { BoundaryViolationsResult, BoundaryViolation } from "../types.js";
 import { openIndex, resolveModuleSpecifier } from "./shared.js";
 
 /**
  * Detect package boundary violations in the import graph.
  */
-export function boundaryViolations(
-  dbPath: string,
-): BoundaryViolationsResult {
+export function boundaryViolations(dbPath: string): BoundaryViolationsResult {
   const db = openIndex(dbPath);
   try {
     return boundaryViolationsFromDb(db);
@@ -48,9 +43,7 @@ export function boundaryViolations(
  * Returns null if the file is not inside a known package directory.
  */
 function extractPackage(filePath: string): string | null {
-  const match = filePath.match(
-    /^(packages|apps|libs|modules)\/([^/]+)\//,
-  );
+  const match = filePath.match(/^(packages|apps|libs|modules)\/([^/]+)\//);
   return match ? `${match[1]}/${match[2]}` : null;
 }
 
@@ -99,9 +92,9 @@ export function boundaryViolationsFromDb(
 
   // Build a set of known file paths for resolution
   const knownFiles = new Set(
-    (
-      db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>
-    ).map((r) => r.path),
+    (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
+      (r) => r.path,
+    ),
   );
 
   const violations: BoundaryViolation[] = [];
@@ -145,7 +138,10 @@ export function boundaryViolationsFromDb(
   );
 
   // Group by package pair
-  const pairMap = new Map<string, { sourcePackage: string; targetPackage: string; count: number }>();
+  const pairMap = new Map<
+    string,
+    { sourcePackage: string; targetPackage: string; count: number }
+  >();
   for (const v of violations) {
     const key = `${v.sourcePackage} → ${v.targetPackage}`;
     const existing = pairMap.get(key);
@@ -160,9 +156,7 @@ export function boundaryViolationsFromDb(
     }
   }
 
-  const byPackagePair = [...pairMap.values()].sort(
-    (a, b) => b.count - a.count,
-  );
+  const byPackagePair = [...pairMap.values()].sort((a, b) => b.count - a.count);
 
   return {
     violations,

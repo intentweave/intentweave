@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/server-core",
   "version": "0.6.0",
-  "description": "IntentWeave server foundation \u2014 Fastify, Neo4j pool, session/workspace middleware, plugin system",
+  "description": "IntentWeave server foundation — Fastify, Neo4j pool, session/workspace middleware, plugin system",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -46,7 +46,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Server foundation \u2014 Fastify, Neo4j pool, middleware. Always open-source."
+    "description": "Server foundation — Fastify, Neo4j pool, middleware. Always open-source."
   },
   "license": "Apache-2.0",
   "repository": {

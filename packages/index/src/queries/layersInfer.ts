@@ -44,9 +44,9 @@ export function layersInferFromDb(db: Database.Database): LayersInferResult {
 
   // Find all files known to the DB (including ones not in import graph)
   const knownFiles = new Set(
-    (
-      db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>
-    ).map((r) => r.path),
+    (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
+      (r) => r.path,
+    ),
   );
 
   // 1. Compute topological depth via reverse BFS from leaf nodes
@@ -292,7 +292,9 @@ function generateYaml(layers: InferredLayer[]): string {
 
   for (const layer of layers) {
     lines.push(`  - name: "${layer.label}"`);
-    lines.push(`    # depth range: ${layer.depthRange[0]}–${layer.depthRange[1]}, ${layer.files.length} files`);
+    lines.push(
+      `    # depth range: ${layer.depthRange[0]}–${layer.depthRange[1]}, ${layer.files.length} files`,
+    );
     lines.push(`    patterns:`);
 
     // Generate glob patterns from common directory prefixes
@@ -334,7 +336,9 @@ function generateYaml(layers: InferredLayer[]): string {
       }
     } else if (remaining.length > 10) {
       // Too many individual files — add a comment
-      lines.push(`      # ${remaining.length} additional files — consider grouping`);
+      lines.push(
+        `      # ${remaining.length} additional files — consider grouping`,
+      );
     }
   }
 

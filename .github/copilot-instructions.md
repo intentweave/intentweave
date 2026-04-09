@@ -107,43 +107,43 @@ See `docs/LIBRARY-API.md` for full documentation.
 
 ### Key Files
 
-| File                                               | Purpose                                                 |
-| -------------------------------------------------- | ------------------------------------------------------- |
-| `packages/index/src/facade.ts`                     | CariIndex facade class + buildFromPaths orchestration   |
-| `packages/index/src/writer.ts`                     | SQLite index builder                                    |
-| `packages/index/src/annotator.ts`                  | Document→code annotation engine (IDF penalty)           |
-| `packages/index/src/idf.ts`                        | IDF scorer + stopword baseline (50 terms, ceiling 0.15) |
-| `packages/index/src/schema.ts`                     | SQLite table definitions                                |
-| `packages/index/src/queries/retrieve.ts`           | Ranked file retrieval                                   |
-| `packages/index/src/queries/connections.ts`        | Cross-layer connection discovery                        |
-| `packages/index/src/queries/check.ts`              | CI drift detection                                      |
-| `packages/index/src/queries/report.ts`             | Corpus-wide health report                               |
-| `packages/index/src/queries/clones.ts`             | Exact + structural clone detection                      |
-| `packages/index/src/queries/imports.ts`            | Circular imports + unused exports                       |
-| `packages/index/src/queries/hotspotPriority.ts`    | High-churn low-doc file ranking                         |
-| `packages/index/src/queries/todos.ts`              | TODO/FIXME/HACK/XXX inventory                           |
-| `packages/index/src/queries/moduleCoverage.ts`     | Documentation coverage per directory                    |
-| `packages/index/src/queries/orphanedSections.ts`   | Doc sections with all-ungrounded mentions               |
-| `packages/index/src/queries/docCompleteness.ts`    | Per-doc completeness vs. referenced exports             |
-| `packages/index/src/queries/crossGroupDrift.ts`    | Cross-group entity coverage conflicts                   |
-| `packages/index/src/queries/hubs.ts`               | God-node / hub analysis (degree centrality)             |
-| `packages/index/src/queries/communities.ts`        | Label-propagation community detection                   |
-| `packages/index/src/queries/surprises.ts`          | Surprising connection ranking (composite score)         |
-| `packages/index/src/queries/rationale.ts`          | WHY/NOTE/IMPORTANT/DESIGN rationale inventory           |
-| `packages/index/src/queries/terminologyInconsistency.ts` | Terminology inconsistency detection (1.5)        |
-| `packages/index/src/queries/dependencyDepth.ts`    | Transitive import depth + fan-in/fan-out risk (3.3)     |
-| `packages/index/src/queries/boundaryViolations.ts` | Cross-package internal import detection (3.4)           |
-| `packages/index/src/queries/layersInfer.ts`        | Auto-infer architectural layers from import graph (5.1a)|
-| `packages/index/src/queries/layersCheck.ts`        | Validate imports against layer configuration (5.1b)     |
-| `packages/index/src/queries/archReport.ts`         | Architecture report data collector (10.1)               |
-| `packages/index/src/export/htmlReport.ts`          | Standalone HTML architecture report renderer (10.1)     |
-| `packages/index/src/incremental.ts`                | Content-hash incremental updates                        |
-| `packages/analyzer/src/kwg/heuristicExtractor.ts`  | Keyword extraction (dictionary, depth)                  |
-| `packages/analyzer/src/kwg/kwxStage.ts`            | KWX stage options (depth, dictionary)                   |
-| `packages/analyzer/src/stages/languageRegistry.ts` | LanguageAdapter interface + LanguageRegistry class      |
-| `packages/python-parser/src/extractor.ts`          | Python AST extractor (tree-sitter-python)               |
-| `packages/cli/src/commands/indexBuild.ts`          | `iw index build` CLI orchestrator                       |
-| `packages/cli/src/mcp/server.ts`                   | MCP server (6 KG + 25 CARI tools)                      |
+| File                                                     | Purpose                                                  |
+| -------------------------------------------------------- | -------------------------------------------------------- |
+| `packages/index/src/facade.ts`                           | CariIndex facade class + buildFromPaths orchestration    |
+| `packages/index/src/writer.ts`                           | SQLite index builder                                     |
+| `packages/index/src/annotator.ts`                        | Document→code annotation engine (IDF penalty)            |
+| `packages/index/src/idf.ts`                              | IDF scorer + stopword baseline (50 terms, ceiling 0.15)  |
+| `packages/index/src/schema.ts`                           | SQLite table definitions                                 |
+| `packages/index/src/queries/retrieve.ts`                 | Ranked file retrieval                                    |
+| `packages/index/src/queries/connections.ts`              | Cross-layer connection discovery                         |
+| `packages/index/src/queries/check.ts`                    | CI drift detection                                       |
+| `packages/index/src/queries/report.ts`                   | Corpus-wide health report                                |
+| `packages/index/src/queries/clones.ts`                   | Exact + structural clone detection                       |
+| `packages/index/src/queries/imports.ts`                  | Circular imports + unused exports                        |
+| `packages/index/src/queries/hotspotPriority.ts`          | High-churn low-doc file ranking                          |
+| `packages/index/src/queries/todos.ts`                    | TODO/FIXME/HACK/XXX inventory                            |
+| `packages/index/src/queries/moduleCoverage.ts`           | Documentation coverage per directory                     |
+| `packages/index/src/queries/orphanedSections.ts`         | Doc sections with all-ungrounded mentions                |
+| `packages/index/src/queries/docCompleteness.ts`          | Per-doc completeness vs. referenced exports              |
+| `packages/index/src/queries/crossGroupDrift.ts`          | Cross-group entity coverage conflicts                    |
+| `packages/index/src/queries/hubs.ts`                     | God-node / hub analysis (degree centrality)              |
+| `packages/index/src/queries/communities.ts`              | Label-propagation community detection                    |
+| `packages/index/src/queries/surprises.ts`                | Surprising connection ranking (composite score)          |
+| `packages/index/src/queries/rationale.ts`                | WHY/NOTE/IMPORTANT/DESIGN rationale inventory            |
+| `packages/index/src/queries/terminologyInconsistency.ts` | Terminology inconsistency detection (1.5)                |
+| `packages/index/src/queries/dependencyDepth.ts`          | Transitive import depth + fan-in/fan-out risk (3.3)      |
+| `packages/index/src/queries/boundaryViolations.ts`       | Cross-package internal import detection (3.4)            |
+| `packages/index/src/queries/layersInfer.ts`              | Auto-infer architectural layers from import graph (5.1a) |
+| `packages/index/src/queries/layersCheck.ts`              | Validate imports against layer configuration (5.1b)      |
+| `packages/index/src/queries/archReport.ts`               | Architecture report data collector (10.1)                |
+| `packages/index/src/export/htmlReport.ts`                | Standalone HTML architecture report renderer (10.1)      |
+| `packages/index/src/incremental.ts`                      | Content-hash incremental updates                         |
+| `packages/analyzer/src/kwg/heuristicExtractor.ts`        | Keyword extraction (dictionary, depth)                   |
+| `packages/analyzer/src/kwg/kwxStage.ts`                  | KWX stage options (depth, dictionary)                    |
+| `packages/analyzer/src/stages/languageRegistry.ts`       | LanguageAdapter interface + LanguageRegistry class       |
+| `packages/python-parser/src/extractor.ts`                | Python AST extractor (tree-sitter-python)                |
+| `packages/cli/src/commands/indexBuild.ts`                | `iw index build` CLI orchestrator                        |
+| `packages/cli/src/mcp/server.ts`                         | MCP server (6 KG + 25 CARI tools)                        |
 
 ### SQLite Schema (`.iw/index.db`)
 
@@ -220,62 +220,62 @@ programmatic API.
 
 ### CARI Tools (local SQLite, no Neo4j or LLM)
 
-| Tool                     | Purpose                     | Key Parameters                         |
-| ------------------------ | --------------------------- | -------------------------------------- |
-| `cari_retrieve`          | Ranked file retrieval       | `query`, `scope?`, `limit?`            |
-| `cari_connections`       | Connection discovery + gaps | `entity`, `include?`, `limit?`         |
-| `cari_check`             | CI drift detection          | `changed`, `severity?`                 |
-| `cari_clones`            | Exact clone detection       | _(none)_                               |
-| `cari_structural_clones` | Type 2 clone detection      | _(none)_                               |
-| `cari_circular_imports`  | Import cycle detection      | _(none)_                               |
-| `cari_unused_exports`    | Unused exported symbols     | `limit?`                               |
-| `cari_hotspot_priority`  | High-churn low-doc files    | `limit?`                               |
-| `cari_todos`             | TODO/FIXME/HACK/XXX list    | `kind?`, `limit?`                      |
-| `cari_module_coverage`   | Coverage % per directory    | _(none)_                               |
-| `cari_orphaned_sections` | Ungrounded doc sections     | _(none)_                               |
-| `cari_doc_completeness`  | Per-doc completeness        | _(none)_                               |
-| `cari_cross_group_drift` | Cross-group conflicts       | _(none)_                               |
-| `cari_mentions_of`       | Entity → doc mentions       | `entityId`, `minConfidence?`, `limit?` |
-| `cari_annotations_for`   | File → all annotations      | `filePath`, `minConfidence?`, `limit?` |
-| `cari_test_coverage`     | Test→source mapping + gaps  | `limit?`                               |
-| `cari_hubs`              | God-node / hub analysis     | `limit?`                               |
-| `cari_communities`       | Community detection         | _(none)_                               |
-| `cari_surprises`         | Surprising connections      | `limit?`                               |
-| `cari_rationale`         | WHY/NOTE/IMPORTANT/DESIGN   | `kind?`, `limit?`                      |
-| `cari_terminology`       | Terminology inconsistency   | `limit?`                               |
-| `cari_dep_depth`         | Transitive import depth     | `limit?`                               |
-| `cari_boundary_violations` | Package boundary violations | _(none)_                             |
-| `cari_layers_infer`    | Auto-infer architectural layers | _(none)_                           |
-| `cari_layers_check`    | Validate imports vs. layer config | `allowSkipLayer?`                |
+| Tool                       | Purpose                           | Key Parameters                         |
+| -------------------------- | --------------------------------- | -------------------------------------- |
+| `cari_retrieve`            | Ranked file retrieval             | `query`, `scope?`, `limit?`            |
+| `cari_connections`         | Connection discovery + gaps       | `entity`, `include?`, `limit?`         |
+| `cari_check`               | CI drift detection                | `changed`, `severity?`                 |
+| `cari_clones`              | Exact clone detection             | _(none)_                               |
+| `cari_structural_clones`   | Type 2 clone detection            | _(none)_                               |
+| `cari_circular_imports`    | Import cycle detection            | _(none)_                               |
+| `cari_unused_exports`      | Unused exported symbols           | `limit?`                               |
+| `cari_hotspot_priority`    | High-churn low-doc files          | `limit?`                               |
+| `cari_todos`               | TODO/FIXME/HACK/XXX list          | `kind?`, `limit?`                      |
+| `cari_module_coverage`     | Coverage % per directory          | _(none)_                               |
+| `cari_orphaned_sections`   | Ungrounded doc sections           | _(none)_                               |
+| `cari_doc_completeness`    | Per-doc completeness              | _(none)_                               |
+| `cari_cross_group_drift`   | Cross-group conflicts             | _(none)_                               |
+| `cari_mentions_of`         | Entity → doc mentions             | `entityId`, `minConfidence?`, `limit?` |
+| `cari_annotations_for`     | File → all annotations            | `filePath`, `minConfidence?`, `limit?` |
+| `cari_test_coverage`       | Test→source mapping + gaps        | `limit?`                               |
+| `cari_hubs`                | God-node / hub analysis           | `limit?`                               |
+| `cari_communities`         | Community detection               | _(none)_                               |
+| `cari_surprises`           | Surprising connections            | `limit?`                               |
+| `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN         | `kind?`, `limit?`                      |
+| `cari_terminology`         | Terminology inconsistency         | `limit?`                               |
+| `cari_dep_depth`           | Transitive import depth           | `limit?`                               |
+| `cari_boundary_violations` | Package boundary violations       | _(none)_                               |
+| `cari_layers_infer`        | Auto-infer architectural layers   | _(none)_                               |
+| `cari_layers_check`        | Validate imports vs. layer config | `allowSkipLayer?`                      |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
 All CARI query functions are available as direct API calls, MCP tools, and CLI subcommands:
 
-| Function               | CLI Command                  | Purpose                                                  |
-| ---------------------- | ---------------------------- | -------------------------------------------------------- |
-| `clones()`             | `iw index clones`            | Exact clone detection (identical body hash)              |
-| `structuralClones()`   | `iw index structural-clones` | Type 2 clones (same control flow, different identifiers) |
-| `circularImports()`    | `iw index circular-imports`  | Import cycle detection                                   |
-| `unusedExports()`      | `iw index unused-exports`    | Exported symbols never imported                          |
-| `hotspotPriority()`    | `iw index hotspot-priority`  | High-churn low-doc files ranked by urgency               |
-| `todos()`              | `iw index todos`             | TODO/FIXME/HACK/XXX inventory                            |
-| `moduleCoverage()`     | `iw index module-coverage`   | Documentation coverage % per directory                   |
-| `orphanedSections()`   | `iw index orphaned-sections` | Doc sections with all-ungrounded mentions                |
-| `docCompleteness()`    | `iw index doc-completeness`  | Per-doc completeness vs. referenced exports              |
-| `crossGroupDrift()`    | `iw index cross-group-drift` | Entity coverage conflicts across doc groups              |
-| `mentionsOf()`         | `iw index mentions-of`       | Find doc mentions of a code or external entity           |
-| `annotationsForFile()` | `iw index annotations-for`   | List all annotations for a documentation file            |
-| `testCoverage()`       | `iw index test-coverage`     | Map test files to source files, find untested exports    |
-| `hubs()`               | `iw index hubs`              | Degree centrality across all edge types (god-node)       |
-| `communities()`        | `iw index communities`       | Label-propagation community detection                    |
-| `surprises()`          | `iw index surprises`         | Surprising connection ranking (composite score)          |
-| `rationale()`          | `iw index rationale`         | WHY/NOTE/IMPORTANT/DESIGN rationale inventory            |
-| `terminologyInconsistency()` | `iw index terminology` | Detect different doc names for the same code symbol      |
-| `dependencyDepth()`    | `iw index dep-depth`         | Transitive import depth + fan-in/fan-out risk            |
-| `boundaryViolations()` | `iw index boundary-violations` | Cross-package internal import detection                |
-| `layersInfer()`        | `iw index layers-infer`        | Auto-infer architectural layers from import graph      |
-| `layersCheck()`        | `iw index layers-check`        | Validate imports against layer configuration           |
+| Function                     | CLI Command                    | Purpose                                                  |
+| ---------------------------- | ------------------------------ | -------------------------------------------------------- |
+| `clones()`                   | `iw index clones`              | Exact clone detection (identical body hash)              |
+| `structuralClones()`         | `iw index structural-clones`   | Type 2 clones (same control flow, different identifiers) |
+| `circularImports()`          | `iw index circular-imports`    | Import cycle detection                                   |
+| `unusedExports()`            | `iw index unused-exports`      | Exported symbols never imported                          |
+| `hotspotPriority()`          | `iw index hotspot-priority`    | High-churn low-doc files ranked by urgency               |
+| `todos()`                    | `iw index todos`               | TODO/FIXME/HACK/XXX inventory                            |
+| `moduleCoverage()`           | `iw index module-coverage`     | Documentation coverage % per directory                   |
+| `orphanedSections()`         | `iw index orphaned-sections`   | Doc sections with all-ungrounded mentions                |
+| `docCompleteness()`          | `iw index doc-completeness`    | Per-doc completeness vs. referenced exports              |
+| `crossGroupDrift()`          | `iw index cross-group-drift`   | Entity coverage conflicts across doc groups              |
+| `mentionsOf()`               | `iw index mentions-of`         | Find doc mentions of a code or external entity           |
+| `annotationsForFile()`       | `iw index annotations-for`     | List all annotations for a documentation file            |
+| `testCoverage()`             | `iw index test-coverage`       | Map test files to source files, find untested exports    |
+| `hubs()`                     | `iw index hubs`                | Degree centrality across all edge types (god-node)       |
+| `communities()`              | `iw index communities`         | Label-propagation community detection                    |
+| `surprises()`                | `iw index surprises`           | Surprising connection ranking (composite score)          |
+| `rationale()`                | `iw index rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory            |
+| `terminologyInconsistency()` | `iw index terminology`         | Detect different doc names for the same code symbol      |
+| `dependencyDepth()`          | `iw index dep-depth`           | Transitive import depth + fan-in/fan-out risk            |
+| `boundaryViolations()`       | `iw index boundary-violations` | Cross-package internal import detection                  |
+| `layersInfer()`              | `iw index layers-infer`        | Auto-infer architectural layers from import graph        |
+| `layersCheck()`              | `iw index layers-check`        | Validate imports against layer configuration             |
 
 ### Entity Bridge
 

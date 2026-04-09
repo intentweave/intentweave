@@ -50,7 +50,10 @@ export function hubsFromDb(db: Database.Database): HubAnalysisResult {
   }>;
 
   for (const row of annotationRows) {
-    annotationDegrees.set(row.name, (annotationDegrees.get(row.name) ?? 0) + row.cnt);
+    annotationDegrees.set(
+      row.name,
+      (annotationDegrees.get(row.name) ?? 0) + row.cnt,
+    );
     if (!symbolMeta.has(row.name)) {
       symbolMeta.set(row.name, { kind: row.kind, filePath: row.file_path });
     }
@@ -60,14 +63,18 @@ export function hubsFromDb(db: Database.Database): HubAnalysisResult {
   const importDegrees = new Map<string, number>();
 
   const importRows = db
-    .prepare(
-      `SELECT source_file, target_file FROM imports`,
-    )
+    .prepare(`SELECT source_file, target_file FROM imports`)
     .all() as Array<{ source_file: string; target_file: string }>;
 
   for (const row of importRows) {
-    importDegrees.set(row.source_file, (importDegrees.get(row.source_file) ?? 0) + 1);
-    importDegrees.set(row.target_file, (importDegrees.get(row.target_file) ?? 0) + 1);
+    importDegrees.set(
+      row.source_file,
+      (importDegrees.get(row.source_file) ?? 0) + 1,
+    );
+    importDegrees.set(
+      row.target_file,
+      (importDegrees.get(row.target_file) ?? 0) + 1,
+    );
   }
 
   // ── Co-occurrence degree: how many co-occurrence edges per entity ──
@@ -116,9 +123,9 @@ export function hubsFromDb(db: Database.Database): HubAnalysisResult {
 
   // File entries
   const fileSet = new Set<string>();
-  const allFiles = db
-    .prepare(`SELECT path FROM files`)
-    .all() as Array<{ path: string }>;
+  const allFiles = db.prepare(`SELECT path FROM files`).all() as Array<{
+    path: string;
+  }>;
   for (const f of allFiles) fileSet.add(f.path);
 
   // ── Build hub entries ──

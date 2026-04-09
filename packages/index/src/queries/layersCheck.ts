@@ -57,10 +57,7 @@ export function layersCheckFromDb(
   }
 
   // Build file → layer assignment using glob patterns
-  const fileToLayer = new Map<
-    string,
-    { name: string; index: number }
-  >();
+  const fileToLayer = new Map<string, { name: string; index: number }>();
 
   // Collect all known files from the DB
   const allKnownFiles = (

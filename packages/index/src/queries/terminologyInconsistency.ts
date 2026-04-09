@@ -44,7 +44,10 @@ export function terminologyInconsistency(
  * Lowercases and collapses whitespace, but preserves the original for display.
  */
 function normaliseMention(text: string): string {
-  return text.toLowerCase().replace(/[\s_-]+/g, " ").trim();
+  return text
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .trim();
 }
 
 /**

@@ -383,21 +383,21 @@ describe("layersCheck", () => {
     const orphanDb = new Database(":memory:");
     initSchema(orphanDb);
     orphanDb
-      .prepare(
-        `INSERT INTO files (path, is_doc, is_hotspot) VALUES (?, 0, 0)`,
-      )
+      .prepare(`INSERT INTO files (path, is_doc, is_hotspot) VALUES (?, 0, 0)`)
       .run("random/file.ts");
     orphanDb
-      .prepare(
-        `INSERT INTO files (path, is_doc, is_hotspot) VALUES (?, 0, 0)`,
-      )
+      .prepare(`INSERT INTO files (path, is_doc, is_hotspot) VALUES (?, 0, 0)`)
       .run("packages/core/src/x.ts");
     orphanDb
       .prepare(
         `INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
          VALUES (?, ?, ?, 1, '[]')`,
       )
-      .run("random/file.ts", "packages/core/src/x.ts", "../../packages/core/src/x");
+      .run(
+        "random/file.ts",
+        "packages/core/src/x.ts",
+        "../../packages/core/src/x",
+      );
     const result = layersCheckFromDb(orphanDb, config);
     // random/file.ts has no layer, so no violation
     expect(result.totalViolations).toBe(0);

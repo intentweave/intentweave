@@ -110,9 +110,7 @@ describe("archReport", () => {
 
   it("assigns layer indices to nodes", () => {
     const result = archReportFromDb(db);
-    const typesNode = result.nodes.find(
-      (n) => n.filePath === "core/types.ts",
-    )!;
+    const typesNode = result.nodes.find((n) => n.filePath === "core/types.ts")!;
     const cliNode = result.nodes.find((n) => n.filePath === "app/cli.ts")!;
     // Foundation should have lower index than entrypoint
     expect(typesNode.layerIndex).toBeLessThan(cliNode.layerIndex);
@@ -150,17 +148,13 @@ describe("archReport", () => {
 
   it("fills fileName from filePath", () => {
     const result = archReportFromDb(db);
-    const typesNode = result.nodes.find(
-      (n) => n.filePath === "core/types.ts",
-    )!;
+    const typesNode = result.nodes.find((n) => n.filePath === "core/types.ts")!;
     expect(typesNode.fileName).toBe("types.ts");
   });
 
   it("assigns transitiveDependents from depth analysis", () => {
     const result = archReportFromDb(db);
-    const typesNode = result.nodes.find(
-      (n) => n.filePath === "core/types.ts",
-    )!;
+    const typesNode = result.nodes.find((n) => n.filePath === "core/types.ts")!;
     // types.ts is imported by nearly everything
     expect(typesNode.transitiveDependents).toBeGreaterThan(0);
   });

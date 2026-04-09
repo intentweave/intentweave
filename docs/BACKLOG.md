@@ -153,6 +153,7 @@ fan-in/fan-out metrics (from 3.3) to cluster files into tiers. Outputs a draft
 "as-should" definition.
 
 Algorithm:
+
 1. Build the import DAG (same as 3.3's `dependencyDepth`)
 2. Topological-sort the DAG → assign each file a depth rank
 3. Bucket depth ranks into layers (e.g., 0–1 = "foundation", 2–3 = "core", etc.)
@@ -165,6 +166,7 @@ CLI: `iw index layers-infer`. MCP: `cari_layers_infer`.
 #### 5.1b Layer Check _(CARI, S)_
 
 Validate all imports against a committed `.iw/layers.yaml` config. Detect:
+
 - **Reverse imports**: lower layer importing from higher layer
 - **Skip-layer imports**: layer N importing from layer N+2 (skipping N+1)
 
@@ -620,9 +622,9 @@ CLI: `iw index export --obsidian`.
 | 4.1  | Ownership drift                  | CARI | S      | Medium | TCG data (exists)    |         |
 | 4.2  | Change coupling anomalies        | CARI | S      | Medium | TCG data (exists)    |         |
 | 1.5  | Terminology inconsistency        | CARI | M      | Medium | None                 | ✅ Done |
-| 5.1a | Layer inference                | CARI | M      | High   | 9.1, 3.3             | ✅ Done |
-| 5.1b | Layer check                    | CARI | S      | High   | 5.1a                 | ✅ Done |
-| 5.1c | Layer naming suggestions        | KG   | S      | Low    | 5.1a                 | ✅      |
+| 5.1a | Layer inference                  | CARI | M      | High   | 9.1, 3.3             | ✅ Done |
+| 5.1b | Layer check                      | CARI | S      | High   | 5.1a                 | ✅ Done |
+| 5.1c | Layer naming suggestions         | KG   | S      | Low    | 5.1a                 | ✅      |
 | 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
 | 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |
 | 5.4  | API surface changelog            | CARI | M      | Medium | Git history          |         |
@@ -645,7 +647,7 @@ CLI: `iw index export --obsidian`.
 | 9.2  | God-node / hub analysis          | CARI | S      | High   | None                 | ✅ Done |
 | 9.3  | Surprising connection ranking    | CARI | M      | High   | 9.1                  | ✅ Done |
 | 9.4  | Rationale extraction             | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
-| 10.1 | Standalone HTML architecture rpt | CARI | M      | High   | 5.1a, 9.1, 3.3      | ✅ Done |
+| 10.1 | Standalone HTML architecture rpt | CARI | M      | High   | 5.1a, 9.1, 3.3       | ✅ Done |
 | 10.2 | Watch mode                       | CARI | M      | Medium | incremental (exists) |         |
 | 10.3 | Git hooks integration            | CARI | S      | Medium | 10.2                 |         |
 | 10.4 | Obsidian vault export            | CARI | M      | Low    | 9.1                  |         |

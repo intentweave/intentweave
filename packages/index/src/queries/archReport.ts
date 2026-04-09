@@ -35,7 +35,10 @@ export interface ArchReportOptions {
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
-export function archReport(dbPath: string, options?: ArchReportOptions): ArchReportData {
+export function archReport(
+  dbPath: string,
+  options?: ArchReportOptions,
+): ArchReportData {
   const db = openIndex(dbPath);
   try {
     return archReportFromDb(db, options);
@@ -44,7 +47,10 @@ export function archReport(dbPath: string, options?: ArchReportOptions): ArchRep
   }
 }
 
-export function archReportFromDb(db: Database.Database, options?: ArchReportOptions): ArchReportData {
+export function archReportFromDb(
+  db: Database.Database,
+  options?: ArchReportOptions,
+): ArchReportData {
   // 1. Gather data from underlying queries
   const layers = layersInferFromDb(db);
   const comms = communitiesFromDb(db);
@@ -195,9 +201,7 @@ export function archReportFromDb(db: Database.Database, options?: ArchReportOpti
   }
 
   // 8. Build layer / community summaries
-  const nameMap = new Map(
-    (options?.layerNames ?? []).map((n) => [n.index, n]),
-  );
+  const nameMap = new Map((options?.layerNames ?? []).map((n) => [n.index, n]));
   const layerSummary = layers.layers.map((l) => {
     const named = nameMap.get(l.index);
     return {
@@ -257,15 +261,16 @@ export function archReportFromDb(db: Database.Database, options?: ArchReportOpti
   }
 
   // Build directory name map from LLM output
-  const dirNames: Record<string, { name: string; description: string }> | undefined =
-    options?.directoryNames?.length
-      ? Object.fromEntries(
-          options.directoryNames.map((d) => [
-            d.path,
-            { name: d.name, description: d.description },
-          ]),
-        )
-      : undefined;
+  const dirNames:
+    | Record<string, { name: string; description: string }>
+    | undefined = options?.directoryNames?.length
+    ? Object.fromEntries(
+        options.directoryNames.map((d) => [
+          d.path,
+          { name: d.name, description: d.description },
+        ]),
+      )
+    : undefined;
 
   return {
     meta: {

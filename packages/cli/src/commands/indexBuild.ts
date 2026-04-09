@@ -75,7 +75,10 @@ const BAR = "██████████████████████�
 
 const indexBuildSubcommand = new Command("build")
   .description("Build CARI index: KWG + TCG + AX → SQLite (.iw/index.db)")
-  .argument("[paths...]", "Document file(s) or directories to analyze (default: .)")
+  .argument(
+    "[paths...]",
+    "Document file(s) or directories to analyze (default: .)",
+  )
   .option("-s, --session <name>", "Session name (default: directory name)")
   .option(
     "--depth <depth>",
@@ -1367,9 +1370,7 @@ const indexHubsSubcommand = new Command("hubs")
     const limit = parseInt(opts.limit, 10);
     const items = result.hubs.slice(0, limit);
 
-    console.log(
-      chalk.blue(`\n  ▸ Top ${items.length} hubs (by total degree)`),
-    );
+    console.log(chalk.blue(`\n  ▸ Top ${items.length} hubs (by total degree)`));
     console.log(
       chalk.gray(
         "    Entity                                        Kind       Ann  Imp  CoOcc  CoChg  Total",
@@ -1429,9 +1430,7 @@ const indexCommunitiesSubcommand = new Command("communities")
         );
       }
       if (c.members.length > 10) {
-        console.log(
-          chalk.gray(`      … and ${c.members.length - 10} more`),
-        );
+        console.log(chalk.gray(`      … and ${c.members.length - 10} more`));
       }
     }
     console.log();
@@ -1478,9 +1477,7 @@ const indexSurprisesSubcommand = new Command("surprises")
         chalk.white(`\n    ${s.entityA} ↔ ${s.entityB}`) +
           chalk.yellow(` (score: ${s.score})`),
       );
-      console.log(
-        chalk.gray(`      ${s.reason}`),
-      );
+      console.log(chalk.gray(`      ${s.reason}`));
       console.log(
         chalk.gray(
           `      cross-layer=${s.crossLayerWeight} community=${s.communityDistance} rarity=${s.inverseFrequency}`,
@@ -1534,7 +1531,9 @@ const indexRationaleSubcommand = new Command("rationale")
       .map(([k, v]) => `${k}: ${v}`)
       .join(", ");
     console.log(
-      chalk.blue(`\n  ▸ ${result.totalCount} rationale comments (${kindSummary})`),
+      chalk.blue(
+        `\n  ▸ ${result.totalCount} rationale comments (${kindSummary})`,
+      ),
     );
 
     for (const r of limited) {
@@ -1603,7 +1602,8 @@ const indexTerminologySubcommand = new Command("terminology")
       console.log(chalk.gray(`    ${inc.filePath}`));
       console.log(chalk.gray("    Variants:"));
       for (const v of inc.variants) {
-        const isCanonical = v.text === inc.symbolName ? chalk.green(" ← canonical") : "";
+        const isCanonical =
+          v.text === inc.symbolName ? chalk.green(" ← canonical") : "";
         console.log(
           `      "${v.text}" × ${v.count} (avg conf: ${v.avgConfidence})${isCanonical}`,
         );
@@ -1632,7 +1632,9 @@ const indexDepDepthSubcommand = new Command("dep-depth")
 
     if (result.totalFiles === 0) {
       console.log(
-        chalk.gray("\n  No import graph data available. Ensure the index is built.\n"),
+        chalk.gray(
+          "\n  No import graph data available. Ensure the index is built.\n",
+        ),
       );
       return;
     }
@@ -1713,9 +1715,7 @@ const indexBoundaryViolationsSubcommand = new Command("boundary-violations")
 
     console.log(chalk.gray("\n    Details:"));
     for (const v of result.violations) {
-      console.log(
-        `    ${chalk.yellow("⚠")} ${v.sourceFile} → ${v.targetFile}`,
-      );
+      console.log(`    ${chalk.yellow("⚠")} ${v.sourceFile} → ${v.targetFile}`);
       console.log(chalk.gray(`      ${v.reason}`));
     }
     console.log();
@@ -1724,9 +1724,7 @@ const indexBoundaryViolationsSubcommand = new Command("boundary-violations")
 // ── iw index layers-infer ─────────────────────────────────────
 
 const indexLayersInferSubcommand = new Command("layers-infer")
-  .description(
-    "Auto-infer architectural layers from the import graph topology",
-  )
+  .description("Auto-infer architectural layers from the import graph topology")
   .option("--db <path>", "Path to index.db")
   .option(
     "-o, --output <path>",
@@ -1768,9 +1766,7 @@ const indexLayersInferSubcommand = new Command("layers-infer")
         console.log(chalk.gray(`      ${f}`));
       }
       if (layer.files.length > 8) {
-        console.log(
-          chalk.gray(`      … and ${layer.files.length - 8} more`),
-        );
+        console.log(chalk.gray(`      … and ${layer.files.length - 8} more`));
       }
     }
 
@@ -1877,9 +1873,7 @@ const indexLayersCheckSubcommand = new Command("layers-check")
 
     for (const v of result.violations) {
       const icon = v.type === "reverse" ? chalk.red("↑") : chalk.yellow("⤴");
-      console.log(
-        `    ${icon} ${v.sourceFile} → ${v.targetFile}`,
-      );
+      console.log(`    ${icon} ${v.sourceFile} → ${v.targetFile}`);
       console.log(chalk.gray(`      ${v.reason}`));
     }
     console.log();
@@ -1906,9 +1900,7 @@ function parseLayersYaml(content: string): LayerConfig {
     if (line === "" || line.startsWith("#")) continue;
 
     // Detect "- name:" which starts a new layer
-    const nameMatch = line.match(
-      /^-\s*name:\s*["']?([^"'\n]+?)["']?\s*$/,
-    );
+    const nameMatch = line.match(/^-\s*name:\s*["']?([^"'\n]+?)["']?\s*$/);
     if (nameMatch) {
       if (currentLayer) layers.push(currentLayer);
       currentLayer = { name: nameMatch[1], patterns: [] };
@@ -1917,9 +1909,7 @@ function parseLayersYaml(content: string): LayerConfig {
     }
 
     // Detect "name:" without leading dash (alternative format)
-    const plainNameMatch = line.match(
-      /^name:\s*["']?([^"'\n]+?)["']?\s*$/,
-    );
+    const plainNameMatch = line.match(/^name:\s*["']?([^"'\n]+?)["']?\s*$/);
     if (plainNameMatch && !line.startsWith("-")) {
       if (currentLayer) layers.push(currentLayer);
       currentLayer = { name: plainNameMatch[1], patterns: [] };
@@ -1959,11 +1949,7 @@ const indexExportSubcommand = new Command("export")
   .description("Export architecture report as a self-contained HTML file")
   .option("--db <path>", "Path to index.db")
   .option("--html", "Generate HTML architecture report (default)", true)
-  .option(
-    "-o, --output <path>",
-    "Output file path",
-    "architecture.html",
-  )
+  .option("-o, --output <path>", "Output file path", "architecture.html")
   .option(
     "--provider <name>",
     "LLM provider for layer naming: openai | smart-mock (omit for heuristic labels only)",
@@ -1985,9 +1971,8 @@ const indexExportSubcommand = new Command("export")
       let layerNames;
       let directoryNames;
       if (opts.provider) {
-        const { OpenAILLMProvider, SmartMockLLMProvider } = await import(
-          "@intentweave/analyzer/llm"
-        );
+        const { OpenAILLMProvider, SmartMockLLMProvider } =
+          await import("@intentweave/analyzer/llm");
         const layers = layersInfer(dbPath);
         let llm;
         if (opts.provider === "openai") {
@@ -2005,9 +1990,7 @@ const indexExportSubcommand = new Command("export")
           llm = new SmartMockLLMProvider({ workspaceKey: "export" });
         }
         console.log(
-          chalk.blue(
-            `Naming layers with ${opts.provider} (${opts.model})…`,
-          ),
+          chalk.blue(`Naming layers with ${opts.provider} (${opts.model})…`),
         );
         const naming = await nameLayers(layers, llm);
         layerNames = naming.layers;
@@ -2027,9 +2010,7 @@ const indexExportSubcommand = new Command("export")
           `${data.summary.totalCommunities} communities`,
       );
       if (data.summary.layerViolations > 0) {
-        console.log(
-          `  ⚠ ${data.summary.layerViolations} layer violation(s)`,
-        );
+        console.log(`  ⚠ ${data.summary.layerViolations} layer violation(s)`);
       }
       if (data.summary.boundaryViolations > 0) {
         console.log(

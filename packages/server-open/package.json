@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/server-open",
   "version": "0.6.0",
-  "description": "IntentWeave open track routes \u2014 pipeline execution, KG query, context, impact analysis, doc-health, xlink",
+  "description": "IntentWeave open track routes — pipeline execution, KG query, context, impact analysis, doc-health, xlink",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -45,7 +45,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Open track API routes \u2014 pipeline, query, context, impact, doc-health. Always open-source."
+    "description": "Open track API routes — pipeline, query, context, impact, doc-health. Always open-source."
   },
   "license": "Apache-2.0",
   "repository": {

@@ -39,10 +39,24 @@ function seedFixtures(d: Database.Database) {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  insertSym.run("s1", "AuthService", "class", "src/auth/service.ts", 10, "exported");
+  insertSym.run(
+    "s1",
+    "AuthService",
+    "class",
+    "src/auth/service.ts",
+    10,
+    "exported",
+  );
   insertSym.run("s2", "UserRepo", "class", "src/user/repo.ts", 5, "exported");
   insertSym.run("s3", "DatabasePool", "class", "src/db/pool.ts", 1, "exported");
-  insertSym.run("s4", "formatDate", "function", "src/utils/date.ts", 20, "exported");
+  insertSym.run(
+    "s4",
+    "formatDate",
+    "function",
+    "src/utils/date.ts",
+    20,
+    "exported",
+  );
 
   // ── Annotations ──
   const insertAnn = d.prepare(`
@@ -52,24 +66,52 @@ function seedFixtures(d: Database.Database) {
 
   // AuthService: inconsistent — 4 variants (critical)
   insertAnn.run("docs/auth.md", 5, "AuthService", "s1", 0.95, "code-span");
-  insertAnn.run("docs/auth.md", 10, "AuthService", "s1", 0.90, "code-span");
-  insertAnn.run("docs/overview.md", 3, "auth service", "s1", 0.80, "identifier");
-  insertAnn.run("docs/overview.md", 15, "authentication module", "s1", 0.70, "dictionary");
-  insertAnn.run("docs/tutorial.md", 8, "Auth Service", "s1", 0.75, "identifier");
+  insertAnn.run("docs/auth.md", 10, "AuthService", "s1", 0.9, "code-span");
+  insertAnn.run("docs/overview.md", 3, "auth service", "s1", 0.8, "identifier");
+  insertAnn.run(
+    "docs/overview.md",
+    15,
+    "authentication module",
+    "s1",
+    0.7,
+    "dictionary",
+  );
+  insertAnn.run(
+    "docs/tutorial.md",
+    8,
+    "Auth Service",
+    "s1",
+    0.75,
+    "identifier",
+  );
 
   // UserRepo: inconsistent — 2 variants (info)
-  insertAnn.run("docs/user.md", 5, "UserRepo", "s2", 0.90, "code-span");
+  insertAnn.run("docs/user.md", 5, "UserRepo", "s2", 0.9, "code-span");
   insertAnn.run("docs/user.md", 10, "UserRepo", "s2", 0.85, "code-span");
-  insertAnn.run("docs/overview.md", 20, "user repository", "s2", 0.70, "dictionary");
+  insertAnn.run(
+    "docs/overview.md",
+    20,
+    "user repository",
+    "s2",
+    0.7,
+    "dictionary",
+  );
 
   // DatabasePool: consistent — only 1 variant (should NOT appear)
-  insertAnn.run("docs/db.md", 5, "DatabasePool", "s3", 0.90, "code-span");
+  insertAnn.run("docs/db.md", 5, "DatabasePool", "s3", 0.9, "code-span");
   insertAnn.run("docs/db.md", 10, "DatabasePool", "s3", 0.85, "code-span");
 
   // formatDate: inconsistent — 3 variants (warning)
-  insertAnn.run("docs/utils.md", 5, "formatDate", "s4", 0.90, "code-span");
-  insertAnn.run("docs/utils.md", 12, "format date", "s4", 0.70, "identifier");
-  insertAnn.run("docs/overview.md", 30, "date formatter", "s4", 0.60, "dictionary");
+  insertAnn.run("docs/utils.md", 5, "formatDate", "s4", 0.9, "code-span");
+  insertAnn.run("docs/utils.md", 12, "format date", "s4", 0.7, "identifier");
+  insertAnn.run(
+    "docs/overview.md",
+    30,
+    "date formatter",
+    "s4",
+    0.6,
+    "dictionary",
+  );
 }
 
 // =============================================================================
@@ -181,7 +223,10 @@ describe("terminologyInconsistency", () => {
   });
 
   it("returns empty result on empty database", () => {
-    const emptyPath = path.join(os.tmpdir(), `cari-terminology-empty-${Date.now()}.db`);
+    const emptyPath = path.join(
+      os.tmpdir(),
+      `cari-terminology-empty-${Date.now()}.db`,
+    );
     const emptyDb = new Database(emptyPath);
     initSchema(emptyDb);
     try {
@@ -197,14 +242,29 @@ describe("terminologyInconsistency", () => {
 
   it("ignores low-confidence annotations", () => {
     // Add a very low confidence annotation
-    const tmpPath = path.join(os.tmpdir(), `cari-terminology-conf-${Date.now()}.db`);
+    const tmpPath = path.join(
+      os.tmpdir(),
+      `cari-terminology-conf-${Date.now()}.db`,
+    );
     const tmpDb = new Database(tmpPath);
     initSchema(tmpDb);
 
-    tmpDb.prepare(`INSERT INTO symbols (id, name, kind, file_path, line, export) VALUES (?, ?, ?, ?, ?, ?)`).run("x1", "Config", "class", "src/config.ts", 1, "exported");
+    tmpDb
+      .prepare(
+        `INSERT INTO symbols (id, name, kind, file_path, line, export) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run("x1", "Config", "class", "src/config.ts", 1, "exported");
     // All mentions use the same text but one is very low confidence with different text
-    tmpDb.prepare(`INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source) VALUES (?, ?, ?, ?, ?, ?)`).run("docs/a.md", 1, "Config", "x1", 0.9, "code-span");
-    tmpDb.prepare(`INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source) VALUES (?, ?, ?, ?, ?, ?)`).run("docs/b.md", 2, "config thingy", "x1", 0.2, "dictionary");
+    tmpDb
+      .prepare(
+        `INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run("docs/a.md", 1, "Config", "x1", 0.9, "code-span");
+    tmpDb
+      .prepare(
+        `INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run("docs/b.md", 2, "config thingy", "x1", 0.2, "dictionary");
 
     try {
       const result = terminologyInconsistencyFromDb(tmpDb);

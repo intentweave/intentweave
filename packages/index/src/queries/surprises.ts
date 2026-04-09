@@ -14,7 +14,10 @@
  */
 
 import type Database from "better-sqlite3";
-import type { SurprisingConnectionsResult, SurprisingConnection } from "../types.js";
+import type {
+  SurprisingConnectionsResult,
+  SurprisingConnection,
+} from "../types.js";
 import { openIndex } from "./shared.js";
 import { communityLabelsFromDb } from "./communities.js";
 
@@ -38,9 +41,7 @@ function loadEdges(db: Database.Database): RawEdge[] {
 
   // Co-occurrences: doc layer (entities co-mentioned in documentation)
   const coOccRows = db
-    .prepare(
-      `SELECT entity_a, entity_b, score, source FROM co_occurrences`,
-    )
+    .prepare(`SELECT entity_a, entity_b, score, source FROM co_occurrences`)
     .all() as Array<{
     entity_a: string;
     entity_b: string;
@@ -115,7 +116,11 @@ function computeSurprises(
     const aIsFile = isFilePath(edge.entityA);
     const bIsFile = isFilePath(edge.entityB);
     const isCrossType = aIsFile !== bIsFile;
-    const crossLayerWeight = isCrossType ? 1.0 : edge.layer === "doc" ? 0.6 : 0.3;
+    const crossLayerWeight = isCrossType
+      ? 1.0
+      : edge.layer === "doc"
+        ? 0.6
+        : 0.3;
 
     // ── (b) Community distance ──
     const commA = communityLabels.get(edge.entityA);
@@ -137,7 +142,7 @@ function computeSurprises(
     // ── Composite score ──
     const score =
       0.35 * crossLayerWeight +
-      0.40 * communityDistance +
+      0.4 * communityDistance +
       0.25 * inverseFrequency;
 
     // ── Plain-English reason ──

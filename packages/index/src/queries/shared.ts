@@ -100,9 +100,9 @@ export function buildImportGraph(db: Database.Database): {
   }>;
 
   const knownFiles = new Set(
-    (
-      db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>
-    ).map((r) => r.path),
+    (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
+      (r) => r.path,
+    ),
   );
 
   const forward = new Map<string, Set<string>>();

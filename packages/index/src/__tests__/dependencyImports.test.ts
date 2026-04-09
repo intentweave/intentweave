@@ -289,7 +289,11 @@ describe("boundaryViolations", () => {
     );
 
     // Not in a package (top-level file → no violation)
-    ins.run("scripts/build.ts", "packages/core/src/types.ts", "../packages/core/src/types");
+    ins.run(
+      "scripts/build.ts",
+      "packages/core/src/types.ts",
+      "../packages/core/src/types",
+    );
   }
 
   it("detects cross-package internal imports", () => {
@@ -325,7 +329,8 @@ describe("boundaryViolations", () => {
   it("detects apps→packages boundary violations", () => {
     const result = boundaryViolationsFromDb(db);
     const appViolation = result.violations.find(
-      (v) => v.sourceFile === "apps/server/src/routes.ts" &&
+      (v) =>
+        v.sourceFile === "apps/server/src/routes.ts" &&
         v.targetPackage === "packages/cli",
     );
     expect(appViolation).toBeDefined();
@@ -370,7 +375,10 @@ describe("boundaryViolations", () => {
   });
 
   it("returns empty result when no violations exist", () => {
-    const tmpPath = path.join(os.tmpdir(), `cari-boundary-empty-${Date.now()}.db`);
+    const tmpPath = path.join(
+      os.tmpdir(),
+      `cari-boundary-empty-${Date.now()}.db`,
+    );
     const tmpDb = new Database(tmpPath);
     initSchema(tmpDb);
 
@@ -380,11 +388,7 @@ describe("boundaryViolations", () => {
         `INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
          VALUES (?, ?, ?, 1, '[]')`,
       )
-      .run(
-        "packages/core/src/a.ts",
-        "packages/core/src/b.ts",
-        "./b",
-      );
+      .run("packages/core/src/a.ts", "packages/core/src/b.ts", "./b");
 
     try {
       const result = boundaryViolationsFromDb(tmpDb);

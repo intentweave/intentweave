@@ -17,7 +17,10 @@ import * as path from "path";
 import * as os from "os";
 import { initSchema } from "../schema.js";
 import { hubsFromDb } from "../queries/hubs.js";
-import { communitiesFromDb, communityLabelsFromDb } from "../queries/communities.js";
+import {
+  communitiesFromDb,
+  communityLabelsFromDb,
+} from "../queries/communities.js";
 import { surprisesFromDb } from "../queries/surprises.js";
 import { rationaleFromDb } from "../queries/rationale.js";
 
@@ -47,11 +50,81 @@ function seedFixtures(d: Database.Database) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertSym.run("s1", "AuthService", "class", null, "class AuthService", "src/auth/service.ts", 10, 100, "exported", null, null, null, null);
-  insertSym.run("s2", "UserRepo", "class", null, "class UserRepo", "src/user/repo.ts", 5, 80, "exported", null, null, null, null);
-  insertSym.run("s3", "DatabasePool", "class", null, "class DatabasePool", "src/db/pool.ts", 1, 50, "exported", null, null, null, null);
-  insertSym.run("s4", "AppConfig", "class", null, "class AppConfig", "src/config.ts", 1, 30, "exported", null, null, null, null);
-  insertSym.run("s5", "Logger", "class", null, "class Logger", "src/util/logger.ts", 1, 40, "exported", null, null, null, null);
+  insertSym.run(
+    "s1",
+    "AuthService",
+    "class",
+    null,
+    "class AuthService",
+    "src/auth/service.ts",
+    10,
+    100,
+    "exported",
+    null,
+    null,
+    null,
+    null,
+  );
+  insertSym.run(
+    "s2",
+    "UserRepo",
+    "class",
+    null,
+    "class UserRepo",
+    "src/user/repo.ts",
+    5,
+    80,
+    "exported",
+    null,
+    null,
+    null,
+    null,
+  );
+  insertSym.run(
+    "s3",
+    "DatabasePool",
+    "class",
+    null,
+    "class DatabasePool",
+    "src/db/pool.ts",
+    1,
+    50,
+    "exported",
+    null,
+    null,
+    null,
+    null,
+  );
+  insertSym.run(
+    "s4",
+    "AppConfig",
+    "class",
+    null,
+    "class AppConfig",
+    "src/config.ts",
+    1,
+    30,
+    "exported",
+    null,
+    null,
+    null,
+    null,
+  );
+  insertSym.run(
+    "s5",
+    "Logger",
+    "class",
+    null,
+    "class Logger",
+    "src/util/logger.ts",
+    1,
+    40,
+    "exported",
+    null,
+    null,
+    null,
+    null,
+  );
 
   // ── Annotations ──
   const insertAnn = d.prepare(`
@@ -62,7 +135,15 @@ function seedFixtures(d: Database.Database) {
   // AuthService mentioned a lot (hub)
   insertAnn.run("docs/auth.md", 5, "AuthService", "s1", 0.9, "code-span", 0.5);
   insertAnn.run("docs/auth.md", 10, "AuthService", "s1", 0.9, "code-span", 0.5);
-  insertAnn.run("docs/overview.md", 3, "AuthService", "s1", 0.8, "heading", 0.4);
+  insertAnn.run(
+    "docs/overview.md",
+    3,
+    "AuthService",
+    "s1",
+    0.8,
+    "heading",
+    0.4,
+  );
   insertAnn.run("docs/auth.md", 15, "UserRepo", "s2", 0.8, "code-span", 0.4);
   insertAnn.run("docs/db.md", 5, "DatabasePool", "s3", 0.9, "code-span", 0.5);
 
@@ -88,16 +169,64 @@ function seedFixtures(d: Database.Database) {
   `);
 
   // auth cluster
-  insertImport.run("src/auth/service.ts", "src/user/repo.ts", "./user/repo", 1, "UserRepo");
-  insertImport.run("src/auth/service.ts", "src/db/pool.ts", "./db/pool", 1, "DatabasePool");
+  insertImport.run(
+    "src/auth/service.ts",
+    "src/user/repo.ts",
+    "./user/repo",
+    1,
+    "UserRepo",
+  );
+  insertImport.run(
+    "src/auth/service.ts",
+    "src/db/pool.ts",
+    "./db/pool",
+    1,
+    "DatabasePool",
+  );
   // common dependencies
-  insertImport.run("src/auth/service.ts", "src/config.ts", "./config", 1, "AppConfig");
-  insertImport.run("src/user/repo.ts", "src/db/pool.ts", "./db/pool", 1, "DatabasePool");
-  insertImport.run("src/user/repo.ts", "src/config.ts", "./config", 1, "AppConfig");
+  insertImport.run(
+    "src/auth/service.ts",
+    "src/config.ts",
+    "./config",
+    1,
+    "AppConfig",
+  );
+  insertImport.run(
+    "src/user/repo.ts",
+    "src/db/pool.ts",
+    "./db/pool",
+    1,
+    "DatabasePool",
+  );
+  insertImport.run(
+    "src/user/repo.ts",
+    "src/config.ts",
+    "./config",
+    1,
+    "AppConfig",
+  );
   // logger used everywhere
-  insertImport.run("src/auth/service.ts", "src/util/logger.ts", "./util/logger", 1, "Logger");
-  insertImport.run("src/user/repo.ts", "src/util/logger.ts", "./util/logger", 1, "Logger");
-  insertImport.run("src/db/pool.ts", "src/util/logger.ts", "./util/logger", 1, "Logger");
+  insertImport.run(
+    "src/auth/service.ts",
+    "src/util/logger.ts",
+    "./util/logger",
+    1,
+    "Logger",
+  );
+  insertImport.run(
+    "src/user/repo.ts",
+    "src/util/logger.ts",
+    "./util/logger",
+    1,
+    "Logger",
+  );
+  insertImport.run(
+    "src/db/pool.ts",
+    "src/util/logger.ts",
+    "./util/logger",
+    1,
+    "Logger",
+  );
 
   // ── Co-occurrences ──
   const insertCoOcc = d.prepare(`
@@ -105,10 +234,38 @@ function seedFixtures(d: Database.Database) {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  insertCoOcc.run("AuthService", "UserRepo", 5, 0.8, "doc-cooc", "docs/auth.md");
-  insertCoOcc.run("AuthService", "DatabasePool", 3, 0.6, "code-import", "src/auth/service.ts");
-  insertCoOcc.run("UserRepo", "DatabasePool", 4, 0.7, "code-import", "src/user/repo.ts");
-  insertCoOcc.run("AppConfig", "Logger", 2, 0.4, "doc-cooc", "docs/overview.md");
+  insertCoOcc.run(
+    "AuthService",
+    "UserRepo",
+    5,
+    0.8,
+    "doc-cooc",
+    "docs/auth.md",
+  );
+  insertCoOcc.run(
+    "AuthService",
+    "DatabasePool",
+    3,
+    0.6,
+    "code-import",
+    "src/auth/service.ts",
+  );
+  insertCoOcc.run(
+    "UserRepo",
+    "DatabasePool",
+    4,
+    0.7,
+    "code-import",
+    "src/user/repo.ts",
+  );
+  insertCoOcc.run(
+    "AppConfig",
+    "Logger",
+    2,
+    0.4,
+    "doc-cooc",
+    "docs/overview.md",
+  );
 
   // ── Co-changes ──
   const insertCoChange = d.prepare(`
@@ -116,7 +273,14 @@ function seedFixtures(d: Database.Database) {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
 
-  insertCoChange.run("src/auth/service.ts", "src/user/repo.ts", 8, 0.6, 0.9, "abc123,def456");
+  insertCoChange.run(
+    "src/auth/service.ts",
+    "src/user/repo.ts",
+    8,
+    0.6,
+    0.9,
+    "abc123,def456",
+  );
   insertCoChange.run("src/db/pool.ts", "src/config.ts", 4, 0.4, 0.7, "ghi789");
 
   // ── Rationale ──
@@ -125,11 +289,41 @@ function seedFixtures(d: Database.Database) {
     VALUES (?, ?, ?, ?, ?)
   `);
 
-  insertRationale.run("src/auth/service.ts", 15, "why", "Token rotation prevents replay attacks", null);
-  insertRationale.run("src/auth/service.ts", 42, "design", "Strategy pattern for multiple auth providers", null);
-  insertRationale.run("src/db/pool.ts", 8, "important", "Pool size must match database connection limit", null);
-  insertRationale.run("src/config.ts", 3, "note", "Env vars override file-based config", null);
-  insertRationale.run("src/config.ts", 20, "why", "Lazy loading avoids startup penalty", null);
+  insertRationale.run(
+    "src/auth/service.ts",
+    15,
+    "why",
+    "Token rotation prevents replay attacks",
+    null,
+  );
+  insertRationale.run(
+    "src/auth/service.ts",
+    42,
+    "design",
+    "Strategy pattern for multiple auth providers",
+    null,
+  );
+  insertRationale.run(
+    "src/db/pool.ts",
+    8,
+    "important",
+    "Pool size must match database connection limit",
+    null,
+  );
+  insertRationale.run(
+    "src/config.ts",
+    3,
+    "note",
+    "Env vars override file-based config",
+    null,
+  );
+  insertRationale.run(
+    "src/config.ts",
+    20,
+    "why",
+    "Lazy loading avoids startup penalty",
+    null,
+  );
 }
 
 // =============================================================================
@@ -159,9 +353,7 @@ describe("9.2 Hub Analysis", () => {
   it("should compute import degree (incoming + outgoing)", () => {
     const result = hubsFromDb(db);
     // src/auth/service.ts imports from 4 files (repo, pool, config, logger)
-    const authFile = result.hubs.find(
-      (h) => h.name === "src/auth/service.ts",
-    );
+    const authFile = result.hubs.find((h) => h.name === "src/auth/service.ts");
     expect(authFile).toBeDefined();
     expect(authFile!.importDegree).toBeGreaterThanOrEqual(4);
   });
@@ -177,9 +369,7 @@ describe("9.2 Hub Analysis", () => {
   it("should compute co-change degree for files", () => {
     const result = hubsFromDb(db);
     // src/auth/service.ts co-changes with src/user/repo.ts
-    const authFile = result.hubs.find(
-      (h) => h.name === "src/auth/service.ts",
-    );
+    const authFile = result.hubs.find((h) => h.name === "src/auth/service.ts");
     expect(authFile).toBeDefined();
     expect(authFile!.coChangeDegree).toBeGreaterThanOrEqual(1);
   });
@@ -199,7 +389,10 @@ describe("9.2 Hub Analysis", () => {
   });
 
   it("should return empty array for empty database", () => {
-    const emptyPath = path.join(os.tmpdir(), `cari-empty-hubs-${Date.now()}.db`);
+    const emptyPath = path.join(
+      os.tmpdir(),
+      `cari-empty-hubs-${Date.now()}.db`,
+    );
     const emptyDb = new Database(emptyPath);
     initSchema(emptyDb);
     const result = hubsFromDb(emptyDb);
@@ -256,7 +449,10 @@ describe("9.1 Community Detection", () => {
   });
 
   it("should return empty for empty database", () => {
-    const emptyPath = path.join(os.tmpdir(), `cari-empty-comm-${Date.now()}.db`);
+    const emptyPath = path.join(
+      os.tmpdir(),
+      `cari-empty-comm-${Date.now()}.db`,
+    );
     const emptyDb = new Database(emptyPath);
     initSchema(emptyDb);
     const result = communitiesFromDb(emptyDb);
@@ -327,7 +523,10 @@ describe("9.3 Surprising Connection Ranking", () => {
   });
 
   it("should return empty for empty database", () => {
-    const emptyPath = path.join(os.tmpdir(), `cari-empty-surp-${Date.now()}.db`);
+    const emptyPath = path.join(
+      os.tmpdir(),
+      `cari-empty-surp-${Date.now()}.db`,
+    );
     const emptyDb = new Database(emptyPath);
     initSchema(emptyDb);
     const result = surprisesFromDb(emptyDb);
@@ -390,7 +589,10 @@ describe("9.4 Rationale Extraction", () => {
   });
 
   it("should handle missing rationale table gracefully", () => {
-    const noRatPath = path.join(os.tmpdir(), `cari-no-rationale-${Date.now()}.db`);
+    const noRatPath = path.join(
+      os.tmpdir(),
+      `cari-no-rationale-${Date.now()}.db`,
+    );
     const noRatDb = new Database(noRatPath);
     // Only create base tables, no rationale table
     noRatDb.exec(`

@@ -10,10 +10,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type {
-  DependencyDepthResult,
-  DependencyDepthEntry,
-} from "../types.js";
+import type { DependencyDepthResult, DependencyDepthEntry } from "../types.js";
 import { openIndex, buildImportGraph } from "./shared.js";
 
 /** Fan-in threshold for "high" risk. */
@@ -51,10 +48,7 @@ export function dependencyDepthFromDb(
     const directDependents = reverse.get(file)?.size ?? 0;
 
     // Transitive forward (fan-out): all files reachable from this file
-    const { reachable: transitiveDeps, maxDepth } = bfsReachable(
-      file,
-      forward,
-    );
+    const { reachable: transitiveDeps, maxDepth } = bfsReachable(file, forward);
 
     // Transitive reverse (fan-in): all files that can reach this file
     const { reachable: transitiveDependents } = bfsReachable(file, reverse);
@@ -141,7 +135,9 @@ function assessRisk(
 
   // Fan-in risk (many dependents → changes here affect many files)
   if (transitiveDependents >= CRITICAL_FAN_IN) {
-    reasons.push(`critical fan-in: ${transitiveDependents} transitive dependents`);
+    reasons.push(
+      `critical fan-in: ${transitiveDependents} transitive dependents`,
+    );
   } else if (transitiveDependents >= HIGH_FAN_IN) {
     reasons.push(`high fan-in: ${transitiveDependents} transitive dependents`);
   } else if (directDependents >= 5) {
