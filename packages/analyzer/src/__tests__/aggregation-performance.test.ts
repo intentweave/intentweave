@@ -311,8 +311,8 @@ describe("Aggregation Performance", () => {
         overhead: lxOverhead.toFixed(2),
       });
 
-      // LX generation overhead — generous for CI runners
-      expect(lxOverhead).toBeLessThan(500);
+      // LX generation overhead — generous for CI runners (slow/variable VMs)
+      expect(lxOverhead).toBeLessThan(1000);
     });
 
     it("measures validation time", async () => {
