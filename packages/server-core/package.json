@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/server-core",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "IntentWeave server foundation \u2014 Fastify, Neo4j pool, session/workspace middleware, plugin system",
   "type": "module",
   "main": "./dist/index.js",
