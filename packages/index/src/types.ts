@@ -882,3 +882,215 @@ export interface BoundaryViolationsResult {
     count: number;
   }>;
 }
+
+// =============================================================================
+// 5.1a Layer Inference
+// =============================================================================
+
+/** A single inferred architectural layer. */
+export interface InferredLayer {
+  /** Layer index (0 = bottom/foundation, higher = closer to UI/entry points) */
+  index: number;
+
+  /** Auto-generated label from most common directory prefix or community */
+  label: string;
+
+  /** Files assigned to this layer */
+  files: string[];
+
+  /** Depth range (min–max topological depth of files in this layer) */
+  depthRange: [number, number];
+}
+
+/** Result of automatic layer inference from the import graph. */
+export interface LayersInferResult {
+  /** Inferred layers sorted from bottom (foundation) to top (entry points) */
+  layers: InferredLayer[];
+
+  /** Total files in the import graph */
+  totalFiles: number;
+
+  /** Files not reachable via any import (isolated) */
+  isolatedFiles: string[];
+
+  /** YAML-formatted layer config ready to write to .iw/layers.yaml */
+  yaml: string;
+}
+
+// =============================================================================
+// 5.1c Layer Naming (LLM-based)
+// =============================================================================
+
+/** A named layer produced by the LLM naming pass. */
+export interface NamedLayer {
+  /** Layer index (matches InferredLayer.index) */
+  index: number;
+
+  /** Original heuristic label from directory prefixes */
+  heuristicLabel: string;
+
+  /** LLM-generated descriptive name (e.g., "HTTP Layer", "Data Access") */
+  name: string;
+
+  /** Short description of the layer's architectural role */
+  description: string;
+}
+
+/** A named directory produced by the LLM naming pass. */
+export interface NamedDirectory {
+  /** Directory path (parent of files in the aggregate) */
+  path: string;
+
+  /** LLM-generated descriptive name (e.g., "CLI Subcommands", "Pipeline Stages") */
+  name: string;
+
+  /** Short description of the directory's contents */
+  description: string;
+}
+
+/** Result of LLM-based layer naming. */
+export interface LayerNamingResult {
+  /** Named layers with LLM-generated labels */
+  layers: NamedLayer[];
+
+  /** Named directories for aggregate node labels */
+  directories: NamedDirectory[];
+
+  /** Token usage for the LLM call */
+  tokensUsed: { prompt: number; completion: number };
+
+  /** LLM latency in milliseconds */
+  latencyMs: number;
+}
+
+// =============================================================================
+// 5.1b Layer Check
+// =============================================================================
+
+/** Layer configuration loaded from .iw/layers.yaml */
+export interface LayerConfig {
+  /** Ordered layers from bottom (index 0) to top */
+  layers: Array<{
+    /** Layer name */
+    name: string;
+
+    /** Glob patterns matching files in this layer */
+    patterns: string[];
+  }>;
+
+  /** Whether to allow skip-layer imports (default: false) */
+  allowSkipLayer?: boolean;
+}
+
+/** A single layer violation. */
+export interface LayerViolation {
+  /** File that contains the violating import */
+  sourceFile: string;
+
+  /** Layer the source file belongs to */
+  sourceLayer: string;
+
+  /** Layer index of the source (higher = upper layer) */
+  sourceLayerIndex: number;
+
+  /** File being imported */
+  targetFile: string;
+
+  /** Layer the target file belongs to */
+  targetLayer: string;
+
+  /** Layer index of the target */
+  targetLayerIndex: number;
+
+  /** Violation type */
+  type: "reverse" | "skip-layer";
+
+  /** Human-readable description */
+  reason: string;
+}
+
+/** Result of layer violation check. */
+export interface LayersCheckResult {
+  /** All detected violations */
+  violations: LayerViolation[];
+
+  /** Total violations found */
+  totalViolations: number;
+
+  /** Violations by type */
+  byType: {
+    reverse: number;
+    skipLayer: number;
+  };
+
+  /** Summary of files per layer */
+  layerSummary: Array<{
+    name: string;
+    index: number;
+    fileCount: number;
+  }>;
+}
+
+// ─── 10.1 Architecture Report ───────────────────────────────────────────────
+
+/** A file node in the architecture report graph. */
+export interface ArchReportNode {
+  filePath: string;
+  fileName: string;
+  layerIndex: number;
+  layerLabel: string;
+  communityId: number;
+  communityLabel: string;
+  transitiveDependents: number;
+  maxDepth: number;
+  risk: "low" | "medium" | "high" | "critical";
+  hubDegree: number;
+  isDoc?: boolean;
+}
+
+/** An edge in the architecture report graph. */
+export interface ArchReportEdge {
+  source: string;
+  target: string;
+  type:
+    | "import"
+    | "layer-violation"
+    | "boundary-violation"
+    | "co-occurrence"
+    | "co-change";
+  violationType?: "reverse" | "skip-layer";
+  reason?: string;
+  /** Weight/score for co-occurrence and co-change edges. */
+  weight?: number;
+}
+
+/** Full data payload for the architecture report. */
+export interface ArchReportData {
+  meta: {
+    generated: string;
+    totalFiles: number;
+  };
+  nodes: ArchReportNode[];
+  edges: ArchReportEdge[];
+  /** Co-occurrence + co-change edges for the Communities view. */
+  coEdges: ArchReportEdge[];
+  layers: Array<{
+    index: number;
+    label: string;
+    fileCount: number;
+    /** LLM-generated descriptive name (5.1c), if available */
+    llmName?: string;
+    /** LLM-generated description of the layer's architectural role */
+    description?: string;
+  }>;
+  communities: Array<{ id: number; label: string; size: number }>;
+  /** LLM-generated directory names for aggregate nodes (5.1c). Key = dir path. */
+  directoryNames?: Record<string, { name: string; description: string }>;
+  summary: {
+    totalLayers: number;
+    totalCommunities: number;
+    layerViolations: number;
+    boundaryViolations: number;
+    highRiskFiles: number;
+  };
+}

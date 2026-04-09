@@ -21,7 +21,7 @@ import type {
   BoundaryViolationsResult,
   BoundaryViolation,
 } from "../types.js";
-import { openIndex } from "./shared.js";
+import { openIndex, resolveModuleSpecifier } from "./shared.js";
 
 /**
  * Detect package boundary violations in the import graph.
@@ -169,54 +169,4 @@ export function boundaryViolationsFromDb(
     totalViolations: violations.length,
     byPackagePair,
   };
-}
-
-/**
- * Resolve a relative module_specifier to a known file path.
- * Tries the specifier as-is and with common extensions.
- */
-function resolveModuleSpecifier(
-  sourceFile: string,
-  specifier: string,
-  knownFiles: Set<string>,
-): string | null {
-  const lastSlash = sourceFile.lastIndexOf("/");
-  const dir = lastSlash >= 0 ? sourceFile.slice(0, lastSlash) : ".";
-
-  let resolved = specifier.startsWith("./") || specifier.startsWith("../")
-    ? `${dir}/${specifier}`
-    : specifier;
-
-  // Collapse . and .. segments
-  const parts = resolved.split("/");
-  const stack: string[] = [];
-  for (const p of parts) {
-    if (p === "." || p === "") continue;
-    if (p === "..") {
-      stack.pop();
-    } else {
-      stack.push(p);
-    }
-  }
-  resolved = stack.join("/");
-
-  if (knownFiles.has(resolved)) return resolved;
-
-  // Strip existing extension (e.g. .js) before trying alternatives
-  const stripped = resolved.replace(/\.[jt]sx?$|\.[mc][jt]s$/, "");
-
-  const extensions = [".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs"];
-  for (const ext of extensions) {
-    if (knownFiles.has(stripped + ext)) return stripped + ext;
-  }
-  for (const ext of extensions) {
-    if (knownFiles.has(`${stripped}/index${ext}`)) return `${stripped}/index${ext}`;
-  }
-  if (stripped !== resolved) {
-    for (const ext of extensions) {
-      if (knownFiles.has(resolved + ext)) return resolved + ext;
-    }
-  }
-
-  return null;
 }

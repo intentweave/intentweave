@@ -139,10 +139,45 @@ low docs = critical knowledge risk.
 
 ## 5. Architecture & Design Intelligence
 
-### 5.1 Layer Violation Detection _(AX + CARI, M)_
+### 5.1 Layer Architecture Analysis
 
-Define architectural layers (e.g., `ui → server → core`). Detect imports that skip
-layers or go in the wrong direction. Requires user-defined layer config in `.iw/layers.yaml`.
+Layer analysis is split into three phases so that auto-inference ($0) comes first,
+validation second, and optional LLM naming last.
+
+#### 5.1a Layer Inference _(CARI, M)_
+
+Auto-infer architectural layers from existing import graph data. Uses import directionality
+(topological sort of the file dependency graph), community detection (from 9.1), and
+fan-in/fan-out metrics (from 3.3) to cluster files into tiers. Outputs a draft
+`.iw/layers.yaml` as the "as-is" architecture — users review and commit as the
+"as-should" definition.
+
+Algorithm:
+1. Build the import DAG (same as 3.3's `dependencyDepth`)
+2. Topological-sort the DAG → assign each file a depth rank
+3. Bucket depth ranks into layers (e.g., 0–1 = "foundation", 2–3 = "core", etc.)
+4. Cross-reference with communities (9.1) — files in the same community at similar
+   depth form one named layer
+5. Emit `.iw/layers.yaml` with layer definitions and file→layer assignments
+
+CLI: `iw index layers-infer`. MCP: `cari_layers_infer`.
+
+#### 5.1b Layer Check _(CARI, S)_
+
+Validate all imports against a committed `.iw/layers.yaml` config. Detect:
+- **Reverse imports**: lower layer importing from higher layer
+- **Skip-layer imports**: layer N importing from layer N+2 (skipping N+1)
+
+Each violation includes source file, target file, source layer, target layer, and a
+human-readable reason.
+
+CLI: `iw index layers-check`. MCP: `cari_layers_check`.
+
+#### 5.1c Layer Naming Suggestions _(KG, S)_ ✅
+
+Optional LLM pass to name inferred layers based on their file contents and symbol types.
+E.g., a layer containing `server/`, `routes/`, `middleware/` gets named "HTTP Layer".
+Depends on 5.1a output. Not needed for validation — pure ergonomics.
 
 ### 5.2 Interface Conformance Drift _(AX, M)_
 
@@ -513,13 +548,27 @@ CLI: `iw index rationale`. MCP: `cari_rationale`.
 
 ## 10. Output & Export
 
-### 10.1 Standalone HTML Graph Report _(CARI, M)_
+### 10.1 Standalone HTML Architecture Report _(CARI, M)_ ✅
 
-Generate a self-contained `graph.html` that visualises the entity graph with interactive
-exploration (click nodes, filter by community, search). Uses vis.js or D3 bundled inline —
-no server required. Complements the full React UI with a zero-dependency sharable artifact.
+Generate a self-contained `architecture.html` that renders a **layered, spatial**
+architecture view rather than a generic node-and-edge graph. Combines outputs from
+multiple CARI analyses into a single interactive visualization:
+
+- **Layout**: Layer bands from 5.1a/b — files positioned in their inferred or declared
+  tier (foundation at bottom, UI at top)
+- **Node size**: Proportional to transitive dependents (3.3) — bigger = higher impact
+- **Node colour**: Community membership (9.1) — coloured clusters
+- **Edges**: Import arrows, with layer violations (5.1b) drawn in red as reverse-arrows,
+  boundary violations (3.4) as dashed cross-zone edges
+- **Interactivity**: Click to expand/collapse layers, search files, filter by community,
+  hover for metrics (fan-in/fan-out, depth, risk)
+
+Uses D3 or vis.js bundled inline — zero server dependency, shareable as a single file.
+Complements the full React UI with a zero-dependency deployment artifact.
 
 CLI: `iw index export --html`.
+
+Depends on: 5.1a (layers), 9.1 (communities), 3.3 (depth), 3.4 (boundary violations).
 
 ### 10.2 Watch Mode _(CARI, M)_
 
@@ -571,7 +620,9 @@ CLI: `iw index export --obsidian`.
 | 4.1  | Ownership drift                  | CARI | S      | Medium | TCG data (exists)    |         |
 | 4.2  | Change coupling anomalies        | CARI | S      | Medium | TCG data (exists)    |         |
 | 1.5  | Terminology inconsistency        | CARI | M      | Medium | None                 | ✅ Done |
-| 5.1  | Layer violation detection        | CARI | M      | Medium | User config          |         |
+| 5.1a | Layer inference                | CARI | M      | High   | 9.1, 3.3             | ✅ Done |
+| 5.1b | Layer check                    | CARI | S      | High   | 5.1a                 | ✅ Done |
+| 5.1c | Layer naming suggestions        | KG   | S      | Low    | 5.1a                 | ✅      |
 | 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
 | 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |
 | 5.4  | API surface changelog            | CARI | M      | Medium | Git history          |         |
@@ -594,7 +645,7 @@ CLI: `iw index export --obsidian`.
 | 9.2  | God-node / hub analysis          | CARI | S      | High   | None                 | ✅ Done |
 | 9.3  | Surprising connection ranking    | CARI | M      | High   | 9.1                  | ✅ Done |
 | 9.4  | Rationale extraction             | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
-| 10.1 | Standalone HTML graph report     | CARI | M      | Medium | 9.1                  |         |
+| 10.1 | Standalone HTML architecture rpt | CARI | M      | High   | 5.1a, 9.1, 3.3      | ✅ Done |
 | 10.2 | Watch mode                       | CARI | M      | Medium | incremental (exists) |         |
 | 10.3 | Git hooks integration            | CARI | S      | Medium | 10.2                 |         |
 | 10.4 | Obsidian vault export            | CARI | M      | Low    | 9.1                  |         |

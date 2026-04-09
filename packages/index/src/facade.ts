@@ -65,6 +65,9 @@ import {
   terminologyInconsistencyFromDb,
   dependencyDepthFromDb,
   boundaryViolationsFromDb,
+  layersInferFromDb,
+  layersCheckFromDb,
+  archReportFromDb,
 } from "./queries/index.js";
 import type { ReportOptions } from "./queries/index.js";
 
@@ -102,8 +105,13 @@ import type {
   TerminologyInconsistencyResult,
   DependencyDepthResult,
   BoundaryViolationsResult,
+  LayersInferResult,
+  LayerConfig,
+  LayersCheckResult,
+  ArchReportData,
 } from "./types.js";
 
+import type { ArchReportOptions } from "./queries/archReport.js";
 import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
 import type { InStageInput } from "@intentweave/analyzer";
 import { minimatch } from "minimatch";
@@ -670,6 +678,29 @@ export class CariIndex {
   /** Detect cross-package internal module imports. */
   boundaryViolations(): BoundaryViolationsResult {
     return boundaryViolationsFromDb(this.db);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Architecture & Design Intelligence (Section 5)
+  // ---------------------------------------------------------------------------
+
+  /** Auto-infer architectural layers from the import graph. */
+  layersInfer(): LayersInferResult {
+    return layersInferFromDb(this.db);
+  }
+
+  /** Validate imports against a layer config, detecting reverse and skip-layer violations. */
+  layersCheck(config: LayerConfig): LayersCheckResult {
+    return layersCheckFromDb(this.db, config);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Architecture Report (Section 10)
+  // ---------------------------------------------------------------------------
+
+  /** Collect architecture report data from all CARI analyses. */
+  archReport(options?: ArchReportOptions): ArchReportData {
+    return archReportFromDb(this.db, options);
   }
 
   // ---------------------------------------------------------------------------

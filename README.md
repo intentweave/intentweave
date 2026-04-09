@@ -7,7 +7,8 @@ IntentWeave provides two complementary systems:
 
 1. **CARI (Code-Aware Retrieval Index)** — Builds a lightweight SQLite index from your code's AST,
    document keywords, and git history. No LLM calls, no external services, no cost. Produces ranked
-   file retrieval, cross-layer connection discovery, and CI drift detection.
+   file retrieval, cross-layer connection discovery, CI drift detection, and **interactive architecture
+   visualization** with automatically inferred layers, communities, and dependency analysis.
 
 2. **Knowledge Graph (KG)** — Uses LLMs to extract entities, decisions, and relationships from
    natural-language documents. Persists to Neo4j for rich semantic queries, impact analysis, and
@@ -34,6 +35,51 @@ iw index connections "AuthService"     # cross-layer connection discovery
 iw index check --changed src/auth.ts   # CI drift detection
 iw index report                        # coverage, staleness, hidden couplings
 ```
+
+### Architecture Analysis & Visualization
+
+```bash
+# Auto-infer architectural layers from your import graph
+iw index layers-infer
+
+# Validate imports against inferred layer boundaries
+iw index layers-check
+
+# Generate a standalone interactive HTML architecture report
+iw index export --html
+
+# With LLM-generated layer and directory names (optional)
+iw index export --html --provider openai --model gpt-4o-mini
+```
+
+The HTML report renders a **layered, spatial architecture view**:
+- Files positioned in their inferred architectural tier (foundation at bottom, entry points at top)
+- Node size proportional to transitive dependents — bigger = higher impact
+- Colour-coded community clusters via label-propagation detection
+- Import edges with layer violations drawn as red reverse-arrows
+- Three views: **Layers** (tiered layout), **Communities** (force-directed), **Dependencies** (root-focused)
+- Optional LLM pass names layers ("HTTP Layer", "Data Access") and directories ("CLI Subcommands",
+  "Pipeline Stages") with architectural descriptions
+- Zero server dependency — shareable as a single self-contained HTML file
+
+#### Layers View — Auto-Inferred Architectural Tiers
+
+![Layers View](docs/screenshots/layers-view.png)
+
+Files arranged into automatically inferred layers with LLM-generated names and descriptions.
+Node size reflects transitive dependents; colours indicate community clusters.
+
+#### Communities View — Force-Directed Graph
+
+![Communities View](docs/screenshots/communities-view.png)
+
+Force-directed layout revealing community clusters, doc-code links, and import relationships.
+
+#### Dependencies View — Root-Focused Dependency Tree
+
+![Dependencies View](docs/screenshots/dependencies-view.png)
+
+Explore the full dependency tree from any root file, colour-coded by risk level.
 
 Two depth modes:
 
@@ -316,6 +362,10 @@ Additional CARI queries are available as CLI subcommands, MCP tools, and via the
 | `iw index terminology`           | `cari_terminology`         | Terminology inconsistency detection                            |
 | `iw index dep-depth`             | `cari_dep_depth`           | Transitive import depth + fan-in/fan-out risk                  |
 | `iw index boundary-violations`   | `cari_boundary_violations` | Cross-package internal import detection                        |
+| `iw index layers-infer`          | `cari_layers_infer`        | Auto-infer architectural layers from import graph              |
+| `iw index layers-check`          | `cari_layers_check`        | Validate imports against layer configuration                   |
+| `iw index export --html`         | —                          | Generate standalone interactive architecture report            |
+| `iw index export --html --provider openai` | `cari_layers_name` | LLM-generated layer & directory names for the report         |
 
 > See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
 
@@ -359,6 +409,9 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `cari_terminology`       | Terminology inconsistency detection         | `limit?`                       |
 | `cari_dep_depth`         | Transitive import depth analysis            | `limit?`                       |
 | `cari_boundary_violations` | Package boundary violation detection      | _(none)_                       |
+| `cari_layers_infer`        | Auto-infer architectural layers           | _(none)_                       |
+| `cari_layers_check`        | Validate imports against layer config     | `allowSkipLayer?`              |
+| `cari_layers_name`         | LLM-generated layer & directory names     | `provider`, `model?`, `api_key?` |
 
 Start the MCP server:
 
@@ -397,6 +450,7 @@ packages/
   profiles/             → @intentweave/profiles — extraction profile packs
   ast-extractor/        → @intentweave/ast-extractor — tree-sitter TS/JS extraction
   swift-parser/         → @intentweave/swift-parser — tree-sitter Swift extraction
+  python-parser/        → @intentweave/python-parser — tree-sitter Python extraction
 ```
 
 ### Server Plugin Architecture
@@ -499,10 +553,12 @@ pnpm --filter @intentweave/cli publish --access public
 
 ### Project Stats
 
-- **10 packages** + 1 app
-- **800+ tests**, all passing
+- **11 packages** + 1 app
+- **900+ tests**, all passing
 - **TypeScript 5.6**, ESM, strict mode
 - **Fastify 5**, Neo4j 5, SQLite (better-sqlite3), Turbo, pnpm workspaces
+- **27 CARI query modes** + interactive HTML architecture report
+- **32 MCP tools** for GitHub Copilot integration
 
 ---
 

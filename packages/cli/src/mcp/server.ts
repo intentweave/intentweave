@@ -27,6 +27,17 @@
  *   - cari_cross_group_drift: Cross-group entity coverage conflicts
  *   - cari_mentions_of:       Find doc mentions of an entity (Entity Bridge)
  *   - cari_annotations_for:   List annotations for a document file
+ *   - cari_test_coverage:     Map test files → source files, find untested exports
+ *   - cari_hubs:              Degree centrality / god-node analysis
+ *   - cari_communities:       Label-propagation community detection
+ *   - cari_surprises:         Surprising connection ranking
+ *   - cari_rationale:         WHY/NOTE/IMPORTANT/DESIGN rationale inventory
+ *   - cari_terminology:       Terminology inconsistency detection
+ *   - cari_dep_depth:         Transitive import depth + fan-in/fan-out risk
+ *   - cari_boundary_violations: Cross-package internal import detection
+ *   - cari_layers_infer:     Auto-infer architectural layers from import graph
+ *   - cari_layers_check:     Validate imports against layer configuration
+ *   - cari_layers_name:      LLM-generated descriptive layer names (5.1c)
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
@@ -514,6 +525,29 @@ function stringify(v: unknown): string {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function parseLayersYamlForMcp(
+  content: string,
+): { layers: Array<{ name: string; patterns: string[] }>; allowSkipLayer?: boolean } {
+  const layers: Array<{ name: string; patterns: string[] }> = [];
+  let current: { name: string; patterns: string[] } | null = null;
+  let inPatterns = false;
+
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("- name:")) {
+      if (current) layers.push(current);
+      current = { name: line.slice("- name:".length).trim(), patterns: [] };
+      inPatterns = false;
+    } else if (line === "patterns:" && current) {
+      inPatterns = true;
+    } else if (line.startsWith("- ") && inPatterns && current) {
+      current.patterns.push(line.slice(2).trim().replace(/^["']|["']$/g, ""));
+    }
+  }
+  if (current) layers.push(current);
+  return { layers };
 }
 
 function handleCariError(err: { message?: string }): string {
@@ -2162,6 +2196,256 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         lines.push("|--------|--------|--------|");
         for (const v of result.violations) {
           lines.push(`| ${v.sourceFile} | ${v.targetFile} | ${v.reason} |`);
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_layers_infer ───────────────────────────────────────────
+  server.tool(
+    "cari_layers_infer",
+    `Auto-infer architectural layers from the import graph using topological depth analysis. Files with no outgoing imports form the foundation layer; files that only import from the foundation form the next layer, and so on. Returns 2–7 layers with auto-generated labels and a YAML config suitable for layers-check.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_layers_infer");
+      try {
+        const { layersInfer } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = layersInfer(dbPath);
+
+        if (result.layers.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No import relationships found — cannot infer layers.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## ${result.layers.length} Inferred Architectural Layers (${result.totalFiles} files)`,
+          "",
+          "| # | Label | Files | Depth Range |",
+          "|---|-------|-------|-------------|",
+        ];
+        for (const layer of result.layers) {
+          lines.push(
+            `| ${layer.index} | ${layer.label} | ${layer.files.length} | ${layer.depthRange[0]}–${layer.depthRange[1]} |`,
+          );
+        }
+
+        if (result.isolatedFiles.length > 0) {
+          lines.push("");
+          lines.push(
+            `_${result.isolatedFiles.length} isolated file(s) with no imports placed in foundation layer._`,
+          );
+        }
+
+        lines.push("");
+        lines.push("### Generated layers.yaml");
+        lines.push("```yaml");
+        lines.push(result.yaml.trim());
+        lines.push("```");
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_layers_check ─────────────────────────────────────────
+  server.tool(
+    "cari_layers_check",
+    `Validate imports against a committed layer configuration. Detects two violation types: (1) reverse — a lower layer importing from a higher layer, and (2) skip-layer — an import that skips one or more intermediate layers. Reads the layer config from .iw/layers.yaml by default.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      allowSkipLayer: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, skip-layer violations are suppressed (only reverse violations reported). Default: false.",
+        ),
+    },
+    async (args: { allowSkipLayer?: boolean }) => {
+      log("cari_layers_check");
+      try {
+        const { layersCheck } = await loadIndex();
+        const dbPath = resolveIndexDb();
+
+        // Read layers.yaml from workspace
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const configPath = path.join(
+          process.cwd(),
+          ".iw",
+          "layers.yaml",
+        );
+
+        if (!fs.existsSync(configPath)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No .iw/layers.yaml found. Run `cari_layers_infer` first to generate a layer config, then save it to .iw/layers.yaml.",
+              },
+            ],
+          };
+        }
+
+        const content = fs.readFileSync(configPath, "utf-8");
+        const config = parseLayersYamlForMcp(content);
+        if (args.allowSkipLayer) {
+          config.allowSkipLayer = true;
+        }
+
+        const result = layersCheck(dbPath, config);
+
+        if (result.totalViolations === 0) {
+          const lines = [
+            "✓ No layer violations detected.",
+            "",
+            "### Layer Summary",
+            "| Layer | Index | Files |",
+            "|-------|-------|-------|",
+          ];
+          for (const s of result.layerSummary) {
+            lines.push(`| ${s.name} | ${s.index} | ${s.fileCount} |`);
+          }
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        }
+
+        const lines = [
+          `## ${result.totalViolations} Layer Violation${result.totalViolations === 1 ? "" : "s"}`,
+          "",
+        ];
+
+        if (result.byType.reverse > 0 || result.byType.skipLayer > 0) {
+          lines.push(
+            `- **Reverse**: ${result.byType.reverse} (lower layer imports higher)`,
+          );
+          lines.push(
+            `- **Skip-layer**: ${result.byType.skipLayer} (skips intermediate layers)`,
+          );
+          lines.push("");
+        }
+
+        lines.push("| Source | Source Layer | Target | Target Layer | Type | Reason |");
+        lines.push("|--------|-------------|--------|--------------|------|--------|");
+        for (const v of result.violations) {
+          lines.push(
+            `| ${v.sourceFile} | ${v.sourceLayer} | ${v.targetFile} | ${v.targetLayer} | ${v.type} | ${v.reason} |`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_layers_name ──────────────────────────────────────────
+  server.tool(
+    "cari_layers_name",
+    `Generate descriptive architectural layer names using an LLM (5.1c). Takes the output of layersInfer and produces human-friendly names like "HTTP Layer", "Data Access", "Core Types" instead of directory-based labels.
+
+Requires an OpenAI API key (OPENAI_API_KEY env var or api_key parameter).`,
+    {
+      provider: z
+        .enum(["openai", "smart-mock"])
+        .default("openai")
+        .describe(
+          "LLM provider. Use 'openai' for real naming or 'smart-mock' for testing.",
+        ),
+      model: z
+        .string()
+        .default("gpt-4o-mini")
+        .describe("Model name for the LLM provider."),
+      api_key: z
+        .string()
+        .optional()
+        .describe(
+          "OpenAI API key. Falls back to OPENAI_API_KEY env var if not provided.",
+        ),
+    },
+    async (args) => {
+      log("cari_layers_name");
+      try {
+        const { layersInfer, nameLayers } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const layers = layersInfer(dbPath);
+
+        if (layers.layers.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No layers inferred — cannot generate names.",
+              },
+            ],
+          };
+        }
+
+        const { OpenAILLMProvider, SmartMockLLMProvider } = await import(
+          "@intentweave/analyzer/llm"
+        );
+        let llm;
+        if (args.provider === "openai") {
+          const apiKey = args.api_key ?? process.env.OPENAI_API_KEY;
+          if (!apiKey) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "OpenAI API key required. Set OPENAI_API_KEY env var or pass api_key parameter.",
+                },
+              ],
+              isError: true,
+            };
+          }
+          llm = new OpenAILLMProvider({ apiKey, model: args.model });
+        } else {
+          llm = new SmartMockLLMProvider({ workspaceKey: "mcp" });
+        }
+
+        const result = await nameLayers(layers, llm);
+
+        const lines = [
+          `## Layer Names (${result.layers.length} layers, ${result.tokensUsed.prompt + result.tokensUsed.completion} tokens, ${result.latencyMs}ms)`,
+          "",
+          "| # | Heuristic Label | LLM Name | Description |",
+          "|---|-----------------|----------|-------------|",
+        ];
+        for (const l of result.layers) {
+          lines.push(
+            `| ${l.index} | ${l.heuristicLabel} | **${l.name}** | ${l.description} |`,
+          );
+        }
+
+        if (result.directories.length > 0) {
+          lines.push(
+            "",
+            `## Directory Names (${result.directories.length} directories)`,
+            "",
+            "| Directory | LLM Name | Description |",
+            "|-----------|----------|-------------|",
+          );
+          for (const d of result.directories) {
+            lines.push(`| ${d.path} | **${d.name}** | ${d.description} |`);
+          }
         }
 
         return { content: [{ type: "text", text: lines.join("\n") }] };

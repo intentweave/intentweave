@@ -88,10 +88,19 @@ export {
   dependencyDepthFromDb,
   boundaryViolations,
   boundaryViolationsFromDb,
+  layersInfer,
+  layersInferFromDb,
+  layersCheck,
+  layersCheckFromDb,
+  nameLayers,
+  archReport,
+  archReportFromDb,
   openIndex,
 } from "./queries/index.js";
 
-export type { ReportOptions } from "./queries/index.js";
+export { renderArchReportHtml } from "./export/index.js";
+
+export type { ReportOptions, ArchReportOptions } from "./queries/index.js";
 
 export type {
   // Core types
@@ -150,4 +159,15 @@ export type {
   DependencyDepthEntry,
   BoundaryViolationsResult,
   BoundaryViolation,
+  LayersInferResult,
+  InferredLayer,
+  LayerConfig,
+  LayersCheckResult,
+  LayerViolation,
+  NamedLayer,
+  NamedDirectory,
+  LayerNamingResult,
+  ArchReportData,
+  ArchReportNode,
+  ArchReportEdge,
 } from "./types.js";

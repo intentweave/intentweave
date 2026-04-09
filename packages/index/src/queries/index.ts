@@ -50,4 +50,9 @@ export {
   boundaryViolations,
   boundaryViolationsFromDb,
 } from "./boundaryViolations.js";
+export { layersInfer, layersInferFromDb } from "./layersInfer.js";
+export { layersCheck, layersCheckFromDb } from "./layersCheck.js";
+export { nameLayers } from "./layerNaming.js";
+export { archReport, archReportFromDb } from "./archReport.js";
+export type { ArchReportOptions } from "./archReport.js";
 export { openIndex } from "./shared.js";

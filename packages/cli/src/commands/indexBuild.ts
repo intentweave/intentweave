@@ -75,7 +75,7 @@ const BAR = "██████████████████████�
 
 const indexBuildSubcommand = new Command("build")
   .description("Build CARI index: KWG + TCG + AX → SQLite (.iw/index.db)")
-  .argument("<paths...>", "Document file(s) or directories to analyze")
+  .argument("[paths...]", "Document file(s) or directories to analyze (default: .)")
   .option("-s, --session <name>", "Session name (default: directory name)")
   .option(
     "--depth <depth>",
@@ -94,6 +94,7 @@ const indexBuildSubcommand = new Command("build")
   .option("-o, --output <path>", "Output path for the SQLite database")
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
+    if (!paths || paths.length === 0) paths = ["."];
     const cwd = process.cwd();
     const session = opts.session ?? path.basename(cwd);
     const verbose = opts.verbose;
@@ -176,12 +177,18 @@ import {
   terminologyInconsistency,
   dependencyDepth,
   boundaryViolations,
+  layersInfer,
+  layersCheck,
+  nameLayers,
+  archReport,
+  renderArchReportHtml,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
   ConnectionsParams,
   CheckParams,
   ExternalEntity,
+  LayerConfig,
 } from "@intentweave/index";
 
 function resolveDbPath(output?: string): string {
@@ -1714,6 +1721,328 @@ const indexBoundaryViolationsSubcommand = new Command("boundary-violations")
     console.log();
   });
 
+// ── iw index layers-infer ─────────────────────────────────────
+
+const indexLayersInferSubcommand = new Command("layers-infer")
+  .description(
+    "Auto-infer architectural layers from the import graph topology",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "-o, --output <path>",
+    "Write layers.yaml to this path (default: .iw/layers.yaml)",
+  )
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = layersInfer(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.layers.length === 0) {
+      console.log(
+        chalk.gray(
+          "\n  No import graph data available. Ensure the index is built.\n",
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.layers.length} layers inferred from ${result.totalFiles} files`,
+      ),
+    );
+
+    for (const layer of result.layers) {
+      console.log(
+        chalk.cyan(
+          `\n    Layer ${layer.index}: ${layer.label} (${layer.files.length} files, depth ${layer.depthRange[0]}–${layer.depthRange[1]})`,
+        ),
+      );
+      const display = layer.files.slice(0, 8);
+      for (const f of display) {
+        console.log(chalk.gray(`      ${f}`));
+      }
+      if (layer.files.length > 8) {
+        console.log(
+          chalk.gray(`      … and ${layer.files.length - 8} more`),
+        );
+      }
+    }
+
+    if (result.isolatedFiles.length > 0) {
+      console.log(
+        chalk.yellow(
+          `\n    ${result.isolatedFiles.length} isolated file(s) not in any layer`,
+        ),
+      );
+    }
+
+    // Write YAML if requested
+    const outputPath =
+      opts.output ?? path.join(process.cwd(), ".iw", "layers.yaml");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, result.yaml, "utf-8");
+    console.log(chalk.green(`\n  ✓ Wrote ${outputPath}`));
+    console.log(
+      chalk.gray(
+        "    Review and edit, then run `iw index layers-check` to validate.\n",
+      ),
+    );
+  });
+
+// ── iw index layers-check ─────────────────────────────────────
+
+const indexLayersCheckSubcommand = new Command("layers-check")
+  .description(
+    "Validate imports against .iw/layers.yaml — detect reverse and skip-layer violations",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "-c, --config <path>",
+    "Path to layers.yaml (default: .iw/layers.yaml)",
+  )
+  .option("--allow-skip-layer", "Ignore skip-layer violations", false)
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const configPath =
+      opts.config ?? path.join(process.cwd(), ".iw", "layers.yaml");
+
+    // Load layer config
+    const { readFile } = await import("node:fs/promises");
+    let configContent: string;
+    try {
+      configContent = await readFile(configPath, "utf-8");
+    } catch {
+      console.error(
+        chalk.red(
+          `\n  ✗ Layer config not found at ${configPath}.\n    Run \`iw index layers-infer\` first to generate one.\n`,
+        ),
+      );
+      process.exit(1);
+    }
+
+    // Parse YAML (simple parser — layers.yaml has a known structure)
+    let config: LayerConfig;
+    try {
+      config = parseLayersYaml(configContent);
+    } catch (err: any) {
+      console.error(
+        chalk.red(`\n  ✗ Failed to parse ${configPath}: ${err.message}\n`),
+      );
+      process.exit(1);
+    }
+
+    if (opts.allowSkipLayer) {
+      config.allowSkipLayer = true;
+    }
+
+    const result = layersCheck(dbPath, config);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    // Layer summary
+    console.log(chalk.blue("\n  ▸ Layer Architecture Summary"));
+    for (const ls of result.layerSummary) {
+      console.log(
+        chalk.gray(
+          `    Layer ${ls.index}: ${ls.name.padEnd(24)} ${ls.fileCount} file(s)`,
+        ),
+      );
+    }
+
+    if (result.totalViolations === 0) {
+      console.log(
+        chalk.green(
+          "\n  ✓ No layer violations — all imports respect the architecture.\n",
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.yellow(
+        `\n  ⚠ ${result.totalViolations} violation(s): ${result.byType.reverse} reverse, ${result.byType.skipLayer} skip-layer`,
+      ),
+    );
+
+    for (const v of result.violations) {
+      const icon = v.type === "reverse" ? chalk.red("↑") : chalk.yellow("⤴");
+      console.log(
+        `    ${icon} ${v.sourceFile} → ${v.targetFile}`,
+      );
+      console.log(chalk.gray(`      ${v.reason}`));
+    }
+    console.log();
+  });
+
+/**
+ * Parse a simple layers.yaml config.
+ * Expected format:
+ *   layers:
+ *     - name: "core"
+ *       patterns:
+ *         - "packages/core/**"
+ *     - name: "server"
+ *       patterns:
+ *         - "packages/server/**"
+ */
+function parseLayersYaml(content: string): LayerConfig {
+  const layers: LayerConfig["layers"] = [];
+  let currentLayer: { name: string; patterns: string[] } | null = null;
+  let inPatterns = false;
+
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) continue;
+
+    // Detect "- name:" which starts a new layer
+    const nameMatch = line.match(
+      /^-\s*name:\s*["']?([^"'\n]+?)["']?\s*$/,
+    );
+    if (nameMatch) {
+      if (currentLayer) layers.push(currentLayer);
+      currentLayer = { name: nameMatch[1], patterns: [] };
+      inPatterns = false;
+      continue;
+    }
+
+    // Detect "name:" without leading dash (alternative format)
+    const plainNameMatch = line.match(
+      /^name:\s*["']?([^"'\n]+?)["']?\s*$/,
+    );
+    if (plainNameMatch && !line.startsWith("-")) {
+      if (currentLayer) layers.push(currentLayer);
+      currentLayer = { name: plainNameMatch[1], patterns: [] };
+      inPatterns = false;
+      continue;
+    }
+
+    if (line === "patterns:" || line === "patterns: []") {
+      inPatterns = true;
+      continue;
+    }
+
+    // Pattern item
+    if (inPatterns && currentLayer && line.startsWith("-")) {
+      const pattern = line
+        .replace(/^-\s*/, "")
+        .replace(/^["']|["']$/g, "")
+        .trim();
+      if (pattern) {
+        currentLayer.patterns.push(pattern);
+      }
+    }
+  }
+
+  if (currentLayer) layers.push(currentLayer);
+
+  if (layers.length === 0) {
+    throw new Error("No layers found in config");
+  }
+
+  return { layers };
+}
+
+// ── iw index export ─────────────────────────────────────────────
+
+const indexExportSubcommand = new Command("export")
+  .description("Export architecture report as a self-contained HTML file")
+  .option("--db <path>", "Path to index.db")
+  .option("--html", "Generate HTML architecture report (default)", true)
+  .option(
+    "-o, --output <path>",
+    "Output file path",
+    "architecture.html",
+  )
+  .option(
+    "--provider <name>",
+    "LLM provider for layer naming: openai | smart-mock (omit for heuristic labels only)",
+  )
+  .option("--model <name>", "LLM model name", "gpt-4o-mini")
+  .option("--api-key <key>", "OpenAI API key (or set OPENAI_API_KEY)")
+  .action(
+    async (opts: {
+      db?: string;
+      html?: boolean;
+      output: string;
+      provider?: string;
+      model: string;
+      apiKey?: string;
+    }) => {
+      const dbPath = resolveDbPath(opts.db);
+
+      // Optional LLM layer naming pass (5.1c)
+      let layerNames;
+      let directoryNames;
+      if (opts.provider) {
+        const { OpenAILLMProvider, SmartMockLLMProvider } = await import(
+          "@intentweave/analyzer/llm"
+        );
+        const layers = layersInfer(dbPath);
+        let llm;
+        if (opts.provider === "openai") {
+          const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
+          if (!apiKey) {
+            console.error(
+              chalk.red(
+                "OpenAI API key required. Set OPENAI_API_KEY or use --api-key.",
+              ),
+            );
+            process.exit(1);
+          }
+          llm = new OpenAILLMProvider({ apiKey, model: opts.model });
+        } else {
+          llm = new SmartMockLLMProvider({ workspaceKey: "export" });
+        }
+        console.log(
+          chalk.blue(
+            `Naming layers with ${opts.provider} (${opts.model})…`,
+          ),
+        );
+        const naming = await nameLayers(layers, llm);
+        layerNames = naming.layers;
+        console.log(
+          `  Named ${layerNames.length} layers + ${naming.directories.length} directories (${naming.tokensUsed.prompt + naming.tokensUsed.completion} tokens, ${naming.latencyMs}ms)`,
+        );
+        directoryNames = naming.directories;
+      }
+
+      console.log("Collecting architecture data…");
+      const data = archReport(
+        dbPath,
+        layerNames ? { layerNames, directoryNames } : undefined,
+      );
+      console.log(
+        `  ${data.meta.totalFiles} files · ${data.summary.totalLayers} layers · ` +
+          `${data.summary.totalCommunities} communities`,
+      );
+      if (data.summary.layerViolations > 0) {
+        console.log(
+          `  ⚠ ${data.summary.layerViolations} layer violation(s)`,
+        );
+      }
+      if (data.summary.boundaryViolations > 0) {
+        console.log(
+          `  ⚠ ${data.summary.boundaryViolations} boundary violation(s)`,
+        );
+      }
+      const html = renderArchReportHtml(data);
+      const fsSync = await import("node:fs");
+      fsSync.writeFileSync(opts.output, html, "utf-8");
+      console.log(`\n✓ Written to ${opts.output}`);
+    },
+  );
+
 export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
@@ -1742,4 +2071,7 @@ export const indexCommand = new Command("index")
   .addCommand(indexRationaleSubcommand)
   .addCommand(indexTerminologySubcommand)
   .addCommand(indexDepDepthSubcommand)
-  .addCommand(indexBoundaryViolationsSubcommand);
+  .addCommand(indexBoundaryViolationsSubcommand)
+  .addCommand(indexLayersInferSubcommand)
+  .addCommand(indexLayersCheckSubcommand)
+  .addCommand(indexExportSubcommand);

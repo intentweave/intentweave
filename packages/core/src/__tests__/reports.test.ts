@@ -341,10 +341,15 @@ describe("Issue Registry", () => {
       };
 
       const seenFingerprints = new Set(["sha256:seen"]);
-      markUnseenAsResolved(registry, seenFingerprints, now);
+      const before = Date.now();
+      markUnseenAsResolved(registry, seenFingerprints);
+      const after = Date.now();
 
       expect(registry.fingerprints["sha256:seen"].resolved).toBeUndefined();
-      expect(registry.fingerprints["sha256:unseen"].resolved).toBe(now);
+      const resolved = registry.fingerprints["sha256:unseen"].resolved!;
+      const resolvedMs = new Date(resolved).getTime();
+      expect(resolvedMs).toBeGreaterThanOrEqual(before);
+      expect(resolvedMs).toBeLessThanOrEqual(after);
     });
   });
 });

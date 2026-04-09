@@ -14,7 +14,7 @@ import type {
   DependencyDepthResult,
   DependencyDepthEntry,
 } from "../types.js";
-import { openIndex } from "./shared.js";
+import { openIndex, buildImportGraph } from "./shared.js";
 
 /** Fan-in threshold for "high" risk. */
 const HIGH_FAN_IN = 10;
@@ -43,59 +43,7 @@ export function dependencyDepth(dbPath: string): DependencyDepthResult {
 export function dependencyDepthFromDb(
   db: Database.Database,
 ): DependencyDepthResult {
-  // 1. Build directed graph from imports (resolve module_specifier if target_file is NULL)
-  const edges = db
-    .prepare(
-      `
-      SELECT DISTINCT source_file, target_file, module_specifier
-      FROM imports
-      WHERE is_relative = 1
-    `,
-    )
-    .all() as Array<{
-    source_file: string;
-    target_file: string | null;
-    module_specifier: string;
-  }>;
-
-  // Build a set of known file paths for resolution
-  const knownFiles = new Set(
-    (
-      db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>
-    ).map((r) => r.path),
-  );
-
-  // Forward graph: file → files it imports (outgoing / dependencies)
-  const forward = new Map<string, Set<string>>();
-  // Reverse graph: file → files that import it (incoming / dependents)
-  const reverse = new Map<string, Set<string>>();
-  const allFiles = new Set<string>();
-
-  for (const edge of edges) {
-    const target =
-      edge.target_file ||
-      resolveModuleSpecifier(
-        edge.source_file,
-        edge.module_specifier,
-        knownFiles,
-      );
-    if (!target) continue;
-
-    allFiles.add(edge.source_file);
-    allFiles.add(target);
-
-    if (!forward.has(edge.source_file)) {
-      forward.set(edge.source_file, new Set());
-    }
-    forward.get(edge.source_file)!.add(target);
-
-    if (!reverse.has(target)) {
-      reverse.set(target, new Set());
-    }
-    reverse.get(target)!.add(edge.source_file);
-  }
-
-  // 2. Compute transitive closure + max depth via BFS for each file
+  const { forward, reverse, allFiles } = buildImportGraph(db);
   const files: DependencyDepthEntry[] = [];
 
   for (const file of allFiles) {
@@ -227,62 +175,4 @@ function assessRisk(
   }
 
   return { risk, reason: reasons.join("; ") };
-}
-
-/**
- * Resolve a relative module_specifier to a known file path.
- * Tries the specifier as-is and with common extensions.
- */
-function resolveModuleSpecifier(
-  sourceFile: string,
-  specifier: string,
-  knownFiles: Set<string>,
-): string | null {
-  // Compute the directory of the source file
-  const lastSlash = sourceFile.lastIndexOf("/");
-  const dir = lastSlash >= 0 ? sourceFile.slice(0, lastSlash) : ".";
-
-  // Normalise the specifier: join dir + specifier and collapse ../
-  let resolved = specifier.startsWith("./") || specifier.startsWith("../")
-    ? `${dir}/${specifier}`
-    : specifier;
-
-  // Collapse . and .. segments
-  const parts = resolved.split("/");
-  const stack: string[] = [];
-  for (const p of parts) {
-    if (p === "." || p === "") continue;
-    if (p === "..") {
-      stack.pop();
-    } else {
-      stack.push(p);
-    }
-  }
-  resolved = stack.join("/");
-
-  // Try exact match first
-  if (knownFiles.has(resolved)) return resolved;
-
-  // Strip existing extension (e.g. .js) before trying alternatives
-  const stripped = resolved.replace(/\.[jt]sx?$|\.[mc][jt]s$/, "");
-
-  // Try common extensions
-  const extensions = [".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs"];
-  for (const ext of extensions) {
-    if (knownFiles.has(stripped + ext)) return stripped + ext;
-  }
-
-  // Try index files (directory import)
-  for (const ext of extensions) {
-    if (knownFiles.has(`${stripped}/index${ext}`)) return `${stripped}/index${ext}`;
-  }
-
-  // Also try the unstripped path with extensions (in case no extension to strip)
-  if (stripped !== resolved) {
-    for (const ext of extensions) {
-      if (knownFiles.has(resolved + ext)) return resolved + ext;
-    }
-  }
-
-  return null;
 }
