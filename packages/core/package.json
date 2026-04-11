@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Core types, utilities, and interfaces for IntentWeave",
   "type": "module",
   "main": "./dist/index.js",
@@ -67,7 +67,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Core types, predicates, and interfaces — always open-source"
+    "description": "Core types, predicates, and interfaces \u2014 always open-source"
   },
   "engines": {
     "node": ">=20.0.0"

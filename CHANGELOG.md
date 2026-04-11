@@ -2,7 +2,7 @@
 
 All notable changes to IntentWeave are documented in this file.
 
-## [0.6.0] — 2026-04-11
+## [0.7.0] — 2026-04-11
 
 ### Added
 

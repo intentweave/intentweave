@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/profiles",
-  "version": "0.6.0",
-  "description": "Analysis profile system for IntentWeave — configurable extraction strategies",
+  "version": "0.7.0",
+  "description": "Analysis profile system for IntentWeave \u2014 configurable extraction strategies",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -41,7 +41,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Starter profile packs — open-source, extensible by users"
+    "description": "Starter profile packs \u2014 open-source, extensible by users"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -1,8 +1,8 @@
 {
   "name": "@intentweave/ui",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
-  "description": "IntentWeave Insight Canvas — interactive knowledge graph visualizations",
+  "description": "IntentWeave Insight Canvas \u2014 interactive knowledge graph visualizations",
   "type": "module",
   "scripts": {
     "dev": "vite",
