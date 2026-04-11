@@ -263,4 +263,42 @@ describe("renderArchReportHtml", () => {
     const html = renderArchReportHtml(sampleData);
     expect(html).toContain('id="tooltip"');
   });
+
+  it("includes community mode dropdown", () => {
+    const html = renderArchReportHtml(sampleData);
+    expect(html).toContain('id="community-mode"');
+    expect(html).toContain("structural");
+    expect(html).toContain("semantic");
+    expect(html).toContain("temporal");
+  });
+
+  it("embeds communityViews when present", () => {
+    const dataWithViews = {
+      ...sampleData,
+      communityViews: {
+        semantic: [{ id: 0, label: "sem-0", size: 3 }],
+        temporal: [{ id: 0, label: "temp-0", size: 2 }],
+      },
+      activeCommunityMode: "structural",
+    };
+    const html = renderArchReportHtml(dataWithViews);
+    expect(html).toContain("communityViews");
+    expect(html).toContain("activeCommunityMode");
+  });
+
+  it("embeds node-level communityViews when present", () => {
+    const dataWithNodeViews = {
+      ...sampleData,
+      nodes: sampleData.nodes.map((n) => ({
+        ...n,
+        communityViews: {
+          semantic: { id: 0, label: "sem-cluster" },
+          temporal: { id: 1, label: "temp-cluster" },
+        },
+      })),
+    };
+    const html = renderArchReportHtml(dataWithNodeViews);
+    expect(html).toContain("sem-cluster");
+    expect(html).toContain("temp-cluster");
+  });
 });

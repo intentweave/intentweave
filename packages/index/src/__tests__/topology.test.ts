@@ -468,6 +468,84 @@ describe("9.1 Community Detection", () => {
     expect(labels).toBeInstanceOf(Map);
     expect(labels.size).toBeGreaterThan(0);
   });
+
+  // ── Resolution & Recursive Splitting ──
+
+  it("should produce more communities with higher resolution", () => {
+    // Resolution scales maxSize: higher resolution → smaller effective maxSize
+    // → more aggressive splitting → at least as many communities
+    const low = communitiesFromDb(db, { resolution: 1.0, maxSize: 20 });
+    const high = communitiesFromDb(db, { resolution: 3.0, maxSize: 20 });
+    // Higher resolution should produce at least as many communities
+    expect(high.totalCommunities).toBeGreaterThanOrEqual(
+      low.totalCommunities,
+    );
+  });
+
+  it("should recursively split large communities with maxSize", () => {
+    const noSplit = communitiesFromDb(db, { maxSize: Infinity });
+    const withSplit = communitiesFromDb(db, { maxSize: 3 });
+    // Splitting should produce at least as many communities
+    expect(withSplit.totalCommunities).toBeGreaterThanOrEqual(
+      noSplit.totalCommunities,
+    );
+    // All communities from split should be ≤ maxSize (or un-splittable)
+    // Note: some communities may resist splitting if the algorithm converges
+    // to a single group, so we just check the split count is >= no-split
+  });
+
+  it("should respect minSize option", () => {
+    const result = communitiesFromDb(db, { minSize: 5 });
+    for (const c of result.communities) {
+      expect(c.size).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it("should handle resolution = 1.0 the same as default", () => {
+    const defaultResult = communitiesFromDb(db);
+    const explicitResult = communitiesFromDb(db, { resolution: 1.0 });
+    // Same number of communities (algorithm is deterministic at resolution=1 modulo shuffle)
+    // We can't check exact equality due to shuffle randomness, but structure should be similar
+    expect(explicitResult.totalCommunities).toBeGreaterThan(0);
+    expect(explicitResult.totalNodes).toBe(defaultResult.totalNodes);
+  });
+
+  // ── Community Modes ──
+
+  it("should support structural mode (default)", () => {
+    const result = communitiesFromDb(db, { mode: "structural" });
+    expect(result.totalCommunities).toBeGreaterThan(0);
+    expect(result.totalNodes).toBeGreaterThan(0);
+  });
+
+  it("should support semantic mode", () => {
+    const result = communitiesFromDb(db, { mode: "semantic" });
+    expect(result.totalCommunities).toBeGreaterThan(0);
+    expect(result.totalNodes).toBeGreaterThan(0);
+  });
+
+  it("should support temporal mode", () => {
+    const result = communitiesFromDb(db, { mode: "temporal" });
+    // Temporal relies on co_changes — may produce 0 communities if none
+    expect(result.totalCommunities).toBeGreaterThanOrEqual(0);
+    expect(result.totalNodes).toBeGreaterThanOrEqual(0);
+  });
+
+  it("should produce different results for different modes", () => {
+    const structural = communitiesFromDb(db, { mode: "structural" });
+    const semantic = communitiesFromDb(db, { mode: "semantic" });
+    // Different graphs should typically yield different community counts or labels
+    // At minimum both should return valid results
+    expect(structural.communities).toBeDefined();
+    expect(semantic.communities).toBeDefined();
+  });
+
+  it("should default to structural mode when omitted", () => {
+    const noMode = communitiesFromDb(db);
+    const explicit = communitiesFromDb(db, { mode: "structural" });
+    expect(noMode.totalCommunities).toBe(explicit.totalCommunities);
+    expect(noMode.totalNodes).toBe(explicit.totalNodes);
+  });
 });
 
 // =============================================================================

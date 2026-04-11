@@ -12,16 +12,24 @@
  */
 
 import type Database from "better-sqlite3";
-import type { LayersInferResult, InferredLayer } from "../types.js";
+import type {
+  LayersInferResult,
+  InferredLayer,
+  InferredSubLayer,
+  LayersInferOptions,
+} from "../types.js";
 import { openIndex, buildImportGraph } from "./shared.js";
 
 /**
  * Infer architectural layers from a database file path.
  */
-export function layersInfer(dbPath: string): LayersInferResult {
+export function layersInfer(
+  dbPath: string,
+  options?: LayersInferOptions,
+): LayersInferResult {
   const db = openIndex(dbPath);
   try {
-    return layersInferFromDb(db);
+    return layersInferFromDb(db, options);
   } finally {
     db.close();
   }
@@ -29,8 +37,17 @@ export function layersInfer(dbPath: string): LayersInferResult {
 
 /**
  * Core layer inference logic against an open database.
+ *
+ * Supports three modes via options:
+ * - **Flat** (default): single-level depth bucketing across all files
+ * - **Scoped** (`scope`): flat inference restricted to one package
+ * - **Hierarchical** (`hierarchical`): macro layers at package boundary,
+ *   sub-layers within large packages
  */
-export function layersInferFromDb(db: Database.Database): LayersInferResult {
+export function layersInferFromDb(
+  db: Database.Database,
+  options?: LayersInferOptions,
+): LayersInferResult {
   const { forward, reverse, allFiles } = buildImportGraph(db);
 
   if (allFiles.size === 0) {
@@ -42,28 +59,40 @@ export function layersInferFromDb(db: Database.Database): LayersInferResult {
     };
   }
 
-  // Find all files known to the DB (including ones not in import graph)
+  // ── Scoped mode: filter graph to one package ────────────────────
+  if (options?.scope) {
+    return scopedInfer(db, forward, allFiles, options.scope);
+  }
+
+  // ── Hierarchical mode: macro layers + sub-layers ────────────────
+  if (options?.hierarchical) {
+    return hierarchicalInfer(
+      db,
+      forward,
+      allFiles,
+      options.minFilesForSubLayers ?? 10,
+    );
+  }
+
+  // ── Flat mode (original algorithm) ──────────────────────────────
+  return flatInfer(db, forward, allFiles);
+}
+
+// ─── Flat inference (original algorithm) ───────────────────────────────────
+
+function flatInfer(
+  db: Database.Database,
+  forward: Map<string, Set<string>>,
+  allFiles: Set<string>,
+): LayersInferResult {
   const knownFiles = new Set(
     (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
       (r) => r.path,
     ),
   );
 
-  // 1. Compute topological depth via reverse BFS from leaf nodes
-  //    Leaf nodes = files with no outgoing imports (forward edges)
-  //    Depth 0 = leaf/foundation files that nothing depends on (fan-out = 0)
-  //    Actually, we want foundation = files imported by many but importing few.
-  //    Better approach: depth = longest path from any root to this file,
-  //    where root = file with no incoming imports (entry points).
-  //    But this gives depth 0 = entry points, which is the opposite of what we want.
-  //
-  //    Use REVERSE depth: depth = longest path in REVERSE graph from sinks.
-  //    Sinks = files with no outgoing imports (they import nothing).
-  //    Depth 0 = sinks (foundation), higher depth = entrypoints/UI.
-
   const depth = computeDepthFromSinks(allFiles, forward);
 
-  // Identify isolated files (in knownFiles but not in import graph)
   const isolatedFiles: string[] = [];
   for (const f of knownFiles) {
     if (!allFiles.has(f)) {
@@ -72,50 +101,7 @@ export function layersInferFromDb(db: Database.Database): LayersInferResult {
   }
   isolatedFiles.sort();
 
-  // 2. Determine layer count and boundaries
-  const maxDepth = Math.max(...depth.values(), 0);
-  const layerCount = Math.min(Math.max(Math.ceil((maxDepth + 1) / 2), 2), 7);
-  const bucketSize = (maxDepth + 1) / layerCount;
-
-  // 3. Bucket files into layers by depth
-  const layerBuckets = new Map<number, string[]>();
-  for (let i = 0; i < layerCount; i++) {
-    layerBuckets.set(i, []);
-  }
-
-  for (const [file, d] of depth) {
-    const bucket = Math.min(Math.floor(d / bucketSize), layerCount - 1);
-    layerBuckets.get(bucket)!.push(file);
-  }
-
-  // 4. Build InferredLayer objects with auto-generated labels
-  const layers: InferredLayer[] = [];
-
-  for (let i = 0; i < layerCount; i++) {
-    const files = layerBuckets.get(i)!;
-    if (files.length === 0) continue;
-
-    files.sort();
-
-    // Compute actual depth range for this bucket
-    const depths = files.map((f) => depth.get(f)!);
-    const depthRange: [number, number] = [
-      Math.min(...depths),
-      Math.max(...depths),
-    ];
-
-    // Generate label from most common directory prefix
-    const label = generateLayerLabel(files, i, layerCount);
-
-    layers.push({
-      index: i,
-      label,
-      files,
-      depthRange,
-    });
-  }
-
-  // 5. Generate YAML
+  const layers = bucketIntoLayers(depth, allFiles);
   const yaml = generateYaml(layers);
 
   return {
@@ -124,6 +110,337 @@ export function layersInferFromDb(db: Database.Database): LayersInferResult {
     isolatedFiles,
     yaml,
   };
+}
+
+// ─── Scoped inference (filter to one package) ──────────────────────────────
+
+function scopedInfer(
+  db: Database.Database,
+  forward: Map<string, Set<string>>,
+  allFiles: Set<string>,
+  scope: string,
+): LayersInferResult {
+  // Normalise scope (strip trailing slash)
+  const prefix = scope.endsWith("/") ? scope : scope + "/";
+
+  // Filter to files within the scope
+  const scopedFiles = new Set<string>();
+  for (const f of allFiles) {
+    if (f.startsWith(prefix)) scopedFiles.add(f);
+  }
+
+  if (scopedFiles.size === 0) {
+    return {
+      layers: [],
+      totalFiles: 0,
+      isolatedFiles: [],
+      yaml: `# No files found in scope "${scope}"\nlayers: []\n`,
+    };
+  }
+
+  // Build scoped forward graph (only edges within scope)
+  const scopedForward = new Map<string, Set<string>>();
+  for (const [src, targets] of forward) {
+    if (!scopedFiles.has(src)) continue;
+    const filtered = new Set<string>();
+    for (const t of targets) {
+      if (scopedFiles.has(t)) filtered.add(t);
+    }
+    if (filtered.size > 0) scopedForward.set(src, filtered);
+  }
+
+  const depth = computeDepthFromSinks(scopedFiles, scopedForward);
+
+  // Identify isolated files within scope
+  const knownFiles = new Set(
+    (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
+      (r) => r.path,
+    ),
+  );
+  const isolatedFiles: string[] = [];
+  for (const f of knownFiles) {
+    if (f.startsWith(prefix) && !scopedFiles.has(f)) {
+      isolatedFiles.push(f);
+    }
+  }
+  isolatedFiles.sort();
+
+  const layers = bucketIntoLayers(depth, scopedFiles);
+  const yaml = generateYaml(layers);
+
+  return {
+    layers,
+    totalFiles: scopedFiles.size,
+    isolatedFiles,
+    yaml,
+  };
+}
+
+// ─── Hierarchical inference (macro layers + sub-layers) ────────────────────
+
+/**
+ * Extract the package directory from a file path.
+ * Recognises: packages/<name>/..., apps/<name>/..., libs/<name>/..., modules/<name>/...
+ * Returns null for files not inside a known package directory.
+ */
+function extractPackage(filePath: string): string | null {
+  const match = filePath.match(/^(packages|apps|libs|modules)\/([^/]+)\//);
+  return match ? `${match[1]}/${match[2]}` : null;
+}
+
+/**
+ * Resolve a non-relative module specifier (e.g. "@intentweave/core") to a known
+ * package directory (e.g. "packages/core"). Tries multiple directory prefixes
+ * (packages/, apps/, libs/, modules/) and matches against known packages.
+ */
+function resolveNonRelativePackage(
+  specifier: string,
+  knownPackages: Set<string>,
+): string | null {
+  // Handle scoped packages: @scope/name → name, @scope/name/sub → name
+  const scopedMatch = specifier.match(/^@[^/]+\/([^/]+)/);
+  const bareName = scopedMatch ? scopedMatch[1] : specifier.split("/")[0];
+
+  // Try each directory prefix
+  for (const prefix of ["packages", "apps", "libs", "modules"]) {
+    const candidate = `${prefix}/${bareName}`;
+    if (knownPackages.has(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function hierarchicalInfer(
+  db: Database.Database,
+  forward: Map<string, Set<string>>,
+  allFiles: Set<string>,
+  minFilesForSubLayers: number,
+): LayersInferResult {
+  // 1. Group files by package
+  const packageFiles = new Map<string, Set<string>>(); // package → files
+  const rootFiles = new Set<string>(); // files not in any package
+  for (const f of allFiles) {
+    const pkg = extractPackage(f);
+    if (pkg) {
+      if (!packageFiles.has(pkg)) packageFiles.set(pkg, new Set());
+      packageFiles.get(pkg)!.add(f);
+    } else {
+      rootFiles.add(f);
+    }
+  }
+
+  // If no package structure detected, fall back to flat inference
+  if (packageFiles.size <= 1 && rootFiles.size === 0) {
+    return flatInfer(db, forward, allFiles);
+  }
+
+  // 2. Build package-level (supernode) import graph
+  //    Edge between packages A→B if any file in A imports any file in B
+  const allPackages = new Set(packageFiles.keys());
+  // Include root as a pseudo-package if it has files
+  if (rootFiles.size > 0) allPackages.add("__root__");
+
+  const pkgForward = new Map<string, Set<string>>();
+
+  // 2a. Cross-package edges from relative imports (already in the forward graph)
+  for (const [src, targets] of forward) {
+    const srcPkg = extractPackage(src) ?? (rootFiles.has(src) ? "__root__" : null);
+    if (!srcPkg) continue;
+    for (const tgt of targets) {
+      const tgtPkg = extractPackage(tgt) ?? (rootFiles.has(tgt) ? "__root__" : null);
+      if (!tgtPkg || tgtPkg === srcPkg) continue;
+      if (!pkgForward.has(srcPkg)) pkgForward.set(srcPkg, new Set());
+      pkgForward.get(srcPkg)!.add(tgtPkg);
+    }
+  }
+
+  // 2b. Cross-package edges from non-relative imports (e.g., @intentweave/core → packages/core)
+  //     These are absent from the forward graph because buildImportGraph only resolves relative imports.
+  const nonRelEdges = db
+    .prepare(
+      `SELECT DISTINCT source_file, module_specifier
+       FROM imports WHERE is_relative = 0`,
+    )
+    .all() as Array<{ source_file: string; module_specifier: string }>;
+
+  for (const { source_file, module_specifier } of nonRelEdges) {
+    const srcPkg =
+      extractPackage(source_file) ??
+      (rootFiles.has(source_file) ? "__root__" : null);
+    if (!srcPkg) continue;
+
+    // Map scoped packages: @scope/name → packages/name (or apps/name)
+    const tgtPkg = resolveNonRelativePackage(module_specifier, allPackages);
+    if (!tgtPkg || tgtPkg === srcPkg) continue;
+
+    if (!pkgForward.has(srcPkg)) pkgForward.set(srcPkg, new Set());
+    pkgForward.get(srcPkg)!.add(tgtPkg);
+  }
+
+  // 3. Compute macro layer depth from package graph
+  const pkgDepth = computeDepthFromSinks(allPackages, pkgForward);
+
+  // 4. Bucket packages into macro layers
+  const maxPkgDepth = Math.max(...pkgDepth.values(), 0);
+  const macroLayerCount = Math.min(
+    Math.max(Math.ceil((maxPkgDepth + 1) / 1), 2), // each depth = one layer for packages
+    7,
+  );
+  const macroBucketSize = (maxPkgDepth + 1) / macroLayerCount;
+
+  const macroBuckets = new Map<number, string[]>();
+  for (let i = 0; i < macroLayerCount; i++) macroBuckets.set(i, []);
+
+  for (const [pkg, d] of pkgDepth) {
+    const bucket = Math.min(
+      Math.floor(d / macroBucketSize),
+      macroLayerCount - 1,
+    );
+    macroBuckets.get(bucket)!.push(pkg);
+  }
+
+  // 5. Build macro layers with sub-layers
+  const knownFiles = new Set(
+    (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
+      (r) => r.path,
+    ),
+  );
+
+  const isolatedFiles: string[] = [];
+  for (const f of knownFiles) {
+    if (!allFiles.has(f)) isolatedFiles.push(f);
+  }
+  isolatedFiles.sort();
+
+  const layers: InferredLayer[] = [];
+
+  for (let i = 0; i < macroLayerCount; i++) {
+    const packages = macroBuckets.get(i)!;
+    if (packages.length === 0) continue;
+
+    packages.sort();
+
+    // Collect all files in this macro layer
+    const layerFiles: string[] = [];
+    for (const pkg of packages) {
+      const files =
+        pkg === "__root__" ? rootFiles : packageFiles.get(pkg) ?? new Set();
+      for (const f of files) layerFiles.push(f);
+    }
+    layerFiles.sort();
+
+    if (layerFiles.length === 0) continue;
+
+    // Compute depth range from per-file depths (across all packages in this layer)
+    const fileDepths = layerFiles.map((f) => {
+      // Use the package depth for the macro range
+      const pkg = extractPackage(f) ?? (rootFiles.has(f) ? "__root__" : null);
+      return pkgDepth.get(pkg ?? "") ?? 0;
+    });
+    const depthRange: [number, number] = [
+      Math.min(...fileDepths),
+      Math.max(...fileDepths),
+    ];
+
+    const label = generateLayerLabel(
+      layerFiles,
+      i,
+      macroLayerCount,
+    );
+
+    // 6. Compute sub-layers for qualifying packages
+    const subLayers: InferredSubLayer[] = [];
+    for (const pkg of packages) {
+      if (pkg === "__root__") continue;
+      const pkgFileSet = packageFiles.get(pkg);
+      if (!pkgFileSet || pkgFileSet.size < minFilesForSubLayers) continue;
+
+      // Build internal subgraph (only edges within this package)
+      const internalForward = new Map<string, Set<string>>();
+      for (const [src, targets] of forward) {
+        if (!pkgFileSet.has(src)) continue;
+        const filtered = new Set<string>();
+        for (const t of targets) {
+          if (pkgFileSet.has(t)) filtered.add(t);
+        }
+        if (filtered.size > 0) internalForward.set(src, filtered);
+      }
+
+      const internalDepth = computeDepthFromSinks(pkgFileSet, internalForward);
+      const internalLayers = bucketIntoLayers(internalDepth, pkgFileSet);
+
+      for (const sub of internalLayers) {
+        subLayers.push({
+          index: sub.index,
+          label: sub.label,
+          files: sub.files,
+          depthRange: sub.depthRange,
+          package: pkg,
+        });
+      }
+    }
+
+    const displayPackages = packages.filter((p) => p !== "__root__");
+
+    layers.push({
+      index: i,
+      label,
+      files: layerFiles,
+      depthRange,
+      ...(displayPackages.length > 0 ? { packages: displayPackages } : {}),
+      ...(subLayers.length > 0 ? { subLayers } : {}),
+    });
+  }
+
+  const yaml = generateHierarchicalYaml(layers);
+
+  return {
+    layers,
+    totalFiles: allFiles.size,
+    isolatedFiles,
+    yaml,
+  };
+}
+
+// ─── Shared bucketing helper ───────────────────────────────────────────────
+
+/**
+ * Bucket files into layers by their computed depth.
+ * Used by both flat and scoped inference, and for sub-layers within packages.
+ */
+function bucketIntoLayers(
+  depth: Map<string, number>,
+  allFiles: Set<string>,
+): InferredLayer[] {
+  const maxDepth = Math.max(...depth.values(), 0);
+  const layerCount = Math.min(Math.max(Math.ceil((maxDepth + 1) / 2), 2), 7);
+  const bucketSize = (maxDepth + 1) / layerCount;
+
+  const layerBuckets = new Map<number, string[]>();
+  for (let i = 0; i < layerCount; i++) layerBuckets.set(i, []);
+
+  for (const [file, d] of depth) {
+    const bucket = Math.min(Math.floor(d / bucketSize), layerCount - 1);
+    layerBuckets.get(bucket)!.push(file);
+  }
+
+  const layers: InferredLayer[] = [];
+  for (let i = 0; i < layerCount; i++) {
+    const files = layerBuckets.get(i)!;
+    if (files.length === 0) continue;
+    files.sort();
+
+    const depths = files.map((f) => depth.get(f)!);
+    const depthRange: [number, number] = [
+      Math.min(...depths),
+      Math.max(...depths),
+    ];
+
+    const label = generateLayerLabel(files, i, layerCount);
+    layers.push({ index: i, label, files, depthRange });
+  }
+
+  return layers;
 }
 
 /**
@@ -339,6 +656,69 @@ function generateYaml(layers: InferredLayer[]): string {
       lines.push(
         `      # ${remaining.length} additional files — consider grouping`,
       );
+    }
+  }
+
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * Generate YAML config from hierarchical layers (with sub-layers).
+ */
+function generateHierarchicalYaml(layers: InferredLayer[]): string {
+  const lines: string[] = [
+    "# Auto-inferred hierarchical layer architecture",
+    "# Macro layers at package boundary, sub-layers within large packages.",
+    "# Lower layers (index 0) are foundation; higher layers are entrypoints/UI.",
+    "#",
+    "# Run `iw index layers-check` to validate imports against this config.",
+    "",
+    "layers:",
+  ];
+
+  for (const layer of layers) {
+    lines.push(`  - name: "${layer.label}"`);
+    const pkgs = layer.packages?.join(", ") ?? "";
+    lines.push(
+      `    # packages: ${pkgs || "mixed"}, ${layer.files.length} files`,
+    );
+    lines.push(`    patterns:`);
+
+    // Use package-level globs
+    if (layer.packages && layer.packages.length > 0) {
+      for (const pkg of layer.packages) {
+        lines.push(`      - "${pkg}/**"`);
+      }
+    } else {
+      // Root files — list individually or use short patterns
+      const sample = layer.files.slice(0, 10);
+      for (const f of sample) {
+        lines.push(`      - "${f}"`);
+      }
+      if (layer.files.length > 10) {
+        lines.push(
+          `      # ${layer.files.length - 10} additional files — consider grouping`,
+        );
+      }
+    }
+
+    // Output sub-layers as comments for reference
+    if (layer.subLayers && layer.subLayers.length > 0) {
+      // Group sub-layers by package
+      const byPkg = new Map<string, InferredSubLayer[]>();
+      for (const sub of layer.subLayers) {
+        if (!byPkg.has(sub.package)) byPkg.set(sub.package, []);
+        byPkg.get(sub.package)!.push(sub);
+      }
+
+      for (const [pkg, subs] of byPkg) {
+        lines.push(`    # sub-layers in ${pkg}:`);
+        for (const sub of subs) {
+          lines.push(
+            `    #   ${sub.index}: ${sub.label} (${sub.files.length} files, depth ${sub.depthRange[0]}–${sub.depthRange[1]})`,
+          );
+        }
+      }
     }
   }
 

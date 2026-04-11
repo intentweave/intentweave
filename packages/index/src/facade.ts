@@ -67,6 +67,7 @@ import {
   boundaryViolationsFromDb,
   layersInferFromDb,
   layersCheckFromDb,
+  slicesFromDb,
   archReportFromDb,
 } from "./queries/index.js";
 import type { ReportOptions } from "./queries/index.js";
@@ -100,15 +101,19 @@ import type {
   AnnotationsForFileResult,
   HubAnalysisResult,
   CommunityDetectionResult,
+  CommunityOptions,
   SurprisingConnectionsResult,
   RationaleResult,
   TerminologyInconsistencyResult,
   DependencyDepthResult,
   BoundaryViolationsResult,
   LayersInferResult,
+  LayersInferOptions,
   LayerConfig,
   LayersCheckResult,
   ArchReportData,
+  SlicesOptions,
+  SlicesResult,
 } from "./types.js";
 
 import type { ArchReportOptions } from "./queries/archReport.js";
@@ -647,8 +652,8 @@ export class CariIndex {
   }
 
   /** Label-propagation community detection on the combined graph. */
-  communities(): CommunityDetectionResult {
-    return communitiesFromDb(this.db);
+  communities(options?: CommunityOptions): CommunityDetectionResult {
+    return communitiesFromDb(this.db, options);
   }
 
   /** Rank connections by surprise score (cross-layer, community distance, rarity). */
@@ -685,13 +690,18 @@ export class CariIndex {
   // ---------------------------------------------------------------------------
 
   /** Auto-infer architectural layers from the import graph. */
-  layersInfer(): LayersInferResult {
-    return layersInferFromDb(this.db);
+  layersInfer(options?: LayersInferOptions): LayersInferResult {
+    return layersInferFromDb(this.db, options);
   }
 
   /** Validate imports against a layer config, detecting reverse and skip-layer violations. */
   layersCheck(config: LayerConfig): LayersCheckResult {
     return layersCheckFromDb(this.db, config);
+  }
+
+  /** Detect vertical slices — communities that span multiple layers end-to-end. */
+  slices(options?: SlicesOptions): SlicesResult {
+    return slicesFromDb(this.db, options);
   }
 
   // ---------------------------------------------------------------------------

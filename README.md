@@ -56,9 +56,12 @@ The HTML report renders a **layered, spatial architecture view**:
 
 - Files positioned in their inferred architectural tier (foundation at bottom, entry points at top)
 - Node size proportional to transitive dependents — bigger = higher impact
-- Colour-coded community clusters via label-propagation detection
+- Colour-coded community clusters via label-propagation detection, with **three switchable modes**:
+  structural (imports + co-changes), semantic (full co-occurrence), temporal (git co-changes only)
 - Import edges with layer violations drawn as red reverse-arrows
 - Three views: **Layers** (tiered layout), **Communities** (force-directed), **Dependencies** (root-focused)
+- Vertical slice detection — click a community to highlight its cross-layer feature slice
+- Hierarchical sub-layering within architectural tiers
 - Optional LLM pass names layers ("HTTP Layer", "Data Access") and directories ("CLI Subcommands",
   "Pipeline Stages") with architectural descriptions
 - Zero server dependency — shareable as a single self-contained HTML file
@@ -357,7 +360,7 @@ Additional CARI queries are available as CLI subcommands, MCP tools, and via the
 | `iw index annotations-for <file>`          | `cari_annotations_for`     | List all annotations for a documentation file                  |
 | `iw index test-coverage`                   | `cari_test_coverage`       | Map test files to source files, find untested exports          |
 | `iw index hubs`                            | `cari_hubs`                | God-node / hub analysis (degree centrality)                    |
-| `iw index communities`                     | `cari_communities`         | Label-propagation community detection                          |
+| `iw index communities`                     | `cari_communities`         | Community detection (structural / semantic / temporal modes)    |
 | `iw index surprises`                       | `cari_surprises`           | Surprising connection ranking (composite score)                |
 | `iw index rationale`                       | `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                  |
 | `iw index terminology`                     | `cari_terminology`         | Terminology inconsistency detection                            |
@@ -404,7 +407,7 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `cari_annotations_for`     | File → all annotations                      | `filePath`, `minConfidence?`     |
 | `cari_test_coverage`       | Test→source mapping + gaps                  | `limit?`                         |
 | `cari_hubs`                | God-node / hub analysis                     | `limit?`                         |
-| `cari_communities`         | Label-propagation community detection       | _(none)_                         |
+| `cari_communities`         | Community detection (3 modes)               | `mode?`, `resolution?`, `limit?` |
 | `cari_surprises`           | Surprising connection ranking               | `limit?`                         |
 | `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN inventory         | `kind?`, `limit?`                |
 | `cari_terminology`         | Terminology inconsistency detection         | `limit?`                         |
@@ -530,7 +533,7 @@ Schema-free knowledge extraction:
 ```bash
 pnpm install          # Install all packages
 pnpm build            # Build all (uses Turbo)
-pnpm test             # Run all tests (710+ tests)
+pnpm test             # Run all tests (1200+ tests)
 pnpm dev              # Dev mode with hot reload
 pnpm typecheck        # Type check all packages
 pnpm format           # Format with Prettier
@@ -555,11 +558,11 @@ pnpm --filter @intentweave/cli publish --access public
 ### Project Stats
 
 - **11 packages** + 1 app
-- **900+ tests**, all passing
+- **1200+ tests**, all passing
 - **TypeScript 5.6**, ESM, strict mode
 - **Fastify 5**, Neo4j 5, SQLite (better-sqlite3), Turbo, pnpm workspaces
-- **27 CARI query modes** + interactive HTML architecture report
-- **32 MCP tools** for GitHub Copilot integration
+- **27 CARI query modes** + interactive HTML architecture report with multi-view community modes
+- **33 MCP tools** for GitHub Copilot integration
 
 ---
 

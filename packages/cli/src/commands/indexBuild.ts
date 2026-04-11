@@ -182,6 +182,7 @@ import {
   boundaryViolations,
   layersInfer,
   layersCheck,
+  slices,
   nameLayers,
   archReport,
   renderArchReportHtml,
@@ -1393,10 +1394,29 @@ const indexCommunitiesSubcommand = new Command("communities")
     "Detect natural module clusters via label propagation on the combined graph",
   )
   .option("--db <path>", "Path to index.db")
+  .option(
+    "-r, --resolution <n>",
+    "Community granularity: higher values (2–5) produce more, smaller communities (default: 1.0)",
+    "1.0",
+  )
+  .option(
+    "--max-size <n>",
+    "Max community size before recursive sub-splitting (default: 100)",
+    "100",
+  )
+  .option(
+    "-m, --mode <mode>",
+    "Community graph mode: structural (imports/co-changes), semantic (full co-occurrence), temporal (co-changes only)",
+    "structural",
+  )
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action((opts) => {
     const dbPath = resolveDbPath(opts.db);
-    const result = communities(dbPath);
+    const result = communities(dbPath, {
+      resolution: parseFloat(opts.resolution),
+      maxSize: parseInt(opts.maxSize, 10),
+      mode: opts.mode as "structural" | "semantic" | "temporal",
+    });
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));
@@ -1731,9 +1751,27 @@ const indexLayersInferSubcommand = new Command("layers-infer")
     "Write layers.yaml to this path (default: .iw/layers.yaml)",
   )
   .option("-f, --format <format>", "Output format: text or json", "text")
+  .option(
+    "--hierarchical",
+    "Two-level inference: macro layers at package boundary, sub-layers within packages",
+  )
+  .option(
+    "--scope <path>",
+    "Scope inference to a single package directory (e.g., packages/analyzer)",
+  )
+  .option(
+    "--min-files <n>",
+    "Minimum files for a package to get sub-layers (hierarchical mode)",
+    "10",
+  )
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
-    const result = layersInfer(dbPath);
+    const options = {
+      hierarchical: opts.hierarchical ?? false,
+      scope: opts.scope,
+      minFilesForSubLayers: parseInt(opts.minFiles, 10),
+    };
+    const result = layersInfer(dbPath, options);
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));
@@ -1749,16 +1787,25 @@ const indexLayersInferSubcommand = new Command("layers-infer")
       return;
     }
 
+    const modeLabel = options.hierarchical
+      ? "hierarchical"
+      : options.scope
+        ? `scoped (${options.scope})`
+        : "flat";
     console.log(
       chalk.blue(
-        `\n  ▸ ${result.layers.length} layers inferred from ${result.totalFiles} files`,
+        `\n  ▸ ${result.layers.length} layers inferred from ${result.totalFiles} files (${modeLabel})`,
       ),
     );
 
     for (const layer of result.layers) {
+      const pkgInfo =
+        layer.packages && layer.packages.length > 0
+          ? ` [${layer.packages.join(", ")}]`
+          : "";
       console.log(
         chalk.cyan(
-          `\n    Layer ${layer.index}: ${layer.label} (${layer.files.length} files, depth ${layer.depthRange[0]}–${layer.depthRange[1]})`,
+          `\n    Layer ${layer.index}: ${layer.label} (${layer.files.length} files, depth ${layer.depthRange[0]}–${layer.depthRange[1]})${pkgInfo}`,
         ),
       );
       const display = layer.files.slice(0, 8);
@@ -1767,6 +1814,26 @@ const indexLayersInferSubcommand = new Command("layers-infer")
       }
       if (layer.files.length > 8) {
         console.log(chalk.gray(`      … and ${layer.files.length - 8} more`));
+      }
+
+      // Show sub-layers in hierarchical mode
+      if (layer.subLayers && layer.subLayers.length > 0) {
+        // Group by package
+        const byPkg = new Map<string, typeof layer.subLayers>();
+        for (const sub of layer.subLayers) {
+          if (!byPkg.has(sub.package)) byPkg.set(sub.package, []);
+          byPkg.get(sub.package)!.push(sub);
+        }
+        for (const [pkg, subs] of byPkg) {
+          console.log(chalk.white(`\n      Sub-layers in ${pkg}:`));
+          for (const sub of subs) {
+            console.log(
+              chalk.gray(
+                `        ${sub.index}: ${sub.label} (${sub.files.length} files, depth ${sub.depthRange[0]}–${sub.depthRange[1]})`,
+              ),
+            );
+          }
+        }
       }
     }
 
@@ -1943,6 +2010,99 @@ function parseLayersYaml(content: string): LayerConfig {
   return { layers };
 }
 
+// ── iw index slices ───────────────────────────────────────────────
+
+const indexSlicesSubcommand = new Command("slices")
+  .description(
+    "Detect vertical slices — communities that span multiple architectural layers end-to-end",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "-n, --min-layers <n>",
+    "Minimum layers a community must span to be a vertical slice",
+    "3",
+  )
+  .option("-l, --limit <n>", "Maximum slices to show")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(
+    (opts: {
+      db?: string;
+      minLayers?: string;
+      limit?: string;
+      format?: string;
+    }) => {
+      const dbPath = resolveDbPath(opts.db);
+      const result = slices(dbPath, {
+        minLayers: opts.minLayers ? parseInt(opts.minLayers, 10) : undefined,
+        limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+      });
+
+      if (opts.format === "json") {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      console.log(
+        chalk.bold(
+          `\n  Vertical Slice Detection — ${result.totalLayers} layers, ${result.totalCommunities} communities\n`,
+        ),
+      );
+
+      if (result.slices.length === 0) {
+        console.log(
+          chalk.yellow(
+            "  No vertical slices detected (no community spans enough layers).\n",
+          ),
+        );
+      } else {
+        console.log(
+          chalk.cyan(
+            `  ${result.slices.length} vertical slice(s) (spanning ≥${opts.minLayers ?? 3} layers):\n`,
+          ),
+        );
+        for (const s of result.slices) {
+          console.log(
+            chalk.bold(
+              `    ${s.label}  —  ${s.totalFiles} files across ${s.layerSpan} layers`,
+            ),
+          );
+          for (const layerIdx of [...s.layers].sort((a, b) => b - a)) {
+            const files = s.filesByLayer[layerIdx] || [];
+            console.log(
+              chalk.gray(
+                `      Layer ${layerIdx}: ${files.map((f: string) => f.split("/").pop()).join(", ")}`,
+              ),
+            );
+          }
+          console.log();
+        }
+      }
+
+      if (result.horizontal.length > 0) {
+        console.log(
+          chalk.gray(
+            `  ${result.horizontal.length} horizontal module(s) (spanning 1–2 layers):\n`,
+          ),
+        );
+        for (const h of result.horizontal.slice(0, 10)) {
+          console.log(
+            chalk.gray(
+              `    ${h.label}  —  ${h.totalFiles} files in layer(s) ${h.layers.join(", ")}`,
+            ),
+          );
+        }
+        if (result.horizontal.length > 10) {
+          console.log(
+            chalk.gray(
+              `    ... and ${result.horizontal.length - 10} more`,
+            ),
+          );
+        }
+        console.log();
+      }
+    },
+  );
+
 // ── iw index export ─────────────────────────────────────────────
 
 const indexExportSubcommand = new Command("export")
@@ -1956,6 +2116,25 @@ const indexExportSubcommand = new Command("export")
   )
   .option("--model <name>", "LLM model name", "gpt-4o-mini")
   .option("--api-key <key>", "OpenAI API key (or set OPENAI_API_KEY)")
+  .option(
+    "--no-hierarchical",
+    "Disable two-level hierarchical layer inference (flat layers only)",
+  )
+  .option(
+    "-r, --resolution <n>",
+    "Community granularity: higher values (2–5) produce more, smaller communities (default: 1.0)",
+    "1.0",
+  )
+  .option(
+    "--max-size <n>",
+    "Max community size before recursive sub-splitting (default: 100)",
+    "100",
+  )
+  .option(
+    "-m, --mode <mode>",
+    "Community graph mode: structural (imports/co-changes), semantic (full co-occurrence), temporal (co-changes only)",
+    "structural",
+  )
   .action(
     async (opts: {
       db?: string;
@@ -1964,6 +2143,10 @@ const indexExportSubcommand = new Command("export")
       provider?: string;
       model: string;
       apiKey?: string;
+      hierarchical: boolean;
+      resolution: string;
+      maxSize: string;
+      mode: string;
     }) => {
       const dbPath = resolveDbPath(opts.db);
 
@@ -1973,7 +2156,10 @@ const indexExportSubcommand = new Command("export")
       if (opts.provider) {
         const { OpenAILLMProvider, SmartMockLLMProvider } =
           await import("@intentweave/analyzer/llm");
-        const layers = layersInfer(dbPath);
+        const layers = layersInfer(
+          dbPath,
+          opts.hierarchical ? { hierarchical: true } : undefined,
+        );
         let llm;
         if (opts.provider === "openai") {
           const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
@@ -2001,10 +2187,19 @@ const indexExportSubcommand = new Command("export")
       }
 
       console.log("Collecting architecture data…");
-      const data = archReport(
-        dbPath,
-        layerNames ? { layerNames, directoryNames } : undefined,
-      );
+      const layerOptions = opts.hierarchical
+        ? { hierarchical: true }
+        : undefined;
+      const communityOptions = {
+        resolution: parseFloat(opts.resolution),
+        maxSize: parseInt(opts.maxSize, 10),
+        mode: opts.mode as "structural" | "semantic" | "temporal",
+      };
+      const data = archReport(dbPath, {
+        ...(layerNames ? { layerNames, directoryNames } : {}),
+        ...(layerOptions ? { layerOptions } : {}),
+        communityOptions,
+      });
       console.log(
         `  ${data.meta.totalFiles} files · ${data.summary.totalLayers} layers · ` +
           `${data.summary.totalCommunities} communities`,
@@ -2055,4 +2250,5 @@ export const indexCommand = new Command("index")
   .addCommand(indexBoundaryViolationsSubcommand)
   .addCommand(indexLayersInferSubcommand)
   .addCommand(indexLayersCheckSubcommand)
+  .addCommand(indexSlicesSubcommand)
   .addCommand(indexExportSubcommand);

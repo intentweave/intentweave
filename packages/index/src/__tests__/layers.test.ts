@@ -14,7 +14,7 @@ import * as os from "os";
 import { initSchema } from "../schema.js";
 import { layersInferFromDb } from "../queries/layersInfer.js";
 import { layersCheckFromDb } from "../queries/layersCheck.js";
-import type { LayerConfig } from "../types.js";
+import type { LayerConfig, LayersInferOptions } from "../types.js";
 
 // =============================================================================
 // 5.1a Layer Inference
@@ -410,5 +410,324 @@ describe("layersCheck", () => {
       expect(typeof v.sourceLayerIndex).toBe("number");
       expect(typeof v.targetLayerIndex).toBe("number");
     }
+  });
+});
+
+// =============================================================================
+// 5.5 Hierarchical Sub-Layering
+// =============================================================================
+
+describe("layersInfer — hierarchical mode", () => {
+  let db: Database.Database;
+  let dbPath: string;
+
+  beforeAll(() => {
+    dbPath = path.join(
+      os.tmpdir(),
+      `cari-layers-hierarchical-${Date.now()}.db`,
+    );
+    db = new Database(dbPath);
+    initSchema(db);
+    seedHierarchicalFixtures(db);
+  });
+
+  afterAll(() => {
+    db.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
+  /**
+   * Multi-package graph with internal structure:
+   *
+   *   packages/core/src/types.ts        (foundation)
+   *   packages/core/src/utils.ts        → core/types.ts
+   *   packages/core/src/errors.ts       → core/types.ts
+   *   packages/analyzer/src/extract.ts  → core/types.ts, core/utils.ts
+   *   packages/analyzer/src/parse.ts    → core/types.ts
+   *   packages/analyzer/src/transform.ts → analyzer/extract.ts, analyzer/parse.ts
+   *   packages/server/src/api.ts        → analyzer/transform.ts, core/types.ts
+   *   packages/server/src/routes.ts     → server/api.ts
+   *   packages/server/src/middleware.ts  → server/api.ts
+   *   packages/cli/src/main.ts          → server/routes.ts
+   */
+  function seedHierarchicalFixtures(d: Database.Database) {
+    const insFile = d.prepare(
+      `INSERT INTO files (path, is_doc, is_hotspot) VALUES (?, 0, 0)`,
+    );
+    const files = [
+      "packages/core/src/types.ts",
+      "packages/core/src/utils.ts",
+      "packages/core/src/errors.ts",
+      "packages/analyzer/src/extract.ts",
+      "packages/analyzer/src/parse.ts",
+      "packages/analyzer/src/transform.ts",
+      "packages/server/src/api.ts",
+      "packages/server/src/routes.ts",
+      "packages/server/src/middleware.ts",
+      "packages/cli/src/main.ts",
+    ];
+    for (const f of files) insFile.run(f);
+
+    const insImp = d.prepare(
+      `INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
+       VALUES (?, ?, ?, 1, '[]')`,
+    );
+    // core internal
+    insImp.run(
+      "packages/core/src/utils.ts",
+      "packages/core/src/types.ts",
+      "./types",
+    );
+    insImp.run(
+      "packages/core/src/errors.ts",
+      "packages/core/src/types.ts",
+      "./types",
+    );
+    // analyzer → core
+    insImp.run(
+      "packages/analyzer/src/extract.ts",
+      "packages/core/src/types.ts",
+      "../../core/src/types",
+    );
+    insImp.run(
+      "packages/analyzer/src/extract.ts",
+      "packages/core/src/utils.ts",
+      "../../core/src/utils",
+    );
+    insImp.run(
+      "packages/analyzer/src/parse.ts",
+      "packages/core/src/types.ts",
+      "../../core/src/types",
+    );
+    // analyzer internal
+    insImp.run(
+      "packages/analyzer/src/transform.ts",
+      "packages/analyzer/src/extract.ts",
+      "./extract",
+    );
+    insImp.run(
+      "packages/analyzer/src/transform.ts",
+      "packages/analyzer/src/parse.ts",
+      "./parse",
+    );
+    // server → analyzer, core
+    insImp.run(
+      "packages/server/src/api.ts",
+      "packages/analyzer/src/transform.ts",
+      "../../analyzer/src/transform",
+    );
+    insImp.run(
+      "packages/server/src/api.ts",
+      "packages/core/src/types.ts",
+      "../../core/src/types",
+    );
+    // server internal
+    insImp.run(
+      "packages/server/src/routes.ts",
+      "packages/server/src/api.ts",
+      "./api",
+    );
+    insImp.run(
+      "packages/server/src/middleware.ts",
+      "packages/server/src/api.ts",
+      "./api",
+    );
+    // cli → server
+    insImp.run(
+      "packages/cli/src/main.ts",
+      "packages/server/src/routes.ts",
+      "../../server/src/routes",
+    );
+  }
+
+  it("returns layers in hierarchical mode", () => {
+    const options: LayersInferOptions = {
+      hierarchical: true,
+      minFilesForSubLayers: 2,
+    };
+    const result = layersInferFromDb(db, options);
+    expect(result.layers.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("assigns packages to layers in hierarchical mode", () => {
+    const options: LayersInferOptions = {
+      hierarchical: true,
+      minFilesForSubLayers: 2,
+    };
+    const result = layersInferFromDb(db, options);
+    // At least one layer should have packages assigned
+    const layersWithPkgs = result.layers.filter(
+      (l) => l.packages && l.packages.length > 0,
+    );
+    expect(layersWithPkgs.length).toBeGreaterThan(0);
+  });
+
+  it("generates sub-layers for packages with enough files", () => {
+    const options: LayersInferOptions = {
+      hierarchical: true,
+      minFilesForSubLayers: 2,
+    };
+    const result = layersInferFromDb(db, options);
+    // core has 3 files, analyzer has 3 files, server has 3 files — all >= 2
+    const layersWithSubs = result.layers.filter(
+      (l) => l.subLayers && l.subLayers.length > 0,
+    );
+    expect(layersWithSubs.length).toBeGreaterThan(0);
+  });
+
+  it("does not create sub-layers below minFilesForSubLayers", () => {
+    const options: LayersInferOptions = {
+      hierarchical: true,
+      minFilesForSubLayers: 100,
+    };
+    const result = layersInferFromDb(db, options);
+    const layersWithSubs = result.layers.filter(
+      (l) => l.subLayers && l.subLayers.length > 0,
+    );
+    expect(layersWithSubs.length).toBe(0);
+  });
+
+  it("falls back to flat with no package structure", () => {
+    // Create a DB with files not matching packages/* pattern
+    const flatDb = new Database(":memory:");
+    initSchema(flatDb);
+    const ins = flatDb.prepare(
+      `INSERT INTO files (path, is_doc, is_hotspot) VALUES (?, 0, 0)`,
+    );
+    ins.run("src/a.ts");
+    ins.run("src/b.ts");
+    flatDb
+      .prepare(
+        `INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
+         VALUES (?, ?, ?, 1, '[]')`,
+      )
+      .run("src/b.ts", "src/a.ts", "./a");
+
+    const result = layersInferFromDb(flatDb, { hierarchical: true });
+    // Should still produce layers (falls back to flat)
+    expect(result.layers.length).toBeGreaterThanOrEqual(1);
+    flatDb.close();
+  });
+
+  it("generates hierarchical YAML with package sub-layers", () => {
+    const options: LayersInferOptions = {
+      hierarchical: true,
+      minFilesForSubLayers: 2,
+    };
+    const result = layersInferFromDb(db, options);
+    expect(result.yaml).toContain("layers:");
+    expect(result.yaml).toContain("patterns:");
+  });
+
+  it("every file appears in exactly one layer", () => {
+    const options: LayersInferOptions = {
+      hierarchical: true,
+      minFilesForSubLayers: 2,
+    };
+    const result = layersInferFromDb(db, options);
+    const allFiles = result.layers.flatMap((l) => l.files);
+    const unique = new Set(allFiles);
+    expect(unique.size).toBe(allFiles.length);
+    expect(unique.size).toBe(result.totalFiles);
+  });
+});
+
+describe("layersInfer — scoped mode", () => {
+  let db: Database.Database;
+  let dbPath: string;
+
+  beforeAll(() => {
+    dbPath = path.join(os.tmpdir(), `cari-layers-scoped-${Date.now()}.db`);
+    db = new Database(dbPath);
+    initSchema(db);
+    // Reuse the same seeding as the hierarchical test
+    seedScopedFixtures(db);
+  });
+
+  afterAll(() => {
+    db.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
+  function seedScopedFixtures(d: Database.Database) {
+    const insFile = d.prepare(
+      `INSERT INTO files (path, is_doc, is_hotspot) VALUES (?, 0, 0)`,
+    );
+    const files = [
+      "packages/core/src/types.ts",
+      "packages/core/src/utils.ts",
+      "packages/analyzer/src/extract.ts",
+      "packages/analyzer/src/parse.ts",
+      "packages/analyzer/src/transform.ts",
+      "packages/server/src/api.ts",
+    ];
+    for (const f of files) insFile.run(f);
+
+    const insImp = d.prepare(
+      `INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
+       VALUES (?, ?, ?, 1, '[]')`,
+    );
+    // core internal
+    insImp.run(
+      "packages/core/src/utils.ts",
+      "packages/core/src/types.ts",
+      "./types",
+    );
+    // analyzer → core
+    insImp.run(
+      "packages/analyzer/src/extract.ts",
+      "packages/core/src/types.ts",
+      "../../core/src/types",
+    );
+    insImp.run(
+      "packages/analyzer/src/parse.ts",
+      "packages/core/src/types.ts",
+      "../../core/src/types",
+    );
+    // analyzer internal
+    insImp.run(
+      "packages/analyzer/src/transform.ts",
+      "packages/analyzer/src/extract.ts",
+      "./extract",
+    );
+    insImp.run(
+      "packages/analyzer/src/transform.ts",
+      "packages/analyzer/src/parse.ts",
+      "./parse",
+    );
+    // server → analyzer
+    insImp.run(
+      "packages/server/src/api.ts",
+      "packages/analyzer/src/transform.ts",
+      "../../analyzer/src/transform",
+    );
+  }
+
+  it("only includes files matching the scope prefix", () => {
+    const result = layersInferFromDb(db, { scope: "packages/analyzer" });
+    const allFiles = result.layers.flatMap((l) => l.files);
+    for (const f of allFiles) {
+      expect(f).toMatch(/^packages\/analyzer\//);
+    }
+  });
+
+  it("excludes files outside the scope", () => {
+    const result = layersInferFromDb(db, { scope: "packages/analyzer" });
+    const allFiles = result.layers.flatMap((l) => l.files);
+    expect(allFiles).not.toContain("packages/core/src/types.ts");
+    expect(allFiles).not.toContain("packages/server/src/api.ts");
+  });
+
+  it("infers layers within the scoped package", () => {
+    const result = layersInferFromDb(db, { scope: "packages/analyzer" });
+    // 3 files: extract.ts, parse.ts (foundation within scope), transform.ts (higher)
+    expect(result.totalFiles).toBe(3);
+    expect(result.layers.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns empty for scope with no files", () => {
+    const result = layersInferFromDb(db, { scope: "packages/nonexistent" });
+    expect(result.layers).toHaveLength(0);
+    expect(result.totalFiles).toBe(0);
   });
 });

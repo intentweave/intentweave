@@ -17,6 +17,10 @@ import type {
   ArchReportEdge,
   NamedLayer,
   NamedDirectory,
+  LayersInferOptions,
+  CommunityOptions,
+  CommunityMode,
+  CommunityDetectionResult,
 } from "../types.js";
 import { openIndex, buildImportGraph } from "./shared.js";
 import { layersInferFromDb } from "./layersInfer.js";
@@ -31,6 +35,10 @@ export interface ArchReportOptions {
   layerNames?: NamedLayer[];
   /** Pre-computed LLM directory names from nameLayers() */
   directoryNames?: NamedDirectory[];
+  /** Options for layer inference (flat/hierarchical/scoped) */
+  layerOptions?: LayersInferOptions;
+  /** Options for community detection granularity */
+  communityOptions?: CommunityOptions;
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -52,8 +60,21 @@ export function archReportFromDb(
   options?: ArchReportOptions,
 ): ArchReportData {
   // 1. Gather data from underlying queries
-  const layers = layersInferFromDb(db);
-  const comms = communitiesFromDb(db);
+  const layers = layersInferFromDb(db, options?.layerOptions);
+  const primaryMode: CommunityMode = options?.communityOptions?.mode ?? "structural";
+  const comms = communitiesFromDb(db, options?.communityOptions);
+
+  // Compute alternative community views for each non-primary mode
+  const allModes: CommunityMode[] = ["structural", "semantic", "temporal"];
+  const altViews = new Map<string, CommunityDetectionResult>();
+  for (const mode of allModes) {
+    if (mode === primaryMode) continue;
+    altViews.set(
+      mode,
+      communitiesFromDb(db, { ...options?.communityOptions, mode }),
+    );
+  }
+
   const depth = dependencyDepthFromDb(db);
   const boundaries = boundaryViolationsFromDb(db);
   const hubData = hubsFromDb(db);
@@ -85,6 +106,23 @@ export function archReportFromDb(
         });
       }
     }
+  }
+
+  // Build per-file community lookups for alternative views
+  const altFileMaps = new Map<string, Map<string, { id: number; label: string }>>();
+  for (const [mode, result] of altViews) {
+    const fileMap = new Map<string, { id: number; label: string }>();
+    for (const comm of result.communities) {
+      for (const member of comm.members) {
+        if (importGraph.allFiles.has(member.name)) {
+          fileMap.set(member.name, { id: comm.id, label: comm.label });
+        }
+        if (member.filePath && !fileMap.has(member.filePath)) {
+          fileMap.set(member.filePath, { id: comm.id, label: comm.label });
+        }
+      }
+    }
+    altFileMaps.set(mode, fileMap);
   }
 
   // file → depth entry
@@ -145,6 +183,13 @@ export function archReportFromDb(
       label: "ungrouped",
     };
     const d = fileToDepth.get(filePath);
+    // Build per-view community assignments for this file
+    const views: Record<string, { id: number; label: string }> = {};
+    for (const [mode, fileMap] of altFileMaps) {
+      const altComm = fileMap.get(filePath);
+      if (altComm) views[mode] = altComm;
+    }
+
     nodes.push({
       filePath,
       fileName: filePath.split("/").pop() ?? filePath,
@@ -152,6 +197,7 @@ export function archReportFromDb(
       layerLabel: layer.label,
       communityId: comm.id,
       communityLabel: comm.label,
+      ...(Object.keys(views).length > 0 ? { communityViews: views } : {}),
       transitiveDependents: d?.transitiveDependents ?? 0,
       maxDepth: d?.maxDepth ?? 0,
       risk: d?.risk ?? "low",
@@ -209,6 +255,19 @@ export function archReportFromDb(
       label: l.label,
       fileCount: l.files.length,
       ...(named ? { llmName: named.name, description: named.description } : {}),
+      ...(l.packages && l.packages.length > 0 ? { packages: l.packages } : {}),
+      ...(l.subLayers && l.subLayers.length > 0
+        ? {
+            subLayers: l.subLayers.map((s) => ({
+              index: s.index,
+              label: s.label,
+              fileCount: s.files.length,
+              files: s.files,
+              package: s.package,
+              depthRange: s.depthRange,
+            })),
+          }
+        : {}),
     };
   });
 
@@ -272,6 +331,20 @@ export function archReportFromDb(
       )
     : undefined;
 
+  // Build alternative community summaries for the report
+  const communityViewSummaries: Record<string, Array<{ id: number; label: string; size: number }>> = {};
+  for (const [mode, result] of altViews) {
+    const altNodeIds = new Set<number>();
+    const altFileMap = altFileMaps.get(mode)!;
+    for (const n of nodes) {
+      const altComm = altFileMap.get(n.filePath);
+      if (altComm) altNodeIds.add(altComm.id);
+    }
+    communityViewSummaries[mode] = result.communities
+      .filter((c) => altNodeIds.has(c.id))
+      .map((c) => ({ id: c.id, label: c.label, size: c.size }));
+  }
+
   return {
     meta: {
       generated: new Date().toISOString(),
@@ -282,6 +355,8 @@ export function archReportFromDb(
     coEdges,
     layers: layerSummary,
     communities: commSummary,
+    communityViews: communityViewSummaries,
+    activeCommunityMode: primaryMode,
     ...(dirNames ? { directoryNames: dirNames } : {}),
     summary: {
       totalLayers: layers.layers.length,

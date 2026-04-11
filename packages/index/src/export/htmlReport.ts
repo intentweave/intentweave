@@ -46,6 +46,11 @@ ${CSS}
     <label class="toggle"><input type="checkbox" id="show-violations" checked> Violations</label>
     <label class="toggle"><input type="checkbox" id="aggregate"> Aggregate dirs</label>
     <label class="toggle"><input type="checkbox" id="show-docs" checked> Docs</label>
+    <select id="community-mode" class="dep-select" title="Community view mode">
+      <option value="structural">Structural</option>
+      <option value="semantic">Semantic</option>
+      <option value="temporal">Temporal</option>
+    </select>
     <select id="dep-root" class="dep-select" style="display:none">
       <option value="">Select root…</option>
     </select>
@@ -153,6 +158,8 @@ body {
 }
 #legend h3 { font-size: 12px; margin-bottom: 6px; font-weight: 600; }
 .legend-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.legend-clickable:hover { background: #21262d; border-radius: 4px; }
+.legend-active { background: #30363d; border-radius: 4px; }
 .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
 .legend-line { width: 20px; height: 0; border-top-width: 2px; border-top-style: solid; flex-shrink: 0; }
 #tooltip {
@@ -201,6 +208,74 @@ const RENDER_SCRIPT = `
   ];
   const commColor = (id) => id < 0 ? '#d0d7de' : COMMUNITY_COLORS[id % COMMUNITY_COLORS.length];
 
+  // ── Community mode switching ─────────────────────────────────────
+  // Store original community assignments so we can restore on mode switch
+  const _origCommunityData = DATA.nodes.map(n => ({ id: n.communityId, label: n.communityLabel }));
+  const _origCommunities = DATA.communities.slice();
+  let activeCommunityMode = DATA.activeCommunityMode || 'structural';
+
+  // Set initial dropdown value
+  const communityModeSelect = document.getElementById('community-mode');
+  if (communityModeSelect) communityModeSelect.value = activeCommunityMode;
+
+  function switchCommunityMode(mode) {
+    if (mode === activeCommunityMode) return;
+    activeCommunityMode = mode;
+
+    if (mode === (DATA.activeCommunityMode || 'structural')) {
+      // Restore original (primary) assignments
+      for (var i = 0; i < DATA.nodes.length; i++) {
+        DATA.nodes[i].communityId = _origCommunityData[i].id;
+        DATA.nodes[i].communityLabel = _origCommunityData[i].label;
+      }
+      DATA.communities = _origCommunities.slice();
+    } else if (DATA.communityViews && DATA.communityViews[mode]) {
+      // Apply alternative view assignments
+      var altComms = DATA.communityViews[mode];
+      // Build a lookup: filePath → { id, label } from alt communities
+      // (stored on each node as communityViews)
+      for (var i = 0; i < DATA.nodes.length; i++) {
+        var n = DATA.nodes[i];
+        var alt = n.communityViews && n.communityViews[mode];
+        if (alt) {
+          n.communityId = alt.id;
+          n.communityLabel = alt.label;
+        } else {
+          n.communityId = -1;
+          n.communityLabel = 'ungrouped';
+        }
+      }
+      DATA.communities = altComms.slice();
+    }
+
+    // Update summary count
+    DATA.summary.totalCommunities = DATA.communities.length;
+    updateSummary();
+    resetHighlights();
+    updateLegend();
+    render();
+  }
+
+  function updateSummary() {
+    document.getElementById('summary').innerHTML = [
+      '<span class="summary-item">' + DATA.meta.totalFiles + ' files</span>',
+      '<span class="summary-item">' + DATA.summary.totalLayers + ' layers</span>',
+      '<span class="summary-item">' + DATA.summary.totalCommunities + ' communities</span>',
+      DATA.nodes.filter(n => !DATA.layers.some(l => l.index === n.layerIndex)).length > 0
+        ? '<span class="summary-item" style="color:#8b949e">' +
+          DATA.nodes.filter(n => !DATA.layers.some(l => l.index === n.layerIndex)).length + ' isolated</span>'
+        : '',
+      DATA.summary.layerViolations > 0
+        ? '<span class="summary-item"><span class="summary-dot" style="background:#cf222e"></span>' +
+          DATA.summary.layerViolations + ' layer violations</span>'
+        : '',
+      DATA.summary.boundaryViolations > 0
+        ? '<span class="summary-item"><span class="summary-dot" style="background:#bf8700"></span>' +
+          DATA.summary.boundaryViolations + ' boundary violations</span>'
+        : '',
+    ].filter(Boolean).join('');
+  }
+
   // ── Layer display name helper (prefers LLM name when available) ──
   const _layerNameMap = new Map();
   for (const l of DATA.layers) {
@@ -231,24 +306,7 @@ const RENDER_SCRIPT = `
   const isolatedCount = DATA.nodes.filter(n => n.layerLabel === 'unknown').length;
 
   // ── Summary ──────────────────────────────────────────────────────
-  const sumEl = document.getElementById('summary');
-  sumEl.innerHTML = [
-    '<span class="summary-item">' + DATA.meta.totalFiles + ' files</span>',
-    '<span class="summary-item">' + DATA.summary.totalLayers + ' layers</span>',
-    '<span class="summary-item">' + DATA.summary.totalCommunities + ' communities</span>',
-    isolatedCount > 0
-      ? '<span class="summary-item"><span class="summary-dot" style="background:#d0d7de"></span>' +
-        isolatedCount + ' isolated</span>'
-      : '',
-    DATA.summary.layerViolations > 0
-      ? '<span class="summary-item"><span class="summary-dot" style="background:#cf222e"></span>' +
-        DATA.summary.layerViolations + ' layer violations</span>'
-      : '',
-    DATA.summary.boundaryViolations > 0
-      ? '<span class="summary-item"><span class="summary-dot" style="background:#bf8700"></span>' +
-        DATA.summary.boundaryViolations + ' boundary violations</span>'
-      : '',
-  ].filter(Boolean).join('');
+  updateSummary();
 
   // ── Legend ───────────────────────────────────────────────────────
   const legendEl = document.getElementById('legend');
@@ -282,10 +340,10 @@ const RENDER_SCRIPT = `
       html.push('<h3 style="margin-top:8px">Node size</h3>');
       html.push('<div class="legend-row">∝ import depth</div>');
     } else {
-      html.push('<h3>Communities</h3>');
+      html.push('<h3>Communities <span style="font-weight:normal;font-size:9px;color:#8b949e">(click to highlight slice)</span></h3>');
       for (const c of DATA.communities) {
         html.push(
-          '<div class="legend-row"><span class="legend-swatch" style="background:' +
+          '<div class="legend-row legend-clickable" data-community-id="' + c.id + '" style="cursor:pointer"><span class="legend-swatch" style="background:' +
           commColor(c.id) + '"></span>' + c.label + ' (' + c.size + ')</div>'
         );
       }
@@ -306,6 +364,14 @@ const RENDER_SCRIPT = `
     }
 
     legendEl.innerHTML = html.join('');
+
+    // Attach click handlers for slice highlighting
+    legendEl.querySelectorAll('.legend-clickable').forEach(function(el) {
+      el.addEventListener('click', function() {
+        var cid = parseInt(el.getAttribute('data-community-id'));
+        if (!isNaN(cid)) highlightSlice(cid);
+      });
+    });
   }
 
   // ── Directory aggregation helpers ────────────────────────────────
@@ -418,8 +484,23 @@ const RENDER_SCRIPT = `
   const PAD = 20;
   const availW = innerW - 2 * PAD;
 
+  // Build sub-layer file lookup: filePath → { layerIndex, subIndex }
+  var subLayerFileMap = new Map();
+  DATA.layers.forEach(function(layer) {
+    if (!layer.subLayers) return;
+    layer.subLayers.forEach(function(sub, si) {
+      (sub.files || []).forEach(function(f) {
+        subLayerFileMap.set(f, { layerIndex: layer.index, subIndex: si });
+      });
+    });
+  });
+
   function layoutNodes(nodes) {
     const nodesPerRow = Math.max(1, Math.floor(availW / NODE_SPACING));
+    // Narrower row for sub-layers (leave room for left label margin)
+    const subLayerPad = 30;
+    const subAvailW = availW - subLayerPad;
+    const subNodesPerRow = Math.max(1, Math.floor(subAvailW / NODE_SPACING));
 
     // Group nodes by layer
     const byLayer = new Map();
@@ -428,15 +509,43 @@ const RENDER_SCRIPT = `
       byLayer.get(n.layerIndex).push(n);
     }
 
+    // Group nodes by sub-layer within each layer
+    var bySubLayer = new Map(); // key: 'layerIdx:subIdx'
+    for (const n of nodes) {
+      var sl = subLayerFileMap.get(n.filePath);
+      if (sl) {
+        var key = sl.layerIndex + ':' + sl.subIndex;
+        if (!bySubLayer.has(key)) bySubLayer.set(key, []);
+        bySubLayer.get(key).push(n);
+      }
+    }
+
     // Compute each layer's height based on row count
+    // For layers with sub-layers, sum the height of each sub-layer band
     const heights = new Map();
+    const SUB_LABEL_H = 16; // vertical space for the sub-layer label row
     let totalH = 0;
     for (const layer of DATA.layers) {
       const lnodes = byLayer.get(layer.index) || [];
-      const rows = Math.max(1, Math.ceil(lnodes.length / nodesPerRow));
-      const h = Math.max(50, rows * ROW_HEIGHT + 30);
-      heights.set(layer.index, h);
-      totalH += h;
+      if (layer.subLayers && layer.subLayers.length > 0) {
+        // Per sub-layer height
+        var layerH = 0;
+        layer.subLayers.forEach(function(sub, si) {
+          var key = layer.index + ':' + si;
+          var slNodes = bySubLayer.get(key) || [];
+          var slRows = Math.max(1, Math.ceil(slNodes.length / subNodesPerRow));
+          var slH = Math.max(36, slRows * ROW_HEIGHT + SUB_LABEL_H + 8);
+          layerH += slH;
+        });
+        layerH = Math.max(50, layerH + 30); // 30 for macro layer header
+        heights.set(layer.index, layerH);
+        totalH += layerH;
+      } else {
+        const rows = Math.max(1, Math.ceil(lnodes.length / nodesPerRow));
+        const h = Math.max(50, rows * ROW_HEIGHT + 30);
+        heights.set(layer.index, h);
+        totalH += h;
+      }
     }
 
     const scale = totalH > 0 ? Math.max(1, innerH / totalH) : 1;
@@ -451,25 +560,84 @@ const RENDER_SCRIPT = `
       cumY += h;
     }
 
-    // Position nodes within layers
-    for (const [layerIdx, layerNodes] of byLayer) {
-      layerNodes.sort((a, b) => a.communityId - b.communityId ||
-        a.filePath.localeCompare(b.filePath));
-      const count = layerNodes.length;
-      const cols = Math.min(count, nodesPerRow);
-      const colSpacing = cols > 1 ? Math.min(NODE_SPACING, availW / (cols - 1)) : 0;
-      const startX = MARGIN.left + PAD + (availW - colSpacing * (cols - 1)) / 2;
-      const lInfo = yMap.get(layerIdx) || { y: MARGIN.top, h: 50 };
-      const rows = Math.ceil(count / cols);
-      const startYOff = (lInfo.h - rows * ROW_HEIGHT) / 2 + ROW_HEIGHT / 2 + 10;
-
-      layerNodes.forEach((n, i) => {
-        n._x = startX + (i % cols) * colSpacing;
-        n._y = lInfo.y + startYOff + Math.floor(i / cols) * ROW_HEIGHT;
+    // Compute sub-layer Y offsets within each layer
+    var subYMap = new Map(); // key: 'layerIdx:subIdx' → { y, h }
+    for (const layer of DATA.layers) {
+      if (!layer.subLayers || layer.subLayers.length === 0) continue;
+      var info = yMap.get(layer.index) || { y: 0, h: 50 };
+      var subCumY = info.y + 30; // skip macro layer header
+      layer.subLayers.forEach(function(sub, si) {
+        var key = layer.index + ':' + si;
+        var slNodes = bySubLayer.get(key) || [];
+        var slRows = Math.max(1, Math.ceil(slNodes.length / subNodesPerRow));
+        var slH = Math.max(36, slRows * ROW_HEIGHT + SUB_LABEL_H + 8);
+        slH *= scale;
+        subYMap.set(key, { y: subCumY, h: slH });
+        subCumY += slH;
       });
     }
 
-    return { yMap, heights, scale };
+    // Position nodes within layers
+    for (const [layerIdx, layerNodes] of byLayer) {
+      // Check if this layer has sub-layers
+      var layerDef = DATA.layers.find(function(l) { return l.index === layerIdx; });
+      if (layerDef && layerDef.subLayers && layerDef.subLayers.length > 0) {
+        // Position within sub-layer bands
+        layerDef.subLayers.forEach(function(sub, si) {
+          var key = layerIdx + ':' + si;
+          var slNodes = bySubLayer.get(key) || [];
+          if (slNodes.length === 0) return;
+          slNodes.sort(function(a, b) {
+            return a.communityId - b.communityId || a.filePath.localeCompare(b.filePath);
+          });
+          var slInfo = subYMap.get(key) || { y: 0, h: 36 };
+          var count = slNodes.length;
+          var cols = Math.min(count, subNodesPerRow);
+          var colSpacing = cols > 1 ? Math.min(NODE_SPACING, subAvailW / (cols - 1)) : 0;
+          var startX = MARGIN.left + PAD + subLayerPad + (subAvailW - colSpacing * (cols - 1)) / 2;
+          var slRows = Math.ceil(count / cols);
+          var startYOff = SUB_LABEL_H + (slInfo.h - SUB_LABEL_H - slRows * ROW_HEIGHT) / 2 + ROW_HEIGHT / 2;
+
+          slNodes.forEach(function(n, i) {
+            n._x = startX + (i % cols) * colSpacing;
+            n._y = slInfo.y + startYOff + Math.floor(i / cols) * ROW_HEIGHT;
+          });
+        });
+        // Any nodes in this layer NOT assigned to a sub-layer: put at bottom
+        var unassigned = layerNodes.filter(function(n) { return !subLayerFileMap.has(n.filePath); });
+        if (unassigned.length > 0) {
+          var lInfo = yMap.get(layerIdx) || { y: MARGIN.top, h: 50 };
+          unassigned.sort(function(a, b) {
+            return a.communityId - b.communityId || a.filePath.localeCompare(b.filePath);
+          });
+          var count = unassigned.length;
+          var cols = Math.min(count, nodesPerRow);
+          var colSpacing = cols > 1 ? Math.min(NODE_SPACING, availW / (cols - 1)) : 0;
+          var startX = MARGIN.left + PAD + (availW - colSpacing * (cols - 1)) / 2;
+          unassigned.forEach(function(n, i) {
+            n._x = startX + (i % cols) * colSpacing;
+            n._y = lInfo.y + lInfo.h - ROW_HEIGHT;
+          });
+        }
+      } else {
+        layerNodes.sort((a, b) => a.communityId - b.communityId ||
+          a.filePath.localeCompare(b.filePath));
+        const count = layerNodes.length;
+        const cols = Math.min(count, nodesPerRow);
+        const colSpacing = cols > 1 ? Math.min(NODE_SPACING, availW / (cols - 1)) : 0;
+        const startX = MARGIN.left + PAD + (availW - colSpacing * (cols - 1)) / 2;
+        const lInfo = yMap.get(layerIdx) || { y: MARGIN.top, h: 50 };
+        const rows = Math.ceil(count / cols);
+        const startYOff = (lInfo.h - rows * ROW_HEIGHT) / 2 + ROW_HEIGHT / 2 + 10;
+
+        layerNodes.forEach((n, i) => {
+          n._x = startX + (i % cols) * colSpacing;
+          n._y = lInfo.y + startYOff + Math.floor(i / cols) * ROW_HEIGHT;
+        });
+      }
+    }
+
+    return { yMap, heights, scale, subYMap };
   }
 
   // ── Rendering state ──────────────────────────────────────────────
@@ -501,12 +669,17 @@ const RENDER_SCRIPT = `
   bgRect.on('click', function() { resetHighlights(); });
 
   const layerG = g.append('g').attr('class', 'layers');
+  const sliceG = g.append('g').attr('class', 'slices');
   const edgeG = g.append('g').attr('class', 'edges');
   const nodeG = g.append('g').attr('class', 'nodes');
   const labelG = g.append('g').attr('class', 'labels');
 
+  // ── Slice highlighting state ─────────────────────────────────────
+  let activeSliceCommunity = null;
+
   // ── Central reset function ───────────────────────────────────────
   function resetHighlights() {
+    activeSliceCommunity = null;
     nodeG.selectAll('circle')
       .attr('opacity', 1)
       .attr('stroke', function(d) {
@@ -516,7 +689,108 @@ const RENDER_SCRIPT = `
         return (d.risk === 'high' || d.risk === 'critical') ? 2 : 1;
       });
     labelG.selectAll('.node-label').attr('opacity', 1);
+    sliceG.selectAll('*').remove();
     applyEdgeFilters();
+    // Reset legend active state
+    document.querySelectorAll('.legend-clickable').forEach(function(el) {
+      el.classList.remove('legend-active');
+    });
+  }
+
+  function highlightSlice(communityId) {
+    if (currentView !== 'layers' && currentView !== 'violations') return;
+    if (!layoutInfo) return;
+
+    // Toggle if already active
+    if (activeSliceCommunity === communityId) {
+      resetHighlights();
+      return;
+    }
+    activeSliceCommunity = communityId;
+
+    // Dim non-member nodes, highlight member nodes
+    nodeG.selectAll('circle')
+      .attr('opacity', function(d) { return d.communityId === communityId ? 1 : 0.12; })
+      .attr('stroke', function(d) {
+        if (d.communityId === communityId) return commColor(communityId);
+        return (d.risk === 'high' || d.risk === 'critical') ? '#cf222e' : '#fff';
+      })
+      .attr('stroke-width', function(d) {
+        return d.communityId === communityId ? 2.5 : 1;
+      });
+    labelG.selectAll('.node-label')
+      .attr('opacity', function(d) { return d.communityId === communityId ? 1 : 0.1; });
+
+    // Dim non-related edges
+    edgeG.selectAll('path')
+      .attr('opacity', function(d) {
+        var sNode = currentNodes.find(function(n) {
+          return (isAggregated ? n.id : n.filePath) === d.source;
+        });
+        var tNode = currentNodes.find(function(n) {
+          return (isAggregated ? n.id : n.filePath) === d.target;
+        });
+        if (sNode && tNode && sNode.communityId === communityId && tNode.communityId === communityId) return 1;
+        return 0.04;
+      });
+
+    // Draw vertical slice column overlays per layer
+    var { yMap } = layoutInfo;
+    var sliceColor = commColor(communityId);
+
+    // Find members of this community with their positions
+    var members = currentNodes.filter(function(n) { return n.communityId === communityId; });
+
+    // Group members by layer
+    var membersByLayer = new Map();
+    for (var m of members) {
+      if (!membersByLayer.has(m.layerIndex)) membersByLayer.set(m.layerIndex, []);
+      membersByLayer.get(m.layerIndex).push(m);
+    }
+
+    // Draw vertical column strips per layer where this community has members
+    sliceG.selectAll('*').remove();
+    var sliceRects = [];
+    for (var [layerIdx, layerMembers] of membersByLayer) {
+      var lInfo = yMap.get(layerIdx);
+      if (!lInfo) continue;
+      // Compute x extent of members in this layer
+      var xVals = layerMembers.map(function(n) { return n._x; });
+      var minX = Math.min.apply(null, xVals) - 14;
+      var maxX = Math.max.apply(null, xVals) + 14;
+      sliceRects.push({
+        x: minX,
+        y: lInfo.y,
+        w: Math.max(28, maxX - minX),
+        h: lInfo.h,
+        layerIdx: layerIdx,
+      });
+    }
+
+    sliceG.selectAll('.slice-col')
+      .data(sliceRects)
+      .join('rect')
+      .attr('class', 'slice-col')
+      .attr('x', function(d) { return d.x; })
+      .attr('y', function(d) { return d.y; })
+      .attr('width', function(d) { return d.w; })
+      .attr('height', function(d) { return d.h; })
+      .attr('fill', sliceColor)
+      .attr('fill-opacity', 0.08)
+      .attr('stroke', sliceColor)
+      .attr('stroke-width', 1.5)
+      .attr('stroke-opacity', 0.4)
+      .attr('rx', 4)
+      .style('pointer-events', 'none');
+
+    // Update legend active state
+    document.querySelectorAll('.legend-clickable').forEach(function(el) {
+      if (parseInt(el.getAttribute('data-community-id')) === communityId) {
+        el.classList.add('legend-active');
+      } else {
+        el.classList.remove('legend-active');
+      }
+    });
   }
 
   svg.call(d3.zoom()
@@ -696,6 +970,52 @@ const RENDER_SCRIPT = `
         .attr('fill', '#adb5bd')
         .attr('font-size', '9px')
         .attr('font-style', 'italic');
+    }
+
+    // Sub-layer bands within macro layers (5.5 hierarchical mode)
+    var subBandData = [];
+    const { subYMap } = layoutInfo;
+    DATA.layers.forEach(function(layer) {
+      if (!layer.subLayers || layer.subLayers.length === 0) return;
+      layer.subLayers.forEach(function(sub, si) {
+        var key = layer.index + ':' + si;
+        var slInfo = subYMap ? subYMap.get(key) : null;
+        if (!slInfo) return;
+        subBandData.push({
+          x: MARGIN.left + 16,
+          y: slInfo.y,
+          w: innerW - 32,
+          h: slInfo.h,
+          label: (sub.package || '') + ' · ' + sub.label + ' (' + sub.fileCount + ')',
+          even: si % 2 === 0,
+        });
+      });
+    });
+    if (subBandData.length > 0) {
+      layerG.selectAll('.sub-band')
+        .data(subBandData)
+        .join('rect')
+        .attr('class', 'sub-band')
+        .attr('x', d => d.x)
+        .attr('width', d => d.w)
+        .attr('y', d => d.y)
+        .attr('height', d => d.h)
+        .attr('fill', d => d.even ? 'rgba(0,0,0,0.02)' : 'rgba(0,0,0,0.05)')
+        .attr('stroke', '#d0d7de')
+        .attr('stroke-width', 0.5)
+        .attr('stroke-dasharray', '4,3')
+        .attr('rx', 2);
+
+      layerG.selectAll('.sub-label')
+        .data(subBandData)
+        .join('text')
+        .attr('class', 'sub-label')
+        .attr('x', d => d.x + 8)
+        .attr('y', d => d.y + 12)
+        .text(d => d.label)
+        .attr('fill', '#656d76')
+        .attr('font-size', '9px')
+        .attr('font-weight', 500);
     }
 
     if (isolatedCount > 0) {
@@ -1131,6 +1451,13 @@ const RENDER_SCRIPT = `
   const showViolationsEl = document.getElementById('show-violations');
   showImportsEl.addEventListener('change', applyEdgeFilters);
   showViolationsEl.addEventListener('change', applyEdgeFilters);
+
+  // ── Community mode switch ──────────────────────────────────────
+  if (communityModeSelect) {
+    communityModeSelect.addEventListener('change', function() {
+      switchCommunityMode(this.value);
+    });
+  }
 
   function applyEdgeFilters() {
     if (currentView === 'communities' || currentView === 'dependencies') return;

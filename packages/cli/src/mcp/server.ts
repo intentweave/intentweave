@@ -38,6 +38,7 @@
  *   - cari_layers_infer:     Auto-infer architectural layers from import graph
  *   - cari_layers_check:     Validate imports against layer configuration
  *   - cari_layers_name:      LLM-generated descriptive layer names (5.1c)
+ *   - cari_slices:           Vertical slice detection (communities × layers)
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
@@ -1870,16 +1871,45 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
   // ── Tool: cari_communities ──────────────────────────────────────────
   server.tool(
     "cari_communities",
-    `Detect natural module clusters via label propagation on the combined co-occurrence + import + co-change graph. Discover how your codebase naturally groups into functional areas.
+    `Detect natural module clusters via label propagation. Three modes offer different views:
+- 'structural' (default): imports + co-changes + file co-occurrences → architectural modules
+- 'semantic': full co-occurrence graph → conceptual/topic clusters
+- 'temporal': co-change edges only → files that evolve together
+
+Use 'resolution' to control granularity: higher values (2–5) produce more, smaller communities.
+Communities larger than 'maxSize' (default 100) are recursively sub-split.
 
 No LLM or Neo4j needed — queries a local SQLite index.`,
-    {},
-    async () => {
+    {
+      mode: z
+        .enum(["structural", "semantic", "temporal"])
+        .optional()
+        .describe(
+          "Graph mode: structural (architecture), semantic (concepts), temporal (evolution). Default: structural",
+        ),
+      resolution: z
+        .number()
+        .optional()
+        .describe(
+          "Community granularity (default 1.0). Higher → more, smaller communities",
+        ),
+      maxSize: z
+        .number()
+        .optional()
+        .describe(
+          "Max community size before recursive sub-splitting (default 100)",
+        ),
+    },
+    async (params) => {
       log("cari_communities");
       try {
         const { communities } = await loadIndex();
         const dbPath = resolveIndexDb();
-        const result = communities(dbPath);
+        const result = communities(dbPath, {
+          mode: params.mode,
+          resolution: params.resolution,
+          maxSize: params.maxSize,
+        });
 
         if (result.communities.length === 0) {
           return {
@@ -2216,14 +2246,50 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_layers_infer",
     `Auto-infer architectural layers from the import graph using topological depth analysis. Files with no outgoing imports form the foundation layer; files that only import from the foundation form the next layer, and so on. Returns 2–7 layers with auto-generated labels and a YAML config suitable for layers-check.
 
+Supports three modes:
+- **flat** (default): single-level inference across all files
+- **hierarchical**: two-level inference — macro layers across packages, sub-layers within large packages
+- **scoped**: infer layers within a single package/directory
+
 No LLM or Neo4j needed — queries a local SQLite index.`,
-    {},
-    async () => {
+    {
+      hierarchical: z
+        .boolean()
+        .optional()
+        .describe(
+          "Enable two-level hierarchical inference: macro layers across packages, sub-layers within large packages.",
+        ),
+      scope: z
+        .string()
+        .optional()
+        .describe(
+          "Scope inference to files under this path prefix (e.g. 'packages/core'). Runs flat inference on the subgraph.",
+        ),
+      minFilesForSubLayers: z
+        .number()
+        .optional()
+        .describe(
+          "Minimum files in a package to compute sub-layers (default: 10). Only used with hierarchical mode.",
+        ),
+    },
+    async (args: {
+      hierarchical?: boolean;
+      scope?: string;
+      minFilesForSubLayers?: number;
+    }) => {
       log("cari_layers_infer");
       try {
         const { layersInfer } = await loadIndex();
         const dbPath = resolveIndexDb();
-        const result = layersInfer(dbPath);
+        const options: Record<string, unknown> = {};
+        if (args.hierarchical) options.hierarchical = true;
+        if (args.scope) options.scope = args.scope;
+        if (args.minFilesForSubLayers != null)
+          options.minFilesForSubLayers = args.minFilesForSubLayers;
+        const result = layersInfer(
+          dbPath,
+          Object.keys(options).length > 0 ? options : undefined,
+        );
 
         if (result.layers.length === 0) {
           return {
@@ -2236,16 +2302,34 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           };
         }
 
+        const mode = args.hierarchical
+          ? "hierarchical"
+          : args.scope
+            ? `scoped (${args.scope})`
+            : "flat";
         const lines = [
-          `## ${result.layers.length} Inferred Architectural Layers (${result.totalFiles} files)`,
+          `## ${result.layers.length} Inferred Architectural Layers — ${mode} (${result.totalFiles} files)`,
           "",
           "| # | Label | Files | Depth Range |",
           "|---|-------|-------|-------------|",
         ];
         for (const layer of result.layers) {
+          const pkgInfo =
+            layer.packages && layer.packages.length > 0
+              ? ` (${layer.packages.join(", ")})`
+              : "";
           lines.push(
-            `| ${layer.index} | ${layer.label} | ${layer.files.length} | ${layer.depthRange[0]}–${layer.depthRange[1]} |`,
+            `| ${layer.index} | ${layer.label}${pkgInfo} | ${layer.files.length} | ${layer.depthRange[0]}–${layer.depthRange[1]} |`,
           );
+
+          // Show sub-layers if present
+          if (layer.subLayers && layer.subLayers.length > 0) {
+            for (const sub of layer.subLayers) {
+              lines.push(
+                `|   | ↳ ${sub.package}/${sub.label} | ${sub.files.length} | ${sub.depthRange[0]}–${sub.depthRange[1]} |`,
+              );
+            }
+          }
         }
 
         if (result.isolatedFiles.length > 0) {
@@ -2449,6 +2533,103 @@ Requires an OpenAI API key (OPENAI_API_KEY env var or api_key parameter).`,
           );
           for (const d of result.directories) {
             lines.push(`| ${d.path} | **${d.name}** | ${d.description} |`);
+          }
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_slices ───────────────────────────────────────────────
+  server.tool(
+    "cari_slices",
+    `Detect vertical slices — communities that span multiple architectural layers end-to-end. A vertical slice is a feature cohort (e.g., "auth") that cuts through foundation, core, interface, and entry layers. Communities spanning only 1–2 layers are horizontal modules.
+
+No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
+    {
+      minLayers: z
+        .number()
+        .optional()
+        .default(3)
+        .describe(
+          "Minimum layers a community must span to be classified as a vertical slice (default: 3)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .describe("Maximum number of vertical slices to return"),
+    },
+    async (args) => {
+      log(`cari_slices: minLayers=${args.minLayers}, limit=${args.limit}`);
+      try {
+        const { slices } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = slices(dbPath, {
+          minLayers: args.minLayers,
+          limit: args.limit,
+        });
+
+        if (
+          result.slices.length === 0 &&
+          result.horizontal.length === 0
+        ) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No slices detected. The index may not have enough community or layer data.",
+              },
+            ],
+          };
+        }
+
+        const lines: string[] = [
+          `## Vertical Slice Detection`,
+          "",
+          `**${result.totalLayers} layers, ${result.totalCommunities} communities analysed**`,
+          "",
+        ];
+
+        if (result.slices.length > 0) {
+          lines.push(
+            `### ${result.slices.length} Vertical Slice${result.slices.length === 1 ? "" : "s"} (spanning ≥${args.minLayers ?? 3} layers)`,
+            "",
+          );
+          for (const s of result.slices) {
+            lines.push(
+              `#### ${s.label} — ${s.totalFiles} files across ${s.layerSpan} layers`,
+              "",
+            );
+            for (const layerIdx of [...s.layers].sort((a, b) => b - a)) {
+              const files = s.filesByLayer[layerIdx] || [];
+              lines.push(
+                `- **Layer ${layerIdx}**: ${files.map((f) => f.split("/").pop()).join(", ")}`,
+              );
+            }
+            lines.push("");
+          }
+        }
+
+        if (result.horizontal.length > 0) {
+          lines.push(
+            `### ${result.horizontal.length} Horizontal Module${result.horizontal.length === 1 ? "" : "s"} (1–2 layers)`,
+            "",
+            "| Community | Files | Layers |",
+            "|-----------|-------|--------|",
+          );
+          for (const h of result.horizontal.slice(0, 15)) {
+            lines.push(
+              `| ${h.label} | ${h.totalFiles} | ${h.layers.join(", ")} |`,
+            );
+          }
+          if (result.horizontal.length > 15) {
+            lines.push(
+              `| ... | +${result.horizontal.length - 15} more | |`,
+            );
           }
         }
 

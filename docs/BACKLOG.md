@@ -199,6 +199,155 @@ Track exported symbols over time (git history). Detect additions, removals, sign
 changes per release. Auto-generate: _"v0.2.0: +3 exports, -1 export, 2 signature changes
 in @intentweave/cli"_.
 
+### 5.5 Hierarchical Sub-Layering _(CARI, M)_
+
+**Problem:** Flat layer inference treats the entire workspace as one graph. In monorepos,
+this causes internal sub-layers of a single package (e.g., the analyzer's pipeline
+orchestration) to appear as top-level peers of much larger layers (e.g., "User Interface").
+
+**Solution:** Two-level layer inference — macro layers at the package boundary, then
+sub-layers within each package:
+
+1. Build a **package-level** import graph (collapse each `packages/*` into a supernode)
+2. Run topological depth on the package graph → **macro layers**
+3. For each package with >N files (configurable, default 10), run a second topological
+   sort on its internal import subgraph → **sub-layers**
+4. HTML report renders nested bands (a layer band with lighter sub-bands inside)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Macro Layer 3: apps/ui, apps/server  (entry)            │
+├─────────────────────────────────────────────────────────┤
+│ Macro Layer 2: packages/cli          (interface)         │
+│   ├── Sub-layer 2: commands/                             │
+│   ├── Sub-layer 1: mcp/                                  │
+│   └── Sub-layer 0: doc-health/, impact/                  │
+├─────────────────────────────────────────────────────────┤
+│ Macro Layer 1: packages/analyzer     (core)              │
+│   ├── Sub-layer 2: pipeline/ (openTrack, buildFull)      │
+│   ├── Sub-layer 1: stages/, cache/                       │
+│   └── Sub-layer 0: kwg/, extractors                      │
+├─────────────────────────────────────────────────────────┤
+│ Macro Layer 0: packages/core, packages/index             │
+└─────────────────────────────────────────────────────────┘
+```
+
+Also supports scoped inference: `iw index layers-infer --scope packages/analyzer` runs
+only on that package's internal graph — useful for deep-diving into one module.
+
+CLI: `iw index layers-infer --hierarchical`. MCP: `cari_layers_infer` (new `hierarchical` param).
+
+Depends on: 5.1a (existing flat inference), 3.4 (package boundary detection).
+
+### 5.6 As-Is vs. As-Should Comparison _(CARI, M)_
+
+**Problem:** Users can infer layers (as-is) and define a should-architecture in
+`.iw/layers.yaml`, but there's no way to see both simultaneously and identify drift
+between intent and reality.
+
+**Solution:** A `--compare` mode that runs inference, loads the config, and outputs a
+three-column delta view showing where files are vs. where they should be:
+
+```bash
+iw index layers-check --compare
+iw index layers-check --compare --config .iw/layers-should.yaml
+```
+
+```
+File                       │ Inferred Layer  │ Should Layer     │ Status
+───────────────────────────┼─────────────────┼──────────────────┼────────
+packages/cli/src/cli.ts    │ 4 (entry)       │ 3 (interface)    │ ⚠ DRIFT
+packages/index/src/...     │ 0 (foundation)  │ 0 (foundation)   │ ✓ OK
+packages/analyzer/src/...  │ 1 (core)        │ 2 (application)  │ ⚠ DRIFT
+```
+
+In the HTML report, this renders as **two-tone layer bands** — the actual position vs.
+where the config says it should be, with visual indicators for mismatches.
+
+CLI: `iw index layers-check --compare`. MCP: `cari_layers_check` (new `compare` param).
+
+Depends on: 5.1a (inference), 5.1b (config validation).
+
+### 5.7 Vertical Slice Detection _(CARI, M)_
+
+**Problem:** Layers show horizontal stratification but not vertical feature cohorts.
+"Which files form the auth feature end-to-end?" requires cross-referencing layers
+with communities.
+
+**Solution:** Identify communities whose members span ≥3 layers as **vertical slices**
+(feature cuts through the architecture). Communities spanning only 1 layer are
+horizontal modules.
+
+```
+         │ Auth Slice │   │ Pipeline Slice │
+─────────┼────────────┼───┼────────────────┼──── Entry
+         │ auth/route │   │ cli/run.ts     │
+─────────┼────────────┼───┼────────────────┼──── Interface
+         │ auth/svc   │   │ openTrack.ts   │
+─────────┼────────────┼───┼────────────────┼──── Core
+         │ auth/model │   │ fx.ts, kx.ts   │
+─────────┼────────────┼───┼────────────────┼──── Foundation
+         │ auth/types │   │ types.ts       │
+```
+
+In the HTML report, clicking a community in the legend highlights its slice as a
+**coloured vertical column** overlaying the layer bands. Non-member nodes dim.
+
+CLI: `iw index slices`. MCP: `cari_slices`.
+
+Depends on: 5.1a (layers), 9.1 (communities).
+
+### 5.8 Architecture Diagram Validation _(CARI, L)_
+
+**Problem:** Teams document intended architectures as diagrams (pipeline flows, component
+boundaries, data-flow graphs), but nothing validates whether the code actually conforms
+to the documented design.
+
+**Solution:** A `diagram-as-config` format (`.iw/architecture.yaml`) that defines
+components (file globs), allowed flows (directed edges), and constraints (forbidden
+dependencies). CARI validates the real import graph against this config.
+
+```yaml
+# .iw/architecture.yaml
+components:
+  - name: "AX Stage"
+    files: ["packages/ast-extractor/**", "packages/analyzer/src/stages/ax*.ts"]
+  - name: "KWX Stage"
+    files: ["packages/analyzer/src/kwg/**"]
+  - name: "Annotate"
+    files: ["packages/index/src/annotator.ts"]
+  - name: "SQLite Writer"
+    files: ["packages/index/src/writer.ts"]
+
+flows:
+  - from: "AX Stage"
+    to: "Annotate"
+  - from: "KWX Stage"
+    to: ["Annotate", "COX Stage"]
+
+constraints:
+  - type: no-direct-dependency
+    from: "AX Stage"
+    to: "SQLite Writer"
+    reason: "AX output should flow through Annotate, not directly to Writer"
+```
+
+```bash
+iw index arch-check --config .iw/architecture.yaml
+
+# ✓ AX Stage → Annotate: confirmed (annotator.ts imports axStage)
+# ⚠ KWX Stage → Annotate: MISSING — no direct import path found
+# ✗ Undocumented: writer.ts imports from idf.ts — not in diagram
+# ✓ No constraint violations
+```
+
+Validates: expected flows exist, no undocumented flows, constraint compliance.
+Closes the loop: documentation describes architecture → CARI validates code matches.
+
+CLI: `iw index arch-check`. MCP: `cari_arch_check`.
+
+Depends on: `imports` table (exists), file glob resolution (exists).
+
 ---
 
 ## 6. Quality & Consistency Checks
@@ -625,6 +774,10 @@ CLI: `iw index export --obsidian`.
 | 5.1a | Layer inference                  | CARI | M      | High   | 9.1, 3.3             | ✅ Done |
 | 5.1b | Layer check                      | CARI | S      | High   | 5.1a                 | ✅ Done |
 | 5.1c | Layer naming suggestions         | KG   | S      | Low    | 5.1a                 | ✅      |
+| 5.5  | Hierarchical sub-layering        | CARI | M      | High   | 5.1a, 3.4            |         |
+| 5.6  | As-is vs. as-should comparison   | CARI | M      | High   | 5.1a, 5.1b           |         |
+| 5.7  | Vertical slice detection         | CARI | M      | High   | 5.1a, 9.1            |         |
+| 5.8  | Architecture diagram validation  | CARI | L      | High   | imports (exists)      |         |
 | 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
 | 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |
 | 5.4  | API surface changelog            | CARI | M      | Medium | Git history          |         |

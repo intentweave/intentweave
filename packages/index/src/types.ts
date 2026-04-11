@@ -677,6 +677,49 @@ export interface HubAnalysisResult {
 // 9.1 Community Detection
 // =============================================================================
 
+/**
+ * Community detection mode — controls which edges are used for clustering.
+ *
+ * - `structural` (default): import + co-change + file-to-file co-occurrence edges.
+ *   Shows functional/modular architecture (packages, libraries).
+ * - `semantic`: all co-occurrence + import + co-change edges (full entity graph).
+ *   Shows conceptual/topic groupings — which concepts are discussed together.
+ * - `temporal`: co-change edges only.
+ *   Shows files that evolve together — reveals implicit coupling.
+ */
+export type CommunityMode = "structural" | "semantic" | "temporal";
+
+/** Options for community detection granularity control. */
+export interface CommunityOptions {
+  /**
+   * Which graph edges to use for community detection (default: "structural").
+   * "structural" = imports + co-changes + file co-occurrences (architecture view).
+   * "semantic"   = full co-occurrence graph (concept/topic view).
+   * "temporal"   = co-change graph only (evolution/coupling view).
+   */
+  mode?: CommunityMode;
+
+  /**
+   * Resolution parameter (default: 1.0).
+   * Higher values (e.g. 2.0–5.0) produce more, smaller communities.
+   * Lower values (e.g. 0.5) merge into fewer, larger communities.
+   */
+  resolution?: number;
+
+  /**
+   * Maximum community size before recursive sub-splitting (default: 100).
+   * Communities larger than this are re-analyzed internally.
+   * Set to Infinity to disable recursive splitting.
+   */
+  maxSize?: number;
+
+  /**
+   * Minimum community size to keep (default: 2).
+   * Communities smaller than this are discarded.
+   */
+  minSize?: number;
+}
+
 export interface CommunityMember {
   name: string;
   kind: string;
@@ -706,6 +749,58 @@ export interface CommunityDetectionResult {
 
   /** Total number of nodes in the graph */
   totalNodes: number;
+}
+
+// =============================================================================
+// 5.7 Vertical Slice Detection
+// =============================================================================
+
+/** A vertical slice: a community whose members span multiple layers. */
+export interface VerticalSlice {
+  /** Community ID */
+  communityId: number;
+
+  /** Community label (from most central member) */
+  label: string;
+
+  /** Number of distinct layers this community spans */
+  layerSpan: number;
+
+  /** Layer indices this community has members in (sorted ascending) */
+  layers: number[];
+
+  /** Files in this slice, grouped by layer index */
+  filesByLayer: Record<number, string[]>;
+
+  /** Total number of files in this slice */
+  totalFiles: number;
+
+  /** Classification: "vertical" (spans ≥ minLayers) or "horizontal" (contained in 1-2 layers) */
+  orientation: "vertical" | "horizontal";
+}
+
+/** Options for vertical slice detection. */
+export interface SlicesOptions {
+  /** Minimum number of layers a community must span to be considered a vertical slice. Default: 3. */
+  minLayers?: number;
+
+  /** Maximum number of slices to return. Default: all. */
+  limit?: number;
+}
+
+/** Result of vertical slice detection. */
+export interface SlicesResult {
+  /** Vertical slices (communities spanning ≥ minLayers layers), sorted by layerSpan descending */
+  slices: VerticalSlice[];
+
+  /** Horizontal modules (communities contained in 1-2 layers) */
+  horizontal: VerticalSlice[];
+
+  /** Total layers detected */
+  totalLayers: number;
+
+  /** Total communities analysed */
+  totalCommunities: number;
 }
 
 // =============================================================================
@@ -900,6 +995,42 @@ export interface InferredLayer {
 
   /** Depth range (min–max topological depth of files in this layer) */
   depthRange: [number, number];
+
+  /** Package names within this layer (hierarchical mode only) */
+  packages?: string[];
+
+  /** Sub-layers within this layer (hierarchical mode only) */
+  subLayers?: InferredSubLayer[];
+}
+
+/** A sub-layer within a macro layer (5.5 hierarchical mode). */
+export interface InferredSubLayer {
+  /** Sub-layer index within the parent macro layer (0 = foundation within package) */
+  index: number;
+
+  /** Auto-generated label from directory prefixes within the package */
+  label: string;
+
+  /** Files assigned to this sub-layer */
+  files: string[];
+
+  /** Depth range within the package's internal import graph */
+  depthRange: [number, number];
+
+  /** The package this sub-layer belongs to */
+  package: string;
+}
+
+/** Options for layer inference (5.1a + 5.5). */
+export interface LayersInferOptions {
+  /** Enable two-level hierarchical inference (macro layers + sub-layers). Default: false. */
+  hierarchical?: boolean;
+
+  /** Scope inference to a single package directory (e.g., "packages/analyzer"). */
+  scope?: string;
+
+  /** Minimum file count for a package to receive sub-layer analysis. Default: 10. */
+  minFilesForSubLayers?: number;
 }
 
 /** Result of automatic layer inference from the import graph. */
@@ -1041,6 +1172,8 @@ export interface ArchReportNode {
   layerLabel: string;
   communityId: number;
   communityLabel: string;
+  /** Community assignments per view mode: { "semantic": { id, label }, "temporal": { id, label } } */
+  communityViews?: Record<string, { id: number; label: string }>;
   transitiveDependents: number;
   maxDepth: number;
   risk: "low" | "medium" | "high" | "critical";
@@ -1082,8 +1215,23 @@ export interface ArchReportData {
     llmName?: string;
     /** LLM-generated description of the layer's architectural role */
     description?: string;
+    /** Packages contained in this layer (hierarchical mode) */
+    packages?: string[];
+    /** Sub-layers within this macro layer (hierarchical mode) */
+    subLayers?: Array<{
+      index: number;
+      label: string;
+      fileCount: number;
+      files: string[];
+      package: string;
+      depthRange: [number, number];
+    }>;
   }>;
   communities: Array<{ id: number; label: string; size: number }>;
+  /** Alternative community views keyed by mode. Each value is a community list. */
+  communityViews?: Record<string, Array<{ id: number; label: string; size: number }>>;
+  /** Active community mode label for the default view. */
+  activeCommunityMode?: string;
   /** LLM-generated directory names for aggregate nodes (5.1c). Key = dir path. */
   directoryNames?: Record<string, { name: string; description: string }>;
   summary: {
