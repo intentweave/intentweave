@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/analyzer",
   "version": "0.7.0",
-  "description": "Analysis engine for IntentWeave knowledge extraction \u2014 pipeline stages IN, FX, KX, GX",
+  "description": "Analysis engine for IntentWeave knowledge extraction — pipeline stages IN, FX, KX, GX",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -74,7 +74,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Pipeline engine (IN\u2192FX\u2192KX\u2192GX) \u2014 core extraction, must stay open-source"
+    "description": "Pipeline engine (IN→FX→KX→GX) — core extraction, must stay open-source"
   },
   "engines": {
     "node": ">=20.0.0"

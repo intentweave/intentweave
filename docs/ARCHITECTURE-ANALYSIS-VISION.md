@@ -150,6 +150,7 @@ Without it, the existing flat inference remains the default and works well for s
 requires knowing both.
 
 Today, CARI supports:
+
 - **As-is:** `layers-infer` (what the import graph reveals)
 - **As-should:** `layers-check` (validation against `.iw/layers.yaml`)
 
@@ -166,6 +167,7 @@ packages/core/types.ts  │ Layer 0 (found.)  │ Layer 0 (found.)   │ ✓ OK
 ```
 
 This works at two levels:
+
 - **File level:** Per-file comparison (detailed, useful for CI)
 - **Layer level:** Do inferred layer boundaries roughly match config boundaries?
   (aggregate, useful for architecture reviews)
@@ -199,6 +201,7 @@ assignments from 5.1a) and requires no new extraction.
 ### Visualization synergy
 
 In the HTML report:
+
 - **Layers view:** Horizontal bands (already implemented)
 - **Communities view:** Colour-coded clusters (already implemented)
 - **Slices view (new):** Layers as horizontal bands + communities as vertical columns overlaid.
@@ -225,6 +228,7 @@ config:
 - **Constraints:** Forbidden dependencies (intentional architectural boundaries)
 
 CARI validates the actual import graph against this config:
+
 - **Expected flow present?** Check if any file in component A imports any file in component B
 - **Unexpected flow detected?** Check for imports between components that have no declared flow
 - **Constraint violated?** Check for imports that cross forbidden boundaries
@@ -253,17 +257,18 @@ architectural level rather than the file level.
 A critical design principle: **all four features (5.5–5.8) operate on data CARI already
 collects.** No new extraction stages are needed.
 
-| Feature                  | Data source                                                |
-|--------------------------|------------------------------------------------------------|
-| 5.5 Sub-layering         | `imports` table (same as 5.1a), `files.filePath` for packages |
-| 5.6 As-is vs. as-should  | `layersInfer()` output + `.iw/layers.yaml`                 |
-| 5.7 Vertical slices       | `communities()` output + `layersInfer()` output            |
-| 5.8 Diagram validation    | `imports` table + `.iw/architecture.yaml` (new config)     |
+| Feature                 | Data source                                                   |
+| ----------------------- | ------------------------------------------------------------- |
+| 5.5 Sub-layering        | `imports` table (same as 5.1a), `files.filePath` for packages |
+| 5.6 As-is vs. as-should | `layersInfer()` output + `.iw/layers.yaml`                    |
+| 5.7 Vertical slices     | `communities()` output + `layersInfer()` output               |
+| 5.8 Diagram validation  | `imports` table + `.iw/architecture.yaml` (new config)        |
 
 The only new inputs are two optional config files (`.iw/layers.yaml` for 5.6,
 `.iw/architecture.yaml` for 5.8). Everything else comes from the existing index.
 
 This means:
+
 - **Zero additional cost** — no LLM calls, no new AST stages
 - **Same incremental model** — if the index is up to date, all queries are instant
 - **Composable** — features can be used independently or combined in the HTML report
@@ -292,12 +297,12 @@ iw index arch-check --strict   # fail on any undocumented flow
 
 ### MCP tools
 
-| Tool                  | Feature | New params                              |
-|-----------------------|---------|-----------------------------------------|
-| `cari_layers_infer`   | 5.5     | `hierarchical?: boolean`, `scope?: string` |
-| `cari_layers_check`   | 5.6     | `compare?: boolean`                     |
-| `cari_slices`         | 5.7     | `minSpan?: number`                      |
-| `cari_arch_check`     | 5.8     | `config?: string`, `strict?: boolean`   |
+| Tool                | Feature | New params                                 |
+| ------------------- | ------- | ------------------------------------------ |
+| `cari_layers_infer` | 5.5     | `hierarchical?: boolean`, `scope?: string` |
+| `cari_layers_check` | 5.6     | `compare?: boolean`                        |
+| `cari_slices`       | 5.7     | `minSpan?: number`                         |
+| `cari_arch_check`   | 5.8     | `config?: string`, `strict?: boolean`      |
 
 ### HTML report views
 

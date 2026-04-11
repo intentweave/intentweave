@@ -360,7 +360,7 @@ Additional CARI queries are available as CLI subcommands, MCP tools, and via the
 | `iw index annotations-for <file>`          | `cari_annotations_for`     | List all annotations for a documentation file                  |
 | `iw index test-coverage`                   | `cari_test_coverage`       | Map test files to source files, find untested exports          |
 | `iw index hubs`                            | `cari_hubs`                | God-node / hub analysis (degree centrality)                    |
-| `iw index communities`                     | `cari_communities`         | Community detection (structural / semantic / temporal modes)    |
+| `iw index communities`                     | `cari_communities`         | Community detection (structural / semantic / temporal modes)   |
 | `iw index surprises`                       | `cari_surprises`           | Surprising connection ranking (composite score)                |
 | `iw index rationale`                       | `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                  |
 | `iw index terminology`                     | `cari_terminology`         | Terminology inconsistency detection                            |

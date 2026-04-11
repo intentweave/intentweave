@@ -215,7 +215,10 @@ function buildTemporalGraph(db: Database.Database): {
 function buildGraphForMode(
   db: Database.Database,
   mode: CommunityMode,
-): { nodes: Map<string, GraphNode>; adjacency: Map<string, Map<string, number>> } {
+): {
+  nodes: Map<string, GraphNode>;
+  adjacency: Map<string, Map<string, number>>;
+} {
   switch (mode) {
     case "semantic":
       return buildGraph(db);
@@ -536,8 +539,7 @@ function splitByHubRemoval(
 
   // Hub threshold: mean + 1 standard deviation
   const degreeValues = [...degrees.values()];
-  const meanDeg =
-    degreeValues.reduce((a, b) => a + b, 0) / degreeValues.length;
+  const meanDeg = degreeValues.reduce((a, b) => a + b, 0) / degreeValues.length;
   const stdDeg = Math.sqrt(
     degreeValues.reduce((a, b) => a + (b - meanDeg) ** 2, 0) /
       degreeValues.length,
@@ -714,9 +716,7 @@ function splitByEdgeRemoval(
 
     // Keep only components meeting minSize; merge remainder into largest
     const qualifying = components.filter((c) => c.length >= minSize);
-    const remainder = components
-      .filter((c) => c.length < minSize)
-      .flat();
+    const remainder = components.filter((c) => c.length < minSize).flat();
 
     if (qualifying.length > 1) {
       if (remainder.length > 0) {

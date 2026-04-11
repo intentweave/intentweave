@@ -2573,10 +2573,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
           limit: args.limit,
         });
 
-        if (
-          result.slices.length === 0 &&
-          result.horizontal.length === 0
-        ) {
+        if (result.slices.length === 0 && result.horizontal.length === 0) {
           return {
             content: [
               {
@@ -2627,9 +2624,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
             );
           }
           if (result.horizontal.length > 15) {
-            lines.push(
-              `| ... | +${result.horizontal.length - 15} more | |`,
-            );
+            lines.push(`| ... | +${result.horizontal.length - 15} more | |`);
           }
         }
 

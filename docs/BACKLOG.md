@@ -777,7 +777,7 @@ CLI: `iw index export --obsidian`.
 | 5.5  | Hierarchical sub-layering        | CARI | M      | High   | 5.1a, 3.4            |         |
 | 5.6  | As-is vs. as-should comparison   | CARI | M      | High   | 5.1a, 5.1b           |         |
 | 5.7  | Vertical slice detection         | CARI | M      | High   | 5.1a, 9.1            |         |
-| 5.8  | Architecture diagram validation  | CARI | L      | High   | imports (exists)      |         |
+| 5.8  | Architecture diagram validation  | CARI | L      | High   | imports (exists)     |         |
 | 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
 | 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |
 | 5.4  | API surface changelog            | CARI | M      | Medium | Git history          |         |

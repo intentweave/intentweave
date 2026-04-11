@@ -2093,9 +2093,7 @@ const indexSlicesSubcommand = new Command("slices")
         }
         if (result.horizontal.length > 10) {
           console.log(
-            chalk.gray(
-              `    ... and ${result.horizontal.length - 10} more`,
-            ),
+            chalk.gray(`    ... and ${result.horizontal.length - 10} more`),
           );
         }
         console.log();

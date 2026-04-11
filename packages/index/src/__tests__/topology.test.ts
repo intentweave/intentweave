@@ -477,9 +477,7 @@ describe("9.1 Community Detection", () => {
     const low = communitiesFromDb(db, { resolution: 1.0, maxSize: 20 });
     const high = communitiesFromDb(db, { resolution: 3.0, maxSize: 20 });
     // Higher resolution should produce at least as many communities
-    expect(high.totalCommunities).toBeGreaterThanOrEqual(
-      low.totalCommunities,
-    );
+    expect(high.totalCommunities).toBeGreaterThanOrEqual(low.totalCommunities);
   });
 
   it("should recursively split large communities with maxSize", () => {

@@ -244,10 +244,12 @@ function hierarchicalInfer(
 
   // 2a. Cross-package edges from relative imports (already in the forward graph)
   for (const [src, targets] of forward) {
-    const srcPkg = extractPackage(src) ?? (rootFiles.has(src) ? "__root__" : null);
+    const srcPkg =
+      extractPackage(src) ?? (rootFiles.has(src) ? "__root__" : null);
     if (!srcPkg) continue;
     for (const tgt of targets) {
-      const tgtPkg = extractPackage(tgt) ?? (rootFiles.has(tgt) ? "__root__" : null);
+      const tgtPkg =
+        extractPackage(tgt) ?? (rootFiles.has(tgt) ? "__root__" : null);
       if (!tgtPkg || tgtPkg === srcPkg) continue;
       if (!pkgForward.has(srcPkg)) pkgForward.set(srcPkg, new Set());
       pkgForward.get(srcPkg)!.add(tgtPkg);
@@ -324,7 +326,7 @@ function hierarchicalInfer(
     const layerFiles: string[] = [];
     for (const pkg of packages) {
       const files =
-        pkg === "__root__" ? rootFiles : packageFiles.get(pkg) ?? new Set();
+        pkg === "__root__" ? rootFiles : (packageFiles.get(pkg) ?? new Set());
       for (const f of files) layerFiles.push(f);
     }
     layerFiles.sort();
@@ -342,11 +344,7 @@ function hierarchicalInfer(
       Math.max(...fileDepths),
     ];
 
-    const label = generateLayerLabel(
-      layerFiles,
-      i,
-      macroLayerCount,
-    );
+    const label = generateLayerLabel(layerFiles, i, macroLayerCount);
 
     // 6. Compute sub-layers for qualifying packages
     const subLayers: InferredSubLayer[] = [];

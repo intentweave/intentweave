@@ -61,7 +61,8 @@ export function archReportFromDb(
 ): ArchReportData {
   // 1. Gather data from underlying queries
   const layers = layersInferFromDb(db, options?.layerOptions);
-  const primaryMode: CommunityMode = options?.communityOptions?.mode ?? "structural";
+  const primaryMode: CommunityMode =
+    options?.communityOptions?.mode ?? "structural";
   const comms = communitiesFromDb(db, options?.communityOptions);
 
   // Compute alternative community views for each non-primary mode
@@ -109,7 +110,10 @@ export function archReportFromDb(
   }
 
   // Build per-file community lookups for alternative views
-  const altFileMaps = new Map<string, Map<string, { id: number; label: string }>>();
+  const altFileMaps = new Map<
+    string,
+    Map<string, { id: number; label: string }>
+  >();
   for (const [mode, result] of altViews) {
     const fileMap = new Map<string, { id: number; label: string }>();
     for (const comm of result.communities) {
@@ -332,7 +336,10 @@ export function archReportFromDb(
     : undefined;
 
   // Build alternative community summaries for the report
-  const communityViewSummaries: Record<string, Array<{ id: number; label: string; size: number }>> = {};
+  const communityViewSummaries: Record<
+    string,
+    Array<{ id: number; label: string; size: number }>
+  > = {};
   for (const [mode, result] of altViews) {
     const altNodeIds = new Set<number>();
     const altFileMap = altFileMaps.get(mode)!;

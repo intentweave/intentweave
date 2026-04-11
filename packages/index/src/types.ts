@@ -1229,7 +1229,10 @@ export interface ArchReportData {
   }>;
   communities: Array<{ id: number; label: string; size: number }>;
   /** Alternative community views keyed by mode. Each value is a community list. */
-  communityViews?: Record<string, Array<{ id: number; label: string; size: number }>>;
+  communityViews?: Record<
+    string,
+    Array<{ id: number; label: string; size: number }>
+  >;
   /** Active community mode label for the default view. */
   activeCommunityMode?: string;
   /** LLM-generated directory names for aggregate nodes (5.1c). Key = dir path. */

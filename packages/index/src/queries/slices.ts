@@ -12,11 +12,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type {
-  SlicesOptions,
-  SlicesResult,
-  VerticalSlice,
-} from "../types.js";
+import type { SlicesOptions, SlicesResult, VerticalSlice } from "../types.js";
 import { openIndex } from "./shared.js";
 import { communitiesFromDb } from "./communities.js";
 import { layersInferFromDb } from "./layersInfer.js";
@@ -27,10 +23,7 @@ import { layersInferFromDb } from "./layersInfer.js";
  * Detect vertical slices by cross-referencing communities with layers.
  * @param dbPath Path to the CARI index database.
  */
-export function slices(
-  dbPath: string,
-  options?: SlicesOptions,
-): SlicesResult {
+export function slices(dbPath: string, options?: SlicesOptions): SlicesResult {
   const db = openIndex(dbPath);
   try {
     return slicesFromDb(db, options);
@@ -118,9 +111,7 @@ export function slicesFromDb(
     .sort((a, b) => b.totalFiles - a.totalFiles);
 
   // 5. Apply limit if requested
-  const limited = options?.limit
-    ? vertical.slice(0, options.limit)
-    : vertical;
+  const limited = options?.limit ? vertical.slice(0, options.limit) : vertical;
 
   return {
     slices: limited,
