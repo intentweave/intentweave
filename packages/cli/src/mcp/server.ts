@@ -2636,6 +2636,165 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
     },
   );
 
+  // ── Tool: cari_focus ────────────────────────────────────────────────
+  server.tool(
+    "cari_focus",
+    `Generate a focused architecture view centred on a specific file, symbol, or topic. Returns a scoped subgraph with N-hop neighbours, annotated with architectural layers, community membership, and transitive dependents.
+
+Three edge types: import (structural), co_change (temporal), doc_cooc (semantic).
+Ideal for understanding the local architecture around any code entity.
+
+No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
+    {
+      target: z
+        .string()
+        .describe(
+          "File path, symbol name, or topic keyword to centre the view on",
+        ),
+      hops: z
+        .number()
+        .optional()
+        .default(2)
+        .describe(
+          "Number of import-graph hops to expand from the target (default: 2)",
+        ),
+      maxNodes: z
+        .number()
+        .optional()
+        .default(25)
+        .describe(
+          "Maximum nodes in the subgraph — truncated by relevance (default: 25)",
+        ),
+    },
+    async (args) => {
+      log(
+        `cari_focus: target=${args.target}, hops=${args.hops}, maxNodes=${args.maxNodes}`,
+      );
+      try {
+        const { focus } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = focus(dbPath, {
+          target: args.target,
+          hops: args.hops,
+          maxNodes: args.maxNodes,
+        });
+
+        if (result.nodes.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No results found for target "${args.target}". Try a file path, symbol name, or keyword.`,
+              },
+            ],
+          };
+        }
+
+        const lines: string[] = [
+          `## Focused Architecture: ${result.target}`,
+          "",
+          `**${result.nodes.length} nodes** (of ${result.totalNeighborhood} in ${result.hops}-hop neighbourhood), **${result.edges.length} edges**`,
+          "",
+        ];
+
+        // Nodes table
+        lines.push(
+          "### Nodes",
+          "",
+          "| File | Layer | Community | Dependents | Hops |",
+          "|------|-------|-----------|------------|------|",
+        );
+        for (const n of result.nodes) {
+          const marker = n.isTarget ? "⭐ " : "";
+          const name = n.name || n.filePath.split("/").pop() || n.filePath;
+          lines.push(
+            `| ${marker}${name} | ${n.layerLabel ?? `L${n.layerIndex}`} | ${n.communityLabel ?? `C${n.communityId}`} | ${n.dependents} | ${n.hopDistance} |`,
+          );
+        }
+        lines.push("");
+
+        // Edges by type
+        const importEdges = result.edges.filter((e) => e.type === "import");
+        const coChangeEdges = result.edges.filter(
+          (e) => e.type === "co_change",
+        );
+        const docEdges = result.edges.filter((e) => e.type === "doc_cooc");
+
+        if (importEdges.length > 0) {
+          lines.push(
+            `### Import Edges (${importEdges.length})`,
+            "",
+            "| Source | Target |",
+            "|--------|--------|",
+          );
+          for (const e of importEdges) {
+            lines.push(
+              `| ${e.source.split("/").pop()} | ${e.target.split("/").pop()} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        if (coChangeEdges.length > 0) {
+          lines.push(
+            `### Co-Change Edges (${coChangeEdges.length})`,
+            "",
+            "| Source | Target | Jaccard |",
+            "|--------|--------|---------|",
+          );
+          for (const e of coChangeEdges) {
+            lines.push(
+              `| ${e.source.split("/").pop()} | ${e.target.split("/").pop()} | ${e.weight.toFixed(2)} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        if (docEdges.length > 0) {
+          lines.push(
+            `### Doc Co-occurrence Edges (${docEdges.length})`,
+            "",
+            "| Source | Target | Weight |",
+            "|--------|--------|--------|",
+          );
+          for (const e of docEdges) {
+            lines.push(
+              `| ${e.source.split("/").pop()} | ${e.target.split("/").pop()} | ${e.weight.toFixed(2)} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        // Mermaid diagram
+        lines.push("### Dependency Graph", "", "```mermaid", "graph LR");
+        const nodeIds = new Map<string, string>();
+        result.nodes.forEach((n, i) => {
+          const id = `n${i}`;
+          const label = n.name || n.filePath.split("/").pop() || n.filePath;
+          const prefix = n.isTarget ? "⭐ " : "";
+          nodeIds.set(n.filePath, id);
+          lines.push(`  ${id}["${prefix}${label}"]`);
+        });
+        for (const e of result.edges) {
+          const src = nodeIds.get(e.source);
+          const tgt = nodeIds.get(e.target);
+          if (!src || !tgt) continue;
+          if (e.type === "import") {
+            lines.push(`  ${src} --> ${tgt}`);
+          } else {
+            lines.push(`  ${src} -.-> ${tgt}`);
+          }
+        }
+        lines.push("```", "");
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
   // ── Connect via stdio ───────────────────────────────────────────────
   const transport = new StdioServerTransport();
   await server.connect(transport);

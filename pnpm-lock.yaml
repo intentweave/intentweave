@@ -207,6 +207,9 @@ importers:
 
   packages/index:
     dependencies:
+      '@viz-js/viz':
+        specifier: ^3.25.0
+        version: 3.25.0
       better-sqlite3:
         specifier: ^11.7.0
         version: 11.10.0
@@ -1589,6 +1592,9 @@ packages:
 
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
+
+  '@viz-js/viz@3.25.0':
+    resolution: {integrity: sha512-dM7zAYMdf7mcRz5Kdb+YJb6+qv5Rjk0rPZ18gROdpMrP/3S7RFOp8uxybeiz5RypHrE1zo1vccA8Twh4mIcLZw==}
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -4134,6 +4140,8 @@ snapshots:
       '@vitest/pretty-format': 2.1.9
       loupe: 3.2.1
       tinyrainbow: 1.2.0
+
+  '@viz-js/viz@3.25.0': {}
 
   abstract-logging@2.0.1: {}
 

@@ -1245,3 +1245,138 @@ export interface ArchReportData {
     highRiskFiles: number;
   };
 }
+
+// =============================================================================
+// Focused Architecture View
+// =============================================================================
+
+/** Parameters for the focused architecture subgraph query. */
+export interface FocusParams {
+  /** Target entity — file path, symbol name, or topic keyword. */
+  target: string;
+
+  /** Number of import-graph hops to expand from the target (default: 2). */
+  hops?: number;
+
+  /** Maximum number of nodes in the returned subgraph (default: 25). */
+  maxNodes?: number;
+}
+
+/** A node in the focused subgraph. */
+export interface FocusNode {
+  /** File path relative to workspace root. */
+  filePath: string;
+
+  /** Short display name (filename without extension). */
+  name: string;
+
+  /** Architectural layer index (-1 if unassigned). */
+  layerIndex: number;
+
+  /** Architectural layer label. */
+  layerLabel: string;
+
+  /** Community ID (-1 if unassigned). */
+  communityId: number;
+
+  /** Community label. */
+  communityLabel: string;
+
+  /** Number of transitive dependents (downstream impact). */
+  dependents: number;
+
+  /** Whether this is the seed/target node. */
+  isTarget: boolean;
+
+  /** Hop distance from the target (0 = target itself). */
+  hopDistance: number;
+}
+
+/** An edge in the focused subgraph. */
+export interface FocusEdge {
+  /** Source file path. */
+  source: string;
+
+  /** Target file path. */
+  target: string;
+
+  /** Edge type: import, co-change, or doc co-occurrence. */
+  type: "import" | "co_change" | "doc_cooc";
+
+  /** Edge weight / score. */
+  weight: number;
+}
+
+/** Result of a focused architecture subgraph query. */
+export interface FocusResult {
+  /** The resolved target (file path or search term). */
+  target: string;
+
+  /** Nodes in the focused subgraph. */
+  nodes: FocusNode[];
+
+  /** Edges in the focused subgraph. */
+  edges: FocusEdge[];
+
+  /** Total number of files in the expanded neighborhood (before truncation). */
+  totalNeighborhood: number;
+
+  /** Number of hops used. */
+  hops: number;
+}
+
+// =============================================================================
+// CARI Impact Analysis
+// =============================================================================
+
+export interface CariImpactParams {
+  /** Changed file paths (relative to workspace root). */
+  changed: string[];
+  /** Max hops to expand via import graph (default: 2). */
+  hops?: number;
+  /** Max results per category (default: 50). */
+  limit?: number;
+}
+
+export interface CariImpactFile {
+  /** File path. */
+  filePath: string;
+  /** How this file is connected to the change. */
+  via: "import" | "reverse-import" | "co-change" | "doc-mention";
+  /** Hop distance from the changed file (imports only). */
+  depth: number;
+  /** Coupling strength (jaccard for co-change, confidence for annotations). */
+  score: number;
+}
+
+export interface CariImpactDoc {
+  /** Documentation file that references the changed code. */
+  docPath: string;
+  /** Number of annotations referencing changed files. */
+  mentionCount: number;
+  /** Max confidence among annotations. */
+  maxConfidence: number;
+  /** Specific symbols mentioned. */
+  symbols: string[];
+}
+
+export interface CariImpactResult {
+  /** The analyzed file(s). */
+  files: string[];
+  /** Files that import the changed file(s) (downstream dependents). */
+  dependents: CariImpactFile[];
+  /** Files imported by the changed file(s) (upstream dependencies). */
+  dependencies: CariImpactFile[];
+  /** Files that historically co-change with the changed file(s). */
+  coChangePartners: CariImpactFile[];
+  /** Documentation files referencing symbols in the changed file(s). */
+  affectedDocs: CariImpactDoc[];
+  /** Stats summary. */
+  stats: {
+    filesAnalyzed: number;
+    dependentCount: number;
+    dependencyCount: number;
+    coChangeCount: number;
+    affectedDocCount: number;
+  };
+}

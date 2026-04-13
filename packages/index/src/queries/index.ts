@@ -51,6 +51,8 @@ export { layersInfer, layersInferFromDb } from "./layersInfer.js";
 export { layersCheck, layersCheckFromDb } from "./layersCheck.js";
 export { nameLayers } from "./layerNaming.js";
 export { slices, slicesFromDb } from "./slices.js";
+export { focus, focusFromDb } from "./focus.js";
+export { impact, impactFromDb, formatCariImpact } from "./impact.js";
 export { archReport, archReportFromDb } from "./archReport.js";
 export type { ArchReportOptions } from "./archReport.js";
 export { openIndex } from "./shared.js";

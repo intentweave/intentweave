@@ -183,9 +183,12 @@ import {
   layersInfer,
   layersCheck,
   slices,
+  focus,
   nameLayers,
   archReport,
   renderArchReportHtml,
+  renderFocusReportHtml,
+  analyzeFocusInsights,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -2101,16 +2104,177 @@ const indexSlicesSubcommand = new Command("slices")
     },
   );
 
+// ── iw index impact ─────────────────────────────────────────────
+
+const indexImpactSubcommand = new Command("impact")
+  .description(
+    "Analyze impact of changed files using the CARI index (no Neo4j required)",
+  )
+  .argument("<files...>", "Changed file paths (workspace-relative)")
+  .option("--db <path>", "Path to index.db")
+  .option("--hops <n>", "Max import-graph hops for dependents (default: 2)", "2")
+  .option("--limit <n>", "Max results per category (default: 50)", "50")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(async (files: string[], opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const hops = parseInt(opts.hops, 10) || 2;
+    const limit = parseInt(opts.limit, 10) || 50;
+
+    const { impact, formatCariImpact } = await import("@intentweave/index");
+    const result = impact(dbPath, { changed: files, hops, limit });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(formatCariImpact(result));
+  });
+
+// ── iw index focus ──────────────────────────────────────────────
+
+const indexFocusSubcommand = new Command("focus")
+  .description(
+    "Generate a focused architecture view centred on a file, symbol, or topic",
+  )
+  .argument("<target>", "File path, symbol name, or topic keyword")
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "-h, --hops <n>",
+    "Number of import-graph hops to expand (default: 2)",
+    "2",
+  )
+  .option(
+    "-n, --max-nodes <n>",
+    "Maximum nodes in the subgraph (default: 25)",
+    "25",
+  )
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(
+    (
+      target: string,
+      opts: {
+        db?: string;
+        hops?: string;
+        maxNodes?: string;
+        format?: string;
+      },
+    ) => {
+      const dbPath = resolveDbPath(opts.db);
+      const result = focus(dbPath, {
+        target,
+        hops: opts.hops ? parseInt(opts.hops, 10) : undefined,
+        maxNodes: opts.maxNodes ? parseInt(opts.maxNodes, 10) : undefined,
+      });
+
+      if (opts.format === "json") {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (result.nodes.length === 0) {
+        console.log(
+          chalk.yellow(
+            `\n  No results found for target "${target}". Try a file path, symbol name, or keyword.\n`,
+          ),
+        );
+        return;
+      }
+
+      console.log(
+        chalk.bold(
+          `\n  Focused Architecture: ${result.target}`,
+        ),
+      );
+      console.log(
+        chalk.gray(
+          `  ${result.nodes.length} nodes (of ${result.totalNeighborhood} in ${result.hops}-hop neighbourhood), ${result.edges.length} edges\n`,
+        ),
+      );
+
+      for (const n of result.nodes) {
+        const marker = n.isTarget ? chalk.yellow("⭐ ") : "   ";
+        const name = n.name || n.filePath.split("/").pop() || n.filePath;
+        const layer = n.layerLabel ?? `L${n.layerIndex}`;
+        const comm = n.communityLabel ?? `C${n.communityId}`;
+        console.log(
+          `${marker}${chalk.cyan(name)}  ${chalk.gray(`[${layer}]`)}  ${chalk.gray(`{${comm}}`)}  ${chalk.gray(`${n.dependents} dep`)}  ${chalk.gray(`hop ${n.hopDistance}`)}`,
+        );
+      }
+
+      const importEdges = result.edges.filter((e) => e.type === "import");
+      const coChangeEdges = result.edges.filter((e) => e.type === "co_change");
+      const docEdges = result.edges.filter((e) => e.type === "doc_cooc");
+
+      if (importEdges.length > 0) {
+        console.log(chalk.bold(`\n  Import edges (${importEdges.length}):`));
+        for (const e of importEdges) {
+          console.log(
+            chalk.gray(
+              `    ${e.source.split("/").pop()} → ${e.target.split("/").pop()}`,
+            ),
+          );
+        }
+      }
+
+      if (coChangeEdges.length > 0) {
+        console.log(
+          chalk.bold(`\n  Co-change edges (${coChangeEdges.length}):`),
+        );
+        for (const e of coChangeEdges) {
+          console.log(
+            chalk.gray(
+              `    ${e.source.split("/").pop()} ↔ ${e.target.split("/").pop()} (${e.weight.toFixed(2)})`,
+            ),
+          );
+        }
+      }
+
+      if (docEdges.length > 0) {
+        console.log(
+          chalk.bold(`\n  Doc co-occurrence edges (${docEdges.length}):`),
+        );
+        for (const e of docEdges) {
+          console.log(
+            chalk.gray(
+              `    ${e.source.split("/").pop()} ↔ ${e.target.split("/").pop()} (${e.weight.toFixed(2)})`,
+            ),
+          );
+        }
+      }
+
+      console.log();
+    },
+  );
+
 // ── iw index export ─────────────────────────────────────────────
 
 const indexExportSubcommand = new Command("export")
   .description("Export architecture report as a self-contained HTML file")
   .option("--db <path>", "Path to index.db")
   .option("--html", "Generate HTML architecture report (default)", true)
-  .option("-o, --output <path>", "Output file path", "architecture.html")
+  .option("-o, --output <path>", "Output file path")
+  .option(
+    "--focus <target>",
+    "Generate a focused architecture view centred on a file, symbol, or topic (Graphviz SVG)",
+  )
+  .option(
+    "--hops <n>",
+    "Number of import-graph hops for --focus (default: 2)",
+    "2",
+  )
+  .option(
+    "--max-nodes <n>",
+    "Maximum nodes for --focus (default: 25)",
+    "25",
+  )
+  .option(
+    "--explain",
+    "Generate an LLM-narrated architecture explanation (requires --provider)",
+  )
   .option(
     "--provider <name>",
-    "LLM provider for layer naming: openai | smart-mock (omit for heuristic labels only)",
+    "LLM provider for layer naming / --explain: openai | smart-mock (omit for heuristic labels only)",
   )
   .option("--model <name>", "LLM model name", "gpt-4o-mini")
   .option("--api-key <key>", "OpenAI API key (or set OPENAI_API_KEY)")
@@ -2137,7 +2301,11 @@ const indexExportSubcommand = new Command("export")
     async (opts: {
       db?: string;
       html?: boolean;
-      output: string;
+      output?: string;
+      focus?: string;
+      explain?: boolean;
+      hops: string;
+      maxNodes: string;
       provider?: string;
       model: string;
       apiKey?: string;
@@ -2147,6 +2315,75 @@ const indexExportSubcommand = new Command("export")
       mode: string;
     }) => {
       const dbPath = resolveDbPath(opts.db);
+
+      // ── Focus mode: Graphviz SVG report ─────────────────────
+      if (opts.focus) {
+        const outputPath = opts.output ?? "focus.html";
+        console.log(
+          chalk.blue(
+            `Generating focused architecture view for "${opts.focus}"…`,
+          ),
+        );
+        const result = focus(dbPath, {
+          target: opts.focus,
+          hops: parseInt(opts.hops, 10),
+          maxNodes: parseInt(opts.maxNodes, 10),
+        });
+
+        if (result.nodes.length === 0) {
+          console.error(
+            chalk.red(
+              `No results found for target "${opts.focus}". Try a file path, symbol name, or keyword.`,
+            ),
+          );
+          process.exit(1);
+        }
+
+        console.log(
+          `  ${result.nodes.length} nodes · ${result.edges.length} edges · ${result.hops}-hop view`,
+        );
+
+        // Optional LLM explanation
+        let narrative: string | undefined;
+        if (opts.explain) {
+          if (!opts.provider) {
+            console.error(
+              chalk.red(
+                "--explain requires --provider (e.g. --provider openai)",
+              ),
+            );
+            process.exit(1);
+          }
+
+          const { OpenAILLMProvider, SmartMockLLMProvider } =
+            await import("@intentweave/analyzer/llm");
+          const apiKey =
+            opts.apiKey ?? process.env.OPENAI_API_KEY ?? "";
+          const llm =
+            opts.provider === "smart-mock"
+              ? new SmartMockLLMProvider()
+              : new OpenAILLMProvider({
+                  apiKey,
+                  model: opts.model,
+                });
+
+          console.log(
+            chalk.blue("  Generating LLM architecture narrative…"),
+          );
+
+          const insights = analyzeFocusInsights(result);
+          narrative = await generateFocusNarrative(llm, result, insights);
+          console.log("  ✓ Narrative generated");
+        }
+
+        const html = await renderFocusReportHtml(result, { narrative });
+        const fsSync = await import("node:fs");
+        fsSync.writeFileSync(outputPath, html, "utf-8");
+        console.log(`\n✓ Written to ${outputPath}`);
+        return;
+      }
+
+      // ── Full architecture report ────────────────────────────
 
       // Optional LLM layer naming pass (5.1c)
       let layerNames;
@@ -2212,8 +2449,9 @@ const indexExportSubcommand = new Command("export")
       }
       const html = renderArchReportHtml(data);
       const fsSync = await import("node:fs");
-      fsSync.writeFileSync(opts.output, html, "utf-8");
-      console.log(`\n✓ Written to ${opts.output}`);
+      const outputPath = opts.output ?? "architecture.html";
+      fsSync.writeFileSync(outputPath, html, "utf-8");
+      console.log(`\n✓ Written to ${outputPath}`);
     },
   );
 
@@ -2249,4 +2487,98 @@ export const indexCommand = new Command("index")
   .addCommand(indexLayersInferSubcommand)
   .addCommand(indexLayersCheckSubcommand)
   .addCommand(indexSlicesSubcommand)
+  .addCommand(indexFocusSubcommand)
+  .addCommand(indexImpactSubcommand)
   .addCommand(indexExportSubcommand);
+
+// ── LLM narrative generation for --explain ──────────────────────
+
+interface FocusInsightsLike {
+  targetSummary: string;
+  clusters: Array<{
+    label: string;
+    files: string[];
+    role: string;
+    avgHop: number;
+  }>;
+  hubs: Array<{
+    name: string;
+    filePath: string;
+    dependents: number;
+    risk: string;
+  }>;
+  flowSummary: string;
+  observations: string[];
+}
+
+async function generateFocusNarrative(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  llm: any,
+  result: { target: string; nodes: Array<{ name: string; filePath: string; layerLabel: string; communityLabel: string; dependents: number; hopDistance: number; isTarget: boolean }>; edges: Array<{ source: string; target: string; type: string }>; hops: number; totalNeighborhood: number },
+  insights: FocusInsightsLike,
+): Promise<string> {
+  const nodesSummary = result.nodes
+    .map(
+      (n) =>
+        `${n.isTarget ? "⭐ " : ""}${n.name} (${n.filePath}, layer: ${n.layerLabel}, hop: ${n.hopDistance}, dependents: ${n.dependents})`,
+    )
+    .join("\n");
+
+  const edgeSummary = `${result.edges.filter((e) => e.type === "import").length} imports, ${result.edges.filter((e) => e.type === "co_change").length} co-changes, ${result.edges.filter((e) => e.type === "doc_cooc").length} doc links`;
+
+  const clusterSummary = insights.clusters
+    .map((c) => `• ${c.label}: ${c.role} (${c.files.length} files)`)
+    .join("\n");
+
+  const hubSummary =
+    insights.hubs.length > 0
+      ? insights.hubs
+          .map(
+            (h) =>
+              `• ${h.name}: ${h.dependents} dependents (${h.risk} risk)`,
+          )
+          .join("\n")
+      : "No high-connectivity hubs detected.";
+
+  const system = `You are a senior software architect analysing a codebase.
+Write a clear, concise architecture narrative (3-5 paragraphs) for a developer who wants to understand this part of the system.
+
+Cover:
+1. What the target module does and its role in the system
+2. How the layers are organised and why
+3. Key data/control flow patterns
+4. Risks or architectural concerns (hubs, tight coupling, boundary violations)
+5. Recommendations for a newcomer working in this area
+
+Use plain language. No markdown formatting — the text will be displayed in a pre-formatted panel.
+Keep it under 400 words.`;
+
+  const userMsg = `Focused architecture view for "${result.target}":
+
+NODES (${result.nodes.length} of ${result.totalNeighborhood} in ${result.hops}-hop neighbourhood):
+${nodesSummary}
+
+EDGES: ${edgeSummary}
+
+LAYER CLUSTERS:
+${clusterSummary}
+
+HUB ANALYSIS:
+${hubSummary}
+
+DATA FLOW: ${insights.flowSummary}
+
+STRUCTURAL OBSERVATIONS:
+${insights.observations.map((o) => `• ${o.replace(/<[^>]*>/g, "")}`).join("\n")}
+
+Please write an architecture narrative explaining this area of the codebase.`;
+
+  const response = await llm.complete({
+    system,
+    messages: [{ role: "user", content: userMsg }],
+    temperature: 0.3,
+    maxTokens: 800,
+  });
+
+  return response.content;
+}

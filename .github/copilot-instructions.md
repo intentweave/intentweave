@@ -78,6 +78,8 @@ iw index update                       # only changed files
 # Export
 iw index export --html                # standalone architecture.html report
 iw index export --html -o report.html # custom output path
+iw index export --focus "AuthService" # focused Graphviz SVG report (focus.html)
+iw index export --focus "auth.ts" --hops 3 --max-nodes 30 -o auth-focus.html
 ```
 
 ### Library API (Facade)
@@ -135,8 +137,10 @@ See `docs/LIBRARY-API.md` for full documentation.
 | `packages/index/src/queries/boundaryViolations.ts`       | Cross-package internal import detection (3.4)            |
 | `packages/index/src/queries/layersInfer.ts`              | Auto-infer architectural layers from import graph (5.1a) |
 | `packages/index/src/queries/layersCheck.ts`              | Validate imports against layer configuration (5.1b)      |
+| `packages/index/src/queries/focus.ts`                    | Focused architecture view around a target entity         |
 | `packages/index/src/queries/archReport.ts`               | Architecture report data collector (10.1)                |
 | `packages/index/src/export/htmlReport.ts`                | Standalone HTML architecture report renderer (10.1)      |
+| `packages/index/src/export/focusReport.ts`               | Focused architecture SVG report (Graphviz WASM)          |
 | `packages/index/src/incremental.ts`                      | Content-hash incremental updates                         |
 | `packages/analyzer/src/kwg/heuristicExtractor.ts`        | Keyword extraction (dictionary, depth)                   |
 | `packages/analyzer/src/kwg/kwxStage.ts`                  | KWX stage options (depth, dictionary)                    |
@@ -247,6 +251,7 @@ programmatic API.
 | `cari_boundary_violations` | Package boundary violations       | _(none)_                               |
 | `cari_layers_infer`        | Auto-infer architectural layers   | _(none)_                               |
 | `cari_layers_check`        | Validate imports vs. layer config | `allowSkipLayer?`                      |
+| `cari_focus`               | Focused architecture view         | `target`, `hops?`, `maxNodes?`         |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
@@ -276,6 +281,7 @@ All CARI query functions are available as direct API calls, MCP tools, and CLI s
 | `boundaryViolations()`       | `iw index boundary-violations` | Cross-package internal import detection                  |
 | `layersInfer()`              | `iw index layers-infer`        | Auto-infer architectural layers from import graph        |
 | `layersCheck()`              | `iw index layers-check`        | Validate imports against layer configuration             |
+| `focus()`                    | `iw index focus`               | Focused architecture view around a target entity         |
 
 ### Entity Bridge
 
@@ -321,3 +327,4 @@ CLI: `iw index register-entities entities.json` (reads JSON array of ExternalEnt
 - "Are there cross-package boundary violations?" → `cari_boundary_violations` for monorepo hygiene
 - "What are the architectural layers?" → `cari_layers_infer` for auto-inferred layer analysis
 - "Do imports respect layer boundaries?" → `cari_layers_check` for layer violation detection
+- "Show me the architecture around auth.ts" → `cari_focus` for focused architecture view

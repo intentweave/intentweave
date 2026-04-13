@@ -2,3 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export { renderArchReportHtml } from "./htmlReport.js";
+export {
+  renderFocusReportHtml,
+  renderFocusDot,
+  analyzeFocusInsights,
+} from "./focusReport.js";

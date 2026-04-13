@@ -95,12 +95,22 @@ export {
   nameLayers,
   slices,
   slicesFromDb,
+  focus,
+  focusFromDb,
+  impact,
+  impactFromDb,
+  formatCariImpact,
   archReport,
   archReportFromDb,
   openIndex,
 } from "./queries/index.js";
 
-export { renderArchReportHtml } from "./export/index.js";
+export {
+  renderArchReportHtml,
+  renderFocusReportHtml,
+  renderFocusDot,
+  analyzeFocusInsights,
+} from "./export/index.js";
 
 export type { ReportOptions, ArchReportOptions } from "./queries/index.js";
 
@@ -179,4 +189,12 @@ export type {
   VerticalSlice,
   SlicesOptions,
   SlicesResult,
+  FocusParams,
+  FocusResult,
+  FocusNode,
+  FocusEdge,
+  CariImpactParams,
+  CariImpactResult,
+  CariImpactFile,
+  CariImpactDoc,
 } from "./types.js";

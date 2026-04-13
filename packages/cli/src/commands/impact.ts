@@ -18,6 +18,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   analyzeImpact,
   formatImpactMarkdown,
@@ -130,7 +132,9 @@ export const impactCommand = new Command("impact")
     "Analyze semantic impact of changing file(s) — shows affected concepts, decisions, and risks",
   )
   .argument("<files...>", "File path(s) to analyze (workspace-relative)")
-  .option("-s, --session <id>", "Session ID (required)", "")
+  .option("-s, --session <id>", "Session ID (for Neo4j mode)")
+  .option("--local", "Use CARI index only (no Neo4j required)")
+  .option("--db <path>", "Path to CARI index.db (for --local mode)")
   .option("--hops <n>", "Ripple expansion depth (1-3)", "2")
   .option("--limit <n>", "Max ripple entities", "100")
   .option("--min-confidence <n>", "Min confidence threshold (0.0-1.0)", "0")
@@ -149,17 +153,80 @@ export const impactCommand = new Command("impact")
       verbose,
     } = options;
 
+    const hops = parseInt(hopsStr, 10) || 2;
+    const limit = parseInt(limitStr, 10) || 100;
+
+    // ── Determine mode: local (CARI) or Neo4j ──────────────────
+    const useLocal = options.local || !sessionId;
+
+    if (useLocal) {
+      // CARI-only mode
+      try {
+        const { impact, formatCariImpact } = await import(
+          "@intentweave/index"
+        );
+
+        const dbPath =
+          options.db ??
+          resolve(process.cwd(), ".iw", "index.db");
+
+        if (!existsSync(dbPath)) {
+          console.error(
+            chalk.red(
+              `Index not found at ${dbPath}. Run \`iw index build\` first.`,
+            ),
+          );
+          process.exit(1);
+        }
+
+        if (verbose) console.error(chalk.blue("Using CARI index (local mode)"));
+
+        const result = impact(dbPath, { changed: files, hops, limit });
+
+        if (format === "json") {
+          const out = JSON.stringify(result, null, 2);
+          if (output) {
+            writeFileSync(output, out, "utf-8");
+            console.error(chalk.green(`Impact analysis written to ${output}`));
+          } else {
+            console.log(out);
+          }
+        } else {
+          const out = formatCariImpact(result);
+          if (output) {
+            writeFileSync(output, out, "utf-8");
+            console.error(chalk.green(`Impact analysis written to ${output}`));
+          } else {
+            console.log(out);
+          }
+        }
+
+        if (verbose) {
+          const s = result.stats;
+          console.error(
+            chalk.blue(
+              `\n${s.dependentCount} dependents, ${s.dependencyCount} dependencies, ` +
+                `${s.coChangeCount} co-change partners, ${s.affectedDocCount} affected docs`,
+            ),
+          );
+        }
+      } catch (err: any) {
+        console.error(chalk.red("Error:"), err.message ?? err);
+        process.exit(1);
+      }
+      return;
+    }
+
+    // ── Neo4j mode (requires --session) ──────────────────────
     if (!sessionId) {
       console.error(
         chalk.red(
-          "Session ID required. Use --session <id> (e.g., --session planpling).",
+          "Session ID required for Neo4j mode. Use --session <id> or --local for CARI-only.",
         ),
       );
       process.exit(1);
     }
 
-    const hops = parseInt(hopsStr, 10) || 2;
-    const limit = parseInt(limitStr, 10) || 100;
     const minConfidence = parseFloat(minConfStr) || 0;
 
     let conn: Neo4jConnection | undefined;

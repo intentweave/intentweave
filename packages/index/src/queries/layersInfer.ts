@@ -283,23 +283,66 @@ function hierarchicalInfer(
   const pkgDepth = computeDepthFromSinks(allPackages, pkgForward);
 
   // 4. Bucket packages into macro layers
+  //    Use depth as primary signal, but when packages outnumber depth levels,
+  //    split same-depth tiers by dependency fan-out to increase granularity.
   const maxPkgDepth = Math.max(...pkgDepth.values(), 0);
+  const depthBasedCount = maxPkgDepth + 1;
+  // Allow up to one layer per package, capped at 7
   const macroLayerCount = Math.min(
-    Math.max(Math.ceil((maxPkgDepth + 1) / 1), 2), // each depth = one layer for packages
+    Math.max(depthBasedCount, Math.min(allPackages.size, 4)),
     7,
   );
-  const macroBucketSize = (maxPkgDepth + 1) / macroLayerCount;
 
-  const macroBuckets = new Map<number, string[]>();
-  for (let i = 0; i < macroLayerCount; i++) macroBuckets.set(i, []);
-
+  // If macroLayerCount > depthBasedCount, we need to split same-depth tiers.
+  // Group packages by depth first.
+  const depthGroups = new Map<number, string[]>();
   for (const [pkg, d] of pkgDepth) {
-    const bucket = Math.min(
-      Math.floor(d / macroBucketSize),
-      macroLayerCount - 1,
-    );
-    macroBuckets.get(bucket)!.push(pkg);
+    if (!depthGroups.has(d)) depthGroups.set(d, []);
+    depthGroups.get(d)!.push(pkg);
   }
+  const sortedDepths = [...depthGroups.keys()].sort((a, b) => a - b);
+
+  // Split large depth groups by fan-out (number of outgoing imports)
+  const macroBuckets = new Map<number, string[]>();
+  let bucketIdx = 0;
+
+  for (const d of sortedDepths) {
+    const pkgsAtDepth = depthGroups.get(d)!;
+
+    // How many layers should this depth group get?
+    const remainingLayers = macroLayerCount - bucketIdx;
+    const remainingDepths = sortedDepths.length - sortedDepths.indexOf(d);
+    const layersForThisDepth = Math.max(
+      1,
+      Math.round(remainingLayers / remainingDepths),
+    );
+
+    if (layersForThisDepth <= 1 || pkgsAtDepth.length <= 1) {
+      // Single layer for this depth
+      macroBuckets.set(bucketIdx, pkgsAtDepth);
+      bucketIdx++;
+    } else {
+      // Split by fan-out (dependency count)
+      const withFanOut = pkgsAtDepth.map((pkg) => ({
+        pkg,
+        fanOut: pkgForward.get(pkg)?.size ?? 0,
+      }));
+      withFanOut.sort((a, b) => a.fanOut - b.fanOut);
+
+      // Divide into sub-buckets
+      const perBucket = Math.ceil(withFanOut.length / layersForThisDepth);
+      for (let i = 0; i < layersForThisDepth && i * perBucket < withFanOut.length; i++) {
+        const slice = withFanOut.slice(i * perBucket, (i + 1) * perBucket);
+        if (slice.length > 0) {
+          macroBuckets.set(bucketIdx, slice.map((s) => s.pkg));
+          bucketIdx++;
+        }
+      }
+    }
+  }
+
+  // Adjust macroLayerCount to actual bucket count
+  const actualLayerCount = bucketIdx;
 
   // 5. Build macro layers with sub-layers
   const knownFiles = new Set(
@@ -316,9 +359,9 @@ function hierarchicalInfer(
 
   const layers: InferredLayer[] = [];
 
-  for (let i = 0; i < macroLayerCount; i++) {
-    const packages = macroBuckets.get(i)!;
-    if (packages.length === 0) continue;
+  for (let i = 0; i < actualLayerCount; i++) {
+    const packages = macroBuckets.get(i);
+    if (!packages || packages.length === 0) continue;
 
     packages.sort();
 
@@ -344,7 +387,7 @@ function hierarchicalInfer(
       Math.max(...fileDepths),
     ];
 
-    const label = generateLayerLabel(layerFiles, i, macroLayerCount);
+    const label = generateLayerLabel(layerFiles, i, actualLayerCount);
 
     // 6. Compute sub-layers for qualifying packages
     const subLayers: InferredSubLayer[] = [];

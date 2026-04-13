@@ -27,16 +27,17 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@viz-js/viz": "^3.25.0",
     "better-sqlite3": "^11.7.0",
     "minimatch": "^10.0.1"
   },
   "peerDependencies": {
-    "@intentweave/core": "workspace:*",
-    "@intentweave/analyzer": "workspace:*"
+    "@intentweave/analyzer": "workspace:*",
+    "@intentweave/core": "workspace:*"
   },
   "devDependencies": {
-    "@intentweave/core": "workspace:*",
     "@intentweave/analyzer": "workspace:*",
+    "@intentweave/core": "workspace:*",
     "@types/better-sqlite3": "^7.6.12",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

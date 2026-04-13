@@ -67,14 +67,18 @@ export function hubsFromDb(db: Database.Database): HubAnalysisResult {
     .all() as Array<{ source_file: string; target_file: string }>;
 
   for (const row of importRows) {
-    importDegrees.set(
-      row.source_file,
-      (importDegrees.get(row.source_file) ?? 0) + 1,
-    );
-    importDegrees.set(
-      row.target_file,
-      (importDegrees.get(row.target_file) ?? 0) + 1,
-    );
+    if (row.source_file != null) {
+      importDegrees.set(
+        row.source_file,
+        (importDegrees.get(row.source_file) ?? 0) + 1,
+      );
+    }
+    if (row.target_file != null) {
+      importDegrees.set(
+        row.target_file,
+        (importDegrees.get(row.target_file) ?? 0) + 1,
+      );
+    }
   }
 
   // ── Co-occurrence degree: how many co-occurrence edges per entity ──

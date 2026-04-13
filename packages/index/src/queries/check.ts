@@ -92,9 +92,14 @@ export function checkFromDb(
           related: [changedFile],
         });
       } else {
-        // Still flag as info even without date data
+        // No date data available — assign severity by confidence
+        const severity: CheckFinding["severity"] =
+          ann.confidence >= 0.8
+            ? "warning"
+            : "info";
+
         findings.push({
-          severity: "info",
+          severity,
           message:
             `${ann.doc_path} references "${ann.text}" (line ${ann.line}, confidence ${ann.confidence.toFixed(2)}) ` +
             `— verify after changes to ${changedFile}`,
@@ -134,7 +139,7 @@ export function checkFromDb(
 
       if (!changedSet.has(otherFile)) {
         findings.push({
-          severity: partner.jaccard >= 0.6 ? "warning" : "info",
+          severity: partner.jaccard >= 0.4 ? "warning" : "info",
           message:
             `${changedFile} co-changes with ${otherFile} ` +
             `(jaccard=${partner.jaccard.toFixed(2)}, ${partner.count} commits) ` +

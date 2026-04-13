@@ -68,6 +68,7 @@ import {
   layersInferFromDb,
   layersCheckFromDb,
   slicesFromDb,
+  focusFromDb,
   archReportFromDb,
 } from "./queries/index.js";
 import type { ReportOptions } from "./queries/index.js";
@@ -114,6 +115,8 @@ import type {
   ArchReportData,
   SlicesOptions,
   SlicesResult,
+  FocusParams,
+  FocusResult,
 } from "./types.js";
 
 import type { ArchReportOptions } from "./queries/archReport.js";
@@ -702,6 +705,11 @@ export class CariIndex {
   /** Detect vertical slices — communities that span multiple layers end-to-end. */
   slices(options?: SlicesOptions): SlicesResult {
     return slicesFromDb(this.db, options);
+  }
+
+  /** Extract a focused architecture subgraph around a target entity. */
+  focus(params: FocusParams): FocusResult {
+    return focusFromDb(this.db, params);
   }
 
   // ---------------------------------------------------------------------------
