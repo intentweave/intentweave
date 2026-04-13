@@ -184,6 +184,7 @@ import {
   layersCheck,
   layersCompare,
   interfaceConformance,
+  deadFeatures,
   slices,
   focus,
   nameLayers,
@@ -2159,6 +2160,191 @@ const indexConformanceSubcommand = new Command("conformance")
     console.log();
   });
 
+// ── iw index dead-features ───────────────────────────────────────
+
+const indexDeadFeaturesSubcommand = new Command("dead-features")
+  .description(
+    "Detect likely dead features — symbols that are unused, undocumented, and stale",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "--min-signals <n>",
+    "Minimum signals to report (1–3). Default: 2",
+    "2",
+  )
+  .option(
+    "--staleness <months>",
+    "Months without commits to count as stale",
+    "6",
+  )
+  .option("-n, --limit <n>", "Maximum results", "100")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const minSignals = parseInt(opts.minSignals, 10);
+    const stalenessMonths = parseInt(opts.staleness, 10);
+    const limit = parseInt(opts.limit, 10);
+
+    const result = deadFeatures(dbPath, { minSignals, stalenessMonths, limit });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ Dead Feature Detection — staleness: ${stalenessMonths} months, min signals: ${minSignals}\n`,
+      ),
+    );
+
+    if (result.totalCandidates === 0) {
+      console.log(
+        chalk.green("  ✓ No dead feature candidates found.\n"),
+      );
+      return;
+    }
+
+    const { three, two, one } = result.bySignalCount;
+    const parts: string[] = [];
+    if (three > 0) parts.push(`${three} with 3 signals`);
+    if (two > 0) parts.push(`${two} with 2 signals`);
+    if (one > 0) parts.push(`${one} with 1 signal`);
+    console.log(
+      chalk.yellow(
+        `  ⚠ ${result.totalCandidates} candidate(s): ${parts.join(", ")}\n`,
+      ),
+    );
+
+    for (const c of result.candidates) {
+      const signals: string[] = [];
+      if (c.unusedExport) signals.push("unused");
+      if (c.undocumented) signals.push("undocumented");
+      if (c.stale) signals.push("stale");
+
+      const icon =
+        c.signalCount === 3
+          ? chalk.red("✗✗✗")
+          : c.signalCount === 2
+            ? chalk.yellow("✗✗ ")
+            : chalk.gray("✗  ");
+
+      console.log(
+        `    ${icon} ${chalk.bold(c.name)} ${chalk.gray(`(${c.kind})`)} — ${signals.join(", ")}`,
+      );
+      console.log(chalk.gray(`        ${c.filePath}:${c.line}`));
+    }
+
+    if (result.totalCandidates > result.candidates.length) {
+      console.log(
+        chalk.gray(
+          `\n    ...and ${result.totalCandidates - result.candidates.length} more`,
+        ),
+      );
+    }
+    console.log();
+  });
+
+// ── iw index api-surface ─────────────────────────────────────────
+
+const indexApiSurfaceSubcommand = new Command("api-surface")
+  .description(
+    "Track exported API changes between git refs — additions, removals, signature changes",
+  )
+  .option(
+    "--baseline <ref>",
+    "Git ref to compare against (default: latest tag or HEAD~1)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(async (opts) => {
+    const { analyzeApiSurface } = await import(
+      "../api-surface/apiSurface.js"
+    );
+    const dbPath = resolveDbPath(opts.db);
+    const result = await analyzeApiSurface({
+      baseline: opts.baseline,
+      dbPath,
+      workspaceRoot: process.cwd(),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ API Surface Changelog — baseline: ${result.baseline}\n`,
+      ),
+    );
+
+    if (result.changes.length === 0) {
+      console.log(
+        chalk.green(
+          `  ✓ No API surface changes detected (${result.filesAnalyzed} files analyzed).\n`,
+        ),
+      );
+      return;
+    }
+
+    // Summary line
+    const { added, removed, changed } = result.summary;
+    const parts: string[] = [];
+    if (added > 0) parts.push(chalk.green(`+${added} added`));
+    if (removed > 0) parts.push(chalk.red(`−${removed} removed`));
+    if (changed > 0) parts.push(chalk.yellow(`~${changed} signature changed`));
+    console.log(
+      `  ${parts.join(", ")} across ${result.filesAnalyzed} file(s)\n`,
+    );
+
+    // Per-package breakdown
+    for (const [pkg, stats] of Object.entries(result.byPackage)) {
+      const pkgParts: string[] = [];
+      if (stats.added > 0) pkgParts.push(chalk.green(`+${stats.added}`));
+      if (stats.removed > 0) pkgParts.push(chalk.red(`−${stats.removed}`));
+      if (stats.changed > 0) pkgParts.push(chalk.yellow(`~${stats.changed}`));
+      console.log(chalk.bold(`  ${pkg}: `) + pkgParts.join(", "));
+    }
+    console.log();
+
+    // Individual changes
+    for (const c of result.changes) {
+      let icon: string;
+      let detail: string;
+
+      switch (c.changeType) {
+        case "added":
+          icon = chalk.green("+");
+          detail = `${chalk.green(c.name)} ${chalk.gray(`(${c.kind})`)}`;
+          break;
+        case "removed":
+          icon = chalk.red("−");
+          detail = `${chalk.red(c.name)} ${chalk.gray(`(${c.kind})`)}`;
+          break;
+        case "signature-changed":
+          icon = chalk.yellow("≠");
+          detail = `${chalk.yellow(c.name)} ${chalk.gray(`(${c.kind})`)}`;
+          break;
+      }
+
+      console.log(`    ${icon} ${detail}`);
+      console.log(
+        chalk.gray(
+          `      ${c.filePath}${c.line ? `:${c.line}` : ""}`,
+        ),
+      );
+
+      if (c.changeType === "signature-changed") {
+        if (c.oldSignature)
+          console.log(chalk.gray(`      old: ${c.oldSignature}`));
+        if (c.newSignature)
+          console.log(chalk.gray(`      new: ${c.newSignature}`));
+      }
+    }
+    console.log();
+  });
+
 // ── iw index slices ───────────────────────────────────────────────
 
 const indexSlicesSubcommand = new Command("slices")
@@ -2633,6 +2819,8 @@ export const indexCommand = new Command("index")
   .addCommand(indexLayersInferSubcommand)
   .addCommand(indexLayersCheckSubcommand)
   .addCommand(indexConformanceSubcommand)
+  .addCommand(indexDeadFeaturesSubcommand)
+  .addCommand(indexApiSurfaceSubcommand)
   .addCommand(indexSlicesSubcommand)
   .addCommand(indexFocusSubcommand)
   .addCommand(indexImpactSubcommand)

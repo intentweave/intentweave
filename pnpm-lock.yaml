@@ -145,6 +145,9 @@ importers:
       '@intentweave/analyzer':
         specifier: workspace:*
         version: link:../analyzer
+      '@intentweave/ast-extractor':
+        specifier: workspace:*
+        version: link:../ast-extractor
       '@intentweave/core':
         specifier: workspace:*
         version: link:../core

@@ -1446,3 +1446,84 @@ export interface CariImpactResult {
     affectedDocCount: number;
   };
 }
+
+// =============================================================================
+// 5.3 Dead Feature Detection
+// =============================================================================
+
+/** A single dead feature candidate with evidence from all three signals. */
+export interface DeadFeatureCandidate {
+  /** Symbol name. */
+  name: string;
+  /** Symbol kind (function, class, method, variable, type). */
+  kind: string;
+  /** File path of the symbol. */
+  filePath: string;
+  /** Line number. */
+  line: number;
+  /** Whether the symbol is exported but never imported. */
+  unusedExport: boolean;
+  /** Whether the symbol has zero documentation references. */
+  undocumented: boolean;
+  /** Whether the file hasn't been modified in 6+ months. */
+  stale: boolean;
+  /** ISO timestamp of last modification (null if unknown). */
+  lastModified: string | null;
+  /** Number of signals that fired (1–3). Higher = more likely dead. */
+  signalCount: number;
+}
+
+/** Result of the dead feature detection query. */
+export interface DeadFeatureResult {
+  /** Candidates sorted by signal count (desc) then name. */
+  candidates: DeadFeatureCandidate[];
+  /** Total candidates found. */
+  totalCandidates: number;
+  /** Breakdown by signal count. */
+  bySignalCount: { three: number; two: number; one: number };
+  /** Staleness threshold used (months). */
+  stalenessMonths: number;
+}
+
+// =============================================================================
+// 5.4 API Surface Changelog
+// =============================================================================
+
+/** A single API change between baseline and current state. */
+export interface ApiChange {
+  /** Symbol name. */
+  name: string;
+  /** Symbol kind (function, class, interface, type, variable, method). */
+  kind: string;
+  /** File path (relative to workspace). */
+  filePath: string;
+  /** Type of change. */
+  changeType: "added" | "removed" | "signature-changed";
+  /** Old signature (for removed and signature-changed). */
+  oldSignature?: string;
+  /** New signature (for added and signature-changed). */
+  newSignature?: string;
+  /** Current line number (for added and signature-changed). */
+  line?: number;
+}
+
+/** Per-package summary of API changes. */
+export interface ApiPackageSummary {
+  added: number;
+  removed: number;
+  changed: number;
+}
+
+/** Result of the API surface changelog analysis. */
+export interface ApiSurfaceResult {
+  /** Git ref used as baseline. */
+  baseline: string;
+  /** All API changes sorted by type then name. */
+  changes: ApiChange[];
+  /** Overall summary counts. */
+  summary: ApiPackageSummary;
+  /** Breakdown by package/directory. */
+  byPackage: Record<string, ApiPackageSummary>;
+  /** Number of code files analyzed. */
+  filesAnalyzed: number;
+}

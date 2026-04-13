@@ -96,6 +96,8 @@ export {
   layersCompareFromDb,
   interfaceConformance,
   interfaceConformanceFromDb,
+  deadFeatures,
+  deadFeaturesFromDb,
   nameLayers,
   slices,
   slicesFromDb,
@@ -116,7 +118,11 @@ export {
   analyzeFocusInsights,
 } from "./export/index.js";
 
-export type { ReportOptions, ArchReportOptions } from "./queries/index.js";
+export type {
+  ReportOptions,
+  ArchReportOptions,
+  DeadFeatureOptions,
+} from "./queries/index.js";
 
 export type {
   // Core types
@@ -188,6 +194,11 @@ export type {
   LayersCompareEntry,
   ConformanceViolation,
   InterfaceConformanceResult,
+  DeadFeatureCandidate,
+  DeadFeatureResult,
+  ApiChange,
+  ApiPackageSummary,
+  ApiSurfaceResult,
   NamedLayer,
   NamedDirectory,
   LayerNamingResult,

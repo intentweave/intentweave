@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@intentweave/analyzer": "workspace:*",
+    "@intentweave/ast-extractor": "workspace:*",
     "@intentweave/core": "workspace:*",
     "@intentweave/index": "workspace:*",
     "@intentweave/profiles": "workspace:*",
