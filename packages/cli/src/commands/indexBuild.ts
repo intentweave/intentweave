@@ -182,6 +182,8 @@ import {
   boundaryViolations,
   layersInfer,
   layersCheck,
+  layersCompare,
+  interfaceConformance,
   slices,
   focus,
   nameLayers,
@@ -1874,6 +1876,7 @@ const indexLayersCheckSubcommand = new Command("layers-check")
     "Path to layers.yaml (default: .iw/layers.yaml)",
   )
   .option("--allow-skip-layer", "Ignore skip-layer violations", false)
+  .option("--compare", "Compare inferred (as-is) vs. configured (as-should) layers", false)
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
@@ -1907,6 +1910,71 @@ const indexLayersCheckSubcommand = new Command("layers-check")
 
     if (opts.allowSkipLayer) {
       config.allowSkipLayer = true;
+    }
+
+    // ── Compare mode (5.6) ──────────────────────────────────────
+    if (opts.compare) {
+      const compareResult = layersCompare(dbPath, config);
+
+      if (opts.format === "json") {
+        console.log(JSON.stringify(compareResult, null, 2));
+        return;
+      }
+
+      console.log(chalk.blue("\n  ▸ As-Is vs. As-Should Layer Comparison\n"));
+
+      // Column widths
+      const maxFile = Math.max(
+        4,
+        ...compareResult.entries.map((e) => e.file.length),
+      );
+      const maxInferred = Math.max(
+        8,
+        ...compareResult.entries.map((e) => (e.inferredLayer ?? "—").length),
+      );
+      const maxConfigured = Math.max(
+        10,
+        ...compareResult.entries.map((e) => (e.configuredLayer ?? "—").length),
+      );
+
+      // Header
+      const header = `    ${"File".padEnd(maxFile)}  ${"Inferred".padEnd(maxInferred)}  ${"Configured".padEnd(maxConfigured)}  Status`;
+      console.log(chalk.gray(header));
+      console.log(chalk.gray("    " + "─".repeat(header.length - 4)));
+
+      for (const entry of compareResult.entries) {
+        const file = entry.file.padEnd(maxFile);
+        const inf = (entry.inferredLayer ?? "—").padEnd(maxInferred);
+        const cfg = (entry.configuredLayer ?? "—").padEnd(maxConfigured);
+
+        let statusIcon: string;
+        if (entry.status === "ok") {
+          statusIcon = chalk.green("✓ OK");
+        } else if (entry.status === "drift") {
+          statusIcon = chalk.yellow("⚠ DRIFT");
+        } else {
+          statusIcon = chalk.gray("? UNASSIGNED");
+        }
+
+        console.log(`    ${file}  ${inf}  ${cfg}  ${statusIcon}`);
+      }
+
+      // Summary
+      console.log();
+      console.log(
+        chalk.gray(
+          `    ${compareResult.totalFiles} file(s): ` +
+            chalk.green(`${compareResult.matchCount} OK`) +
+            `, ` +
+            (compareResult.driftCount > 0
+              ? chalk.yellow(`${compareResult.driftCount} drift`)
+              : `${compareResult.driftCount} drift`) +
+            `, ` +
+            `${compareResult.unassignedCount} unassigned`,
+        ),
+      );
+      console.log();
+      return;
     }
 
     const result = layersCheck(dbPath, config);
@@ -2012,6 +2080,84 @@ function parseLayersYaml(content: string): LayerConfig {
 
   return { layers };
 }
+
+// ── iw index conformance ──────────────────────────────────────────
+
+const indexConformanceSubcommand = new Command("conformance")
+  .description(
+    "Detect interface conformance drift — missing methods, changed signatures across packages",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = interfaceConformance(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ Interface Conformance Check — ${result.pairsChecked} pair(s) checked\n`,
+      ),
+    );
+
+    if (result.totalViolations === 0) {
+      console.log(
+        chalk.green(
+          "  ✓ All classes conform to their declared interfaces.\n",
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.yellow(
+        `  ⚠ ${result.totalViolations} violation(s): ` +
+          `${result.byType.missingMethod} missing method(s), ` +
+          `${result.byType.missingProperty} missing property/ies, ` +
+          `${result.byType.signatureMismatch} signature mismatch(es)\n`,
+      ),
+    );
+
+    for (const v of result.violations) {
+      let icon: string;
+      let detail: string;
+
+      switch (v.type) {
+        case "missing-method":
+          icon = chalk.red("✗");
+          detail = `${v.className} is missing method ${chalk.bold(v.memberName)}()`;
+          if (v.expectedSignature) detail += chalk.gray(` — expected: ${v.expectedSignature}`);
+          break;
+        case "missing-property":
+          icon = chalk.red("✗");
+          detail = `${v.className} is missing property ${chalk.bold(v.memberName)}`;
+          break;
+        case "signature-mismatch":
+          icon = chalk.yellow("≠");
+          detail = `${v.className}.${chalk.bold(v.memberName)}() signature differs`;
+          break;
+      }
+
+      console.log(`    ${icon} ${detail}`);
+      console.log(
+        chalk.gray(
+          `      interface ${v.interfaceName} (${v.interfaceFile}) → class ${v.className} (${v.classFile})`,
+        ),
+      );
+
+      if (v.type === "signature-mismatch") {
+        if (v.expectedSignature)
+          console.log(chalk.gray(`      expected: ${v.expectedSignature}`));
+        if (v.actualSignature)
+          console.log(chalk.gray(`      actual:   ${v.actualSignature}`));
+      }
+    }
+    console.log();
+  });
 
 // ── iw index slices ───────────────────────────────────────────────
 
@@ -2486,6 +2632,7 @@ export const indexCommand = new Command("index")
   .addCommand(indexBoundaryViolationsSubcommand)
   .addCommand(indexLayersInferSubcommand)
   .addCommand(indexLayersCheckSubcommand)
+  .addCommand(indexConformanceSubcommand)
   .addCommand(indexSlicesSubcommand)
   .addCommand(indexFocusSubcommand)
   .addCommand(indexImpactSubcommand)

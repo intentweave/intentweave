@@ -1162,6 +1162,72 @@ export interface LayersCheckResult {
   }>;
 }
 
+// ─── 5.2 Interface Conformance Drift ────────────────────────────────────────
+
+/** A single conformance violation: missing member, extra member, or signature mismatch. */
+export interface ConformanceViolation {
+  /** The class that claims to implement the interface */
+  className: string;
+  /** File where the class is defined */
+  classFile: string;
+  /** The interface being implemented */
+  interfaceName: string;
+  /** File where the interface is defined */
+  interfaceFile: string;
+  /** Type of violation */
+  type: "missing-method" | "missing-property" | "signature-mismatch";
+  /** Name of the member involved */
+  memberName: string;
+  /** Expected signature (from the interface), if applicable */
+  expectedSignature?: string;
+  /** Actual signature (from the class), if applicable */
+  actualSignature?: string;
+}
+
+/** Result of interface conformance checking across the codebase. */
+export interface InterfaceConformanceResult {
+  /** All detected violations */
+  violations: ConformanceViolation[];
+  /** Total violations found */
+  totalViolations: number;
+  /** Number of (class, interface) pairs checked */
+  pairsChecked: number;
+  /** Violations grouped by type */
+  byType: {
+    missingMethod: number;
+    missingProperty: number;
+    signatureMismatch: number;
+  };
+}
+
+// ─── 5.6 As-Is vs. As-Should Comparison ─────────────────────────────────────
+
+/** Per-file comparison entry: inferred layer vs. configured layer. */
+export interface LayersCompareEntry {
+  /** File path */
+  file: string;
+  /** Layer assigned by inference (as-is), or null if not inferred */
+  inferredLayer: string | null;
+  /** Layer assigned by config patterns (as-should), or null if unassigned */
+  configuredLayer: string | null;
+  /** Comparison status */
+  status: "ok" | "drift" | "unassigned";
+}
+
+/** Result of as-is vs. as-should layer comparison. */
+export interface LayersCompareResult {
+  /** Per-file comparisons */
+  entries: LayersCompareEntry[];
+  /** Files that match between inferred and configured layers */
+  matchCount: number;
+  /** Files with layer drift (different inferred vs. configured) */
+  driftCount: number;
+  /** Files unassigned in either inference or config */
+  unassignedCount: number;
+  /** Total files compared */
+  totalFiles: number;
+}
+
 // ─── 10.1 Architecture Report ───────────────────────────────────────────────
 
 /** A file node in the architecture report graph. */

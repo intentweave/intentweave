@@ -116,6 +116,9 @@ export interface AxSymbol {
 
   /** SHA-256 hash of structural body (identifiers/literals replaced with placeholders) */
   structureHash?: string;
+
+  /** Interfaces this class implements (class symbols only) */
+  implements?: string[];
 }
 
 /**
@@ -355,6 +358,7 @@ function convertSymbol(
     export: symbol.isExported ? "exported" : "internal",
     parameters: symbol.parameters,
     docSummary: symbol.docSummary,
+    implements: symbol.implements,
   };
 }
 

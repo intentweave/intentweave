@@ -49,6 +49,11 @@ export {
 } from "./boundaryViolations.js";
 export { layersInfer, layersInferFromDb } from "./layersInfer.js";
 export { layersCheck, layersCheckFromDb } from "./layersCheck.js";
+export { layersCompare, layersCompareFromDb } from "./layersCompare.js";
+export {
+  interfaceConformance,
+  interfaceConformanceFromDb,
+} from "./interfaceConformance.js";
 export { nameLayers } from "./layerNaming.js";
 export { slices, slicesFromDb } from "./slices.js";
 export { focus, focusFromDb } from "./focus.js";

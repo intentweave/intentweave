@@ -87,6 +87,9 @@ export interface ExtractedSymbol {
 
   /** Raw signature for display */
   signature?: string;
+
+  /** Interfaces this class implements (class symbols only) */
+  implements?: string[];
 }
 
 /**

@@ -391,6 +391,9 @@ export class AstExtractor {
       ? this.extractDocComment(node, content)
       : undefined;
 
+    // Parse implements clause
+    const implementsList = this.extractImplements(node);
+
     symbols.push({
       name,
       kind: "class",
@@ -398,7 +401,8 @@ export class AstExtractor {
       range: this.nodeToRange(node),
       isExported: false,
       docSummary,
-      signature: `class ${name}`,
+      signature: this.extractSignature(node, content) ?? `class ${name}`,
+      implements: implementsList.length > 0 ? implementsList : undefined,
     });
 
     // Extract class members
@@ -468,6 +472,7 @@ export class AstExtractor {
             docSummary: options.includeDocSummary
               ? this.extractDocComment(child, content)
               : undefined,
+            signature: this.extractSignature(child, content),
           });
           break;
         }
@@ -571,6 +576,7 @@ export class AstExtractor {
             parameters: options.includeParameters
               ? this.extractParameters(child)
               : undefined,
+            signature: this.extractSignature(child, content),
           });
           break;
         }
@@ -957,6 +963,52 @@ export class AstExtractor {
     }
 
     return undefined;
+  }
+
+  /**
+   * Extract interface names from an implements clause on a class node.
+   */
+  private extractImplements(node: Parser.SyntaxNode): string[] {
+    const result: string[] = [];
+    for (const child of node.children) {
+      // tree-sitter-typescript wraps "implements X, Y" in a class_heritage node
+      const heritageNode =
+        child.type === "implements_clause"
+          ? child
+          : child.type === "class_heritage"
+            ? child
+            : null;
+      if (!heritageNode) continue;
+
+      // Look for "implements" keyword, then collect type names after it
+      let foundImplements = false;
+      for (const hChild of heritageNode.children) {
+        if (hChild.type === "implements_clause") {
+          // Nested implements_clause inside class_heritage
+          for (const tNode of hChild.children) {
+            if (tNode.type === "type_identifier") {
+              result.push(tNode.text);
+            } else if (tNode.type === "generic_type") {
+              const nameNode = tNode.childForFieldName("name") ??
+                tNode.children.find((c) => c.type === "type_identifier");
+              if (nameNode) result.push(nameNode.text);
+            }
+          }
+          foundImplements = true;
+        } else if (hChild.text === "implements") {
+          foundImplements = true;
+        } else if (foundImplements) {
+          if (hChild.type === "type_identifier") {
+            result.push(hChild.text);
+          } else if (hChild.type === "generic_type") {
+            const nameNode = hChild.childForFieldName("name") ??
+              hChild.children.find((c) => c.type === "type_identifier");
+            if (nameNode) result.push(nameNode.text);
+          }
+        }
+      }
+    }
+    return result;
   }
 
   /**

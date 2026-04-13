@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS symbols (
   doc_summary TEXT,
   body_hash TEXT,
   body_lines INTEGER,
-  structure_hash TEXT
+  structure_hash TEXT,
+  implements TEXT
 );
 
 CREATE TABLE IF NOT EXISTS annotations (

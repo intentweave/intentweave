@@ -116,8 +116,8 @@ export function buildIndex(
 function writeSymbols(db: Database.Database, ax: AxOutput): number {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO symbols
-      (id, name, kind, container, signature, file_path, line, end_line, export, doc_summary, body_hash, body_lines, structure_hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, kind, container, signature, file_path, line, end_line, export, doc_summary, body_hash, body_lines, structure_hash, implements)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let count = 0;
@@ -140,6 +140,7 @@ function writeSymbols(db: Database.Database, ax: AxOutput): number {
           sym.bodyHash ?? null,
           sym.bodyLines ?? null,
           sym.structureHash ?? null,
+          sym.implements ? JSON.stringify(sym.implements) : null,
         );
         count++;
       }
