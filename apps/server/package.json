@@ -2,7 +2,7 @@
   "name": "@intentweave/app-server",
   "version": "0.8.0",
   "private": true,
-  "description": "IntentWeave server \u2014 composes server-core + server-open into a runnable application",
+  "description": "IntentWeave server — composes server-core + server-open into a runnable application",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
