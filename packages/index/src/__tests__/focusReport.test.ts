@@ -12,7 +12,10 @@ import * as path from "path";
 import * as os from "os";
 import { initSchema } from "../schema.js";
 import { focusFromDb } from "../queries/focus.js";
-import { renderFocusReportHtml, renderFocusDot } from "../export/focusReport.js";
+import {
+  renderFocusReportHtml,
+  renderFocusDot,
+} from "../export/focusReport.js";
 
 describe("focusReport", () => {
   let db: Database.Database;
@@ -49,15 +52,41 @@ describe("focusReport", () => {
     );
     insertImport.run("analyzer/extract.ts", "core/types.ts", "./core/types", 1);
     insertImport.run("analyzer/extract.ts", "core/utils.ts", "./core/utils", 1);
-    insertImport.run("server/api.ts", "analyzer/extract.ts", "../analyzer/extract", 1);
+    insertImport.run(
+      "server/api.ts",
+      "analyzer/extract.ts",
+      "../analyzer/extract",
+      1,
+    );
 
     const insertSymbol = db.prepare(
       `INSERT INTO symbols (id, name, kind, file_path, line, export)
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
-    insertSymbol.run("sym-typedef", "TypeDef", "type", "core/types.ts", 1, "named");
-    insertSymbol.run("sym-extract", "extract", "function", "analyzer/extract.ts", 10, "named");
-    insertSymbol.run("sym-api", "handleRequest", "function", "server/api.ts", 1, "named");
+    insertSymbol.run(
+      "sym-typedef",
+      "TypeDef",
+      "type",
+      "core/types.ts",
+      1,
+      "named",
+    );
+    insertSymbol.run(
+      "sym-extract",
+      "extract",
+      "function",
+      "analyzer/extract.ts",
+      10,
+      "named",
+    );
+    insertSymbol.run(
+      "sym-api",
+      "handleRequest",
+      "function",
+      "server/api.ts",
+      1,
+      "named",
+    );
 
     // Co-change edge
     const insertCoChange = db.prepare(
@@ -139,9 +168,7 @@ describe("focusReport", () => {
     const html = await renderFocusReportHtml(result);
 
     // Extract the JSON from the HTML
-    const match = html.match(
-      /window\.__FOCUS_DATA__\s*=\s*({.*?});/s,
-    );
+    const match = html.match(/window\.__FOCUS_DATA__\s*=\s*({.*?});/s);
     expect(match).not.toBeNull();
     const data = JSON.parse(match![1]);
     expect(data.target).toBe("server/api.ts");

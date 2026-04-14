@@ -56,9 +56,9 @@ export function interfaceConformanceFromDb(
   db: Database.Database,
 ): InterfaceConformanceResult {
   // Check if the implements column exists (older indexes may not have it)
-  const columns = db
-    .prepare(`PRAGMA table_info(symbols)`)
-    .all() as Array<{ name: string }>;
+  const columns = db.prepare(`PRAGMA table_info(symbols)`).all() as Array<{
+    name: string;
+  }>;
   const hasImplements = columns.some((c) => c.name === "implements");
 
   if (!hasImplements) {
@@ -90,9 +90,7 @@ export function interfaceConformanceFromDb(
 
   // 2. Build a lookup of all interface names → file_path
   const interfaceRows = db
-    .prepare(
-      `SELECT name, file_path FROM symbols WHERE kind = 'interface'`,
-    )
+    .prepare(`SELECT name, file_path FROM symbols WHERE kind = 'interface'`)
     .all() as Array<{ name: string; file_path: string }>;
 
   const interfaceFiles = new Map<string, string>();

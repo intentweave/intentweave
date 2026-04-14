@@ -2,6 +2,38 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.8.0] — 2026-04-13
+
+### Added
+
+- **Focused architecture view** — explore the architecture around any target file or symbol with
+  configurable hop depth and max-node limits. Renders as a standalone Graphviz WASM-powered SVG
+  report (`iw index export --focus <target>`). MCP: `cari_focus`.
+- **Interface conformance drift** (5.2) — detect when a class claims to implement an interface but
+  method signatures have diverged. Extracts `implements` clauses from AST (`class_heritage` in
+  tree-sitter), compares method signatures, and reports missing methods, missing properties, and
+  signature mismatches. CLI: `iw index conformance`.
+- **Dead feature detection** (5.3) — combine three signals (unused exports, undocumented symbols,
+  stale files) to surface likely dead features. Configurable minimum signal count and staleness
+  threshold. CLI: `iw index dead-features`.
+- **API surface changelog** (5.4) — track exported symbols over time via git history. Detects
+  additions, removals, and signature changes per release. Auto-generates summaries like
+  _"+40 added, −14 removed, ~1 signature changed across 28 files"_.
+  CLI: `iw index api-surface [--baseline <ref>]`.
+- **As-is vs. as-should layer comparison** (5.6) — `iw index layers-check --compare` runs both
+  inference and config validation, outputting a three-column delta view showing where files
+  actually are vs. where they should be.
+- **4 new CLI subcommands**: `conformance`, `dead-features`, `api-surface`, `focus`
+- **1 new MCP tool**: `cari_focus` (focused architecture view)
+- **34 MCP tools total**, **1248 tests**
+
+### Fixed
+
+- **Hub analysis crash** on projects with null import data (added null guards)
+- **Check severity filtering** now promotes severity based on annotation confidence
+- **Impact analysis** works without Neo4j (CARI-only mode)
+- **Layer inference granularity** — improved fan-out splitting for more balanced layers
+
 ## [0.7.0] — 2026-04-11
 
 ### Added

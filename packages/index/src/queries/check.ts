@@ -94,9 +94,7 @@ export function checkFromDb(
       } else {
         // No date data available — assign severity by confidence
         const severity: CheckFinding["severity"] =
-          ann.confidence >= 0.8
-            ? "warning"
-            : "info";
+          ann.confidence >= 0.8 ? "warning" : "info";
 
         findings.push({
           severity,

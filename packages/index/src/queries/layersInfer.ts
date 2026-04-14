@@ -331,10 +331,17 @@ function hierarchicalInfer(
 
       // Divide into sub-buckets
       const perBucket = Math.ceil(withFanOut.length / layersForThisDepth);
-      for (let i = 0; i < layersForThisDepth && i * perBucket < withFanOut.length; i++) {
+      for (
+        let i = 0;
+        i < layersForThisDepth && i * perBucket < withFanOut.length;
+        i++
+      ) {
         const slice = withFanOut.slice(i * perBucket, (i + 1) * perBucket);
         if (slice.length > 0) {
-          macroBuckets.set(bucketIdx, slice.map((s) => s.pkg));
+          macroBuckets.set(
+            bucketIdx,
+            slice.map((s) => s.pkg),
+          );
           bucketIdx++;
         }
       }

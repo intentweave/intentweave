@@ -1877,7 +1877,11 @@ const indexLayersCheckSubcommand = new Command("layers-check")
     "Path to layers.yaml (default: .iw/layers.yaml)",
   )
   .option("--allow-skip-layer", "Ignore skip-layer violations", false)
-  .option("--compare", "Compare inferred (as-is) vs. configured (as-should) layers", false)
+  .option(
+    "--compare",
+    "Compare inferred (as-is) vs. configured (as-should) layers",
+    false,
+  )
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
@@ -2107,9 +2111,7 @@ const indexConformanceSubcommand = new Command("conformance")
 
     if (result.totalViolations === 0) {
       console.log(
-        chalk.green(
-          "  ✓ All classes conform to their declared interfaces.\n",
-        ),
+        chalk.green("  ✓ All classes conform to their declared interfaces.\n"),
       );
       return;
     }
@@ -2131,7 +2133,8 @@ const indexConformanceSubcommand = new Command("conformance")
         case "missing-method":
           icon = chalk.red("✗");
           detail = `${v.className} is missing method ${chalk.bold(v.memberName)}()`;
-          if (v.expectedSignature) detail += chalk.gray(` — expected: ${v.expectedSignature}`);
+          if (v.expectedSignature)
+            detail += chalk.gray(` — expected: ${v.expectedSignature}`);
           break;
         case "missing-property":
           icon = chalk.red("✗");
@@ -2199,9 +2202,7 @@ const indexDeadFeaturesSubcommand = new Command("dead-features")
     );
 
     if (result.totalCandidates === 0) {
-      console.log(
-        chalk.green("  ✓ No dead feature candidates found.\n"),
-      );
+      console.log(chalk.green("  ✓ No dead feature candidates found.\n"));
       return;
     }
 
@@ -2258,9 +2259,7 @@ const indexApiSurfaceSubcommand = new Command("api-surface")
   .option("--db <path>", "Path to index.db")
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action(async (opts) => {
-    const { analyzeApiSurface } = await import(
-      "../api-surface/apiSurface.js"
-    );
+    const { analyzeApiSurface } = await import("../api-surface/apiSurface.js");
     const dbPath = resolveDbPath(opts.db);
     const result = await analyzeApiSurface({
       baseline: opts.baseline,
@@ -2330,9 +2329,7 @@ const indexApiSurfaceSubcommand = new Command("api-surface")
 
       console.log(`    ${icon} ${detail}`);
       console.log(
-        chalk.gray(
-          `      ${c.filePath}${c.line ? `:${c.line}` : ""}`,
-        ),
+        chalk.gray(`      ${c.filePath}${c.line ? `:${c.line}` : ""}`),
       );
 
       if (c.changeType === "signature-changed") {
@@ -2444,7 +2441,11 @@ const indexImpactSubcommand = new Command("impact")
   )
   .argument("<files...>", "Changed file paths (workspace-relative)")
   .option("--db <path>", "Path to index.db")
-  .option("--hops <n>", "Max import-graph hops for dependents (default: 2)", "2")
+  .option(
+    "--hops <n>",
+    "Max import-graph hops for dependents (default: 2)",
+    "2",
+  )
   .option("--limit <n>", "Max results per category (default: 50)", "50")
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action(async (files: string[], opts) => {
@@ -2513,11 +2514,7 @@ const indexFocusSubcommand = new Command("focus")
         return;
       }
 
-      console.log(
-        chalk.bold(
-          `\n  Focused Architecture: ${result.target}`,
-        ),
-      );
+      console.log(chalk.bold(`\n  Focused Architecture: ${result.target}`));
       console.log(
         chalk.gray(
           `  ${result.nodes.length} nodes (of ${result.totalNeighborhood} in ${result.hops}-hop neighbourhood), ${result.edges.length} edges\n`,
@@ -2595,11 +2592,7 @@ const indexExportSubcommand = new Command("export")
     "Number of import-graph hops for --focus (default: 2)",
     "2",
   )
-  .option(
-    "--max-nodes <n>",
-    "Maximum nodes for --focus (default: 25)",
-    "25",
-  )
+  .option("--max-nodes <n>", "Maximum nodes for --focus (default: 25)", "25")
   .option(
     "--explain",
     "Generate an LLM-narrated architecture explanation (requires --provider)",
@@ -2689,8 +2682,7 @@ const indexExportSubcommand = new Command("export")
 
           const { OpenAILLMProvider, SmartMockLLMProvider } =
             await import("@intentweave/analyzer/llm");
-          const apiKey =
-            opts.apiKey ?? process.env.OPENAI_API_KEY ?? "";
+          const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY ?? "";
           const llm =
             opts.provider === "smart-mock"
               ? new SmartMockLLMProvider()
@@ -2699,9 +2691,7 @@ const indexExportSubcommand = new Command("export")
                   model: opts.model,
                 });
 
-          console.log(
-            chalk.blue("  Generating LLM architecture narrative…"),
-          );
+          console.log(chalk.blue("  Generating LLM architecture narrative…"));
 
           const insights = analyzeFocusInsights(result);
           narrative = await generateFocusNarrative(llm, result, insights);
@@ -2849,7 +2839,21 @@ interface FocusInsightsLike {
 async function generateFocusNarrative(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   llm: any,
-  result: { target: string; nodes: Array<{ name: string; filePath: string; layerLabel: string; communityLabel: string; dependents: number; hopDistance: number; isTarget: boolean }>; edges: Array<{ source: string; target: string; type: string }>; hops: number; totalNeighborhood: number },
+  result: {
+    target: string;
+    nodes: Array<{
+      name: string;
+      filePath: string;
+      layerLabel: string;
+      communityLabel: string;
+      dependents: number;
+      hopDistance: number;
+      isTarget: boolean;
+    }>;
+    edges: Array<{ source: string; target: string; type: string }>;
+    hops: number;
+    totalNeighborhood: number;
+  },
   insights: FocusInsightsLike,
 ): Promise<string> {
   const nodesSummary = result.nodes
@@ -2869,8 +2873,7 @@ async function generateFocusNarrative(
     insights.hubs.length > 0
       ? insights.hubs
           .map(
-            (h) =>
-              `• ${h.name}: ${h.dependents} dependents (${h.risk} risk)`,
+            (h) => `• ${h.name}: ${h.dependents} dependents (${h.risk} risk)`,
           )
           .join("\n")
       : "No high-connectivity hubs detected.";

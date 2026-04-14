@@ -54,10 +54,7 @@ export {
   interfaceConformance,
   interfaceConformanceFromDb,
 } from "./interfaceConformance.js";
-export {
-  deadFeatures,
-  deadFeaturesFromDb,
-} from "./deadFeatures.js";
+export { deadFeatures, deadFeaturesFromDb } from "./deadFeatures.js";
 export type { DeadFeatureOptions } from "./deadFeatures.js";
 export { nameLayers } from "./layerNaming.js";
 export { slices, slicesFromDb } from "./slices.js";

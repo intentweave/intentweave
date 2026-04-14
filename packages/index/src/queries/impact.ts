@@ -316,9 +316,7 @@ export function formatCariImpact(result: CariImpactResult): string {
   if (result.coChangePartners.length > 0) {
     lines.push("### Co-Change Partners (historically changed together)\n");
     for (const c of result.coChangePartners) {
-      lines.push(
-        `- \`${c.filePath}\` — jaccard=${c.score.toFixed(2)}`,
-      );
+      lines.push(`- \`${c.filePath}\` — jaccard=${c.score.toFixed(2)}`);
     }
     lines.push("");
   }

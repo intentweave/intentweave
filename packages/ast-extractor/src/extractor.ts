@@ -989,7 +989,8 @@ export class AstExtractor {
             if (tNode.type === "type_identifier") {
               result.push(tNode.text);
             } else if (tNode.type === "generic_type") {
-              const nameNode = tNode.childForFieldName("name") ??
+              const nameNode =
+                tNode.childForFieldName("name") ??
                 tNode.children.find((c) => c.type === "type_identifier");
               if (nameNode) result.push(nameNode.text);
             }
@@ -1001,7 +1002,8 @@ export class AstExtractor {
           if (hChild.type === "type_identifier") {
             result.push(hChild.text);
           } else if (hChild.type === "generic_type") {
-            const nameNode = hChild.childForFieldName("name") ??
+            const nameNode =
+              hChild.childForFieldName("name") ??
               hChild.children.find((c) => c.type === "type_identifier");
             if (nameNode) result.push(nameNode.text);
           }

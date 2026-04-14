@@ -767,7 +767,7 @@ CLI: `iw index export --obsidian`.
 | 3.3  | Dependency depth                 | CARI | S      | Medium | AX imports (exists)  | ✅ Done |
 | 4.4  | Bus factor per module            | CARI | M      | Medium | TCG data (exists)    |         |
 | 3.4  | Package boundary violations      | CARI | M      | Medium | 5.1 concept          | ✅ Done |
-| 5.3  | Dead feature detection           | CARI | M      | Medium | 3.2, 1.3             |         |
+| 5.3  | Dead feature detection           | CARI | M      | Medium | 3.2, 1.3             | ✅ Done |
 | 4.1  | Ownership drift                  | CARI | S      | Medium | TCG data (exists)    |         |
 | 4.2  | Change coupling anomalies        | CARI | S      | Medium | TCG data (exists)    |         |
 | 1.5  | Terminology inconsistency        | CARI | M      | Medium | None                 | ✅ Done |
@@ -775,13 +775,13 @@ CLI: `iw index export --obsidian`.
 | 5.1b | Layer check                      | CARI | S      | High   | 5.1a                 | ✅ Done |
 | 5.1c | Layer naming suggestions         | KG   | S      | Low    | 5.1a                 | ✅      |
 | 5.5  | Hierarchical sub-layering        | CARI | M      | High   | 5.1a, 3.4            |         |
-| 5.6  | As-is vs. as-should comparison   | CARI | M      | High   | 5.1a, 5.1b           |         |
-| 5.7  | Vertical slice detection         | CARI | M      | High   | 5.1a, 9.1            |         |
+| 5.6  | As-is vs. as-should comparison   | CARI | M      | High   | 5.1a, 5.1b           | ✅ Done |
+| 5.7  | Vertical slice detection         | CARI | M      | High   | 5.1a, 9.1            | ✅ Done |
 | 5.8  | Architecture diagram validation  | CARI | L      | High   | imports (exists)     |         |
 | 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
 | 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |
-| 5.4  | API surface changelog            | CARI | M      | Medium | Git history          |         |
-| 5.2  | Interface conformance            | AX   | M      | Medium | None                 |         |
+| 5.4  | API surface changelog            | CARI | M      | Medium | Git history          | ✅ Done |
+| 5.2  | Interface conformance            | AX   | M      | Medium | None                 | ✅ Done |
 | 2.4  | Clone lineage tracking           | CARI | M      | Low    | 2.1                  |         |
 | 1.6  | Decision lifecycle               | KG   | M      | Medium | Neo4j pipeline       |         |
 | 2.3  | Semantic clone detection         | KG   | L      | Medium | LLM embeddings       |         |

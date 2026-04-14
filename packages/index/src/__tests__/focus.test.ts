@@ -69,7 +69,12 @@ describe("focus", () => {
     insertImport.run("analyzer/extract.ts", "core/types.ts", "./core/types", 1);
     insertImport.run("analyzer/extract.ts", "core/utils.ts", "./core/utils", 1);
     insertImport.run("analyzer/parse.ts", "core/types.ts", "./core/types", 1);
-    insertImport.run("server/api.ts", "analyzer/extract.ts", "../analyzer/extract", 1);
+    insertImport.run(
+      "server/api.ts",
+      "analyzer/extract.ts",
+      "../analyzer/extract",
+      1,
+    );
     insertImport.run("server/routes.ts", "server/api.ts", "./api", 1);
     insertImport.run("cli/main.ts", "server/routes.ts", "../server/routes", 1);
     insertImport.run("cli/main.ts", "core/types.ts", "../core/types", 1);
@@ -79,12 +84,54 @@ describe("focus", () => {
       `INSERT INTO symbols (id, name, kind, file_path, line, export)
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
-    insertSymbol.run("sym-typedef", "TypeDef", "type", "core/types.ts", 1, "named");
-    insertSymbol.run("sym-formatdate", "formatDate", "function", "core/utils.ts", 5, "named");
-    insertSymbol.run("sym-extract", "extract", "function", "analyzer/extract.ts", 10, "named");
-    insertSymbol.run("sym-parse", "parse", "function", "analyzer/parse.ts", 1, "named");
-    insertSymbol.run("sym-handlerequest", "handleRequest", "function", "server/api.ts", 1, "named");
-    insertSymbol.run("sym-setuproutes", "setupRoutes", "function", "server/routes.ts", 1, "named");
+    insertSymbol.run(
+      "sym-typedef",
+      "TypeDef",
+      "type",
+      "core/types.ts",
+      1,
+      "named",
+    );
+    insertSymbol.run(
+      "sym-formatdate",
+      "formatDate",
+      "function",
+      "core/utils.ts",
+      5,
+      "named",
+    );
+    insertSymbol.run(
+      "sym-extract",
+      "extract",
+      "function",
+      "analyzer/extract.ts",
+      10,
+      "named",
+    );
+    insertSymbol.run(
+      "sym-parse",
+      "parse",
+      "function",
+      "analyzer/parse.ts",
+      1,
+      "named",
+    );
+    insertSymbol.run(
+      "sym-handlerequest",
+      "handleRequest",
+      "function",
+      "server/api.ts",
+      1,
+      "named",
+    );
+    insertSymbol.run(
+      "sym-setuproutes",
+      "setupRoutes",
+      "function",
+      "server/routes.ts",
+      1,
+      "named",
+    );
     insertSymbol.run("sym-main", "main", "function", "cli/main.ts", 1, "named");
 
     // Add a co-change edge
@@ -110,7 +157,9 @@ describe("focus", () => {
     const result = focusFromDb(db, { target: "core/types.ts" });
     expect(result.target).toBe("core/types.ts");
     expect(result.nodes.length).toBeGreaterThan(0);
-    expect(result.nodes.some((n) => n.isTarget && n.filePath === "core/types.ts")).toBe(true);
+    expect(
+      result.nodes.some((n) => n.isTarget && n.filePath === "core/types.ts"),
+    ).toBe(true);
   });
 
   it("resolves partial file name", () => {
@@ -140,8 +189,12 @@ describe("focus", () => {
     const result = focusFromDb(db, { target: "server/api.ts", hops: 1 });
     // api.ts → import: analyzer/extract.ts, reverse: server/routes.ts
     expect(result.nodes.some((n) => n.filePath === "server/api.ts")).toBe(true);
-    expect(result.nodes.some((n) => n.filePath === "analyzer/extract.ts")).toBe(true);
-    expect(result.nodes.some((n) => n.filePath === "server/routes.ts")).toBe(true);
+    expect(result.nodes.some((n) => n.filePath === "analyzer/extract.ts")).toBe(
+      true,
+    );
+    expect(result.nodes.some((n) => n.filePath === "server/routes.ts")).toBe(
+      true,
+    );
     // cli/main.ts is 2 hops away (via routes), so should NOT be present
     expect(result.nodes.some((n) => n.filePath === "cli/main.ts")).toBe(false);
   });
@@ -156,12 +209,18 @@ describe("focus", () => {
   // ── Truncation ─────────────────────────────────────────────────
 
   it("respects maxNodes parameter", () => {
-    const result = focusFromDb(db, { target: "core/types.ts", hops: 3, maxNodes: 3 });
+    const result = focusFromDb(db, {
+      target: "core/types.ts",
+      hops: 3,
+      maxNodes: 3,
+    });
     expect(result.nodes.length).toBeLessThanOrEqual(3);
     // Target should always be present
     expect(result.nodes.some((n) => n.isTarget)).toBe(true);
     // totalNeighborhood should be >= nodes shown
-    expect(result.totalNeighborhood).toBeGreaterThanOrEqual(result.nodes.length);
+    expect(result.totalNeighborhood).toBeGreaterThanOrEqual(
+      result.nodes.length,
+    );
   });
 
   // ── Node annotations ──────────────────────────────────────────
@@ -187,7 +246,9 @@ describe("focus", () => {
   it("computes hopDistance correctly", () => {
     const result = focusFromDb(db, { target: "server/api.ts", hops: 2 });
     const apiNode = result.nodes.find((n) => n.filePath === "server/api.ts");
-    const extractNode = result.nodes.find((n) => n.filePath === "analyzer/extract.ts");
+    const extractNode = result.nodes.find(
+      (n) => n.filePath === "analyzer/extract.ts",
+    );
     const typesNode = result.nodes.find((n) => n.filePath === "core/types.ts");
 
     expect(apiNode!.hopDistance).toBe(0);
@@ -205,7 +266,8 @@ describe("focus", () => {
     // api.ts → extract.ts should be an import edge
     expect(
       importEdges.some(
-        (e) => e.source === "server/api.ts" && e.target === "analyzer/extract.ts",
+        (e) =>
+          e.source === "server/api.ts" && e.target === "analyzer/extract.ts",
       ),
     ).toBe(true);
   });

@@ -162,13 +162,9 @@ export const impactCommand = new Command("impact")
     if (useLocal) {
       // CARI-only mode
       try {
-        const { impact, formatCariImpact } = await import(
-          "@intentweave/index"
-        );
+        const { impact, formatCariImpact } = await import("@intentweave/index");
 
-        const dbPath =
-          options.db ??
-          resolve(process.cwd(), ".iw", "index.db");
+        const dbPath = options.db ?? resolve(process.cwd(), ".iw", "index.db");
 
         if (!existsSync(dbPath)) {
           console.error(

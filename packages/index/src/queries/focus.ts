@@ -144,7 +144,11 @@ export function focusFromDb(
   for (const filePath of neighborhoodFiles) {
     const layer = layerMap.get(filePath);
     const comm = commMap.get(filePath);
-    const name = filePath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? filePath;
+    const name =
+      filePath
+        .split("/")
+        .pop()
+        ?.replace(/\.[^.]+$/, "") ?? filePath;
 
     nodes.push({
       filePath,
@@ -183,13 +187,12 @@ export function focusFromDb(
   for (const row of coChangeRows) {
     if (fileSet.has(row.file_a) && fileSet.has(row.file_b)) {
       // Avoid duplicate with import edges — only add if no import exists
-      const hasImport =
-        edges.some(
-          (e) =>
-            e.type === "import" &&
-            ((e.source === row.file_a && e.target === row.file_b) ||
-              (e.source === row.file_b && e.target === row.file_a)),
-        );
+      const hasImport = edges.some(
+        (e) =>
+          e.type === "import" &&
+          ((e.source === row.file_a && e.target === row.file_b) ||
+            (e.source === row.file_b && e.target === row.file_a)),
+      );
       if (!hasImport) {
         edges.push({
           source: row.file_a,
@@ -281,7 +284,8 @@ function resolveTarget(db: Database.Database, target: string): string[] {
        LIMIT 5`,
     )
     .all(`%${target.toLowerCase()}%`) as Array<{ file_path: string }>;
-  if (annotationFiles.length > 0) return annotationFiles.map((r) => r.file_path);
+  if (annotationFiles.length > 0)
+    return annotationFiles.map((r) => r.file_path);
 
   // 5. Ranked retrieval — handles natural language queries like "Analysis Pipeline"
   // Uses CARI's TF-IDF scoring across annotations + symbol FTS

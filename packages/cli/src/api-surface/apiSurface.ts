@@ -17,7 +17,11 @@ import path from "node:path";
 import { createExtractor } from "@intentweave/ast-extractor";
 import { openIndex } from "@intentweave/index";
 import type Database from "better-sqlite3";
-import type { ApiSurfaceResult, ApiChange, ApiPackageSummary } from "@intentweave/index";
+import type {
+  ApiSurfaceResult,
+  ApiChange,
+  ApiPackageSummary,
+} from "@intentweave/index";
 
 const execFileAsync = promisify(execFile);
 
@@ -63,10 +67,7 @@ function inferPackage(filePath: string): string {
 
 // ─── Git operations ──────────────────────────────────────────────────────────
 
-async function findBaseline(
-  cwd: string,
-  requested?: string,
-): Promise<string> {
+async function findBaseline(cwd: string, requested?: string): Promise<string> {
   if (requested) return requested;
   try {
     const { stdout } = await execFileAsync(
@@ -335,7 +336,8 @@ export async function analyzeApiSurface(
     const byPackage: Record<string, ApiPackageSummary> = {};
     for (const change of changes) {
       const pkg = inferPackage(change.filePath);
-      if (!byPackage[pkg]) byPackage[pkg] = { added: 0, removed: 0, changed: 0 };
+      if (!byPackage[pkg])
+        byPackage[pkg] = { added: 0, removed: 0, changed: 0 };
       switch (change.changeType) {
         case "added":
           byPackage[pkg].added++;

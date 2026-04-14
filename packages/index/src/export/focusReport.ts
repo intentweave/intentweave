@@ -51,10 +51,8 @@ interface FocusInsights {
  */
 export function analyzeFocusInsights(result: FocusResult): FocusInsights {
   const targetNodes = result.nodes.filter((n) => n.isTarget);
-  const targetName =
-    targetNodes.map((n) => n.name).join(", ") || result.target;
-  const targetLayer =
-    targetNodes[0]?.layerLabel ?? "unknown";
+  const targetName = targetNodes.map((n) => n.name).join(", ") || result.target;
+  const targetLayer = targetNodes[0]?.layerLabel ?? "unknown";
 
   // ── Cluster insights ──────────────────────────────────────────
   const layerMap = new Map<string, FocusNode[]>();
@@ -80,10 +78,7 @@ export function analyzeFocusInsights(result: FocusResult): FocusInsights {
   clusters.sort((a, b) => a.avgHop - b.avgHop);
 
   // ── Hub detection ─────────────────────────────────────────────
-  const hubThreshold = Math.max(
-    5,
-    Math.round(result.nodes.length * 0.3),
-  );
+  const hubThreshold = Math.max(5, Math.round(result.nodes.length * 0.3));
   const hubs: HubInsight[] = result.nodes
     .filter((n) => n.dependents >= hubThreshold)
     .sort((a, b) => b.dependents - a.dependents)
@@ -143,9 +138,7 @@ export function analyzeFocusInsights(result: FocusResult): FocusInsights {
   const coChangeCount = result.edges.filter(
     (e) => e.type === "co_change",
   ).length;
-  const docCount = result.edges.filter(
-    (e) => e.type === "doc_cooc",
-  ).length;
+  const docCount = result.edges.filter((e) => e.type === "doc_cooc").length;
   if (coChangeCount > 0) {
     readingGuide.push(
       `<strong>Dashed orange lines</strong> are co-change signals — files that tend to change together in git (${coChangeCount} found).`,
@@ -165,8 +158,7 @@ export function analyzeFocusInsights(result: FocusResult): FocusInsights {
 
   if (hubs.length > 0) {
     const hubNames = hubs.map(
-      (h) =>
-        `<strong>${escapeHtml(h.name)}</strong> (${h.dependents} deps)`,
+      (h) => `<strong>${escapeHtml(h.name)}</strong> (${h.dependents} deps)`,
     );
     observations.push(
       `⚠️ Hub nodes detected: ${hubNames.join(", ")}. Changes here ripple widely — consider if they should be split.`,
@@ -190,9 +182,7 @@ export function analyzeFocusInsights(result: FocusResult): FocusInsights {
   const upImports = importEdges.filter((e) => {
     const srcNode = result.nodes.find((n) => n.filePath === e.source);
     const tgtNode = result.nodes.find((n) => n.filePath === e.target);
-    return (
-      srcNode && tgtNode && srcNode.layerIndex < tgtNode.layerIndex
-    );
+    return srcNode && tgtNode && srcNode.layerIndex < tgtNode.layerIndex;
   });
   if (upImports.length > 0) {
     observations.push(
@@ -202,7 +192,13 @@ export function analyzeFocusInsights(result: FocusResult): FocusInsights {
 
   if (entryNodes.length > 0 && leafNodes.length > 0) {
     observations.push(
-      `📊 Data flows from entry points (${entryNodes.slice(0, 3).map((n) => `<strong>${escapeHtml(n)}</strong>`).join(", ")}) down to leaf modules (${leafNodes.slice(0, 3).map((n) => `<strong>${escapeHtml(n)}</strong>`).join(", ")}).`,
+      `📊 Data flows from entry points (${entryNodes
+        .slice(0, 3)
+        .map((n) => `<strong>${escapeHtml(n)}</strong>`)
+        .join(", ")}) down to leaf modules (${leafNodes
+        .slice(0, 3)
+        .map((n) => `<strong>${escapeHtml(n)}</strong>`)
+        .join(", ")}).`,
     );
   }
 
@@ -314,8 +310,14 @@ const LAYER_COLORS = [
 ];
 
 const LAYER_BORDER_COLORS = [
-  "#4caf50", "#2196f3", "#ff9800", "#e91e63",
-  "#9c27b0", "#00bcd4", "#ffc107", "#8bc34a",
+  "#4caf50",
+  "#2196f3",
+  "#ff9800",
+  "#e91e63",
+  "#9c27b0",
+  "#00bcd4",
+  "#ffc107",
+  "#8bc34a",
 ];
 
 const EDGE_COLORS = {
@@ -362,9 +364,7 @@ function buildDot(result: FocusResult): string {
   }
 
   // Sort layers descending (highest layer = top of graph)
-  const sortedLayers = [...layerGroups.entries()].sort(
-    ([a], [b]) => b - a,
-  );
+  const sortedLayers = [...layerGroups.entries()].sort(([a], [b]) => b - a);
 
   for (const [layerIdx, nodes] of sortedLayers) {
     const bgColor = LAYER_COLORS[layerIdx % LAYER_COLORS.length] ?? "#f5f5f5";
@@ -533,7 +533,9 @@ function buildFlowDot(result: FocusResult): string {
     '  graph [rankdir=LR, fontname="Inter, Helvetica, Arial, sans-serif", fontsize=12, bgcolor="transparent",',
     "    pad=0.4, nodesep=0.4, ranksep=0.7, splines=ortho];",
     '  node [shape=box, style="filled,rounded", fontname="Inter, Helvetica, Arial, sans-serif", fontsize=11, margin="0.12,0.06"];',
-    '  edge [fontname="Inter, Helvetica, Arial, sans-serif", fontsize=9, color="' + EDGE_COLORS.import + '", penwidth=1.5];',
+    '  edge [fontname="Inter, Helvetica, Arial, sans-serif", fontsize=9, color="' +
+      EDGE_COLORS.import +
+      '", penwidth=1.5];',
     "",
   ];
 
@@ -546,7 +548,9 @@ function buildFlowDot(result: FocusResult): string {
   }
 
   // Add rank constraints
-  for (const [hop, files] of [...hopGroups.entries()].sort(([a], [b]) => a - b)) {
+  for (const [hop, files] of [...hopGroups.entries()].sort(
+    ([a], [b]) => a - b,
+  )) {
     if (files.length > 1) {
       lines.push(`  { rank=same; ${files.map(nodeId).join("; ")}; }`);
     }
@@ -561,7 +565,9 @@ function buildFlowDot(result: FocusResult): string {
     const label = node.isTarget ? `⭐ ${node.name}` : node.name;
     const fillColor = node.isTarget
       ? "#fff176"
-      : node.hopDistance === 0 ? "#fff176" : `hsl(210, 30%, ${85 + node.hopDistance * 3}%)`;
+      : node.hopDistance === 0
+        ? "#fff176"
+        : `hsl(210, 30%, ${85 + node.hopDistance * 3}%)`;
     const borderClr = node.isTarget ? "#f57f17" : "#78909c";
     const penWidth = node.isTarget ? "2.5" : "1";
     lines.push(
@@ -630,7 +636,9 @@ function buildAbstractDot(result: FocusResult): string {
   ];
 
   // Community meta-nodes
-  for (const [cid, nodes] of [...communities.entries()].sort(([a], [b]) => a - b)) {
+  for (const [cid, nodes] of [...communities.entries()].sort(
+    ([a], [b]) => a - b,
+  )) {
     const id = `comm_${cid === -1 ? "ungrouped" : cid}`;
     const hasTarget = nodes.some((n) => n.isTarget);
     const targetNode = nodes.find((n) => n.isTarget);
@@ -652,12 +660,15 @@ function buildAbstractDot(result: FocusResult): string {
     const moreCount = nodes.length > 5 ? nodes.length - 5 : 0;
     const moreLabel = moreCount > 0 ? `\\l+${moreCount} more` : "";
 
-    const avgHop =
-      nodes.reduce((s, n) => s + n.hopDistance, 0) / nodes.length;
+    const avgHop = nodes.reduce((s, n) => s + n.hopDistance, 0) / nodes.length;
     const totalDeps = nodes.reduce((s, n) => s + n.dependents, 0);
 
-    const fillColor = hasTarget ? "#fff9c4" : LAYER_COLORS[cid % LAYER_COLORS.length] ?? "#f5f5f5";
-    const borderClr = hasTarget ? "#f57f17" : LAYER_BORDER_COLORS[cid % LAYER_BORDER_COLORS.length] ?? "#999";
+    const fillColor = hasTarget
+      ? "#fff9c4"
+      : (LAYER_COLORS[cid % LAYER_COLORS.length] ?? "#f5f5f5");
+    const borderClr = hasTarget
+      ? "#f57f17"
+      : (LAYER_BORDER_COLORS[cid % LAYER_BORDER_COLORS.length] ?? "#999");
     const penWidth = hasTarget ? "2.5" : "1.5";
 
     const label = `{${escapeDot(shortLabel)} (${nodes.length})|${fileList}${moreLabel}\\l|deps: ${totalDeps} · hop: ${avgHop.toFixed(1)}}`;
@@ -677,7 +688,11 @@ function buildAbstractDot(result: FocusResult): string {
     const hasImport = data.types.has("import");
     const hasCoChange = data.types.has("co_change");
 
-    const color = hasImport ? EDGE_COLORS.import : hasCoChange ? EDGE_COLORS.co_change : EDGE_COLORS.doc_cooc;
+    const color = hasImport
+      ? EDGE_COLORS.import
+      : hasCoChange
+        ? EDGE_COLORS.co_change
+        : EDGE_COLORS.doc_cooc;
     const style = hasImport ? "solid" : hasCoChange ? "dashed" : "dotted";
     const label = data.count > 1 ? `${data.count}` : "";
 
@@ -1178,9 +1193,7 @@ function buildInsightsHtml(
   for (const cluster of insights.clusters) {
     const fileList = cluster.files.slice(0, 8).join(", ");
     const more =
-      cluster.files.length > 8
-        ? ` +${cluster.files.length - 8} more`
-        : "";
+      cluster.files.length > 8 ? ` +${cluster.files.length - 8} more` : "";
     sections.push(`<div class="cluster-card">
       <h4>${escapeHtml(cluster.label)}</h4>
       <div class="role">${cluster.role}</div>
@@ -1211,9 +1224,7 @@ function buildInsightsHtml(
   if (narrative) {
     sections.push(`<div class="llm-section">`);
     sections.push(`<h3>🤖 AI Architecture Narrative</h3>`);
-    sections.push(
-      `<div class="llm-narrative">${escapeHtml(narrative)}</div>`,
-    );
+    sections.push(`<div class="llm-narrative">${escapeHtml(narrative)}</div>`);
     sections.push(`</div>`);
   }
 

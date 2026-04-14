@@ -368,8 +368,14 @@ Additional CARI queries are available as CLI subcommands, MCP tools, and via the
 | `iw index boundary-violations`             | `cari_boundary_violations` | Cross-package internal import detection                        |
 | `iw index layers-infer`                    | `cari_layers_infer`        | Auto-infer architectural layers from import graph              |
 | `iw index layers-check`                    | `cari_layers_check`        | Validate imports against layer configuration                   |
+| `iw index layers-check --compare`          | —                          | As-is vs. as-should layer comparison (three-column delta view) |
+| `iw index conformance`                     | —                          | Interface conformance drift (missing methods, mismatches)      |
+| `iw index dead-features`                   | —                          | Dead feature detection (unused + undocumented + stale)         |
+| `iw index api-surface`                     | —                          | API surface changelog (additions, removals, signature changes) |
+| `iw index focus <target>`                  | `cari_focus`               | Focused architecture view around a target entity               |
 | `iw index export --html`                   | —                          | Generate standalone interactive architecture report            |
 | `iw index export --html --provider openai` | `cari_layers_name`         | LLM-generated layer & directory names for the report           |
+| `iw index export --focus <target>`         | —                          | Focused Graphviz SVG architecture report                       |
 
 > See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
 
@@ -416,6 +422,7 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `cari_layers_infer`        | Auto-infer architectural layers             | _(none)_                         |
 | `cari_layers_check`        | Validate imports against layer config       | `allowSkipLayer?`                |
 | `cari_layers_name`         | LLM-generated layer & directory names       | `provider`, `model?`, `api_key?` |
+| `cari_focus`               | Focused architecture view around a target   | `target`, `hops?`, `maxNodes?`   |
 
 Start the MCP server:
 
@@ -558,11 +565,11 @@ pnpm --filter @intentweave/cli publish --access public
 ### Project Stats
 
 - **11 packages** + 1 app
-- **1200+ tests**, all passing
+- **1240+ tests**, all passing
 - **TypeScript 5.6**, ESM, strict mode
 - **Fastify 5**, Neo4j 5, SQLite (better-sqlite3), Turbo, pnpm workspaces
-- **27 CARI query modes** + interactive HTML architecture report with multi-view community modes
-- **33 MCP tools** for GitHub Copilot integration
+- **31 CARI query modes** + interactive HTML architecture report with multi-view community modes
+- **34 MCP tools** for GitHub Copilot integration
 
 ---
 

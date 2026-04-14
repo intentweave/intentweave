@@ -217,18 +217,19 @@ Then synthesise the diagram from the combined results.
 
 ## Example Prompts and Responses
 
-| User asks                                              | Diagram type | Key tool calls                      |
-|--------------------------------------------------------|-------------|--------------------------------------|
-| "Show me the architecture around KX"                   | Dependency   | `cari_focus("KX")`                  |
-| "How does the analysis pipeline flow?"                 | Sequence     | `cari_focus("Analysis Pipeline")`   |
-| "What are the main components of the analyzer?"        | Component    | `cari_focus("analyzer", hops=3)`    |
-| "How does data flow through the open track?"           | Data-flow    | `cari_focus("openTrack")`           |
-| "High-level overview of IntentWeave"                   | C4 Context   | `cari_focus(".", hops=1, maxNodes=15)` |
-| "What would break if I refactor context.ts?"           | Dependency   | `cari_focus("context.ts")` + `cari_connections("context")` |
+| User asks                                       | Diagram type | Key tool calls                                             |
+| ----------------------------------------------- | ------------ | ---------------------------------------------------------- |
+| "Show me the architecture around KX"            | Dependency   | `cari_focus("KX")`                                         |
+| "How does the analysis pipeline flow?"          | Sequence     | `cari_focus("Analysis Pipeline")`                          |
+| "What are the main components of the analyzer?" | Component    | `cari_focus("analyzer", hops=3)`                           |
+| "How does data flow through the open track?"    | Data-flow    | `cari_focus("openTrack")`                                  |
+| "High-level overview of IntentWeave"            | C4 Context   | `cari_focus(".", hops=1, maxNodes=15)`                     |
+| "What would break if I refactor context.ts?"    | Dependency   | `cari_focus("context.ts")` + `cari_connections("context")` |
 
 ## Export as Interactive SVG
 
 For a high-quality interactive report (pan/zoom, tooltips), use:
+
 ```
 iw index export --focus "<target>" --hops 2 --max-nodes 30 -o report.html
 ```

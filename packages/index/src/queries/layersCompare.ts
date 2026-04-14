@@ -91,9 +91,7 @@ export function layersCompareFromDb(
     if (inferredLayer === null || configuredLayer === null) {
       status = "unassigned";
       unassignedCount++;
-    } else if (
-      inferredLayer.toLowerCase() === configuredLayer.toLowerCase()
-    ) {
+    } else if (inferredLayer.toLowerCase() === configuredLayer.toLowerCase()) {
       status = "ok";
       matchCount++;
     } else {
