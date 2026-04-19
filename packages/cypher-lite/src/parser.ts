@@ -8,7 +8,7 @@
  * Supports the Cypher subset used in IntentWeave KG queries.
  */
 
-import { tokenize } from './tokenizer.js';
+import { tokenize } from "./tokenizer.js";
 import {
   Token,
   TokenType,
@@ -51,7 +51,7 @@ import {
   AnyExpr,
   MapLiteral,
   MapEntry,
-} from './types.js';
+} from "./types.js";
 
 export class CypherLiteParser {
   private tokens: Token[];
@@ -70,10 +70,10 @@ export class CypherLiteParser {
     }
 
     if (clauses.length === 0) {
-      throw this.error('Empty query');
+      throw this.error("Empty query");
     }
 
-    return { type: 'CypherStatement', clauses };
+    return { type: "CypherStatement", clauses };
   }
 
   // ── Clause dispatch ───────────────────────────────────────────────
@@ -88,7 +88,7 @@ export class CypherLiteParser {
       case TokenType.OPTIONAL: {
         this.advance(); // consume OPTIONAL
         if (!this.check(TokenType.MATCH)) {
-          throw this.error('Expected MATCH after OPTIONAL');
+          throw this.error("Expected MATCH after OPTIONAL");
         }
         return this.parseMatch(true);
       }
@@ -113,7 +113,7 @@ export class CypherLiteParser {
       case TokenType.DETACH: {
         this.advance(); // consume DETACH
         if (!this.check(TokenType.DELETE)) {
-          throw this.error('Expected DELETE after DETACH');
+          throw this.error("Expected DELETE after DETACH");
         }
         return this.parseDelete(true);
       }
@@ -154,7 +154,7 @@ export class CypherLiteParser {
       this.advance(); // consume WHERE
       where = this.parseExpression();
     }
-    return { type: 'MatchClause', optional, pattern, where };
+    return { type: "MatchClause", optional, pattern, where };
   }
 
   // ── WHERE (standalone clause) ─────────────────────────────────────
@@ -162,7 +162,7 @@ export class CypherLiteParser {
   private parseWhereClause() {
     this.advance(); // consume WHERE
     const expression = this.parseExpression();
-    return { type: 'WhereClause' as const, expression };
+    return { type: "WhereClause" as const, expression };
   }
 
   // ── RETURN ────────────────────────────────────────────────────────
@@ -175,7 +175,7 @@ export class CypherLiteParser {
       distinct = true;
     }
     const items = this.parseReturnItems();
-    return { type: 'ReturnClause', distinct, items };
+    return { type: "ReturnClause", distinct, items };
   }
 
   private parseReturnItems(): ReturnItem[] {
@@ -193,7 +193,7 @@ export class CypherLiteParser {
     let alias: string | undefined;
     if (this.check(TokenType.AS)) {
       this.advance();
-      alias = this.expectIdentifier('alias');
+      alias = this.expectIdentifier("alias");
     }
     return { expression, alias };
   }
@@ -203,7 +203,7 @@ export class CypherLiteParser {
   private parseCreate(): CreateClause {
     this.advance(); // consume CREATE
     const pattern = this.parsePattern();
-    return { type: 'CreateClause', pattern };
+    return { type: "CreateClause", pattern };
   }
 
   // ── MERGE ─────────────────────────────────────────────────────────
@@ -219,20 +219,20 @@ export class CypherLiteParser {
       const token = this.peek();
       if (token.type === TokenType.CREATE) {
         this.advance(); // consume CREATE
-        this.expect(TokenType.SET, 'Expected SET after ON CREATE');
+        this.expect(TokenType.SET, "Expected SET after ON CREATE");
         onCreateSet = this.parseSetItems();
       } else if (token.type === TokenType.MATCH) {
         this.advance(); // consume MATCH
-        this.expect(TokenType.SET, 'Expected SET after ON MATCH');
+        this.expect(TokenType.SET, "Expected SET after ON MATCH");
         onMatchSet = this.parseSetItems();
       } else {
         throw this.error(
-          `Expected CREATE or MATCH after ON, got ${token.type}`
+          `Expected CREATE or MATCH after ON, got ${token.type}`,
         );
       }
     }
 
-    return { type: 'MergeClause', pattern, onCreateSet, onMatchSet };
+    return { type: "MergeClause", pattern, onCreateSet, onMatchSet };
   }
 
   // ── DELETE ────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ export class CypherLiteParser {
       this.advance();
       expressions.push(this.parsePrimary());
     }
-    return { type: 'DeleteClause', detach, expressions };
+    return { type: "DeleteClause", detach, expressions };
   }
 
   // ── SET ───────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ export class CypherLiteParser {
   private parseSet(): SetClause {
     this.advance(); // consume SET
     const items = this.parseSetItems();
-    return { type: 'SetClause', items };
+    return { type: "SetClause", items };
   }
 
   private parseSetItems(): SetItem[] {
@@ -267,12 +267,16 @@ export class CypherLiteParser {
   }
 
   private parseSetItem(): SetItem {
-    const obj = this.expectIdentifier('SET property object');
-    this.expect(TokenType.DOT, 'Expected . in SET');
-    const prop = this.expectIdentifier('SET property name');
-    this.expect(TokenType.EQ, 'Expected = in SET');
+    const obj = this.expectIdentifier("SET property object");
+    this.expect(TokenType.DOT, "Expected . in SET");
+    const prop = this.expectIdentifier("SET property name");
+    this.expect(TokenType.EQ, "Expected = in SET");
     const value = this.parseExpression();
-    const property: PropertyExpr = { type: 'PropertyExpr', object: obj, property: prop };
+    const property: PropertyExpr = {
+      type: "PropertyExpr",
+      object: obj,
+      property: prop,
+    };
     return { property, value };
   }
 
@@ -281,9 +285,9 @@ export class CypherLiteParser {
   private parseUnwind(): UnwindClause {
     this.advance(); // consume UNWIND
     const expression = this.parseExpression();
-    this.expect(TokenType.AS, 'Expected AS in UNWIND');
-    const alias = this.expectIdentifier('UNWIND alias');
-    return { type: 'UnwindClause', expression, alias };
+    this.expect(TokenType.AS, "Expected AS in UNWIND");
+    const alias = this.expectIdentifier("UNWIND alias");
+    return { type: "UnwindClause", expression, alias };
   }
 
   // ── WITH ──────────────────────────────────────────────────────────
@@ -301,31 +305,31 @@ export class CypherLiteParser {
       this.advance();
       where = this.parseExpression();
     }
-    return { type: 'WithClause', distinct, items, where };
+    return { type: "WithClause", distinct, items, where };
   }
 
   // ── ORDER BY ──────────────────────────────────────────────────────
 
   private parseOrderBy(): OrderByClause {
     this.advance(); // consume ORDER
-    this.expect(TokenType.BY, 'Expected BY after ORDER');
+    this.expect(TokenType.BY, "Expected BY after ORDER");
     const items: OrderItem[] = [];
     items.push(this.parseOrderItem());
     while (this.check(TokenType.COMMA)) {
       this.advance();
       items.push(this.parseOrderItem());
     }
-    return { type: 'OrderByClause', items };
+    return { type: "OrderByClause", items };
   }
 
   private parseOrderItem(): OrderItem {
     const expression = this.parseExpression();
-    let direction: 'ASC' | 'DESC' = 'ASC';
+    let direction: "ASC" | "DESC" = "ASC";
     if (this.check(TokenType.ASC)) {
       this.advance();
     } else if (this.check(TokenType.DESC)) {
       this.advance();
-      direction = 'DESC';
+      direction = "DESC";
     }
     return { expression, direction };
   }
@@ -335,13 +339,13 @@ export class CypherLiteParser {
   private parseLimit(): LimitClause {
     this.advance(); // consume LIMIT
     const count = this.parsePrimary();
-    return { type: 'LimitClause', count };
+    return { type: "LimitClause", count };
   }
 
   private parseSkip(): SkipClause {
     this.advance(); // consume SKIP
     const count = this.parsePrimary();
-    return { type: 'SkipClause', count };
+    return { type: "SkipClause", count };
   }
 
   // ── Pattern ───────────────────────────────────────────────────────
@@ -355,11 +359,11 @@ export class CypherLiteParser {
       elements.push(this.parseNodePattern());
     }
 
-    return { type: 'Pattern', elements };
+    return { type: "Pattern", elements };
   }
 
   private parseNodePattern(): NodePattern {
-    this.expect(TokenType.LPAREN, 'Expected ( for node pattern');
+    this.expect(TokenType.LPAREN, "Expected ( for node pattern");
 
     let variable: string | undefined;
     const labels: string[] = [];
@@ -373,7 +377,7 @@ export class CypherLiteParser {
     // Labels (:Label1:Label2)
     while (this.check(TokenType.COLON)) {
       this.advance(); // consume :
-      labels.push(this.expectIdentifier('label'));
+      labels.push(this.expectIdentifier("label"));
     }
 
     // Inline properties { key: value }
@@ -381,9 +385,9 @@ export class CypherLiteParser {
       properties = this.parseMapLiteral();
     }
 
-    this.expect(TokenType.RPAREN, 'Expected ) to close node pattern');
+    this.expect(TokenType.RPAREN, "Expected ) to close node pattern");
 
-    return { type: 'NodePattern', variable, labels, properties };
+    return { type: "NodePattern", variable, labels, properties };
   }
 
   private isRelStart(): boolean {
@@ -395,7 +399,7 @@ export class CypherLiteParser {
   }
 
   private parseRelationshipPattern(): RelationshipPattern {
-    let direction: 'outgoing' | 'incoming' | 'undirected' = 'undirected';
+    let direction: "outgoing" | "incoming" | "undirected" = "undirected";
     let variable: string | undefined;
     let relTypes: string[] = [];
     let variableLength: VariableLength | undefined;
@@ -403,7 +407,7 @@ export class CypherLiteParser {
 
     // Left side: <- or - or --
     if (this.check(TokenType.ARROW_LEFT)) {
-      direction = 'incoming';
+      direction = "incoming";
       this.advance();
     } else if (this.check(TokenType.DASH)) {
       // --[...]--  undirected
@@ -424,10 +428,10 @@ export class CypherLiteParser {
       // :TYPE1|TYPE2
       if (this.check(TokenType.COLON)) {
         this.advance();
-        relTypes.push(this.expectIdentifier('relationship type'));
+        relTypes.push(this.expectIdentifier("relationship type"));
         while (this.check(TokenType.PIPE)) {
           this.advance();
-          relTypes.push(this.expectIdentifier('relationship type'));
+          relTypes.push(this.expectIdentifier("relationship type"));
         }
       }
 
@@ -442,15 +446,15 @@ export class CypherLiteParser {
         properties = this.parseMapLiteral();
       }
 
-      this.expect(TokenType.RBRACKET, 'Expected ] to close relationship');
+      this.expect(TokenType.RBRACKET, "Expected ] to close relationship");
     }
 
     // Right side: -> or - or --
     if (this.check(TokenType.ARROW_RIGHT)) {
-      if (direction === 'incoming') {
-        throw this.error('Invalid relationship direction: both <- and ->');
+      if (direction === "incoming") {
+        throw this.error("Invalid relationship direction: both <- and ->");
       }
-      direction = 'outgoing';
+      direction = "outgoing";
       this.advance();
     } else if (this.check(TokenType.DASH)) {
       this.advance();
@@ -459,7 +463,7 @@ export class CypherLiteParser {
     }
 
     return {
-      type: 'RelationshipPattern',
+      type: "RelationshipPattern",
       variable,
       relTypes,
       direction,
@@ -478,7 +482,7 @@ export class CypherLiteParser {
 
     if (this.check(TokenType.DOT)) {
       this.advance();
-      this.expect(TokenType.DOT, 'Expected .. in variable length');
+      this.expect(TokenType.DOT, "Expected .. in variable length");
       if (this.check(TokenType.NUMBER)) {
         max = parseInt(this.advance().value, 10);
       }
@@ -493,7 +497,7 @@ export class CypherLiteParser {
   // ── Map literal ───────────────────────────────────────────────────
 
   private parseMapLiteral(): MapLiteral {
-    this.expect(TokenType.LBRACE, 'Expected {');
+    this.expect(TokenType.LBRACE, "Expected {");
     const entries: MapEntry[] = [];
 
     if (!this.check(TokenType.RBRACE)) {
@@ -504,13 +508,13 @@ export class CypherLiteParser {
       }
     }
 
-    this.expect(TokenType.RBRACE, 'Expected }');
-    return { type: 'MapLiteral', entries };
+    this.expect(TokenType.RBRACE, "Expected }");
+    return { type: "MapLiteral", entries };
   }
 
   private parseMapEntry(): MapEntry {
-    const key = this.expectIdentifier('map key');
-    this.expect(TokenType.COLON, 'Expected : in map entry');
+    const key = this.expectIdentifier("map key");
+    this.expect(TokenType.COLON, "Expected : in map entry");
     const value = this.parseExpression();
     return { key, value };
   }
@@ -526,7 +530,12 @@ export class CypherLiteParser {
     while (this.check(TokenType.OR)) {
       this.advance();
       const right = this.parseAnd();
-      left = { type: 'LogicalExpr', operator: 'OR', left, right } as LogicalExpr;
+      left = {
+        type: "LogicalExpr",
+        operator: "OR",
+        left,
+        right,
+      } as LogicalExpr;
     }
     return left;
   }
@@ -536,7 +545,12 @@ export class CypherLiteParser {
     while (this.check(TokenType.AND)) {
       this.advance();
       const right = this.parseNot();
-      left = { type: 'LogicalExpr', operator: 'AND', left, right } as LogicalExpr;
+      left = {
+        type: "LogicalExpr",
+        operator: "AND",
+        left,
+        right,
+      } as LogicalExpr;
     }
     return left;
   }
@@ -545,7 +559,7 @@ export class CypherLiteParser {
     if (this.check(TokenType.NOT)) {
       this.advance();
       const expr = this.parseNot();
-      return { type: 'NotExpr', expression: expr } as NotExpr;
+      return { type: "NotExpr", expression: expr } as NotExpr;
     }
     return this.parseComparison();
   }
@@ -557,7 +571,11 @@ export class CypherLiteParser {
     if (this.check(TokenType.CONTAINS)) {
       this.advance();
       const right = this.parseAddSub();
-      return { type: 'ContainsExpr', value: left, substring: right } as ContainsExpr;
+      return {
+        type: "ContainsExpr",
+        value: left,
+        substring: right,
+      } as ContainsExpr;
     }
     if (this.check(TokenType.STARTS)) {
       this.advance();
@@ -566,7 +584,11 @@ export class CypherLiteParser {
         this.advance();
       }
       const right = this.parseAddSub();
-      return { type: 'StartsWithExpr', value: left, prefix: right } as StartsWithExpr;
+      return {
+        type: "StartsWithExpr",
+        value: left,
+        prefix: right,
+      } as StartsWithExpr;
     }
     if (this.check(TokenType.ENDS)) {
       this.advance();
@@ -575,14 +597,18 @@ export class CypherLiteParser {
         this.advance();
       }
       const right = this.parseAddSub();
-      return { type: 'EndsWithExpr', value: left, suffix: right } as EndsWithExpr;
+      return {
+        type: "EndsWithExpr",
+        value: left,
+        suffix: right,
+      } as EndsWithExpr;
     }
 
     // IN
     if (this.check(TokenType.IN)) {
       this.advance();
       const list = this.parseAddSub();
-      return { type: 'InExpr', value: left, list } as InExpr;
+      return { type: "InExpr", value: left, list } as InExpr;
     }
 
     // IS NULL / IS NOT NULL
@@ -593,25 +619,30 @@ export class CypherLiteParser {
         this.advance();
         negated = true;
       }
-      this.expect(TokenType.NULL, 'Expected NULL after IS [NOT]');
-      return { type: 'IsNullExpr', value: left, negated } as IsNullExpr;
+      this.expect(TokenType.NULL, "Expected NULL after IS [NOT]");
+      return { type: "IsNullExpr", value: left, negated } as IsNullExpr;
     }
 
     // Comparison operators
-    const opMap: Partial<Record<TokenType, ComparisonExpr['operator']>> = {
-      [TokenType.EQ]: '=',
-      [TokenType.NEQ]: '<>',
-      [TokenType.LT]: '<',
-      [TokenType.GT]: '>',
-      [TokenType.LTE]: '<=',
-      [TokenType.GTE]: '>=',
+    const opMap: Partial<Record<TokenType, ComparisonExpr["operator"]>> = {
+      [TokenType.EQ]: "=",
+      [TokenType.NEQ]: "<>",
+      [TokenType.LT]: "<",
+      [TokenType.GT]: ">",
+      [TokenType.LTE]: "<=",
+      [TokenType.GTE]: ">=",
     };
 
     const op = opMap[this.peek().type];
     if (op) {
       this.advance();
       const right = this.parseAddSub();
-      return { type: 'ComparisonExpr', operator: op, left, right } as ComparisonExpr;
+      return {
+        type: "ComparisonExpr",
+        operator: op,
+        left,
+        right,
+      } as ComparisonExpr;
     }
 
     return left;
@@ -624,8 +655,8 @@ export class CypherLiteParser {
       this.advance();
       const right = this.parsePrimary();
       left = {
-        type: 'FunctionCallExpr',
-        name: '__concat',
+        type: "FunctionCallExpr",
+        name: "__concat",
         args: [left, right],
       } as FunctionCallExpr;
     }
@@ -642,45 +673,45 @@ export class CypherLiteParser {
     if (token.type === TokenType.LPAREN) {
       this.advance();
       const expr = this.parseExpression();
-      this.expect(TokenType.RPAREN, 'Expected )');
+      this.expect(TokenType.RPAREN, "Expected )");
       return expr;
     }
 
     // Parameter ($name)
     if (token.type === TokenType.PARAMETER) {
       this.advance();
-      return { type: 'ParameterExpr', name: token.value } as ParameterExpr;
+      return { type: "ParameterExpr", name: token.value } as ParameterExpr;
     }
 
     // String literal
     if (token.type === TokenType.STRING) {
       this.advance();
-      return { type: 'LiteralExpr', value: token.value } as LiteralExpr;
+      return { type: "LiteralExpr", value: token.value } as LiteralExpr;
     }
 
     // Number literal
     if (token.type === TokenType.NUMBER) {
       this.advance();
-      const numVal = token.value.includes('.')
+      const numVal = token.value.includes(".")
         ? parseFloat(token.value)
         : parseInt(token.value, 10);
-      return { type: 'LiteralExpr', value: numVal } as LiteralExpr;
+      return { type: "LiteralExpr", value: numVal } as LiteralExpr;
     }
 
     // Boolean literals
     if (token.type === TokenType.TRUE) {
       this.advance();
-      return { type: 'LiteralExpr', value: true } as LiteralExpr;
+      return { type: "LiteralExpr", value: true } as LiteralExpr;
     }
     if (token.type === TokenType.FALSE) {
       this.advance();
-      return { type: 'LiteralExpr', value: false } as LiteralExpr;
+      return { type: "LiteralExpr", value: false } as LiteralExpr;
     }
 
     // NULL literal
     if (token.type === TokenType.NULL) {
       this.advance();
-      return { type: 'LiteralExpr', value: null } as LiteralExpr;
+      return { type: "LiteralExpr", value: null } as LiteralExpr;
     }
 
     // List literal [a, b, c]
@@ -693,10 +724,10 @@ export class CypherLiteParser {
       this.advance();
       if (this.check(TokenType.EXISTS)) {
         const existsExpr = this.parseExistsExpr();
-        return { type: 'NotExpr', expression: existsExpr } as NotExpr;
+        return { type: "NotExpr", expression: existsExpr } as NotExpr;
       }
       const expr = this.parsePrimary();
-      return { type: 'NotExpr', expression: expr } as NotExpr;
+      return { type: "NotExpr", expression: expr } as NotExpr;
     }
 
     // EXISTS { MATCH pattern }
@@ -717,7 +748,7 @@ export class CypherLiteParser {
     // STAR (for COUNT(*))
     if (token.type === TokenType.STAR) {
       this.advance();
-      return { type: 'VariableExpr', name: '*' } as VariableExpr;
+      return { type: "VariableExpr", name: "*" } as VariableExpr;
     }
 
     // Function call or identifier with property access
@@ -736,7 +767,7 @@ export class CypherLiteParser {
     }
 
     throw this.error(
-      `Unexpected token in expression: ${token.type} ('${token.value}')`
+      `Unexpected token in expression: ${token.type} ('${token.value}')`,
     );
   }
 
@@ -752,11 +783,15 @@ export class CypherLiteParser {
     // Property access: name.prop
     if (this.check(TokenType.DOT)) {
       this.advance();
-      const prop = this.expectIdentifier('property name');
-      return { type: 'PropertyExpr', object: name, property: prop } as PropertyExpr;
+      const prop = this.expectIdentifier("property name");
+      return {
+        type: "PropertyExpr",
+        object: name,
+        property: prop,
+      } as PropertyExpr;
     }
 
-    return { type: 'VariableExpr', name } as VariableExpr;
+    return { type: "VariableExpr", name } as VariableExpr;
   }
 
   private isFunctionName(type: TokenType): boolean {
@@ -789,12 +824,12 @@ export class CypherLiteParser {
     }
 
     this.expect(TokenType.RPAREN, `Expected ) after function args`);
-    return { type: 'FunctionCallExpr', name, args, distinct };
+    return { type: "FunctionCallExpr", name, args, distinct };
   }
 
   private parseExistsExpr(): ExistsExpr {
     this.advance(); // consume EXISTS
-    this.expect(TokenType.LBRACE, 'Expected { after EXISTS');
+    this.expect(TokenType.LBRACE, "Expected { after EXISTS");
 
     // EXISTS { MATCH (a)-[r]->(b) } or just EXISTS { (a)-[r]->(b) }
     if (this.check(TokenType.MATCH)) {
@@ -802,20 +837,20 @@ export class CypherLiteParser {
     }
 
     const pattern = this.parsePattern();
-    this.expect(TokenType.RBRACE, 'Expected } to close EXISTS');
-    return { type: 'ExistsExpr', pattern };
+    this.expect(TokenType.RBRACE, "Expected } to close EXISTS");
+    return { type: "ExistsExpr", pattern };
   }
 
   private parseAnyExpr(): AnyExpr {
     this.advance(); // consume ANY
-    this.expect(TokenType.LPAREN, 'Expected ( after ANY');
-    const variable = this.expectIdentifier('ANY variable');
-    this.expect(TokenType.IN, 'Expected IN in ANY');
+    this.expect(TokenType.LPAREN, "Expected ( after ANY");
+    const variable = this.expectIdentifier("ANY variable");
+    this.expect(TokenType.IN, "Expected IN in ANY");
     const list = this.parseExpression();
-    this.expect(TokenType.WHERE, 'Expected WHERE in ANY');
+    this.expect(TokenType.WHERE, "Expected WHERE in ANY");
     const predicate = this.parseExpression();
-    this.expect(TokenType.RPAREN, 'Expected ) to close ANY');
-    return { type: 'AnyExpr', variable, list, predicate };
+    this.expect(TokenType.RPAREN, "Expected ) to close ANY");
+    return { type: "AnyExpr", variable, list, predicate };
   }
 
   private parseCaseExpr(): FunctionCallExpr {
@@ -825,15 +860,15 @@ export class CypherLiteParser {
     while (this.check(TokenType.WHEN)) {
       this.advance();
       args.push(this.parseExpression()); // condition
-      this.expect(TokenType.THEN, 'Expected THEN in CASE');
+      this.expect(TokenType.THEN, "Expected THEN in CASE");
       args.push(this.parseExpression()); // result
     }
     if (this.check(TokenType.ELSE)) {
       this.advance();
       args.push(this.parseExpression()); // else value
     }
-    this.expect(TokenType.END, 'Expected END for CASE');
-    return { type: 'FunctionCallExpr', name: '__case', args };
+    this.expect(TokenType.END, "Expected END for CASE");
+    return { type: "FunctionCallExpr", name: "__case", args };
   }
 
   private parseListLiteral(): FunctionCallExpr {
@@ -846,15 +881,17 @@ export class CypherLiteParser {
         args.push(this.parseExpression());
       }
     }
-    this.expect(TokenType.RBRACKET, 'Expected ]');
+    this.expect(TokenType.RBRACKET, "Expected ]");
     // Encode as a __list pseudo-function
-    return { type: 'FunctionCallExpr', name: '__list', args };
+    return { type: "FunctionCallExpr", name: "__list", args };
   }
 
   // ── Token utilities ───────────────────────────────────────────────
 
   private peek(): Token {
-    return this.tokens[this.pos] ?? { type: TokenType.EOF, value: '', position: -1 };
+    return (
+      this.tokens[this.pos] ?? { type: TokenType.EOF, value: "", position: -1 }
+    );
   }
 
   private advance(): Token {
@@ -907,7 +944,7 @@ export class CypherLiteParser {
   private error(message: string): Error {
     const token = this.peek();
     return new Error(
-      `CypherLite parse error at position ${token.position}: ${message}`
+      `CypherLite parse error at position ${token.position}: ${message}`,
     );
   }
 }

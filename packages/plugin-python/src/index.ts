@@ -31,7 +31,8 @@ export { createPythonAdapter } from "./adapter.js";
 const pythonPlugin: IWPlugin = {
   name: "python",
   version: "0.8.0",
-  description: "Python language support via tree-sitter (AST extraction for .py files)",
+  description:
+    "Python language support via tree-sitter (AST extraction for .py files)",
   capabilities: ["language"],
 
   getCapabilities(_context: PluginContext): Capability[] {

@@ -94,9 +94,7 @@ describe("PluginRegistry", () => {
 
     it("accepts plugins whose dependencies are already registered", () => {
       registry.register(makePlugin({ name: "alpha" }));
-      registry.register(
-        makePlugin({ name: "beta", dependencies: ["alpha"] }),
-      );
+      registry.register(makePlugin({ name: "beta", dependencies: ["alpha"] }));
 
       expect(registry.size).toBe(2);
     });

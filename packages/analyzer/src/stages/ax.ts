@@ -44,10 +44,7 @@ import {
   extractRationale,
 } from "./ax-helpers.js";
 
-import {
-  getPluginRegistry,
-  type LanguageCapability,
-} from "@intentweave/core";
+import { getPluginRegistry, type LanguageCapability } from "@intentweave/core";
 
 // ============================================================================
 // AX Output Types
@@ -401,12 +398,7 @@ function resolveImportPath(
  */
 async function discoverFiles(
   workspaceRoot: string,
-  include: string[] = [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.js",
-    "**/*.jsx",
-  ],
+  include: string[] = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
   exclude: string[] = [
     "**/node_modules/**",
     "**/dist/**",
@@ -531,7 +523,8 @@ export function createLanguageRegistry(
   // Auto-discover language plugins from the global PluginRegistry
   try {
     const pluginRegistry = getPluginRegistry();
-    const caps = pluginRegistry.getAllCapabilities<LanguageCapability>("language");
+    const caps =
+      pluginRegistry.getAllCapabilities<LanguageCapability>("language");
     for (const cap of caps) {
       const adapter = cap.createAdapter({
         workspaceRoot: options.workspaceRoot,

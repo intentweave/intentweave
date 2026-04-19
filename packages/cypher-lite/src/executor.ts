@@ -9,8 +9,8 @@
  * so consumers can inject their own database.
  */
 
-import { parse } from './parser.js';
-import { transpile, TranspiledQuery } from './transpiler.js';
+import { parse } from "./parser.js";
+import { transpile, TranspiledQuery } from "./transpiler.js";
 
 /**
  * Minimal database interface compatible with better-sqlite3.
@@ -22,7 +22,10 @@ export interface CypherLiteDatabase {
 }
 
 export interface CypherLiteStatement {
-  run(...params: unknown[]): { changes: number; lastInsertRowid: number | bigint };
+  run(...params: unknown[]): {
+    changes: number;
+    lastInsertRowid: number | bigint;
+  };
   all(...params: unknown[]): Record<string, unknown>[];
   get(...params: unknown[]): Record<string, unknown> | undefined;
 }
@@ -130,7 +133,7 @@ export class CypherLiteEngine {
    */
   run(
     cypher: string,
-    params: Record<string, unknown> = {}
+    params: Record<string, unknown> = {},
   ): Record<string, unknown>[] {
     const ast = parse(cypher);
     const queries = transpile(ast, params);
@@ -138,7 +141,7 @@ export class CypherLiteEngine {
     let lastResults: Record<string, unknown>[] = [];
 
     for (const q of queries) {
-      if (q.kind === 'read') {
+      if (q.kind === "read") {
         lastResults = this.executeRead(q);
       } else {
         this.executeWrite(q);
@@ -154,7 +157,7 @@ export class CypherLiteEngine {
    */
   query(
     cypher: string,
-    params: Record<string, unknown> = {}
+    params: Record<string, unknown> = {},
   ): Record<string, unknown>[] {
     return this.run(cypher, params);
   }
@@ -163,15 +166,12 @@ export class CypherLiteEngine {
    * Execute a Cypher write query
    * (CREATE, MERGE, DELETE, SET).
    */
-  execute(
-    cypher: string,
-    params: Record<string, unknown> = {}
-  ): void {
+  execute(cypher: string, params: Record<string, unknown> = {}): void {
     const ast = parse(cypher);
     const queries = transpile(ast, params);
 
     for (const q of queries) {
-      if (q.kind === 'write') {
+      if (q.kind === "write") {
         this.executeWrite(q);
       } else {
         this.executeRead(q);
@@ -183,7 +183,10 @@ export class CypherLiteEngine {
 
   private executeRead(q: TranspiledQuery): Record<string, unknown>[] {
     // Handle multiple SQL statements (unlikely for reads but possible)
-    const statements = q.sql.split(';').map((s) => s.trim()).filter(Boolean);
+    const statements = q.sql
+      .split(";")
+      .map((s) => s.trim())
+      .filter(Boolean);
     let results: Record<string, unknown>[] = [];
 
     for (const sql of statements) {
@@ -195,7 +198,10 @@ export class CypherLiteEngine {
   }
 
   private executeWrite(q: TranspiledQuery): void {
-    const statements = q.sql.split(';').map((s) => s.trim()).filter(Boolean);
+    const statements = q.sql
+      .split(";")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     for (const sql of statements) {
       const stmt = this.db.prepare(sql);

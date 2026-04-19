@@ -31,7 +31,8 @@ export { createSwiftAdapter } from "./adapter.js";
 const swiftPlugin: IWPlugin = {
   name: "swift",
   version: "0.8.0",
-  description: "Swift language support via tree-sitter (AST extraction for .swift files)",
+  description:
+    "Swift language support via tree-sitter (AST extraction for .swift files)",
   capabilities: ["language"],
 
   getCapabilities(_context: PluginContext): Capability[] {

@@ -171,13 +171,13 @@ iw index connections "AuthService"         # structural + semantic connections
 
 **What enrichment unlocks:**
 
-| Use Case | How It Works |
-|----------|-------------|
-| **Architecture diagram validation** | LLM reads ASCII/Mermaid diagrams in your docs, extracts component flows, CARI validates against the actual import graph |
-| **Decision tracking** | LLM extracts decision triples from ADRs, CARI checks which decisions have code grounding |
-| **Cross-doc contradiction detection** | LLM extracts conflicting predicates from docs that CARI flags as drifted |
-| **Config-to-docs sync** | LLM maps config parameters to docs, CARI detects value mismatches |
-| **Setup instruction validation** | LLM extracts step sequences from CONTRIBUTING.md, CARI validates commands exist |
+| Use Case                              | How It Works                                                                                                            |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Architecture diagram validation**   | LLM reads ASCII/Mermaid diagrams in your docs, extracts component flows, CARI validates against the actual import graph |
+| **Decision tracking**                 | LLM extracts decision triples from ADRs, CARI checks which decisions have code grounding                                |
+| **Cross-doc contradiction detection** | LLM extracts conflicting predicates from docs that CARI flags as drifted                                                |
+| **Config-to-docs sync**               | LLM maps config parameters to docs, CARI detects value mismatches                                                       |
+| **Setup instruction validation**      | LLM extracts step sequences from CONTRIBUTING.md, CARI validates commands exist                                         |
 
 Budget-controlled: set `--budget N` to cap LLM calls. Incremental: unchanged files
 are skipped. All stored in the same `index.db` — no second database.
@@ -191,29 +191,29 @@ features. Here's what's already shipped and what's next:
 
 ### Shipped (40+ features)
 
-| Area | Features |
-|------|----------|
-| **Document Intelligence** | doc-group classification, cross-group drift, orphaned sections, module coverage, terminology inconsistency, doc completeness scoring |
-| **Code Duplication** | exact clone detection, structural (Type 2) clone detection |
-| **Dependencies** | circular imports, unused exports, dependency depth, boundary violations |
-| **Architecture** | layer inference, layer validation, as-is vs as-should comparison, hierarchical sub-layering, vertical slice detection, interface conformance, dead feature detection, API surface changelog |
-| **Git Intelligence** | hotspot priority, co-change coupling, ownership tracking |
-| **Graph Topology** | community detection (3 modes), hub analysis, surprising connections, rationale extraction |
-| **Visualisation** | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports |
-| **Languages** | TypeScript/JavaScript (built-in), Python, Swift (plugins) |
-| **Plugin System** | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j) |
-| **Integration** | CariIndex facade, entity bridge, 34 MCP tools, REST API |
+| Area                      | Features                                                                                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Document Intelligence** | doc-group classification, cross-group drift, orphaned sections, module coverage, terminology inconsistency, doc completeness scoring                                                        |
+| **Code Duplication**      | exact clone detection, structural (Type 2) clone detection                                                                                                                                  |
+| **Dependencies**          | circular imports, unused exports, dependency depth, boundary violations                                                                                                                     |
+| **Architecture**          | layer inference, layer validation, as-is vs as-should comparison, hierarchical sub-layering, vertical slice detection, interface conformance, dead feature detection, API surface changelog |
+| **Git Intelligence**      | hotspot priority, co-change coupling, ownership tracking                                                                                                                                    |
+| **Graph Topology**        | community detection (3 modes), hub analysis, surprising connections, rationale extraction                                                                                                   |
+| **Visualisation**         | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports                                                                                           |
+| **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                   |
+| **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                     |
+| **Integration**           | CariIndex facade, entity bridge, 34 MCP tools, REST API                                                                                                                                     |
 
 ### Next Up
 
-| Feature | Description |
-|---------|-------------|
-| **Selective enrichment** (11.8) | Budget-controlled LLM on CARI-selected targets — the bridge between layers 1 and 2 |
+| Feature                                          | Description                                                                                    |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| **Selective enrichment** (11.8)                  | Budget-controlled LLM on CARI-selected targets — the bridge between layers 1 and 2             |
 | **Architecture diagram validation** (5.8 + 11.8) | LLM parses ASCII/Mermaid diagrams, CARI validates against import graph — no YAML config needed |
-| **Intent verification** (12.x) | Spec-to-code verification, constraint checking, living documentation scores |
-| **More languages** | Go, Rust, Java via tree-sitter plugins |
-| **Watch mode** | Continuous re-indexing on file save |
-| **CI action** | `uses: intentweave/doc-health-action@v1` for GitHub Actions |
+| **Intent verification** (12.x)                   | Spec-to-code verification, constraint checking, living documentation scores                    |
+| **More languages**                               | Go, Rust, Java via tree-sitter plugins                                                         |
+| **Watch mode**                                   | Continuous re-indexing on file save                                                            |
+| **CI action**                                    | `uses: intentweave/doc-health-action@v1` for GitHub Actions                                    |
 
 ---
 

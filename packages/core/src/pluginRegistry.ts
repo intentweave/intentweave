@@ -68,9 +68,7 @@ export class PluginRegistry {
    */
   register(plugin: IWPlugin): void {
     if (this.plugins.has(plugin.name)) {
-      throw new Error(
-        `Plugin "${plugin.name}" is already registered`,
-      );
+      throw new Error(`Plugin "${plugin.name}" is already registered`);
     }
 
     // Check dependencies
@@ -112,7 +110,10 @@ export class PluginRegistry {
         const plugin: IWPlugin | undefined = mod.default;
 
         if (!plugin?.name) {
-          skipped.push({ name, reason: `${pkg} has no default export with .name` });
+          skipped.push({
+            name,
+            reason: `${pkg} has no default export with .name`,
+          });
           continue;
         }
 

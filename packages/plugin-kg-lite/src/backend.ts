@@ -119,14 +119,12 @@ export class KgLiteBackend {
 
       // Write relationships
       for (const r of relationships) {
-        const fromRow = findEntity.get(
-          r.subjectCanonId,
-          session,
-        ) as { id: number } | undefined;
-        const toRow = findEntity.get(
-          r.objectCanonId,
-          session,
-        ) as { id: number } | undefined;
+        const fromRow = findEntity.get(r.subjectCanonId, session) as
+          | { id: number }
+          | undefined;
+        const toRow = findEntity.get(r.objectCanonId, session) as
+          | { id: number }
+          | undefined;
 
         if (!fromRow || !toRow) {
           // Skip relationships with unresolved entities

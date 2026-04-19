@@ -15,10 +15,7 @@ import {
   createSwiftExtractor,
   type SwiftSymbol,
 } from "@intentweave/swift-parser";
-import type {
-  AxSymbol,
-  AxFileResult,
-} from "@intentweave/analyzer";
+import type { AxSymbol, AxFileResult } from "@intentweave/analyzer";
 import {
   generateSymbolId,
   hashFileContent,

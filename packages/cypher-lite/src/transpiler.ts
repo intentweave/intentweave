@@ -46,7 +46,7 @@ import {
   ReturnItem,
   SetItem,
   OrderItem,
-} from './types.js';
+} from "./types.js";
 
 /** Result of transpiling a Cypher statement. */
 export interface TranspiledQuery {
@@ -54,7 +54,7 @@ export interface TranspiledQuery {
   /** Positional parameter values for the prepared statement. */
   params: unknown[];
   /** Whether this is a read or write operation. */
-  kind: 'read' | 'write';
+  kind: "read" | "write";
 }
 
 /**
@@ -110,21 +110,21 @@ export class CypherLiteTranspiler {
     while (i < stmt.clauses.length) {
       const clause = stmt.clauses[i];
 
-      if (clause.type === 'MatchClause') {
+      if (clause.type === "MatchClause") {
         // Collect consecutive MATCH + WHERE + optional MATCH + RETURN/WITH/DELETE/SET
         const { query, endIdx } = this.transpileReadBlock(stmt.clauses, i);
         results.push(query);
         i = endIdx;
-      } else if (clause.type === 'CreateClause') {
+      } else if (clause.type === "CreateClause") {
         results.push(this.transpileCreate(clause));
         i++;
-      } else if (clause.type === 'MergeClause') {
+      } else if (clause.type === "MergeClause") {
         results.push(...this.transpileMerge(clause));
         i++;
-      } else if (clause.type === 'DeleteClause') {
+      } else if (clause.type === "DeleteClause") {
         results.push(this.transpileDeleteStandalone(clause));
         i++;
-      } else if (clause.type === 'UnwindClause') {
+      } else if (clause.type === "UnwindClause") {
         // UNWIND + following clauses — expand inline
         const { queries, endIdx } = this.transpileUnwindBlock(stmt.clauses, i);
         results.push(...queries);
@@ -141,7 +141,7 @@ export class CypherLiteTranspiler {
 
   private transpileReadBlock(
     clauses: Clause[],
-    startIdx: number
+    startIdx: number,
   ): { query: TranspiledQuery; endIdx: number } {
     const ctx = this.newContext();
     let i = startIdx;
@@ -149,10 +149,10 @@ export class CypherLiteTranspiler {
     // Process all MATCH / OPTIONAL MATCH clauses
     while (
       i < clauses.length &&
-      (clauses[i].type === 'MatchClause' || clauses[i].type === 'WhereClause')
+      (clauses[i].type === "MatchClause" || clauses[i].type === "WhereClause")
     ) {
       const c = clauses[i];
-      if (c.type === 'MatchClause') {
+      if (c.type === "MatchClause") {
         this.processMatch(c as MatchClause, ctx);
       }
       i++;
@@ -169,25 +169,25 @@ export class CypherLiteTranspiler {
 
     while (i < clauses.length) {
       const c = clauses[i];
-      if (c.type === 'ReturnClause') {
+      if (c.type === "ReturnClause") {
         returnClause = c;
         i++;
-      } else if (c.type === 'WithClause') {
+      } else if (c.type === "WithClause") {
         withClause = c;
         i++;
-      } else if (c.type === 'OrderByClause') {
+      } else if (c.type === "OrderByClause") {
         orderBy = c;
         i++;
-      } else if (c.type === 'LimitClause') {
+      } else if (c.type === "LimitClause") {
         limit = c;
         i++;
-      } else if (c.type === 'SkipClause') {
+      } else if (c.type === "SkipClause") {
         skip = c;
         i++;
-      } else if (c.type === 'DeleteClause') {
+      } else if (c.type === "DeleteClause") {
         deleteClause = c;
         i++;
-      } else if (c.type === 'SetClause') {
+      } else if (c.type === "SetClause") {
         setClause = c;
         i++;
       } else {
@@ -198,12 +198,18 @@ export class CypherLiteTranspiler {
     // Build SQL
     if (deleteClause) {
       const sql = this.buildDeleteSql(deleteClause, ctx);
-      return { query: { sql, params: this.allParams(ctx), kind: 'write' }, endIdx: i };
+      return {
+        query: { sql, params: this.allParams(ctx), kind: "write" },
+        endIdx: i,
+      };
     }
 
     if (setClause) {
       const sql = this.buildUpdateSql(setClause, ctx);
-      return { query: { sql, params: this.allParams(ctx), kind: 'write' }, endIdx: i };
+      return {
+        query: { sql, params: this.allParams(ctx), kind: "write" },
+        endIdx: i,
+      };
     }
 
     const items = returnClause?.items ?? withClause?.items ?? [];
@@ -220,63 +226,66 @@ export class CypherLiteTranspiler {
       return cypherAlias ? `${expr} AS "${cypherAlias}"` : expr;
     });
 
-    const selectStr = selectParts.length > 0 ? selectParts.join(', ') : '*';
-    const distinctStr = distinct ? 'DISTINCT ' : '';
+    const selectStr = selectParts.length > 0 ? selectParts.join(", ") : "*";
+    const distinctStr = distinct ? "DISTINCT " : "";
 
-    let sql = '';
+    let sql = "";
 
     // CTEs
     if (ctx.ctes.length > 0) {
-      sql += 'WITH ' + ctx.ctes.join(', ') + ' ';
+      sql += "WITH " + ctx.ctes.join(", ") + " ";
     }
 
     sql += `SELECT ${distinctStr}${selectStr}`;
 
     if (ctx.fromParts.length > 0) {
-      sql += ' FROM ' + ctx.fromParts.join(', ');
+      sql += " FROM " + ctx.fromParts.join(", ");
     }
 
     if (ctx.joinParts.length > 0) {
-      sql += ' ' + ctx.joinParts.join(' ');
+      sql += " " + ctx.joinParts.join(" ");
     }
 
     if (ctx.whereParts.length > 0) {
-      sql += ' WHERE ' + ctx.whereParts.join(' AND ');
+      sql += " WHERE " + ctx.whereParts.join(" AND ");
     }
 
     if (orderBy) {
       const orderParts = orderBy.items.map(
-        (item) => `${this.exprToSql(item.expression, ctx)} ${item.direction}`
+        (item) => `${this.exprToSql(item.expression, ctx)} ${item.direction}`,
       );
-      sql += ' ORDER BY ' + orderParts.join(', ');
+      sql += " ORDER BY " + orderParts.join(", ");
     }
 
     if (limit) {
-      sql += ' LIMIT ' + this.exprToSql(limit.count, ctx);
+      sql += " LIMIT " + this.exprToSql(limit.count, ctx);
     }
 
     if (skip) {
-      sql += ' OFFSET ' + this.exprToSql(skip.count, ctx);
+      sql += " OFFSET " + this.exprToSql(skip.count, ctx);
     }
 
-    return { query: { sql, params: this.allParams(ctx), kind: 'read' }, endIdx: i };
+    return {
+      query: { sql, params: this.allParams(ctx), kind: "read" },
+      endIdx: i,
+    };
   }
 
   // ── MATCH processing ──────────────────────────────────────────────
 
   private processMatch(match: MatchClause, ctx: TranspileContext): void {
     const pattern = match.pattern;
-    const joinType = match.optional ? 'LEFT JOIN' : 'JOIN';
+    const joinType = match.optional ? "LEFT JOIN" : "JOIN";
 
     let prevNodeVar: string | undefined;
 
     for (const element of pattern.elements) {
-      if (element.type === 'NodePattern') {
+      if (element.type === "NodePattern") {
         this.processNodePattern(element, ctx, prevNodeVar === undefined);
         prevNodeVar = element.variable;
-      } else if (element.type === 'RelationshipPattern') {
+      } else if (element.type === "RelationshipPattern") {
         if (!prevNodeVar) {
-          throw new Error('Relationship pattern without preceding node');
+          throw new Error("Relationship pattern without preceding node");
         }
         const nextElement = pattern.elements[
           pattern.elements.indexOf(element) + 1
@@ -289,7 +298,7 @@ export class CypherLiteTranspiler {
             prevNodeVar,
             nextNodeVar,
             ctx,
-            joinType
+            joinType,
           );
         } else {
           this.processRelPattern(
@@ -297,7 +306,7 @@ export class CypherLiteTranspiler {
             prevNodeVar,
             nextNodeVar,
             ctx,
-            joinType
+            joinType,
           );
         }
       }
@@ -312,7 +321,7 @@ export class CypherLiteTranspiler {
   private processNodePattern(
     node: NodePattern,
     ctx: TranspileContext,
-    isFirst: boolean
+    isFirst: boolean,
   ): void {
     if (!node.variable) return;
 
@@ -334,7 +343,7 @@ export class CypherLiteTranspiler {
 
     // Label filter
     for (const label of node.labels) {
-      if (label === 'Entity' || label === 'Canon') {
+      if (label === "Entity" || label === "Canon") {
         // These are always implied
         continue;
       }
@@ -346,7 +355,9 @@ export class CypherLiteTranspiler {
     if (node.properties) {
       for (const entry of node.properties.entries) {
         const val = this.resolvePropertyValue(entry.value, ctx);
-        ctx.whereParts.push(`${alias}.${this.mapPropertyColumn(entry.key)} = ?`);
+        ctx.whereParts.push(
+          `${alias}.${this.mapPropertyColumn(entry.key)} = ?`,
+        );
         ctx.params.push(val);
       }
     }
@@ -357,7 +368,7 @@ export class CypherLiteTranspiler {
     fromVar: string,
     toVar: string | undefined,
     ctx: TranspileContext,
-    joinType: string
+    joinType: string,
   ): void {
     const relAlias = this.nextAlias(ctx);
     const fromBinding = ctx.nodeBindings.get(fromVar);
@@ -379,19 +390,19 @@ export class CypherLiteTranspiler {
     // Direction handling
     let fromCol: string;
     let toCol: string;
-    if (rel.direction === 'outgoing') {
-      fromCol = 'from_id';
-      toCol = 'to_id';
-    } else if (rel.direction === 'incoming') {
-      fromCol = 'to_id';
-      toCol = 'from_id';
+    if (rel.direction === "outgoing") {
+      fromCol = "from_id";
+      toCol = "to_id";
+    } else if (rel.direction === "incoming") {
+      fromCol = "to_id";
+      toCol = "from_id";
     } else {
       // Undirected: we'll use OR for both directions
-      fromCol = 'from_id';
-      toCol = 'to_id';
+      fromCol = "from_id";
+      toCol = "to_id";
     }
 
-    if (rel.direction === 'undirected') {
+    if (rel.direction === "undirected") {
       // Undirected: join where either direction matches
       let onClause =
         `(${relAlias}.from_id = ${fromBinding.tableAlias}.id AND ${relAlias}.to_id = ${toAlias}.id) ` +
@@ -400,7 +411,7 @@ export class CypherLiteTranspiler {
         onClause += ` AND ${this.relTypeFilter(relAlias, rel.relTypes, ctx)}`;
       }
       ctx.joinParts.push(
-        `${joinType} kg_relationships ${relAlias} ON ${onClause}`
+        `${joinType} kg_relationships ${relAlias} ON ${onClause}`,
       );
     } else {
       let onClause = `${relAlias}.${fromCol} = ${fromBinding.tableAlias}.id`;
@@ -408,24 +419,24 @@ export class CypherLiteTranspiler {
         onClause += ` AND ${this.relTypeFilter(relAlias, rel.relTypes, ctx)}`;
       }
       ctx.joinParts.push(
-        `${joinType} kg_relationships ${relAlias} ON ${onClause}`
+        `${joinType} kg_relationships ${relAlias} ON ${onClause}`,
       );
     }
 
     // Join to the target entity table
-    if (!ctx.nodeBindings.has(toVar ?? '') || toVar === undefined) {
+    if (!ctx.nodeBindings.has(toVar ?? "") || toVar === undefined) {
       // Need to also join the target entity table
     }
-    if (rel.direction !== 'undirected') {
+    if (rel.direction !== "undirected") {
       ctx.joinParts.push(
-        `${joinType} kg_entities ${toAlias} ON ${toAlias}.id = ${relAlias}.${toCol}`
+        `${joinType} kg_entities ${toAlias} ON ${toAlias}.id = ${relAlias}.${toCol}`,
       );
     } else {
       // For undirected, the target is already covered by the OR
       ctx.joinParts.push(
         `${joinType} kg_entities ${toAlias} ON ` +
           `(${toAlias}.id = ${relAlias}.to_id OR ${toAlias}.id = ${relAlias}.from_id) ` +
-          `AND ${toAlias}.id <> ${fromBinding.tableAlias}.id`
+          `AND ${toAlias}.id <> ${fromBinding.tableAlias}.id`,
       );
     }
 
@@ -434,7 +445,7 @@ export class CypherLiteTranspiler {
         tableAlias: relAlias,
         variable: rel.variable,
         fromNode: fromVar,
-        toNode: toVar ?? '',
+        toNode: toVar ?? "",
       });
     }
   }
@@ -444,7 +455,7 @@ export class CypherLiteTranspiler {
     fromVar: string,
     toVar: string | undefined,
     ctx: TranspileContext,
-    joinType: string
+    joinType: string,
   ): void {
     const fromBinding = ctx.nodeBindings.get(fromVar);
     if (!fromBinding) {
@@ -456,13 +467,13 @@ export class CypherLiteTranspiler {
     const maxDepth = rel.variableLength?.max ?? 10;
 
     // Direction-aware column references
-    const fromCol = rel.direction === 'incoming' ? 'to_id' : 'from_id';
-    const toCol = rel.direction === 'incoming' ? 'from_id' : 'to_id';
+    const fromCol = rel.direction === "incoming" ? "to_id" : "from_id";
+    const toCol = rel.direction === "incoming" ? "from_id" : "to_id";
 
     // Relationship type filter
-    let typeFilter = '';
+    let typeFilter = "";
     if (rel.relTypes.length > 0) {
-      const placeholders = rel.relTypes.map(() => '?').join(', ');
+      const placeholders = rel.relTypes.map(() => "?").join(", ");
       typeFilter = ` AND r.predicate IN (${placeholders})`;
       // We need params twice (base + recursive)
       ctx.cteParams.push(...rel.relTypes);
@@ -491,10 +502,10 @@ export class CypherLiteTranspiler {
     }
 
     ctx.joinParts.push(
-      `${joinType} ${cteName} ON ${cteName}.depth >= ${minDepth}`
+      `${joinType} ${cteName} ON ${cteName}.depth >= ${minDepth}`,
     );
     ctx.joinParts.push(
-      `${joinType} kg_entities ${toAlias} ON ${toAlias}.id = ${cteName}.node_id`
+      `${joinType} kg_entities ${toAlias} ON ${toAlias}.id = ${cteName}.node_id`,
     );
   }
 
@@ -505,33 +516,33 @@ export class CypherLiteTranspiler {
     const params: unknown[] = [];
 
     for (const element of clause.pattern.elements) {
-      if (element.type === 'NodePattern' && element.properties) {
+      if (element.type === "NodePattern" && element.properties) {
         const columns: string[] = [];
         const values: string[] = [];
 
         for (const entry of element.properties.entries) {
           columns.push(this.mapPropertyColumn(entry.key));
-          values.push('?');
+          values.push("?");
           params.push(this.resolveLiteralOrParam(entry.value));
         }
 
         // Add labels as type
         if (element.labels.length > 0) {
-          columns.push('type');
-          values.push('?');
+          columns.push("type");
+          values.push("?");
           params.push(element.labels[element.labels.length - 1].toUpperCase());
         }
 
         parts.push(
-          `INSERT INTO kg_entities (${columns.join(', ')}) VALUES (${values.join(', ')})`
+          `INSERT INTO kg_entities (${columns.join(", ")}) VALUES (${values.join(", ")})`,
         );
       }
     }
 
     return {
-      sql: parts.join('; '),
+      sql: parts.join("; "),
       params,
-      kind: 'write',
+      kind: "write",
     };
   }
 
@@ -541,14 +552,14 @@ export class CypherLiteTranspiler {
     const results: TranspiledQuery[] = [];
 
     for (const element of clause.pattern.elements) {
-      if (element.type !== 'NodePattern') continue;
+      if (element.type !== "NodePattern") continue;
 
       const matchCols: string[] = [];
       const matchVals: unknown[] = [];
 
       // Build match criteria from labels and inline properties
       if (element.labels.length > 0) {
-        matchCols.push('type');
+        matchCols.push("type");
         matchVals.push(element.labels[element.labels.length - 1].toUpperCase());
       }
 
@@ -577,9 +588,9 @@ export class CypherLiteTranspiler {
 
       // INSERT OR IGNORE to handle the "create if not exists" part
       const insertSql =
-        `INSERT OR IGNORE INTO kg_entities (${allCols.join(', ')}) ` +
-        `VALUES (${allCols.map(() => '?').join(', ')})`;
-      results.push({ sql: insertSql, params: [...allVals], kind: 'write' });
+        `INSERT OR IGNORE INTO kg_entities (${allCols.join(", ")}) ` +
+        `VALUES (${allCols.map(() => "?").join(", ")})`;
+      results.push({ sql: insertSql, params: [...allVals], kind: "write" });
 
       // UPDATE for the "on match set" part
       if (setOnMatch.length > 0) {
@@ -587,7 +598,9 @@ export class CypherLiteTranspiler {
         const updateParams: unknown[] = [];
 
         for (const item of setOnMatch) {
-          updateParts.push(`${this.mapPropertyColumn(item.property.property)} = ?`);
+          updateParts.push(
+            `${this.mapPropertyColumn(item.property.property)} = ?`,
+          );
           updateParams.push(this.resolveLiteralOrParam(item.value));
         }
 
@@ -595,9 +608,9 @@ export class CypherLiteTranspiler {
         updateParams.push(...matchVals);
 
         const updateSql =
-          `UPDATE kg_entities SET ${updateParts.join(', ')} ` +
-          `WHERE ${whereParts.join(' AND ')}`;
-        results.push({ sql: updateSql, params: updateParams, kind: 'write' });
+          `UPDATE kg_entities SET ${updateParts.join(", ")} ` +
+          `WHERE ${whereParts.join(" AND ")}`;
+        results.push({ sql: updateSql, params: updateParams, kind: "write" });
       }
     }
 
@@ -609,21 +622,21 @@ export class CypherLiteTranspiler {
   private transpileDeleteStandalone(clause: DeleteClause): TranspiledQuery {
     // Simple variable-based delete without prior MATCH
     const vars = clause.expressions
-      .filter((e): e is VariableExpr => e.type === 'VariableExpr')
+      .filter((e): e is VariableExpr => e.type === "VariableExpr")
       .map((e) => e.name);
 
     const sql = clause.detach
-      ? `DELETE FROM kg_entities WHERE id IN (SELECT id FROM kg_entities WHERE name IN (${vars.map(() => '?').join(', ')}))`
-      : `DELETE FROM kg_entities WHERE name IN (${vars.map(() => '?').join(', ')})`;
+      ? `DELETE FROM kg_entities WHERE id IN (SELECT id FROM kg_entities WHERE name IN (${vars.map(() => "?").join(", ")}))`
+      : `DELETE FROM kg_entities WHERE name IN (${vars.map(() => "?").join(", ")})`;
 
-    return { sql, params: vars, kind: 'write' };
+    return { sql, params: vars, kind: "write" };
   }
 
   // ── DELETE (with MATCH context) ───────────────────────────────────
 
   private buildDeleteSql(clause: DeleteClause, ctx: TranspileContext): string {
     const vars = clause.expressions
-      .filter((e): e is VariableExpr => e.type === 'VariableExpr')
+      .filter((e): e is VariableExpr => e.type === "VariableExpr")
       .map((e) => e.name);
 
     const targets: string[] = [];
@@ -635,7 +648,7 @@ export class CypherLiteTranspiler {
     }
 
     if (targets.length === 0) {
-      throw new Error('DELETE: no valid targets found');
+      throw new Error("DELETE: no valid targets found");
     }
 
     // For DETACH DELETE, also delete relationships
@@ -646,13 +659,13 @@ export class CypherLiteTranspiler {
           `DELETE FROM kg_relationships WHERE from_id IN ` +
             `(SELECT ${alias}.id FROM kg_entities ${alias}` +
             this.buildWhereFragment(ctx) +
-            `)`
+            `)`,
         );
         stmts.push(
           `DELETE FROM kg_relationships WHERE to_id IN ` +
             `(SELECT ${alias}.id FROM kg_entities ${alias}` +
             this.buildWhereFragment(ctx) +
-            `)`
+            `)`,
         );
       }
     }
@@ -662,11 +675,11 @@ export class CypherLiteTranspiler {
         `DELETE FROM kg_entities WHERE id IN ` +
           `(SELECT ${alias}.id FROM kg_entities ${alias}` +
           this.buildWhereFragment(ctx) +
-          `)`
+          `)`,
       );
     }
 
-    return stmts.join('; ');
+    return stmts.join("; ");
   }
 
   // ── UPDATE (with MATCH context) ───────────────────────────────────
@@ -683,7 +696,7 @@ export class CypherLiteTranspiler {
     }
 
     return (
-      `UPDATE kg_entities SET ${updates.join(', ')}` +
+      `UPDATE kg_entities SET ${updates.join(", ")}` +
       this.buildWhereFragment(ctx)
     );
   }
@@ -692,7 +705,7 @@ export class CypherLiteTranspiler {
 
   private transpileUnwindBlock(
     clauses: Clause[],
-    startIdx: number
+    startIdx: number,
   ): { queries: TranspiledQuery[]; endIdx: number } {
     const unwind = clauses[startIdx] as UnwindClause;
 
@@ -712,7 +725,7 @@ export class CypherLiteTranspiler {
       this.userParams[unwind.alias] = item;
 
       const tempStmt: CypherStatement = {
-        type: 'CypherStatement',
+        type: "CypherStatement",
         clauses: remainingClauses,
       };
 
@@ -727,55 +740,57 @@ export class CypherLiteTranspiler {
 
   private exprToSql(expr: WhereExpression, ctx: TranspileContext): string {
     switch (expr.type) {
-      case 'PropertyExpr':
+      case "PropertyExpr":
         return this.propertyToSql(expr, ctx);
 
-      case 'ParameterExpr':
+      case "ParameterExpr":
         return this.parameterToSql(expr, ctx);
 
-      case 'LiteralExpr':
+      case "LiteralExpr":
         return this.literalToSql(expr, ctx);
 
-      case 'VariableExpr':
+      case "VariableExpr":
         return this.variableToSql(expr, ctx);
 
-      case 'ComparisonExpr':
+      case "ComparisonExpr":
         return `${this.exprToSql(expr.left, ctx)} ${expr.operator} ${this.exprToSql(expr.right, ctx)}`;
 
-      case 'LogicalExpr':
+      case "LogicalExpr":
         return `(${this.exprToSql(expr.left, ctx)} ${expr.operator} ${this.exprToSql(expr.right, ctx)})`;
 
-      case 'NotExpr':
+      case "NotExpr":
         return `NOT (${this.exprToSql(expr.expression, ctx)})`;
 
-      case 'InExpr':
+      case "InExpr":
         return `${this.exprToSql(expr.value, ctx)} IN (${this.exprToSql(expr.list, ctx)})`;
 
-      case 'ContainsExpr':
+      case "ContainsExpr":
         return `${this.exprToSql(expr.value, ctx)} LIKE '%' || ${this.exprToSql(expr.substring, ctx)} || '%'`;
 
-      case 'StartsWithExpr':
+      case "StartsWithExpr":
         return `${this.exprToSql(expr.value, ctx)} LIKE ${this.exprToSql(expr.prefix, ctx)} || '%'`;
 
-      case 'EndsWithExpr':
+      case "EndsWithExpr":
         return `${this.exprToSql(expr.value, ctx)} LIKE '%' || ${this.exprToSql(expr.suffix, ctx)}`;
 
-      case 'IsNullExpr':
+      case "IsNullExpr":
         return expr.negated
           ? `${this.exprToSql(expr.value, ctx)} IS NOT NULL`
           : `${this.exprToSql(expr.value, ctx)} IS NULL`;
 
-      case 'ExistsExpr':
+      case "ExistsExpr":
         return this.existsToSql(expr, ctx);
 
-      case 'AnyExpr':
+      case "AnyExpr":
         return this.anyToSql(expr, ctx);
 
-      case 'FunctionCallExpr':
+      case "FunctionCallExpr":
         return this.functionToSql(expr, ctx);
 
       default:
-        throw new Error(`Unsupported expression type: ${(expr as WhereExpression).type}`);
+        throw new Error(
+          `Unsupported expression type: ${(expr as WhereExpression).type}`,
+        );
     }
   }
 
@@ -804,26 +819,26 @@ export class CypherLiteTranspiler {
 
     if (Array.isArray(val)) {
       // Expand array parameters inline
-      const placeholders = val.map(() => '?');
+      const placeholders = val.map(() => "?");
       ctx.params.push(...val);
-      return placeholders.join(', ');
+      return placeholders.join(", ");
     }
 
     ctx.params.push(val);
-    return '?';
+    return "?";
   }
 
   private literalToSql(expr: LiteralExpr, ctx: TranspileContext): string {
-    if (expr.value === null) return 'NULL';
-    if (typeof expr.value === 'boolean') return expr.value ? '1' : '0';
-    if (typeof expr.value === 'number') return String(expr.value);
+    if (expr.value === null) return "NULL";
+    if (typeof expr.value === "boolean") return expr.value ? "1" : "0";
+    if (typeof expr.value === "number") return String(expr.value);
 
     ctx.params.push(expr.value);
-    return '?';
+    return "?";
   }
 
   private variableToSql(expr: VariableExpr, ctx: TranspileContext): string {
-    if (expr.name === '*') return '*';
+    if (expr.name === "*") return "*";
 
     const nodeBinding = ctx.nodeBindings.get(expr.name);
     if (nodeBinding) {
@@ -838,7 +853,7 @@ export class CypherLiteTranspiler {
     // Check if it's an unwind alias in params
     if (this.userParams[expr.name] !== undefined) {
       ctx.params.push(this.userParams[expr.name]);
-      return '?';
+      return "?";
     }
 
     return this.quoteId(expr.name);
@@ -848,35 +863,38 @@ export class CypherLiteTranspiler {
     const name = expr.name.toLowerCase();
 
     switch (name) {
-      case 'count':
+      case "count":
         if (expr.distinct && expr.args.length > 0) {
           return `COUNT(DISTINCT ${this.exprToSql(expr.args[0], ctx)})`;
         }
-        if (expr.args.length === 0 || (expr.args[0] as VariableExpr)?.name === '*') {
-          return 'COUNT(*)';
+        if (
+          expr.args.length === 0 ||
+          (expr.args[0] as VariableExpr)?.name === "*"
+        ) {
+          return "COUNT(*)";
         }
         return `COUNT(${this.exprToSql(expr.args[0], ctx)})`;
 
-      case 'collect':
+      case "collect":
         if (expr.distinct) {
           return `json_group_array(DISTINCT ${this.exprToSql(expr.args[0], ctx)})`;
         }
         return `json_group_array(${this.exprToSql(expr.args[0], ctx)})`;
 
-      case 'tolower':
+      case "tolower":
         return `LOWER(${this.exprToSql(expr.args[0], ctx)})`;
 
-      case 'coalesce':
-        return `COALESCE(${expr.args.map((a) => this.exprToSql(a, ctx)).join(', ')})`;
+      case "coalesce":
+        return `COALESCE(${expr.args.map((a) => this.exprToSql(a, ctx)).join(", ")})`;
 
-      case '__concat':
+      case "__concat":
         return `(${this.exprToSql(expr.args[0], ctx)} || ${this.exprToSql(expr.args[1], ctx)})`;
 
-      case '__list':
-        return expr.args.map((a) => this.exprToSql(a, ctx)).join(', ');
+      case "__list":
+        return expr.args.map((a) => this.exprToSql(a, ctx)).join(", ");
 
-      case '__case': {
-        let sql = 'CASE';
+      case "__case": {
+        let sql = "CASE";
         let i = 0;
         while (i + 1 < expr.args.length) {
           sql += ` WHEN ${this.exprToSql(expr.args[i], ctx)} THEN ${this.exprToSql(expr.args[i + 1], ctx)}`;
@@ -885,12 +903,12 @@ export class CypherLiteTranspiler {
         if (i < expr.args.length) {
           sql += ` ELSE ${this.exprToSql(expr.args[i], ctx)}`;
         }
-        sql += ' END';
+        sql += " END";
         return sql;
       }
 
       default:
-        return `${name}(${expr.args.map((a) => this.exprToSql(a, ctx)).join(', ')})`;
+        return `${name}(${expr.args.map((a) => this.exprToSql(a, ctx)).join(", ")})`;
     }
   }
 
@@ -905,9 +923,9 @@ export class CypherLiteTranspiler {
     // Process the pattern
     const pattern = expr.pattern;
     for (const element of pattern.elements) {
-      if (element.type === 'NodePattern') {
+      if (element.type === "NodePattern") {
         this.processNodePattern(element, subCtx, subCtx.fromParts.length === 0);
-      } else if (element.type === 'RelationshipPattern') {
+      } else if (element.type === "RelationshipPattern") {
         const idx = pattern.elements.indexOf(element);
         const prevNode = pattern.elements[idx - 1] as NodePattern | undefined;
         const nextNode = pattern.elements[idx + 1] as NodePattern | undefined;
@@ -917,25 +935,29 @@ export class CypherLiteTranspiler {
             prevNode.variable,
             nextNode?.variable,
             subCtx,
-            'JOIN'
+            "JOIN",
           );
         }
       }
     }
 
-    let subSql = 'SELECT 1';
+    let subSql = "SELECT 1";
     if (subCtx.fromParts.length > 0) {
-      subSql += ' FROM ' + subCtx.fromParts.join(', ');
+      subSql += " FROM " + subCtx.fromParts.join(", ");
     }
     if (subCtx.joinParts.length > 0) {
-      subSql += ' ' + subCtx.joinParts.join(' ');
+      subSql += " " + subCtx.joinParts.join(" ");
     }
     if (subCtx.whereParts.length > 0) {
-      subSql += ' WHERE ' + subCtx.whereParts.join(' AND ');
+      subSql += " WHERE " + subCtx.whereParts.join(" AND ");
     }
 
     // Copy params from subcontext (all buckets go into parent params since EXISTS is inlined in WHERE)
-    ctx.params.push(...subCtx.cteParams, ...subCtx.joinParams, ...subCtx.params);
+    ctx.params.push(
+      ...subCtx.cteParams,
+      ...subCtx.joinParams,
+      ...subCtx.params,
+    );
 
     return `EXISTS (${subSql})`;
   }
@@ -976,8 +998,8 @@ export class CypherLiteTranspiler {
   }
 
   private buildWhereFragment(ctx: TranspileContext): string {
-    if (ctx.whereParts.length === 0) return '';
-    return ' WHERE ' + ctx.whereParts.join(' AND ');
+    if (ctx.whereParts.length === 0) return "";
+    return " WHERE " + ctx.whereParts.join(" AND ");
   }
 
   /**
@@ -986,48 +1008,53 @@ export class CypherLiteTranspiler {
    */
   private mapPropertyColumn(prop: string): string {
     const map: Record<string, string> = {
-      canonId: 'canon_id',
-      sessionId: 'session_id',
-      artifactId: 'artifact_id',
-      runId: 'run_id',
-      workspaceId: 'workspace_id',
-      sourceFile: 'source_file',
-      rawPredicate: 'raw_predicate',
-      tripleIndex: 'triple_index',
-      subjectKind: 'subject_kind',
-      objectKind: 'object_kind',
-      subjectCanonId: 'subject_canon_id',
-      objectCanonId: 'object_canon_id',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
+      canonId: "canon_id",
+      sessionId: "session_id",
+      artifactId: "artifact_id",
+      runId: "run_id",
+      workspaceId: "workspace_id",
+      sourceFile: "source_file",
+      rawPredicate: "raw_predicate",
+      tripleIndex: "triple_index",
+      subjectKind: "subject_kind",
+      objectKind: "object_kind",
+      subjectCanonId: "subject_canon_id",
+      objectCanonId: "object_canon_id",
+      createdAt: "created_at",
+      updatedAt: "updated_at",
     };
     return map[prop] ?? prop;
   }
 
-  private resolvePropertyValue(expr: WhereExpression, ctx: TranspileContext): unknown {
-    if (expr.type === 'LiteralExpr') return expr.value;
-    if (expr.type === 'ParameterExpr') return this.userParams[expr.name];
+  private resolvePropertyValue(
+    expr: WhereExpression,
+    ctx: TranspileContext,
+  ): unknown {
+    if (expr.type === "LiteralExpr") return expr.value;
+    if (expr.type === "ParameterExpr") return this.userParams[expr.name];
     return this.exprToSql(expr, ctx);
   }
 
   private resolveLiteralOrParam(expr: WhereExpression): unknown {
-    if (expr.type === 'LiteralExpr') return expr.value;
-    if (expr.type === 'ParameterExpr') {
+    if (expr.type === "LiteralExpr") return expr.value;
+    if (expr.type === "ParameterExpr") {
       const val = this.userParams[expr.name];
-      if (val === undefined) throw new Error(`Unbound parameter: $${expr.name}`);
+      if (val === undefined)
+        throw new Error(`Unbound parameter: $${expr.name}`);
       return val;
     }
     throw new Error(`Expected literal or parameter, got ${expr.type}`);
   }
 
   private resolveExprValue(expr: WhereExpression): unknown {
-    if (expr.type === 'LiteralExpr') return expr.value;
-    if (expr.type === 'ParameterExpr') {
+    if (expr.type === "LiteralExpr") return expr.value;
+    if (expr.type === "ParameterExpr") {
       const val = this.userParams[expr.name];
-      if (val === undefined) throw new Error(`Unbound parameter: $${expr.name}`);
+      if (val === undefined)
+        throw new Error(`Unbound parameter: $${expr.name}`);
       return val;
     }
-    if (expr.type === 'FunctionCallExpr' && expr.name === '__list') {
+    if (expr.type === "FunctionCallExpr" && expr.name === "__list") {
       return expr.args.map((a) => this.resolveExprValue(a));
     }
     throw new Error(`Cannot resolve expression value for ${expr.type}`);
@@ -1040,10 +1067,10 @@ export class CypherLiteTranspiler {
 
   /** Derive a Cypher-style alias for a RETURN expression (e.g. `n.name`). */
   private cypherAlias(expr: WhereExpression): string | undefined {
-    if (expr.type === 'PropertyExpr') {
+    if (expr.type === "PropertyExpr") {
       const pe = expr as PropertyExpr;
       // pe.object is a string (variable name) in our parser
-      if (typeof pe.object === 'string') {
+      if (typeof pe.object === "string") {
         return `${pe.object}.${pe.property}`;
       }
     }
@@ -1053,13 +1080,13 @@ export class CypherLiteTranspiler {
   private relTypeFilter(
     relAlias: string,
     relTypes: string[],
-    ctx: TranspileContext
+    ctx: TranspileContext,
   ): string {
     if (relTypes.length === 1) {
       ctx.joinParams.push(relTypes[0]);
       return `${relAlias}.predicate = ?`;
     }
-    const placeholders = relTypes.map(() => '?').join(', ');
+    const placeholders = relTypes.map(() => "?").join(", ");
     ctx.joinParams.push(...relTypes);
     return `${relAlias}.predicate IN (${placeholders})`;
   }
@@ -1068,7 +1095,7 @@ export class CypherLiteTranspiler {
 /** Convenience function to transpile a Cypher AST to SQL. */
 export function transpile(
   stmt: CypherStatement,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
 ): TranspiledQuery[] {
   return new CypherLiteTranspiler(params).transpile(stmt);
 }

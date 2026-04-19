@@ -773,8 +773,8 @@ export interface IWPlugin {
   name: string;
   version: string;
   description: string;
-  dependencies?: string[];           // other plugin names required
-  capabilities?: string[];           // capability identifiers this plugin provides
+  dependencies?: string[]; // other plugin names required
+  capabilities?: string[]; // capability identifiers this plugin provides
 
   registerCommands?(program: Command): void;
   registerMcpTools?(server: McpServer, context: McpContext): void;
@@ -796,11 +796,11 @@ implementations.
 
 Initial capabilities:
 
-| Capability     | Interface                                         | Used By                                |
-| -------------- | ------------------------------------------------- | -------------------------------------- |
-| `llm`          | `generate(prompt, opts?) → string`                | `--explain`, `--provider`, layer naming |
-| `vcs`          | `log()`, `blame()`, `diff()`                      | TCG stage, staleness detection          |
-| `persistence`  | `persist(entities, rels)`, `query(cypher)`         | KG plugin only                         |
+| Capability    | Interface                                  | Used By                                 |
+| ------------- | ------------------------------------------ | --------------------------------------- |
+| `llm`         | `generate(prompt, opts?) → string`         | `--explain`, `--provider`, layer naming |
+| `vcs`         | `log()`, `blame()`, `diff()`               | TCG stage, staleness detection          |
+| `persistence` | `persist(entities, rels)`, `query(cypher)` | KG plugin only                          |
 
 When core needs an LLM (e.g., `iw index export --focus X --explain`), it asks the
 registry: `registry.getCapability<LlmCapability>("llm")`. If no plugin provides it,
@@ -814,7 +814,10 @@ or any KG infrastructure.
 // @intentweave/core/src/capabilities.ts
 export interface LlmCapability {
   name: "llm";
-  generate(prompt: string, options?: { model?: string; maxTokens?: number }): Promise<string>;
+  generate(
+    prompt: string,
+    options?: { model?: string; maxTokens?: number },
+  ): Promise<string>;
 }
 
 export interface VcsCapability {
@@ -838,6 +841,7 @@ Cypher regardless of backend.
 A zero-dependency Cypher subset parser + SQLite transpiler (~800 lines).
 
 **Supported Cypher subset** (covers 100% of existing queries):
+
 - `MATCH (n:Label) WHERE n.prop = $param` → `SELECT ... FROM ... WHERE`
 - `MATCH (a)-[r:REL]->(b)` → `JOIN kg_relationships`
 - `MATCH (a)-[r*1..N]-(b)` → Recursive CTEs
@@ -853,6 +857,7 @@ A zero-dependency Cypher subset parser + SQLite transpiler (~800 lines).
 **Out of scope:** `SHORTEST PATH`, `APOC`, graph algorithms, `CALL`, subqueries.
 
 **SQLite Schema:**
+
 ```sql
 -- Core KG tables
 CREATE TABLE kg_entities (
@@ -935,6 +940,7 @@ PersistenceCapability.query(cypher, params)
 ```
 
 **What moves to plugin-kg:**
+
 - Commands: `iw run`, `iw query`, `iw context`, `iw persist`, `iw impact`,
   `iw doc-health --neo4j`, `iw xlink`
 - MCP tools: `kg_query`, `kg_context`, `kg_entities`, `kg_impact`, `kg_doc_health`,
@@ -942,6 +948,7 @@ PersistenceCapability.query(cypher, params)
 - Dependencies: `neo4j-driver`
 
 **What stays in core CLI:**
+
 - All `iw index *` commands (CARI)
 - All `cari_*` MCP tools
 - `iw init`, `iw plugin *`
@@ -1013,6 +1020,7 @@ Migrate CLI commands that currently import `neo4j-driver` directly to route thro
 work against **either** backend (Neo4j or SQLite) transparently.
 
 **Scope:**
+
 - ~12 files in `packages/cli/src/` with direct `neo4j-driver` imports
 - Move `kg_*` MCP tools to `plugin-kg`'s `registerMcpTools()`
 - Remove `neo4j-driver` from CLI's direct dependencies (keep only in `plugin-kg`)
@@ -1059,6 +1067,7 @@ Canonical entities are also injected via the Entity Bridge (`registerEntities()`
 queries like `retrieve`, `connections`, and `mentions_of` surface them naturally.
 
 **Budget control:**
+
 - `--budget N` limits to N LLM calls (default: 20)
 - `--threshold 0.7` only enriches files with impact score ≥ 0.7
 - `--focus "packages/auth/"` restricts to a directory subtree
@@ -1084,11 +1093,11 @@ semantics, CARI validates the result against the code graph.
 Instead of requiring a formal `.iw/architecture.yaml`, the LLM reads ASCII art or
 Mermaid diagrams embedded in docs and extracts component-flow triples:
 
-```
+````
 CARI detects:  README.md has a ```mermaid block mentioning 6 components
 LLM extracts:  (AX Stage) -[FLOWS_TO]-> (Annotator) -[FLOWS_TO]-> (Writer)
 CARI validates: import graph confirms AX→Annotator, but Writer←IDF is undocumented
-```
+````
 
 No manual YAML authoring — the diagram **is** the architecture spec. The LLM parses it,
 CypherLite stores it, CARI validates it. Closes the loop on 5.8 without requiring format
@@ -1236,66 +1245,66 @@ iw verify --score
 
 ## Priority Matrix
 
-| #    | Feature                          | Tier | Size   | Value  | Dependencies         | Status  |
-| ---- | -------------------------------- | ---- | ------ | ------ | -------------------- | ------- |
-| 2.1  | Exact clone detection            | CARI | S      | High   | AX body_hash         | ✅      |
-| 1.1  | Doc-group classification         | CARI | S      | High   | None                 | ✅      |
-| 3.1  | Circular import detection        | CARI | S      | High   | AX imports (exists)  | ✅      |
-| 3.2  | Unused export detection          | CARI | S      | High   | AX imports (exists)  | ✅      |
-| 4.3  | Hotspot → doc priority           | CARI | S      | High   | TCG data (exists)    | ✅      |
-| 6.3  | TODO/FIXME inventory             | CARI | S      | High   | None                 | ✅      |
-| 1.4  | Coverage by module               | CARI | S      | Medium | None                 | ✅      |
-| 1.3  | Orphaned doc sections            | CARI | S      | Medium | None                 | ✅      |
-| 1.7  | Doc completeness scoring         | CARI | S      | Medium | None                 | ✅      |
-| 2.2  | Structural clones                | CARI | M      | High   | 2.1                  | ✅      |
-| 1.2  | Cross-group drift                | CARI | M      | High   | 1.1                  | ✅      |
-| 6.2  | Test coverage mapping            | CARI | M      | High   | AX imports (exists)  | ✅      |
-| 3.3  | Dependency depth                 | CARI | S      | Medium | AX imports (exists)  | ✅ Done |
-| 4.4  | Bus factor per module            | CARI | M      | Medium | TCG data (exists)    |         |
-| 3.4  | Package boundary violations      | CARI | M      | Medium | 5.1 concept          | ✅ Done |
-| 5.3  | Dead feature detection           | CARI | M      | Medium | 3.2, 1.3             | ✅ Done |
-| 4.1  | Ownership drift                  | CARI | S      | Medium | TCG data (exists)    |         |
-| 4.2  | Change coupling anomalies        | CARI | S      | Medium | TCG data (exists)    |         |
-| 1.5  | Terminology inconsistency        | CARI | M      | Medium | None                 | ✅ Done |
-| 5.1a | Layer inference                  | CARI | M      | High   | 9.1, 3.3             | ✅ Done |
-| 5.1b | Layer check                      | CARI | S      | High   | 5.1a                 | ✅ Done |
-| 5.1c | Layer naming suggestions         | KG   | S      | Low    | 5.1a                 | ✅      |
-| 5.5  | Hierarchical sub-layering        | CARI | M      | High   | 5.1a, 3.4            |         |
-| 5.6  | As-is vs. as-should comparison   | CARI | M      | High   | 5.1a, 5.1b           | ✅ Done |
-| 5.7  | Vertical slice detection         | CARI | M      | High   | 5.1a, 9.1            | ✅ Done |
-| 5.8  | Architecture diagram validation  | CARI | L      | High   | imports (exists)     |         |
-| 6.1  | Naming convention checks         | CARI | S      | Low    | None                 |         |
-| 6.4  | Comment-to-code ratio            | CARI | S      | Low    | None                 |         |
-| 5.4  | API surface changelog            | CARI | M      | Medium | Git history          | ✅ Done |
-| 5.2  | Interface conformance            | AX   | M      | Medium | None                 | ✅ Done |
-| 2.4  | Clone lineage tracking           | CARI | M      | Low    | 2.1                  |         |
-| 1.6  | Decision lifecycle               | KG   | M      | Medium | Neo4j pipeline       |         |
-| 2.3  | Semantic clone detection         | KG   | L      | Medium | LLM embeddings       |         |
-| 7.1  | Python AST extractor             | AX   | M      | High   | tree-sitter-python   | ✅ Done |
-| 7.2  | Language-agnostic AX dispatch    | AX   | M      | High   | 7.1                  | ✅ Done |
-| 7.3  | Go / Rust / Java extractors      | AX   | M each | Medium | 7.2                  |         |
-| 8.0  | CariIndex facade + orchestration | CARI | M      | High   | None (refactor)      | ✅ Done |
-| 8.0a | Entity bridge                    | CARI | M      | High   | 8.0                  | ✅ Done |
-| 8.1  | Programmatic CARI API docs       | Docs | S      | High   | 8.0                  | ✅ Done |
-| 8.2  | Docusaurus/Starlight plugin      | INT  | M      | High   | 8.0                  |         |
-| 8.3  | Sphinx / MkDocs integration      | INT  | M      | Medium | 8.0                  |         |
-| 8.4  | CI artifact validation action    | INT  | M      | High   | `iw index check`     |         |
-| 8.5  | REST API for doc systems         | INT  | S      | Medium | server-core (exists) |         |
-| 8.6  | Webhook-triggered re-index       | INT  | M      | Medium | 8.5                  |         |
-| 9.1  | Community detection              | CARI | M      | High   | co_occ + imports     | ✅ Done |
-| 9.2  | God-node / hub analysis          | CARI | S      | High   | None                 | ✅ Done |
-| 9.3  | Surprising connection ranking    | CARI | M      | High   | 9.1                  | ✅ Done |
-| 9.4  | Rationale extraction             | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
-| 10.1 | Standalone HTML architecture rpt | CARI | M      | High   | 5.1a, 9.1, 3.3       | ✅ Done |
-| 10.2 | Watch mode                       | CARI | M      | Medium | incremental (exists) |         |
-| 10.3 | Git hooks integration            | CARI | S      | Medium | 10.2                 |         |
-| 10.4 | Obsidian vault export            | CARI | M      | Low    | 9.1                  |         |
-| 11.1 | Plugin interface & registry      | CARI | M      | High   | None                 |         |
-| 11.2 | Capability provider system       | CARI | M      | High   | 11.1                 |         |
-| 11.3 | KG plugin extraction (CypherLite)| KG   | L      | High   | 11.1, 11.2           |         |
-| 11.4 | Plugin CLI commands              | CARI | S      | High   | 11.1                 |         |
-| 11.5 | Lightweight LLM plugin           | INT  | S      | Medium | 11.2                 |         |
-| 11.6 | Language parser as plugins       | AX   | M      | Medium | 11.1, 7.2            |         |
-| 12.1 | Spec-to-code verification        | KG   | L      | High   | plugin-kg, 8.0a      |         |
-| 12.2 | Constraint consistency check     | KG   | M      | High   | plugin-kg            |         |
-| 12.3 | Living documentation score       | KG   | M      | Medium | 12.1, 12.2           |         |
+| #    | Feature                           | Tier | Size   | Value  | Dependencies         | Status  |
+| ---- | --------------------------------- | ---- | ------ | ------ | -------------------- | ------- |
+| 2.1  | Exact clone detection             | CARI | S      | High   | AX body_hash         | ✅      |
+| 1.1  | Doc-group classification          | CARI | S      | High   | None                 | ✅      |
+| 3.1  | Circular import detection         | CARI | S      | High   | AX imports (exists)  | ✅      |
+| 3.2  | Unused export detection           | CARI | S      | High   | AX imports (exists)  | ✅      |
+| 4.3  | Hotspot → doc priority            | CARI | S      | High   | TCG data (exists)    | ✅      |
+| 6.3  | TODO/FIXME inventory              | CARI | S      | High   | None                 | ✅      |
+| 1.4  | Coverage by module                | CARI | S      | Medium | None                 | ✅      |
+| 1.3  | Orphaned doc sections             | CARI | S      | Medium | None                 | ✅      |
+| 1.7  | Doc completeness scoring          | CARI | S      | Medium | None                 | ✅      |
+| 2.2  | Structural clones                 | CARI | M      | High   | 2.1                  | ✅      |
+| 1.2  | Cross-group drift                 | CARI | M      | High   | 1.1                  | ✅      |
+| 6.2  | Test coverage mapping             | CARI | M      | High   | AX imports (exists)  | ✅      |
+| 3.3  | Dependency depth                  | CARI | S      | Medium | AX imports (exists)  | ✅ Done |
+| 4.4  | Bus factor per module             | CARI | M      | Medium | TCG data (exists)    |         |
+| 3.4  | Package boundary violations       | CARI | M      | Medium | 5.1 concept          | ✅ Done |
+| 5.3  | Dead feature detection            | CARI | M      | Medium | 3.2, 1.3             | ✅ Done |
+| 4.1  | Ownership drift                   | CARI | S      | Medium | TCG data (exists)    |         |
+| 4.2  | Change coupling anomalies         | CARI | S      | Medium | TCG data (exists)    |         |
+| 1.5  | Terminology inconsistency         | CARI | M      | Medium | None                 | ✅ Done |
+| 5.1a | Layer inference                   | CARI | M      | High   | 9.1, 3.3             | ✅ Done |
+| 5.1b | Layer check                       | CARI | S      | High   | 5.1a                 | ✅ Done |
+| 5.1c | Layer naming suggestions          | KG   | S      | Low    | 5.1a                 | ✅      |
+| 5.5  | Hierarchical sub-layering         | CARI | M      | High   | 5.1a, 3.4            |         |
+| 5.6  | As-is vs. as-should comparison    | CARI | M      | High   | 5.1a, 5.1b           | ✅ Done |
+| 5.7  | Vertical slice detection          | CARI | M      | High   | 5.1a, 9.1            | ✅ Done |
+| 5.8  | Architecture diagram validation   | CARI | L      | High   | imports (exists)     |         |
+| 6.1  | Naming convention checks          | CARI | S      | Low    | None                 |         |
+| 6.4  | Comment-to-code ratio             | CARI | S      | Low    | None                 |         |
+| 5.4  | API surface changelog             | CARI | M      | Medium | Git history          | ✅ Done |
+| 5.2  | Interface conformance             | AX   | M      | Medium | None                 | ✅ Done |
+| 2.4  | Clone lineage tracking            | CARI | M      | Low    | 2.1                  |         |
+| 1.6  | Decision lifecycle                | KG   | M      | Medium | Neo4j pipeline       |         |
+| 2.3  | Semantic clone detection          | KG   | L      | Medium | LLM embeddings       |         |
+| 7.1  | Python AST extractor              | AX   | M      | High   | tree-sitter-python   | ✅ Done |
+| 7.2  | Language-agnostic AX dispatch     | AX   | M      | High   | 7.1                  | ✅ Done |
+| 7.3  | Go / Rust / Java extractors       | AX   | M each | Medium | 7.2                  |         |
+| 8.0  | CariIndex facade + orchestration  | CARI | M      | High   | None (refactor)      | ✅ Done |
+| 8.0a | Entity bridge                     | CARI | M      | High   | 8.0                  | ✅ Done |
+| 8.1  | Programmatic CARI API docs        | Docs | S      | High   | 8.0                  | ✅ Done |
+| 8.2  | Docusaurus/Starlight plugin       | INT  | M      | High   | 8.0                  |         |
+| 8.3  | Sphinx / MkDocs integration       | INT  | M      | Medium | 8.0                  |         |
+| 8.4  | CI artifact validation action     | INT  | M      | High   | `iw index check`     |         |
+| 8.5  | REST API for doc systems          | INT  | S      | Medium | server-core (exists) |         |
+| 8.6  | Webhook-triggered re-index        | INT  | M      | Medium | 8.5                  |         |
+| 9.1  | Community detection               | CARI | M      | High   | co_occ + imports     | ✅ Done |
+| 9.2  | God-node / hub analysis           | CARI | S      | High   | None                 | ✅ Done |
+| 9.3  | Surprising connection ranking     | CARI | M      | High   | 9.1                  | ✅ Done |
+| 9.4  | Rationale extraction              | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
+| 10.1 | Standalone HTML architecture rpt  | CARI | M      | High   | 5.1a, 9.1, 3.3       | ✅ Done |
+| 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists) |         |
+| 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                 |         |
+| 10.4 | Obsidian vault export             | CARI | M      | Low    | 9.1                  |         |
+| 11.1 | Plugin interface & registry       | CARI | M      | High   | None                 |         |
+| 11.2 | Capability provider system        | CARI | M      | High   | 11.1                 |         |
+| 11.3 | KG plugin extraction (CypherLite) | KG   | L      | High   | 11.1, 11.2           |         |
+| 11.4 | Plugin CLI commands               | CARI | S      | High   | 11.1                 |         |
+| 11.5 | Lightweight LLM plugin            | INT  | S      | Medium | 11.2                 |         |
+| 11.6 | Language parser as plugins        | AX   | M      | Medium | 11.1, 7.2            |         |
+| 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a      |         |
+| 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg            |         |
+| 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2           |         |

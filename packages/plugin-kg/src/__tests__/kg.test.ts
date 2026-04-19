@@ -48,7 +48,8 @@ describe("plugin-kg", () => {
     const persistence = caps[0] as {
       query: (c: string, p?: Record<string, unknown>) => Promise<unknown[]>;
     };
-    await expect(persistence.query("MATCH (n) RETURN n")).rejects.toThrow(      /Neo4j password required/,
+    await expect(persistence.query("MATCH (n) RETURN n")).rejects.toThrow(
+      /Neo4j password required/,
     );
   });
 

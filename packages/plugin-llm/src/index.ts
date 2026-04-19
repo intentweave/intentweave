@@ -30,7 +30,8 @@ export { OpenAILLMProvider, type OpenAIConfig } from "./openai.js";
 const llmPlugin: IWPlugin = {
   name: "llm",
   version: "0.8.0",
-  description: "LLM provider for OpenAI-compatible APIs (--explain, --provider)",
+  description:
+    "LLM provider for OpenAI-compatible APIs (--explain, --provider)",
   capabilities: ["llm"],
 
   getCapabilities(_context: PluginContext): Capability[] {

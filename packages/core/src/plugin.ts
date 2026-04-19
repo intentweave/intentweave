@@ -95,7 +95,10 @@ export interface LanguageCapability {
 }
 
 /** Union of all capability types. */
-export type Capability = LlmCapability | PersistenceCapability | LanguageCapability;
+export type Capability =
+  | LlmCapability
+  | PersistenceCapability
+  | LanguageCapability;
 
 // =============================================================================
 // Plugin Interface (11.1)

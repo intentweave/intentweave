@@ -16,8 +16,9 @@ import chalk from "chalk";
 import { execSync } from "node:child_process";
 import { getPluginRegistry } from "@intentweave/core";
 
-export const pluginCommand = new Command("plugin")
-  .description("Manage IntentWeave plugins");
+export const pluginCommand = new Command("plugin").description(
+  "Manage IntentWeave plugins",
+);
 
 // ─── iw plugin list ──────────────────────────────────────────────────────────
 
@@ -35,11 +36,17 @@ pluginCommand
 
     if (plugins.length === 0) {
       console.log(chalk.dim("No plugins installed."));
+      console.log(chalk.dim("\nAvailable plugins:"));
       console.log(
-        chalk.dim("\nAvailable plugins:"),
+        chalk.dim(
+          "  iw plugin add kg      — Knowledge graph extraction + Neo4j",
+        ),
       );
-      console.log(chalk.dim("  iw plugin add kg      — Knowledge graph extraction + Neo4j"));
-      console.log(chalk.dim("  iw plugin add llm     — LLM provider for --explain / --provider"));
+      console.log(
+        chalk.dim(
+          "  iw plugin add llm     — LLM provider for --explain / --provider",
+        ),
+      );
       console.log(chalk.dim("  iw plugin add python  — Python AST extraction"));
       console.log(chalk.dim("  iw plugin add swift   — Swift AST extraction"));
       return;
@@ -56,18 +63,13 @@ pluginCommand
     );
     console.log(
       chalk.dim(
-        "─".repeat(16) +
-          "─".repeat(10) +
-          "─".repeat(22) +
-          "─".repeat(30),
+        "─".repeat(16) + "─".repeat(10) + "─".repeat(22) + "─".repeat(30),
       ),
     );
 
     for (const p of plugins) {
       const caps =
-        p.capabilities.length > 0
-          ? p.capabilities.join(", ")
-          : chalk.dim("—");
+        p.capabilities.length > 0 ? p.capabilities.join(", ") : chalk.dim("—");
       console.log(
         padRight(p.name, 16) +
           padRight(p.version, 10) +
@@ -76,9 +78,7 @@ pluginCommand
       );
     }
 
-    console.log(
-      chalk.dim(`\n${plugins.length} plugin(s) installed.`),
-    );
+    console.log(chalk.dim(`\n${plugins.length} plugin(s) installed.`));
   });
 
 // ─── iw plugin add <name> ────────────────────────────────────────────────────

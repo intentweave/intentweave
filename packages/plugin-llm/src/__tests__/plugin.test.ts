@@ -2,11 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type {
-  IWPlugin,
-  LlmCapability,
-  PluginContext,
-} from "@intentweave/core";
+import type { IWPlugin, LlmCapability, PluginContext } from "@intentweave/core";
 import llmPlugin, { OpenAILLMProvider } from "../index.js";
 
 // =============================================================================

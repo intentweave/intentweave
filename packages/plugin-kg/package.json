@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/plugin-kg",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Neo4j KG persistence plugin for IntentWeave — production-grade graph database backend",
   "type": "module",
   "main": "./dist/index.js",

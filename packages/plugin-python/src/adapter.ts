@@ -15,11 +15,7 @@ import {
   createPythonExtractor,
   type PythonSymbol,
 } from "@intentweave/python-parser";
-import type {
-  AxSymbol,
-  AxFileResult,
-  AxImport,
-} from "@intentweave/analyzer";
+import type { AxSymbol, AxFileResult, AxImport } from "@intentweave/analyzer";
 import {
   generateSymbolId,
   hashFileContent,

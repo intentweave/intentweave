@@ -11,83 +11,83 @@
 
 export enum TokenType {
   // Keywords
-  MATCH = 'MATCH',
-  OPTIONAL = 'OPTIONAL',
-  WHERE = 'WHERE',
-  RETURN = 'RETURN',
-  ORDER = 'ORDER',
-  BY = 'BY',
-  LIMIT = 'LIMIT',
-  SKIP = 'SKIP',
-  CREATE = 'CREATE',
-  MERGE = 'MERGE',
-  DELETE = 'DELETE',
-  DETACH = 'DETACH',
-  SET = 'SET',
-  ON = 'ON',
-  UNWIND = 'UNWIND',
-  WITH = 'WITH',
-  AS = 'AS',
-  AND = 'AND',
-  OR = 'OR',
-  NOT = 'NOT',
-  IN = 'IN',
-  IS = 'IS',
-  NULL = 'NULL',
-  TRUE = 'TRUE',
-  FALSE = 'FALSE',
-  CONTAINS = 'CONTAINS',
-  STARTS = 'STARTS',
-  ENDS = 'ENDS',
-  ANY = 'ANY',
-  DISTINCT = 'DISTINCT',
-  CASE = 'CASE',
-  WHEN = 'WHEN',
-  THEN = 'THEN',
-  ELSE = 'ELSE',
-  END = 'END',
-  ASC = 'ASC',
-  DESC = 'DESC',
-  EXISTS = 'EXISTS',
-  COUNT = 'COUNT',
-  COLLECT = 'COLLECT',
-  COALESCE = 'COALESCE',
-  TOLOWER = 'TOLOWER',
+  MATCH = "MATCH",
+  OPTIONAL = "OPTIONAL",
+  WHERE = "WHERE",
+  RETURN = "RETURN",
+  ORDER = "ORDER",
+  BY = "BY",
+  LIMIT = "LIMIT",
+  SKIP = "SKIP",
+  CREATE = "CREATE",
+  MERGE = "MERGE",
+  DELETE = "DELETE",
+  DETACH = "DETACH",
+  SET = "SET",
+  ON = "ON",
+  UNWIND = "UNWIND",
+  WITH = "WITH",
+  AS = "AS",
+  AND = "AND",
+  OR = "OR",
+  NOT = "NOT",
+  IN = "IN",
+  IS = "IS",
+  NULL = "NULL",
+  TRUE = "TRUE",
+  FALSE = "FALSE",
+  CONTAINS = "CONTAINS",
+  STARTS = "STARTS",
+  ENDS = "ENDS",
+  ANY = "ANY",
+  DISTINCT = "DISTINCT",
+  CASE = "CASE",
+  WHEN = "WHEN",
+  THEN = "THEN",
+  ELSE = "ELSE",
+  END = "END",
+  ASC = "ASC",
+  DESC = "DESC",
+  EXISTS = "EXISTS",
+  COUNT = "COUNT",
+  COLLECT = "COLLECT",
+  COALESCE = "COALESCE",
+  TOLOWER = "TOLOWER",
 
   // Literals & identifiers
-  IDENTIFIER = 'IDENTIFIER',
-  STRING = 'STRING',
-  NUMBER = 'NUMBER',
-  PARAMETER = 'PARAMETER',
+  IDENTIFIER = "IDENTIFIER",
+  STRING = "STRING",
+  NUMBER = "NUMBER",
+  PARAMETER = "PARAMETER",
 
   // Operators
-  EQ = '=',
-  NEQ = '<>',
-  LT = '<',
-  GT = '>',
-  LTE = '<=',
-  GTE = '>=',
-  PLUS = '+',
-  MINUS = '-',
+  EQ = "=",
+  NEQ = "<>",
+  LT = "<",
+  GT = ">",
+  LTE = "<=",
+  GTE = ">=",
+  PLUS = "+",
+  MINUS = "-",
 
   // Punctuation
-  LPAREN = '(',
-  RPAREN = ')',
-  LBRACKET = '[',
-  RBRACKET = ']',
-  LBRACE = '{',
-  RBRACE = '}',
-  COLON = ':',
-  DOT = '.',
-  COMMA = ',',
-  STAR = '*',
-  PIPE = '|',
-  ARROW_RIGHT = '->',
-  ARROW_LEFT = '<-',
-  DASH = '--',
+  LPAREN = "(",
+  RPAREN = ")",
+  LBRACKET = "[",
+  RBRACKET = "]",
+  LBRACE = "{",
+  RBRACE = "}",
+  COLON = ":",
+  DOT = ".",
+  COMMA = ",",
+  STAR = "*",
+  PIPE = "|",
+  ARROW_RIGHT = "->",
+  ARROW_LEFT = "<-",
+  DASH = "--",
 
   // Special
-  EOF = 'EOF',
+  EOF = "EOF",
 }
 
 export interface Token {
@@ -99,7 +99,7 @@ export interface Token {
 // ── AST Nodes ───────────────────────────────────────────────────────
 
 export type CypherStatement = {
-  type: 'CypherStatement';
+  type: "CypherStatement";
   clauses: Clause[];
 };
 
@@ -120,31 +120,31 @@ export type Clause =
 // ── Match ───────────────────────────────────────────────────────────
 
 export interface MatchClause {
-  type: 'MatchClause';
+  type: "MatchClause";
   optional: boolean;
   pattern: Pattern;
   where?: WhereExpression;
 }
 
 export interface Pattern {
-  type: 'Pattern';
+  type: "Pattern";
   elements: PatternElement[];
 }
 
 export type PatternElement = NodePattern | RelationshipPattern;
 
 export interface NodePattern {
-  type: 'NodePattern';
+  type: "NodePattern";
   variable?: string;
   labels: string[];
   properties?: MapLiteral;
 }
 
 export interface RelationshipPattern {
-  type: 'RelationshipPattern';
+  type: "RelationshipPattern";
   variable?: string;
   relTypes: string[];
-  direction: 'outgoing' | 'incoming' | 'undirected';
+  direction: "outgoing" | "incoming" | "undirected";
   variableLength?: VariableLength;
   properties?: MapLiteral;
 }
@@ -157,7 +157,7 @@ export interface VariableLength {
 // ── Where ───────────────────────────────────────────────────────────
 
 export interface WhereClause {
-  type: 'WhereClause';
+  type: "WhereClause";
   expression: WhereExpression;
 }
 
@@ -179,98 +179,98 @@ export type WhereExpression =
   | VariableExpr;
 
 export interface ComparisonExpr {
-  type: 'ComparisonExpr';
-  operator: '=' | '<>' | '<' | '>' | '<=' | '>=';
+  type: "ComparisonExpr";
+  operator: "=" | "<>" | "<" | ">" | "<=" | ">=";
   left: WhereExpression;
   right: WhereExpression;
 }
 
 export interface LogicalExpr {
-  type: 'LogicalExpr';
-  operator: 'AND' | 'OR';
+  type: "LogicalExpr";
+  operator: "AND" | "OR";
   left: WhereExpression;
   right: WhereExpression;
 }
 
 export interface NotExpr {
-  type: 'NotExpr';
+  type: "NotExpr";
   expression: WhereExpression;
 }
 
 export interface InExpr {
-  type: 'InExpr';
+  type: "InExpr";
   value: WhereExpression;
   list: WhereExpression;
 }
 
 export interface ContainsExpr {
-  type: 'ContainsExpr';
+  type: "ContainsExpr";
   value: WhereExpression;
   substring: WhereExpression;
 }
 
 export interface StartsWithExpr {
-  type: 'StartsWithExpr';
+  type: "StartsWithExpr";
   value: WhereExpression;
   prefix: WhereExpression;
 }
 
 export interface EndsWithExpr {
-  type: 'EndsWithExpr';
+  type: "EndsWithExpr";
   value: WhereExpression;
   suffix: WhereExpression;
 }
 
 export interface IsNullExpr {
-  type: 'IsNullExpr';
+  type: "IsNullExpr";
   value: WhereExpression;
   negated: boolean; // IS NOT NULL
 }
 
 export interface ExistsExpr {
-  type: 'ExistsExpr';
+  type: "ExistsExpr";
   pattern: Pattern;
 }
 
 export interface AnyExpr {
-  type: 'AnyExpr';
+  type: "AnyExpr";
   variable: string;
   list: WhereExpression;
   predicate: WhereExpression;
 }
 
 export interface PropertyExpr {
-  type: 'PropertyExpr';
+  type: "PropertyExpr";
   object: string;
   property: string;
 }
 
 export interface ParameterExpr {
-  type: 'ParameterExpr';
+  type: "ParameterExpr";
   name: string;
 }
 
 export interface LiteralExpr {
-  type: 'LiteralExpr';
+  type: "LiteralExpr";
   value: string | number | boolean | null;
 }
 
 export interface FunctionCallExpr {
-  type: 'FunctionCallExpr';
+  type: "FunctionCallExpr";
   name: string;
   args: WhereExpression[];
   distinct?: boolean;
 }
 
 export interface VariableExpr {
-  type: 'VariableExpr';
+  type: "VariableExpr";
   name: string;
 }
 
 // ── Return ──────────────────────────────────────────────────────────
 
 export interface ReturnClause {
-  type: 'ReturnClause';
+  type: "ReturnClause";
   distinct: boolean;
   items: ReturnItem[];
 }
@@ -283,25 +283,25 @@ export interface ReturnItem {
 // ── Create / Merge / Delete / Set ───────────────────────────────────
 
 export interface CreateClause {
-  type: 'CreateClause';
+  type: "CreateClause";
   pattern: Pattern;
 }
 
 export interface MergeClause {
-  type: 'MergeClause';
+  type: "MergeClause";
   pattern: Pattern;
   onCreateSet?: SetItem[];
   onMatchSet?: SetItem[];
 }
 
 export interface DeleteClause {
-  type: 'DeleteClause';
+  type: "DeleteClause";
   detach: boolean;
   expressions: WhereExpression[];
 }
 
 export interface SetClause {
-  type: 'SetClause';
+  type: "SetClause";
   items: SetItem[];
 }
 
@@ -313,13 +313,13 @@ export interface SetItem {
 // ── Unwind / With ───────────────────────────────────────────────────
 
 export interface UnwindClause {
-  type: 'UnwindClause';
+  type: "UnwindClause";
   expression: WhereExpression;
   alias: string;
 }
 
 export interface WithClause {
-  type: 'WithClause';
+  type: "WithClause";
   distinct: boolean;
   items: ReturnItem[];
   where?: WhereExpression;
@@ -328,29 +328,29 @@ export interface WithClause {
 // ── Order / Limit / Skip ────────────────────────────────────────────
 
 export interface OrderByClause {
-  type: 'OrderByClause';
+  type: "OrderByClause";
   items: OrderItem[];
 }
 
 export interface OrderItem {
   expression: WhereExpression;
-  direction: 'ASC' | 'DESC';
+  direction: "ASC" | "DESC";
 }
 
 export interface LimitClause {
-  type: 'LimitClause';
+  type: "LimitClause";
   count: WhereExpression;
 }
 
 export interface SkipClause {
-  type: 'SkipClause';
+  type: "SkipClause";
   count: WhereExpression;
 }
 
 // ── Map Literal ─────────────────────────────────────────────────────
 
 export interface MapLiteral {
-  type: 'MapLiteral';
+  type: "MapLiteral";
   entries: MapEntry[];
 }
 

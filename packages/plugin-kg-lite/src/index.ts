@@ -34,9 +34,7 @@ const kgLitePlugin: IWPlugin = {
   capabilities: ["persistence"],
 
   getCapabilities(context: PluginContext): Capability[] {
-    const dbPath =
-      process.env.IW_KG_DB ??
-      `${context.workspaceRoot}/.iw/kg.db`;
+    const dbPath = process.env.IW_KG_DB ?? `${context.workspaceRoot}/.iw/kg.db`;
 
     const backend = new KgLiteBackend(dbPath);
 

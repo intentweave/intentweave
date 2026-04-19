@@ -9,7 +9,7 @@
  * and punctuation for the supported Cypher subset.
  */
 
-import { Token, TokenType } from './types.js';
+import { Token, TokenType } from "./types.js";
 
 const KEYWORDS: Record<string, TokenType> = {
   MATCH: TokenType.MATCH,
@@ -76,7 +76,7 @@ export class CypherLiteTokenizer {
       const ch = this.input[this.pos];
 
       // Single-line comments
-      if (ch === '/' && this.input[this.pos + 1] === '/') {
+      if (ch === "/" && this.input[this.pos + 1] === "/") {
         this.skipLineComment();
         continue;
       }
@@ -88,19 +88,19 @@ export class CypherLiteTokenizer {
       }
 
       // Backtick-quoted identifier
-      if (ch === '`') {
+      if (ch === "`") {
         this.readBacktickIdentifier();
         continue;
       }
 
       // Numbers
-      if (ch >= '0' && ch <= '9') {
+      if (ch >= "0" && ch <= "9") {
         this.readNumber();
         continue;
       }
 
       // Parameters ($name)
-      if (ch === '$') {
+      if (ch === "$") {
         this.readParameter();
         continue;
       }
@@ -118,11 +118,11 @@ export class CypherLiteTokenizer {
       }
 
       throw new Error(
-        `CypherLite: Unexpected character '${ch}' at position ${this.pos}`
+        `CypherLite: Unexpected character '${ch}' at position ${this.pos}`,
       );
     }
 
-    this.tokens.push({ type: TokenType.EOF, value: '', position: this.pos });
+    this.tokens.push({ type: TokenType.EOF, value: "", position: this.pos });
     return this.tokens;
   }
 
@@ -135,7 +135,7 @@ export class CypherLiteTokenizer {
   }
 
   private skipLineComment(): void {
-    while (this.pos < this.input.length && this.input[this.pos] !== '\n') {
+    while (this.pos < this.input.length && this.input[this.pos] !== "\n") {
       this.pos++;
     }
   }
@@ -143,22 +143,22 @@ export class CypherLiteTokenizer {
   private readString(quote: string): void {
     const start = this.pos;
     this.pos++; // skip opening quote
-    let value = '';
+    let value = "";
     while (this.pos < this.input.length) {
       const ch = this.input[this.pos];
-      if (ch === '\\') {
+      if (ch === "\\") {
         this.pos++;
         if (this.pos < this.input.length) {
           const escaped = this.input[this.pos];
           switch (escaped) {
-            case 'n':
-              value += '\n';
+            case "n":
+              value += "\n";
               break;
-            case 't':
-              value += '\t';
+            case "t":
+              value += "\t";
               break;
-            case '\\':
-              value += '\\';
+            case "\\":
+              value += "\\";
               break;
             default:
               value += escaped;
@@ -181,21 +181,21 @@ export class CypherLiteTokenizer {
       this.pos++;
     }
     throw new Error(
-      `CypherLite: Unterminated string starting at position ${start}`
+      `CypherLite: Unterminated string starting at position ${start}`,
     );
   }
 
   private readBacktickIdentifier(): void {
     const start = this.pos;
     this.pos++; // skip `
-    let value = '';
-    while (this.pos < this.input.length && this.input[this.pos] !== '`') {
+    let value = "";
+    while (this.pos < this.input.length && this.input[this.pos] !== "`") {
       value += this.input[this.pos];
       this.pos++;
     }
     if (this.pos >= this.input.length) {
       throw new Error(
-        `CypherLite: Unterminated backtick identifier at position ${start}`
+        `CypherLite: Unterminated backtick identifier at position ${start}`,
       );
     }
     this.pos++; // skip closing `
@@ -204,16 +204,19 @@ export class CypherLiteTokenizer {
 
   private readNumber(): void {
     const start = this.pos;
-    let value = '';
+    let value = "";
     let hasDot = false;
     while (this.pos < this.input.length) {
       const ch = this.input[this.pos];
-      if (ch >= '0' && ch <= '9') {
+      if (ch >= "0" && ch <= "9") {
         value += ch;
         this.pos++;
-      } else if (ch === '.' && !hasDot) {
+      } else if (ch === "." && !hasDot) {
         // Don't treat '..' as decimal — it's range syntax (e.g., *1..3)
-        if (this.pos + 1 < this.input.length && this.input[this.pos + 1] === '.') {
+        if (
+          this.pos + 1 < this.input.length &&
+          this.input[this.pos + 1] === "."
+        ) {
           break;
         }
         hasDot = true;
@@ -229,7 +232,7 @@ export class CypherLiteTokenizer {
   private readParameter(): void {
     const start = this.pos;
     this.pos++; // skip $
-    let name = '';
+    let name = "";
     while (
       this.pos < this.input.length &&
       this.isIdentChar(this.input[this.pos])
@@ -238,21 +241,23 @@ export class CypherLiteTokenizer {
       this.pos++;
     }
     if (name.length === 0) {
-      throw new Error(
-        `CypherLite: Empty parameter name at position ${start}`
-      );
+      throw new Error(`CypherLite: Empty parameter name at position ${start}`);
     }
-    this.tokens.push({ type: TokenType.PARAMETER, value: name, position: start });
+    this.tokens.push({
+      type: TokenType.PARAMETER,
+      value: name,
+      position: start,
+    });
   }
 
   private tryMultiChar(): boolean {
     const remaining = this.input.slice(this.pos);
 
     // ->
-    if (remaining.startsWith('->')) {
+    if (remaining.startsWith("->")) {
       this.tokens.push({
         type: TokenType.ARROW_RIGHT,
-        value: '->',
+        value: "->",
         position: this.pos,
       });
       this.pos += 2;
@@ -260,10 +265,10 @@ export class CypherLiteTokenizer {
     }
 
     // <-
-    if (remaining.startsWith('<-')) {
+    if (remaining.startsWith("<-")) {
       this.tokens.push({
         type: TokenType.ARROW_LEFT,
-        value: '<-',
+        value: "<-",
         position: this.pos,
       });
       this.pos += 2;
@@ -271,10 +276,10 @@ export class CypherLiteTokenizer {
     }
 
     // <> (not equal)
-    if (remaining.startsWith('<>')) {
+    if (remaining.startsWith("<>")) {
       this.tokens.push({
         type: TokenType.NEQ,
-        value: '<>',
+        value: "<>",
         position: this.pos,
       });
       this.pos += 2;
@@ -282,10 +287,10 @@ export class CypherLiteTokenizer {
     }
 
     // <=
-    if (remaining.startsWith('<=')) {
+    if (remaining.startsWith("<=")) {
       this.tokens.push({
         type: TokenType.LTE,
-        value: '<=',
+        value: "<=",
         position: this.pos,
       });
       this.pos += 2;
@@ -293,10 +298,10 @@ export class CypherLiteTokenizer {
     }
 
     // >=
-    if (remaining.startsWith('>=')) {
+    if (remaining.startsWith(">=")) {
       this.tokens.push({
         type: TokenType.GTE,
-        value: '>=',
+        value: ">=",
         position: this.pos,
       });
       this.pos += 2;
@@ -305,13 +310,13 @@ export class CypherLiteTokenizer {
 
     // -- (undirected relationship dash; only when followed by ( or [)
     if (
-      remaining.startsWith('--') &&
+      remaining.startsWith("--") &&
       this.pos + 2 < this.input.length &&
-      (this.input[this.pos + 2] === '(' || this.input[this.pos + 2] === '[')
+      (this.input[this.pos + 2] === "(" || this.input[this.pos + 2] === "[")
     ) {
       this.tokens.push({
         type: TokenType.DASH,
-        value: '--',
+        value: "--",
         position: this.pos,
       });
       this.pos += 2;
@@ -323,22 +328,22 @@ export class CypherLiteTokenizer {
 
   private trySingleChar(ch: string): boolean {
     const map: Record<string, TokenType> = {
-      '(': TokenType.LPAREN,
-      ')': TokenType.RPAREN,
-      '[': TokenType.LBRACKET,
-      ']': TokenType.RBRACKET,
-      '{': TokenType.LBRACE,
-      '}': TokenType.RBRACE,
-      ':': TokenType.COLON,
-      '.': TokenType.DOT,
-      ',': TokenType.COMMA,
-      '*': TokenType.STAR,
-      '|': TokenType.PIPE,
-      '=': TokenType.EQ,
-      '<': TokenType.LT,
-      '>': TokenType.GT,
-      '+': TokenType.PLUS,
-      '-': TokenType.MINUS,
+      "(": TokenType.LPAREN,
+      ")": TokenType.RPAREN,
+      "[": TokenType.LBRACKET,
+      "]": TokenType.RBRACKET,
+      "{": TokenType.LBRACE,
+      "}": TokenType.RBRACE,
+      ":": TokenType.COLON,
+      ".": TokenType.DOT,
+      ",": TokenType.COMMA,
+      "*": TokenType.STAR,
+      "|": TokenType.PIPE,
+      "=": TokenType.EQ,
+      "<": TokenType.LT,
+      ">": TokenType.GT,
+      "+": TokenType.PLUS,
+      "-": TokenType.MINUS,
     };
 
     const tt = map[ch];
@@ -352,7 +357,7 @@ export class CypherLiteTokenizer {
 
   private readIdentifier(): void {
     const start = this.pos;
-    let value = '';
+    let value = "";
     while (
       this.pos < this.input.length &&
       this.isIdentChar(this.input[this.pos])
