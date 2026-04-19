@@ -92,9 +92,7 @@ export function createGraphRunner(): Neo4jRunner {
 export function runnerFromCapability(cap: PersistenceCapability): Neo4jRunner {
   return {
     async run(cypher: string, params?: Record<string, unknown>) {
-      return cap.query(cypher, params) as Promise<
-        Record<string, unknown>[]
-      >;
+      return cap.query(cypher, params) as Promise<Record<string, unknown>[]>;
     },
   };
 }
@@ -122,7 +120,12 @@ export function createGraphDriver() {
 /** @internal — wrap primitive values so .toNumber()/.toString() work like Neo4j records */
 function wrapValue(val: unknown): unknown {
   if (typeof val === "number" || typeof val === "bigint") {
-    return { toNumber: () => Number(val), toInt: () => Number(val), valueOf: () => Number(val), toString: () => String(val) };
+    return {
+      toNumber: () => Number(val),
+      toInt: () => Number(val),
+      valueOf: () => Number(val),
+      toString: () => String(val),
+    };
   }
   return val;
 }
@@ -135,10 +138,10 @@ export function createDriverAdapter(persistence: {
     session() {
       return {
         async run(cypher: string, params?: Record<string, unknown>) {
-          const rows = (await persistence.query(
-            cypher,
-            params,
-          )) as Record<string, unknown>[];
+          const rows = (await persistence.query(cypher, params)) as Record<
+            string,
+            unknown
+          >[];
           return {
             records: rows.map((row) => ({
               keys: Object.keys(row),

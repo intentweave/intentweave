@@ -329,12 +329,9 @@ export const docHealthCommand = new Command("doc-health")
       if (enableDocCode && hasKwg && axOutput) {
         const t0 = performance.now();
         log("Running doc-code drift detector...");
-        const dcReport = await detectDocCodeDrift(
-          runner,
-          sessionId,
-          axOutput,
-          { log },
-        );
+        const dcReport = await detectDocCodeDrift(runner, sessionId, axOutput, {
+          log,
+        });
         docCodeSignals = dcReport.signals;
         docCodeStats = {
           enabled: true,
@@ -460,7 +457,12 @@ export const docHealthCommand = new Command("doc-health")
 // KWG data loaders (graph database → lightweight in-memory types)
 // =============================================================================
 
-type Runner = { run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> };
+type Runner = {
+  run(
+    cypher: string,
+    params?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>[]>;
+};
 
 async function loadKwgEntities(
   runner: Runner,

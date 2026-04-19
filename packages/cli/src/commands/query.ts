@@ -84,7 +84,12 @@ Do NOT fabricate data beyond what the results contain.`;
 // =============================================================================
 
 async function executeCypher(
-  runner: { run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> },
+  runner: {
+    run(
+      cypher: string,
+      params?: Record<string, unknown>,
+    ): Promise<Record<string, unknown>[]>;
+  },
   cypher: string,
 ): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
   const rows = await runner.run(cypher);

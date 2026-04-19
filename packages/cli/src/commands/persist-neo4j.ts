@@ -25,7 +25,10 @@ import type {
   CanonTriple,
   RawTriple,
 } from "@intentweave/analyzer";
-import { getPersistence, createDriverAdapter } from "../persistence/graphRunner.js";
+import {
+  getPersistence,
+  createDriverAdapter,
+} from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Types
@@ -145,12 +148,7 @@ export async function persistKxToNeo4j(
     await ensureSchema(driver);
 
     if (mode === "delta") {
-      return await persistDelta(
-        driver,
-        kxOutputs,
-        options,
-        startTime,
-      );
+      return await persistDelta(driver, kxOutputs, options, startTime);
     }
 
     // ── Legacy full mode ────────────────────────────────────────────

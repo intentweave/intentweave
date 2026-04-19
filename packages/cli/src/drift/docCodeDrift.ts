@@ -145,7 +145,12 @@ function tokenOverlap(a: string[], b: string[]): number {
  * @param options    Detection options
  */
 export async function detectDocCodeDrift(
-  driver: import("neo4j-driver").Driver,
+  runner: {
+    run(
+      cypher: string,
+      params?: Record<string, unknown>,
+    ): Promise<Record<string, unknown>[]>;
+  },
   session: string,
   axOutput: AxOutput,
   options?: DocCodeDriftOptions,
@@ -166,14 +171,22 @@ export async function detectDocCodeDrift(
   const nearMatchThreshold = options?.nearMatchThreshold ?? 0.5;
   const signatureCheck = options?.signatureCheck ?? true;
 
-  // ── 1. Fetch KWG entities from Neo4j ─────────────────────────────────
-  log("Fetching KWG entities from Neo4j...");
-  const neo4jSession = driver.session();
+  // ── 1. Fetch KWG entities from graph database ───────────────────────
+  log("Fetching KWG entities from graph database...");
   let kwgEntities: KwgEntity[];
   let kwgMentions: KwgMention[] = [];
 
-  try {
-    const result = await neo4jSession.run(
+  const entityRows = await runner.run(
+    `
+    MATCH (e:KWEntity {session_id: $session})
+    RETURN e.name AS name,
+           e.mentionCount AS mentionCount,
+           e.qualifiers AS qualifiers,
+           e.filePaths AS filePaths,
+           e.predominantSource AS predominantSource
+    `,
+    { session },
+  );
 
   kwgEntities = entityRows.map((r) => ({
     name: r.name as string,
@@ -198,34 +211,14 @@ export async function detectDocCodeDrift(
       { session },
     );
 
+    kwgMentions = mentionRows.map((r) => ({
+      entityName: r.entityName as string,
+      text: r.text as string,
+      heading: (r.heading as string) ?? "",
+      filePath: r.filePath as string,
+      startLine: toNumber(r.startLine),
     }));
-
-    // Fetch mentions for signature matching
-    if (signatureCheck) {
-      log("Fetching KWG mentions for signature matching...");
-      const mentionResult = await neo4jSession.run(
-        `
-        MATCH (m:KWMention {session_id: $session})
-        RETURN m.entityName AS entityName,
-               m.text AS text,
-               m.heading AS heading,
-               m.filePath AS filePath,
-               m.startLine AS startLine
-        `,
-        { session },
-      );
-
-      kwgMentions = mentionResult.records.map((r) => ({
-        entityName: r.get("entityName") as string,
-        text: r.get("text") as string,
-        heading: (r.get("heading") as string) ?? "",
-        filePath: r.get("filePath") as string,
-        startLine: toNumber(r.get("startLine")),
-      }));
-      log(`  → ${kwgMentions.length} KWG mentions loaded`);
-    }
-  } finally {
-    await neo4jSession.close();
+    log(`  → ${kwgMentions.length} KWG mentions loaded`);
   }
 
   log(`  → ${kwgEntities.length} KWG entities loaded`);

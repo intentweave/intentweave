@@ -26,7 +26,10 @@ import type {
   KwgEntityRecord,
   MentionRecord,
 } from "@intentweave/core";
-import { createGraphDriver, type GraphDriver } from "../persistence/graphRunner.js";
+import {
+  createGraphDriver,
+  type GraphDriver,
+} from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Schema Setup
