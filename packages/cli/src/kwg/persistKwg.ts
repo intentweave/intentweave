@@ -11,8 +11,8 @@
  *
  * With --force: full delete + recreate (no MERGE).
  *
- * Uses dynamic import of neo4j-driver to avoid hard dependency.
- * No GraphPersister interface — direct Neo4j calls per Phase A §1.1.
+ * Uses PersistenceCapability plugin via the driver adapter.
+ * No GraphPersister interface — direct Cypher calls per Phase A §1.1.
  *
  * @version 0.1
  */
@@ -26,6 +26,7 @@ import type {
   KwgEntityRecord,
   MentionRecord,
 } from "@intentweave/core";
+import { createGraphDriver, type GraphDriver } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Schema Setup
@@ -69,7 +70,7 @@ export interface PersistKwgOptions {
 export async function persistKwg(
   output: KwgPipelineOutput,
   session: string,
-  driver: import("neo4j-driver").Driver,
+  driver: GraphDriver,
   options?: PersistKwgOptions,
 ): Promise<PersistResult> {
   const startTime = performance.now();
@@ -394,25 +395,11 @@ export async function persistKwg(
 // =============================================================================
 
 /**
- * Create a Neo4j driver from environment variables.
- * Uses dynamic import to avoid hard dependency on neo4j-driver.
+ * Create a graph driver from the persistence plugin.
+ *
+ * Returns a driver-like adapter backed by PersistenceCapability.
+ * Replaces the old createNeo4jDriver() that directly imported neo4j-driver.
  */
-export async function createNeo4jDriver(): Promise<
-  import("neo4j-driver").Driver
-> {
-  const neo4j = await import("neo4j-driver");
-
-  const uri = process.env.NEO4J_URI ?? "bolt://localhost:7687";
-  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? "neo4j";
-  const password = process.env.NEO4J_PASSWORD;
-
-  if (!password) {
-    throw new Error(
-      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        '  Example: export NEO4J_PASSWORD="your-password"\n' +
-        "  Or start Neo4j with: docker run -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:5",
-    );
-  }
-
-  return neo4j.default.driver(uri, neo4j.default.auth.basic(user, password));
+export function createNeo4jDriver(): ReturnType<typeof createGraphDriver> {
+  return createGraphDriver();
 }

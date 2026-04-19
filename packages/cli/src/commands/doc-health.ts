@@ -62,47 +62,11 @@ import type {
   DetectorStats,
   UnifiedDriftReport,
   DriftSignal,
+  SignalQualifier,
 } from "@intentweave/core";
 
-// =============================================================================
-// Neo4j connection (same pattern as other commands)
-// =============================================================================
-
-interface Neo4jConnection {
-  driver: any;
-  session: any;
-  close: () => Promise<void>;
-}
-
-async function connectNeo4j(uri?: string): Promise<Neo4jConnection> {
-  const neo4j = await import("neo4j-driver");
-  const neoUri = uri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
-  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? "neo4j";
-  const password = process.env.NEO4J_PASSWORD;
-
-  if (!password) {
-    throw new Error(
-      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        "Example: export NEO4J_PASSWORD=intentweave",
-    );
-  }
-
-  const driver = neo4j.default.driver(
-    neoUri,
-    neo4j.default.auth.basic(user, password),
-  );
-  await driver.verifyConnectivity();
-  const session = driver.session();
-
-  return {
-    driver,
-    session,
-    close: async () => {
-      await session.close();
-      await driver.close();
-    },
-  };
-}
+// Persistence
+import { createGraphRunner } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Command
@@ -266,16 +230,17 @@ export const docHealthCommand = new Command("doc-health")
       : () => {};
     const workspaceRoot = process.cwd();
 
-    let conn: Neo4jConnection | undefined;
-
     try {
-      conn = await connectNeo4j(options.neo4jUri);
-      log("Connected to Neo4j");
+      if (options.neo4jUri) {
+        process.env.NEO4J_URI = options.neo4jUri;
+      }
+      const runner = createGraphRunner();
+      log("Connected to graph database");
 
-      // ─── Step 1: Load KWG data from Neo4j ─────────────────────────
+      // ─── Step 1: Load KWG data from graph database ────────────────
 
-      const kwgEntities = await loadKwgEntities(conn, sessionId, log);
-      const kwgMentions = await loadKwgMentions(conn, sessionId, log);
+      const kwgEntities = await loadKwgEntities(runner, sessionId, log);
+      const kwgMentions = await loadKwgMentions(runner, sessionId, log);
 
       const hasKwg = kwgEntities.length > 0;
       if (!hasKwg) {
@@ -365,7 +330,7 @@ export const docHealthCommand = new Command("doc-health")
         const t0 = performance.now();
         log("Running doc-code drift detector...");
         const dcReport = await detectDocCodeDrift(
-          conn.driver,
+          runner,
           sessionId,
           axOutput,
           { log },
@@ -488,22 +453,21 @@ export const docHealthCommand = new Command("doc-health")
     } catch (err: any) {
       console.error(chalk.red("Error:"), err.message ?? err);
       process.exit(1);
-    } finally {
-      if (conn) await conn.close();
     }
   });
 
 // =============================================================================
-// KWG data loaders (Neo4j → lightweight in-memory types)
+// KWG data loaders (graph database → lightweight in-memory types)
 // =============================================================================
 
+type Runner = { run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> };
+
 async function loadKwgEntities(
-  conn: Neo4jConnection,
+  runner: Runner,
   session: string,
   log: (msg: string) => void,
 ): Promise<KwgEntityForDrift[]> {
-  const neo4j = await import("neo4j-driver");
-  const result = await conn.session.run(
+  const rows = await runner.run(
     `MATCH (e:KWEntity {session_id: $session})
      RETURN e.name AS name,
             e.mentionCount AS mentionCount,
@@ -512,23 +476,23 @@ async function loadKwgEntities(
     { session },
   );
 
-  const entities: KwgEntityForDrift[] = result.records.map((rec: any) => ({
-    name: rec.get("name") as string,
-    mentionCount: toNumber(rec.get("mentionCount")),
-    qualifiers: toStringArray(rec.get("qualifiers")),
-    filePaths: toStringArray(rec.get("filePaths")),
+  const entities: KwgEntityForDrift[] = rows.map((row) => ({
+    name: row.name as string,
+    mentionCount: typeof row.mentionCount === "number" ? row.mentionCount : 0,
+    qualifiers: toStringArray(row.qualifiers) as SignalQualifier[],
+    filePaths: toStringArray(row.filePaths),
   }));
 
-  log(`Loaded ${entities.length} KWG entities from Neo4j`);
+  log(`Loaded ${entities.length} KWG entities`);
   return entities;
 }
 
 async function loadKwgMentions(
-  conn: Neo4jConnection,
+  runner: Runner,
   session: string,
   log: (msg: string) => void,
 ): Promise<KwgMentionForDrift[]> {
-  const result = await conn.session.run(
+  const rows = await runner.run(
     `MATCH (m:KWMention {session_id: $session})
      RETURN m.entityName AS entityName,
             m.text AS text,
@@ -539,36 +503,22 @@ async function loadKwgMentions(
     { session },
   );
 
-  const mentions: KwgMentionForDrift[] = result.records.map((rec: any) => ({
-    entityName: rec.get("entityName") as string,
-    text: rec.get("text") as string,
-    heading: rec.get("heading") as string | undefined,
-    filePath: rec.get("filePath") as string,
-    startLine: toNumber(rec.get("startLine")),
-    qualifiers: toStringArray(rec.get("qualifiers")),
+  const mentions: KwgMentionForDrift[] = rows.map((row) => ({
+    entityName: row.entityName as string,
+    text: row.text as string,
+    heading: row.heading as string | undefined,
+    filePath: row.filePath as string,
+    startLine: typeof row.startLine === "number" ? row.startLine : 0,
+    qualifiers: toStringArray(row.qualifiers) as SignalQualifier[],
   }));
 
-  log(`Loaded ${mentions.length} KWG mentions from Neo4j`);
+  log(`Loaded ${mentions.length} KWG mentions`);
   return mentions;
 }
 
 // =============================================================================
-// Neo4j value helpers
+// Value helpers
 // =============================================================================
-
-function toNumber(v: unknown): number {
-  if (v === null || v === undefined) return 0;
-  if (typeof v === "number") return v;
-  if (
-    typeof v === "object" &&
-    v !== null &&
-    "toNumber" in v &&
-    typeof (v as any).toNumber === "function"
-  ) {
-    return (v as any).toNumber();
-  }
-  return Number(v) || 0;
-}
 
 function toStringArray(v: unknown): string[] {
   if (Array.isArray(v)) return v.map(String);

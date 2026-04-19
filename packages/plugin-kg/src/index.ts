@@ -33,17 +33,18 @@ const kgPlugin: IWPlugin = {
   capabilities: ["persistence"],
 
   getCapabilities(_context: PluginContext): Capability[] {
-    const config: Neo4jConfig = {
-      uri: process.env.NEO4J_URI,
-      user: process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME,
-      password: process.env.NEO4J_PASSWORD,
-    };
-
-    // Defer creation — the backend validates config and connects lazily
+    // Defer creation — the backend validates config and connects lazily.
+    // Env vars are read at first use, not at resolve time, so CLI commands
+    // can set process.env.NEO4J_URI from --neo4j-uri before the first query.
     let backend: KgBackend | undefined;
 
     function getBackend(): KgBackend {
       if (!backend) {
+        const config: Neo4jConfig = {
+          uri: process.env.NEO4J_URI,
+          user: process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME,
+          password: process.env.NEO4J_PASSWORD,
+        };
         backend = new KgBackend(config);
       }
       return backend;

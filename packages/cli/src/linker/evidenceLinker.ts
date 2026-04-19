@@ -18,7 +18,7 @@
  * @version 0.1
  */
 
-import type { Driver } from "neo4j-driver";
+import type { GraphDriver as Driver } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Types

@@ -18,6 +18,7 @@
  */
 
 import type { TcgPipelineOutput } from "@intentweave/core";
+import type { GraphDriver } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Schema Setup
@@ -69,7 +70,7 @@ export interface PersistTcgResult {
 export async function persistTcg(
   output: TcgPipelineOutput,
   session: string,
-  driver: import("neo4j-driver").Driver,
+  driver: GraphDriver,
   options?: PersistTcgOptions,
 ): Promise<PersistTcgResult> {
   const startTime = performance.now();

@@ -5,7 +5,7 @@
  * Neo4j Persistence for Open Track (KX) Output
  *
  * Writes canonical entities + triples + raw triples to Neo4j.
- * Uses dynamic import of neo4j-driver so the CLI doesn't hard-depend on it.
+ * Uses the PersistenceCapability plugin (plugin-kg or plugin-kg-lite).
  *
  * Neo4j Data Model:
  *   :Canon:Entity { canonId, name, type, aliases[], confidence }
@@ -25,6 +25,7 @@ import type {
   CanonTriple,
   RawTriple,
 } from "@intentweave/analyzer";
+import { getPersistence, createDriverAdapter } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Types
@@ -112,7 +113,7 @@ FOR (n:RawTriple) ON (n.artifactId);
 /**
  * Persist KX output to Neo4j.
  *
- * Dynamically imports neo4j-driver to avoid hard dependency.
+ * Uses PersistenceCapability from the plugin registry.
  * Creates schema constraints on first run.
  *
  * Modes:
@@ -127,41 +128,25 @@ export async function persistKxToNeo4j(
   const mode = options.mode ?? "delta";
   const log = options.log ?? (() => {});
 
-  // Dynamic import — only loads when --persist is used
-  const neo4j = await import("neo4j-driver");
+  // Set env vars from options so the persistence plugin picks them up
+  if (options.uri) process.env.NEO4J_URI = options.uri;
+  if (options.user) process.env.NEO4J_USER = options.user;
+  if (options.password) process.env.NEO4J_PASSWORD = options.password;
 
-  const uri = options.uri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
-  const user =
-    options.user ??
-    process.env.NEO4J_USER ??
-    process.env.NEO4J_USERNAME ??
-    "neo4j";
-  const password = options.password ?? process.env.NEO4J_PASSWORD;
+  // Get the persistence capability (backed by plugin-kg or plugin-kg-lite)
+  const persistence = getPersistence();
 
-  if (!password) {
-    throw new Error(
-      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        '  Example: export NEO4J_PASSWORD="your-password"\n' +
-        "  Or start Neo4j with: docker run -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:5",
-    );
-  }
-
-  const driver = neo4j.default.driver(
-    uri,
-    neo4j.default.auth.basic(user, password),
-  );
+  // Create a driver-like adapter so internal functions work unchanged.
+  // Each session.run() call delegates to PersistenceCapability.query().
+  const driver = createDriverAdapter(persistence);
 
   try {
-    // Verify connectivity
-    await driver.verifyConnectivity();
-
-    // Ensure schema
-    await ensureSchema(driver, neo4j.default);
+    // Ensure schema (constraints/indexes)
+    await ensureSchema(driver);
 
     if (mode === "delta") {
       return await persistDelta(
         driver,
-        neo4j.default,
         kxOutputs,
         options,
         startTime,
@@ -222,8 +207,8 @@ export async function persistKxToNeo4j(
       rawTriplesWritten: totalRawTriples,
       durationMs: Date.now() - startTime,
     };
-  } finally {
-    await driver.close();
+  } catch (err) {
+    throw err;
   }
 }
 
@@ -251,7 +236,6 @@ function rawKey(subject: string, predicate: string, object: string): string {
 
 async function persistDelta(
   driver: any,
-  neo4jModule: any,
   kxOutputs: KxStageOutput[],
   options: PersistOptions,
   startTime: number,
@@ -758,7 +742,7 @@ async function removeStaleRawTriples(
 // Internal Helpers
 // =============================================================================
 
-async function ensureSchema(driver: any, neo4jModule: any): Promise<void> {
+async function ensureSchema(driver: any): Promise<void> {
   const session = driver.session();
   try {
     // Run each statement separately (Neo4j doesn't support multi-statement in one call)

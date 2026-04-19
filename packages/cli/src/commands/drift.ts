@@ -34,7 +34,7 @@ import {
   renderDriftReport,
   type DocCodeDriftOptions,
 } from "../drift/docCodeDrift.js";
-import { createNeo4jDriver } from "../kwg/persistKwg.js";
+import { createGraphRunner } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // CLI Command
@@ -161,9 +161,9 @@ export const driftCommand = new Command("drift")
     if (!runDocCode) return;
 
     // ── Neo4j connection ──────────────────────────────────────────────
-    let driver: import("neo4j-driver").Driver;
+    let runner: Awaited<ReturnType<typeof createGraphRunner>>;
     try {
-      driver = await createNeo4jDriver();
+      runner = await createGraphRunner();
     } catch (err) {
       console.error(
         chalk.red(`Neo4j connection failed: ${(err as Error).message}`),
@@ -234,7 +234,7 @@ export const driftCommand = new Command("drift")
       };
 
       const report = await detectDocCodeDrift(
-        driver,
+        runner,
         session,
         axOutput,
         driftOpts,
@@ -369,6 +369,6 @@ export const driftCommand = new Command("drift")
         }
       }
     } finally {
-      await driver.close();
+      /* runner lifecycle managed by plugin */
     }
   });

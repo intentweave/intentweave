@@ -13,6 +13,7 @@
  */
 
 import type { UnifiedDriftReport, DriftSignal } from "@intentweave/core";
+import type { GraphDriver } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Schema
@@ -62,7 +63,7 @@ export interface PersistDriftResult {
 export async function persistDrift(
   report: UnifiedDriftReport,
   session: string,
-  driver: import("neo4j-driver").Driver,
+  driver: GraphDriver,
   options?: PersistDriftOptions,
 ): Promise<PersistDriftResult> {
   const startTime = performance.now();

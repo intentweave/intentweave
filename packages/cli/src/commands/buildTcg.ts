@@ -35,6 +35,7 @@ import type {
 } from "@intentweave/core";
 import { persistTcg } from "../tcg/persistTcg.js";
 import { createNeo4jDriver } from "../kwg/persistKwg.js";
+import type { GraphDriver } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // TCG Subcommand
@@ -270,7 +271,7 @@ export const tcgSubcommand = new Command("tcg")
 
     // ── Persist to Neo4j ───────────────────────────────────────────────
     if (persist) {
-      let driver: import("neo4j-driver").Driver;
+      let driver: GraphDriver;
       try {
         driver = await createNeo4jDriver();
       } catch (err) {

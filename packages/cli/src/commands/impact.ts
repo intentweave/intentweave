@@ -26,102 +26,7 @@ import {
   formatImpactJson,
   type ImpactOptions,
 } from "../impact/index.js";
-import type { Neo4jRunner } from "../context/index.js";
-
-// =============================================================================
-// Neo4j connection (same pattern as other commands)
-// =============================================================================
-
-interface Neo4jConnection {
-  driver: any;
-  session: any;
-  close: () => Promise<void>;
-}
-
-async function connectNeo4j(uri?: string): Promise<Neo4jConnection> {
-  const neo4j = await import("neo4j-driver");
-  const neoUri = uri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
-  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? "neo4j";
-  const password = process.env.NEO4J_PASSWORD;
-
-  if (!password) {
-    throw new Error(
-      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        "Example: export NEO4J_PASSWORD=intentweave",
-    );
-  }
-
-  const driver = neo4j.default.driver(
-    neoUri,
-    neo4j.default.auth.basic(user, password),
-  );
-  await driver.verifyConnectivity();
-  const session = driver.session();
-
-  return {
-    driver,
-    session,
-    close: async () => {
-      await session.close();
-      await driver.close();
-    },
-  };
-}
-
-// =============================================================================
-// Runner adapter
-// =============================================================================
-
-function toPlainValue(v: unknown): unknown {
-  if (v === null || v === undefined) return v;
-  if (
-    typeof v === "object" &&
-    v !== null &&
-    "toNumber" in v &&
-    typeof (v as any).toNumber === "function"
-  ) {
-    return (v as any).toNumber();
-  }
-  if (Array.isArray(v)) return v.map(toPlainValue);
-  return v;
-}
-
-function plainProps(props: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(props)) {
-    out[k] = toPlainValue(v);
-  }
-  return out;
-}
-
-function createRunner(conn: Neo4jConnection): Neo4jRunner {
-  return {
-    async run(
-      cypher: string,
-      params: Record<string, unknown> = {},
-    ): Promise<Record<string, unknown>[]> {
-      const neo4j = await import("neo4j-driver");
-      const cleanParams: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(params)) {
-        cleanParams[k] =
-          typeof v === "number" ? neo4j.default.int(Math.round(v)) : v;
-      }
-      const result = await conn.session.run(cypher, cleanParams);
-      return result.records.map((rec: any) => {
-        const row: Record<string, unknown> = {};
-        for (const key of rec.keys) {
-          const v = rec.get(key);
-          if (v !== null && typeof v === "object" && "properties" in v) {
-            row[key as string] = plainProps(v.properties);
-          } else {
-            row[key as string] = toPlainValue(v);
-          }
-        }
-        return row;
-      });
-    },
-  };
-}
+import { createGraphRunner } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Command
@@ -225,13 +130,13 @@ export const impactCommand = new Command("impact")
 
     const minConfidence = parseFloat(minConfStr) || 0;
 
-    let conn: Neo4jConnection | undefined;
-
     try {
-      conn = await connectNeo4j(options.neo4jUri);
-      if (verbose) console.error(chalk.blue("Connected to Neo4j"));
+      if (options.neo4jUri) {
+        process.env.NEO4J_URI = options.neo4jUri;
+      }
+      const runner = createGraphRunner();
+      if (verbose) console.error(chalk.blue("Connected to graph database"));
 
-      const runner = createRunner(conn);
       const log = verbose
         ? (msg: string) => console.error(chalk.blue(msg))
         : undefined;
@@ -269,7 +174,5 @@ export const impactCommand = new Command("impact")
     } catch (err: any) {
       console.error(chalk.red("Error:"), err.message ?? err);
       process.exit(1);
-    } finally {
-      if (conn) await conn.close();
     }
   });

@@ -119,12 +119,14 @@ program.addCommand(xlinkCommand);
 // CLI commands. Failures are silently ignored — missing plugins are normal.
 const registry = getPluginRegistry();
 await registry.discover((pkg) => import(pkg));
-registry.registerAllCommands(program, {
+const pluginContext = {
   workspaceRoot: process.cwd(),
   indexDbPath: `${process.cwd()}/.iw/index.db`,
   session: process.env.IW_SESSION ?? "default",
   verbose: process.argv.includes("-v") || process.argv.includes("--verbose"),
-});
+};
+registry.resolveCapabilities(pluginContext);
+registry.registerAllCommands(program, pluginContext);
 
 // Parse and execute
 program.parse();

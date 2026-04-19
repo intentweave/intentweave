@@ -93,7 +93,7 @@ function getParentDir(p: string): string | null {
 export async function persistScg(
   axOutput: AxOutput,
   session: string,
-  driver: import("neo4j-driver").Driver,
+  driver: import("../persistence/graphRunner.js").GraphDriver,
   options?: ScgPersistOptions,
 ): Promise<ScgPersistResult> {
   const startTime = performance.now();

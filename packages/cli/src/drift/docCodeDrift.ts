@@ -174,23 +174,30 @@ export async function detectDocCodeDrift(
 
   try {
     const result = await neo4jSession.run(
+
+  kwgEntities = entityRows.map((r) => ({
+    name: r.name as string,
+    mentionCount: toNumber(r.mentionCount),
+    qualifiers: (r.qualifiers as string[]) ?? [],
+    filePaths: (r.filePaths as string[]) ?? [],
+    predominantSource: (r.predominantSource as string) ?? "",
+  }));
+
+  // Fetch mentions for signature matching
+  if (signatureCheck) {
+    log("Fetching KWG mentions for signature matching...");
+    const mentionRows = await runner.run(
       `
-      MATCH (e:KWEntity {session_id: $session})
-      RETURN e.name AS name,
-             e.mentionCount AS mentionCount,
-             e.qualifiers AS qualifiers,
-             e.filePaths AS filePaths,
-             e.predominantSource AS predominantSource
+      MATCH (m:KWMention {session_id: $session})
+      RETURN m.entityName AS entityName,
+             m.text AS text,
+             m.heading AS heading,
+             m.filePath AS filePath,
+             m.startLine AS startLine
       `,
       { session },
     );
 
-    kwgEntities = result.records.map((r) => ({
-      name: r.get("name") as string,
-      mentionCount: toNumber(r.get("mentionCount")),
-      qualifiers: (r.get("qualifiers") as string[]) ?? [],
-      filePaths: (r.get("filePaths") as string[]) ?? [],
-      predominantSource: (r.get("predominantSource") as string) ?? "",
     }));
 
     // Fetch mentions for signature matching

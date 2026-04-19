@@ -67,7 +67,6 @@
     "glob": "^11.0.0",
     "minimatch": "^10.0.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "neo4j-driver": "^5.27.0",
     "zod": "^3.23.8"
   },
   "optionalDependencies": {

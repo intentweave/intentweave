@@ -74,119 +74,10 @@ import {
   preflightDocHealth,
   formatPreflightForAgent,
 } from "../doc-health/index.js";
-
-// =============================================================================
-// Neo4j connection (same dynamic import pattern as CLI commands)
-// =============================================================================
-
-interface Neo4jConnection {
-  driver: any;
-  session: any;
-  close: () => Promise<void>;
-}
-
-let _conn: Neo4jConnection | undefined;
-let _connUri: string | undefined;
-
-async function getConnection(uri?: string): Promise<Neo4jConnection> {
-  // If we have an existing connection, verify it's still alive
-  if (_conn) {
-    try {
-      await _conn.driver.verifyConnectivity();
-      return _conn;
-    } catch {
-      // Connection is stale — close and recreate
-      try {
-        await _conn.close();
-      } catch {
-        /* ignore */
-      }
-      _conn = undefined;
-    }
-  }
-
-  const neo4j = await import("neo4j-driver");
-  const neoUri =
-    uri ?? _connUri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
-  _connUri = neoUri; // remember for reconnection
-  const user = process.env.NEO4J_USER ?? process.env.NEO4J_USERNAME ?? "neo4j";
-  const password = process.env.NEO4J_PASSWORD;
-
-  if (!password) {
-    throw new Error(
-      "NEO4J_PASSWORD environment variable is required. Example: export NEO4J_PASSWORD=intentweave",
-    );
-  }
-
-  const driver = neo4j.default.driver(
-    neoUri,
-    neo4j.default.auth.basic(user, password),
-  );
-  await driver.verifyConnectivity();
-  const session = driver.session();
-
-  _conn = {
-    driver,
-    session,
-    close: async () => {
-      await session.close();
-      await driver.close();
-      _conn = undefined;
-    },
-  };
-  return _conn;
-}
-
-function toPlainValue(v: unknown): unknown {
-  if (v === null || v === undefined) return v;
-  if (
-    typeof v === "object" &&
-    v !== null &&
-    "toNumber" in v &&
-    typeof (v as any).toNumber === "function"
-  ) {
-    return (v as any).toNumber();
-  }
-  if (Array.isArray(v)) return v.map(toPlainValue);
-  return v;
-}
-
-function plainProps(props: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(props)) {
-    out[k] = toPlainValue(v);
-  }
-  return out;
-}
-
-async function runCypher(
-  cypher: string,
-  params: Record<string, unknown> = {},
-): Promise<Record<string, unknown>[]> {
-  const conn = await getConnection();
-  const neo4j = await import("neo4j-driver");
-
-  // Convert numeric params to Neo4j integers
-  const cleanParams: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(params)) {
-    cleanParams[k] =
-      typeof v === "number" ? neo4j.default.int(Math.round(v)) : v;
-  }
-
-  const result = await conn.session.run(cypher, cleanParams);
-  return result.records.map((rec: any) => {
-    const row: Record<string, unknown> = {};
-    for (const key of rec.keys) {
-      const v = rec.get(key);
-      if (v !== null && typeof v === "object" && "properties" in v) {
-        row[key as string] = plainProps(v.properties);
-      } else {
-        row[key as string] = toPlainValue(v);
-      }
-    }
-    return row;
-  });
-}
+import {
+  createGraphRunner,
+  hasPersistence,
+} from "../persistence/graphRunner.js";
 
 // =============================================================================
 // LLM helper (for NL → Cypher translation)
@@ -319,7 +210,8 @@ async function toolQuery(args: {
     }
   }
 
-  const rows = await runCypher(cypherQuery);
+  const runner = createGraphRunner();
+  const rows = await runner.run(cypherQuery);
   if (rows.length === 0) {
     return `No results found.\n\nCypher used:\n${cypherQuery}`;
   }
@@ -346,17 +238,6 @@ async function toolQuery(args: {
 }
 
 /**
- * Create a Neo4jRunner adapter from the MCP connection.
- */
-function createMcpRunner(): Neo4jRunner {
-  return {
-    async run(cypher: string, params?: Record<string, unknown>) {
-      return runCypher(cypher, params);
-    },
-  };
-}
-
-/**
  * Create an LLM completer from the MCP server's llmComplete function.
  */
 function createMcpLlmCompleter(): (opts: {
@@ -373,7 +254,7 @@ async function toolContext(args: {
   hops: number;
   limit: number;
 }): Promise<string> {
-  const runner = createMcpRunner();
+  const runner = createGraphRunner();
 
   const contextOpts: ContextOptions = {
     runner,
@@ -450,7 +331,8 @@ async function toolEntities(args: {
       LIMIT $lim`;
   }
 
-  const rows = await runCypher(cypher, params);
+  const runner = createGraphRunner();
+  const rows = await runner.run(cypher, params);
   if (rows.length === 0) return "No entities found.";
 
   const header = "| name | type | confidence |";
@@ -481,7 +363,7 @@ async function toolDocHealth(args: {
   }
 
   // Full mode: requires Neo4j
-  const runner = createMcpRunner();
+  const runner = createGraphRunner();
 
   const opts: DocHealthOptions = {
     runner,
@@ -500,7 +382,7 @@ async function toolImpact(args: {
   session_id: string;
   hops: number;
 }): Promise<string> {
-  const runner = createMcpRunner();
+  const runner = createGraphRunner();
 
   const impactOpts: ImpactOptions = {
     runner,
@@ -2797,8 +2679,17 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
   );
 
   // ── Plugin MCP tools ─────────────────────────────────────────────────
+  if (options.neo4jUri) {
+    process.env.NEO4J_URI = options.neo4jUri;
+  }
   const registry = getPluginRegistry();
   await registry.discover((pkg) => import(pkg));
+  await registry.resolveCapabilities({
+    workspaceRoot: process.cwd(),
+    indexDbPath: path.join(process.cwd(), ".iw", "index.db"),
+    session: sessionId,
+    verbose: !!verbose,
+  });
   registry.registerAllMcpTools(server, {
     workspaceRoot: process.cwd(),
     indexDbPath: path.join(process.cwd(), ".iw", "index.db"),

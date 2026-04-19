@@ -24,6 +24,7 @@ import {
   getSchemaForLayer,
   type GraphLayer,
 } from "../schema/graphSchema.js";
+import { createGraphRunner } from "../persistence/graphRunner.js";
 
 // =============================================================================
 // Graph schema description (fed to the LLM for Cypher generation)
@@ -79,125 +80,15 @@ If results are empty, say "No results found." and suggest a refined query.
 Do NOT fabricate data beyond what the results contain.`;
 
 // =============================================================================
-// Neo4j helpers (dynamic import, same pattern as persist-neo4j.ts)
+// Cypher execution via PersistenceCapability
 // =============================================================================
 
-interface Neo4jConnection {
-  driver: any;
-  session: any;
-  close: () => Promise<void>;
-}
-
-async function connectNeo4j(opts: {
-  uri?: string;
-  user?: string;
-  password?: string;
-}): Promise<Neo4jConnection> {
-  const neo4j = await import("neo4j-driver");
-
-  const uri = opts.uri ?? process.env.NEO4J_URI ?? "bolt://localhost:7687";
-  const user =
-    opts.user ??
-    process.env.NEO4J_USER ??
-    process.env.NEO4J_USERNAME ??
-    "neo4j";
-  const password = opts.password ?? process.env.NEO4J_PASSWORD;
-
-  if (!password) {
-    throw new Error(
-      "Neo4j password required. Set NEO4J_PASSWORD environment variable.\n" +
-        "Example: export NEO4J_PASSWORD=intentweave",
-    );
-  }
-
-  const driver = neo4j.default.driver(
-    uri,
-    neo4j.default.auth.basic(user, password),
-  );
-  await driver.verifyConnectivity();
-  const session = driver.session();
-
-  return {
-    driver,
-    session,
-    close: async () => {
-      await session.close();
-      await driver.close();
-    },
-  };
-}
-
-/** Convert Neo4j Integer / other exotic types to plain JS values. */
-function toPlainValue(v: unknown): unknown {
-  if (v === null || v === undefined) return v;
-  // Neo4j integer
-  if (
-    typeof v === "object" &&
-    v !== null &&
-    "toNumber" in v &&
-    typeof (v as any).toNumber === "function"
-  ) {
-    return (v as any).toNumber();
-  }
-  // Neo4j Node
-  if (
-    typeof v === "object" &&
-    v !== null &&
-    "properties" in v &&
-    "labels" in v
-  ) {
-    const node = v as any;
-    return { _labels: node.labels, ...plainProps(node.properties) };
-  }
-  // Neo4j Relationship
-  if (
-    typeof v === "object" &&
-    v !== null &&
-    "properties" in v &&
-    "type" in v &&
-    "start" in v
-  ) {
-    const rel = v as any;
-    return { _type: rel.type, ...plainProps(rel.properties) };
-  }
-  // Neo4j Path
-  if (typeof v === "object" && v !== null && "segments" in v) {
-    const path = v as any;
-    return {
-      _path: path.segments.map((s: any) => ({
-        start: toPlainValue(s.start),
-        rel: toPlainValue(s.relationship),
-        end: toPlainValue(s.end),
-      })),
-    };
-  }
-  // Array
-  if (Array.isArray(v)) return v.map(toPlainValue);
-  return v;
-}
-
-function plainProps(props: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(props)) {
-    out[k] = toPlainValue(v);
-  }
-  return out;
-}
-
 async function executeCypher(
-  conn: Neo4jConnection,
+  runner: { run(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> },
   cypher: string,
 ): Promise<{ columns: string[]; rows: Record<string, unknown>[] }> {
-  const result = await conn.session.run(cypher);
-  const columns =
-    result.records.length > 0 ? (result.records[0].keys as string[]) : [];
-  const rows = result.records.map((rec: any) => {
-    const row: Record<string, unknown> = {};
-    for (const key of rec.keys) {
-      row[key as string] = toPlainValue(rec.get(key));
-    }
-    return row;
-  });
+  const rows = await runner.run(cypher);
+  const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   return { columns, rows };
 }
 
@@ -334,13 +225,15 @@ export const queryCommand = new Command("query")
     ) as GraphLayer;
 
     const limitN = parseInt(limit, 10) || 50;
-    let conn: Neo4jConnection | undefined;
 
     try {
-      // ── Connect to Neo4j ──────────────────────────────────────────────
-      conn = await connectNeo4j({ uri: options.neo4jUri ?? options.neoUri });
+      // ── Set up persistence ────────────────────────────────────────
+      if (options.neo4jUri ?? options.neoUri) {
+        process.env.NEO4J_URI = options.neo4jUri ?? options.neoUri;
+      }
+      const runner = createGraphRunner();
       if (verbose) {
-        console.log(chalk.blue("Connected to Neo4j"));
+        console.log(chalk.blue("Connected to graph database"));
       }
 
       let cypherQuery: string;
@@ -387,7 +280,7 @@ export const queryCommand = new Command("query")
       // ── Execute Cypher (with auto-retry on syntax errors) ─────────
       let execResult: { columns: string[]; rows: Record<string, unknown>[] };
       try {
-        execResult = await executeCypher(conn, cypherQuery);
+        execResult = await executeCypher(runner, cypherQuery);
       } catch (execErr: any) {
         const errMsg = execErr?.message ?? String(execErr);
         // If this was an NL-generated query and it's a syntax/semantic error, retry
@@ -426,7 +319,7 @@ export const queryCommand = new Command("query")
             console.log(chalk.gray(cypherQuery));
             console.log();
           }
-          execResult = await executeCypher(conn, cypherQuery);
+          execResult = await executeCypher(runner, cypherQuery);
         } else {
           throw execErr;
         }
@@ -485,7 +378,5 @@ export const queryCommand = new Command("query")
     } catch (err: any) {
       console.error(chalk.red("Error:"), err.message ?? err);
       process.exit(1);
-    } finally {
-      if (conn) await conn.close();
     }
   });
