@@ -2,6 +2,41 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.9.0] — 2026-04-19
+
+### Added
+
+- **Plugin architecture** (11.1–11.6) — `PluginRegistry` with auto-discovery, 3 capability types
+  (LLM, persistence, language), and 6 plugins:
+  - `@intentweave/plugin-llm` — OpenAI-compatible LLM capability
+  - `@intentweave/plugin-kg` — Neo4j persistence backend
+  - `@intentweave/plugin-kg-lite` — zero-config SQLite persistence via CypherLite
+  - `@intentweave/plugin-python` — Python AST extraction (tree-sitter)
+  - `@intentweave/plugin-swift` — Swift AST extraction (tree-sitter)
+- **CypherLite** (`@intentweave/cypher-lite`) — zero-dependency Cypher→SQL transpiler with
+  MATCH, WHERE, RETURN, ORDER BY, LIMIT, SKIP, OPTIONAL MATCH, and label/property filtering.
+  63 tests, powers the KG-Lite plugin.
+- **Plugin CLI commands** — `iw plugin list`, `iw plugin add <name>`, `iw plugin remove <name>`
+- **18 packages total** (up from 12), all published to npm
+
+### Changed
+
+- Language parsers (Python, Swift) now register via `LanguageCapability` plugin interface
+  instead of hardcoded dispatch
+- KG persistence abstracted behind `PersistenceCapability` — consumers no longer import
+  Neo4j directly
+- LLM calls abstracted behind `LlmCapability` — layer naming, enrichment, and extraction
+  use the plugin interface
+
+### Infrastructure
+
+- All 16 public packages published to npm as `@intentweave/*@0.9.0` (6 new, 10 updated)
+- tsconfig project references added for all new packages
+- 1375+ tests across 70 test files
+- Updated README with three-layer umbrella vision (CARI → Enrichment → Verification)
+- Updated intentweave.org: new homepage, plugins page with combinations matrix, restructured
+  sidebar, rewritten roadmap
+
 ## [0.8.0] — 2026-04-13
 
 ### Added
