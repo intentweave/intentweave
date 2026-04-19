@@ -12,6 +12,7 @@
 | **KG**    | Requires Neo4j + LLM pipeline |
 | **AX**    | Extends AST extractor         |
 | **INT**   | Integration / embedding mode  |
+| **PLT**   | Platform / plugin infra       |
 | **Docs**  | Documentation only            |
 | **S/M/L** | T-shirt size effort           |
 
@@ -144,7 +145,7 @@ low docs = critical knowledge risk.
 Layer analysis is split into three phases so that auto-inference ($0) comes first,
 validation second, and optional LLM naming last.
 
-#### 5.1a Layer Inference _(CARI, M)_
+#### 5.1a Layer Inference _(CARI, M)_ ✅
 
 Auto-infer architectural layers from existing import graph data. Uses import directionality
 (topological sort of the file dependency graph), community detection (from 9.1), and
@@ -163,7 +164,7 @@ Algorithm:
 
 CLI: `iw index layers-infer`. MCP: `cari_layers_infer`.
 
-#### 5.1b Layer Check _(CARI, S)_
+#### 5.1b Layer Check _(CARI, S)_ ✅
 
 Validate all imports against a committed `.iw/layers.yaml` config. Detect:
 
@@ -181,25 +182,25 @@ Optional LLM pass to name inferred layers based on their file contents and symbo
 E.g., a layer containing `server/`, `routes/`, `middleware/` gets named "HTTP Layer".
 Depends on 5.1a output. Not needed for validation — pure ergonomics.
 
-### 5.2 Interface Conformance Drift _(AX, M)_
+### 5.2 Interface Conformance Drift _(AX, M)_ ✅
 
 Track when a class claims to implement an interface but the method signatures have
 diverged (missing methods, changed parameters). More precise than tsc for cross-package
 scenarios.
 
-### 5.3 Dead Feature Detection _(CARI + AX, M)_
+### 5.3 Dead Feature Detection _(CARI + AX, M)_ ✅
 
 Combine: (a) code symbols never called from tests or entry points, (b) doc sections
 with zero code references, (c) git: no commits in 6+ months. When all three align,
 flag as likely dead feature.
 
-### 5.4 API Surface Changelog _(AX + CARI, M)_
+### 5.4 API Surface Changelog _(AX + CARI, M)_ ✅
 
 Track exported symbols over time (git history). Detect additions, removals, signature
 changes per release. Auto-generate: _"v0.2.0: +3 exports, -1 export, 2 signature changes
 in @intentweave/cli"_.
 
-### 5.5 Hierarchical Sub-Layering _(CARI, M)_
+### 5.5 Hierarchical Sub-Layering _(CARI, M)_ ✅
 
 **Problem:** Flat layer inference treats the entire workspace as one graph. In monorepos,
 this causes internal sub-layers of a single package (e.g., the analyzer's pipeline
@@ -239,7 +240,7 @@ CLI: `iw index layers-infer --hierarchical`. MCP: `cari_layers_infer` (new `hier
 
 Depends on: 5.1a (existing flat inference), 3.4 (package boundary detection).
 
-### 5.6 As-Is vs. As-Should Comparison _(CARI, M)_
+### 5.6 As-Is vs. As-Should Comparison _(CARI, M)_ ✅
 
 **Problem:** Users can infer layers (as-is) and define a should-architecture in
 `.iw/layers.yaml`, but there's no way to see both simultaneously and identify drift
@@ -268,7 +269,7 @@ CLI: `iw index layers-check --compare`. MCP: `cari_layers_check` (new `compare` 
 
 Depends on: 5.1a (inference), 5.1b (config validation).
 
-### 5.7 Vertical Slice Detection _(CARI, M)_
+### 5.7 Vertical Slice Detection _(CARI, M)_ ✅
 
 **Problem:** Layers show horizontal stratification but not vertical feature cohorts.
 "Which files form the auth feature end-to-end?" requires cross-referencing layers
@@ -306,6 +307,10 @@ to the documented design.
 **Solution:** A `diagram-as-config` format (`.iw/architecture.yaml`) that defines
 components (file globs), allowed flows (directed edges), and constraints (forbidden
 dependencies). CARI validates the real import graph against this config.
+
+> **See also 11.8:** With selective semantic enrichment, the LLM can parse ASCII art and
+> Mermaid diagrams directly — no manual YAML authoring needed. The diagram in your docs
+> becomes the architecture spec automatically.
 
 ```yaml
 # .iw/architecture.yaml
@@ -358,7 +363,7 @@ Check symbol names against configurable patterns (camelCase functions, PascalCas
 UPPER_SNAKE constants). Flag violations per file. No new dependencies — regex on existing
 symbol data.
 
-### 6.2 Test Coverage Mapping _(AX + CARI, M)_
+### 6.2 Test Coverage Mapping _(AX + CARI, M)_ ✅
 
 Map test files to their targets via naming convention (`foo.test.ts` → `foo.ts`) and
 import analysis. Surface untested exported symbols: _"12 exported functions in
@@ -540,7 +545,7 @@ domain-driven tools, or AI agents — can bridge _"this entity is mentioned in t
 without building their own mention scanner. The integration analysis shows this cuts
 effort from ~3d to ~1.5d for a typical pipeline consumer.
 
-### 8.1 Programmatic CARI API Documentation _(Docs, S)_ ✅
+### 8.1 Programmatic CARI API Documentation _(Docs, S)_ ✅ ✅
 
 Write a guide showing how to use the `CariIndex` facade (from 8.0) and the raw
 query functions. Cover three usage patterns:
@@ -647,7 +652,7 @@ Compose with `@intentweave/index` `detectChanges` + `applyChanges` (already expo
 
 ## 9. Graph Topology & Structure _(inspired by [graphify](https://github.com/safishamsi/graphify))_
 
-### 9.1 Community Detection _(CARI, M)_
+### 9.1 Community Detection _(CARI, M)_ ✅
 
 Run Leiden community detection on the combined co-occurrence + import + co-change graph.
 Automatically discover natural module clusters without user-defined layers. Surface:
@@ -663,7 +668,7 @@ Visualise in the React UI as colour-coded groups. Use an existing JS implementat
 
 CLI: `iw index communities`. MCP: `cari_communities`.
 
-### 9.2 God-Node / Hub Analysis _(CARI, S)_
+### 9.2 God-Node / Hub Analysis _(CARI, S)_ ✅
 
 Compute degree centrality across all edge types (annotations, imports, co-occurrences,
 co-changes). Rank entities by total degree. Surface: _"Top hubs: AuthService (42 edges),
@@ -672,7 +677,7 @@ connects through — highest architectural risk and highest documentation priori
 
 CLI: `iw index hubs`. MCP: `cari_hubs`.
 
-### 9.3 Surprising Connection Ranking _(CARI, M)_
+### 9.3 Surprising Connection Ranking _(CARI, M)_ ✅
 
 Extend the existing hidden-couplings analysis with a composite surprise score. Rank
 by: (a) cross-layer weight (code↔doc edges score higher than code↔code), (b) community
@@ -684,7 +689,7 @@ Builds on: 9.1 (communities), existing `co_occurrences` + `co_changes` data.
 
 CLI: `iw index surprises`. MCP: `cari_surprises`.
 
-### 9.4 Rationale Extraction _(AX, S)_
+### 9.4 Rationale Extraction _(AX, S)_ ✅
 
 Extract `// WHY:`, `// NOTE:`, `// IMPORTANT:`, `// DESIGN:` comments during AX as
 first-class knowledge nodes (alongside existing TODO/FIXME/HACK extraction). Store in
@@ -721,7 +726,14 @@ CLI: `iw index export --html`.
 
 Depends on: 5.1a (layers), 9.1 (communities), 3.3 (depth), 3.4 (boundary violations).
 
-### 10.2 Watch Mode _(CARI, M)_
+### 10.2 Focus Architecture Report _(CARI, S)_ ✅
+
+Generate a focused Graphviz SVG report centered on a target entity with configurable
+hop depth and max nodes.
+
+CLI: `iw index export --focus <target>`. MCP: `cari_focus`.
+
+### 10.3 Watch Mode _(CARI, M)_
 
 Run `iw index watch` in a background terminal. On file save: code files trigger instant
 AST re-extraction (no LLM), doc changes re-run annotation matching. Keeps `.iw/index.db`
@@ -745,6 +757,480 @@ and links to related communities. Directly importable into Obsidian, Logseq, or 
 markdown-based knowledge base.
 
 CLI: `iw index export --obsidian`.
+
+---
+
+## 11. Plugin Architecture & Platform
+
+### 11.1 Plugin Interface & Registry _(CARI, M)_ ✅
+
+Define the `IWPlugin` interface and `PluginRegistry` class in `@intentweave/core`. A
+plugin is an npm package (`@intentweave/plugin-<name>`) that exports a default object
+implementing `IWPlugin`:
+
+```typescript
+export interface IWPlugin {
+  name: string;
+  version: string;
+  description: string;
+  dependencies?: string[];           // other plugin names required
+  capabilities?: string[];           // capability identifiers this plugin provides
+
+  registerCommands?(program: Command): void;
+  registerMcpTools?(server: McpServer, context: McpContext): void;
+  getApi?(): Record<string, unknown>;
+}
+```
+
+The registry auto-discovers installed `@intentweave/plugin-*` packages via dynamic
+`import()` with try/catch — no custom loader, no configuration file needed.
+
+CLI entry point and MCP server call `registry.discover()` at startup, then
+`registry.registerAllCommands(program)` / `registry.registerAllMcpTools(server, ctx)`.
+
+### 11.2 Capability Provider System _(CARI, M)_ ✅
+
+Generic provider interfaces that plugins can implement and core features can consume
+**without depending on a specific plugin**. Core defines the interface, plugins supply
+implementations.
+
+Initial capabilities:
+
+| Capability     | Interface                                         | Used By                                |
+| -------------- | ------------------------------------------------- | -------------------------------------- |
+| `llm`          | `generate(prompt, opts?) → string`                | `--explain`, `--provider`, layer naming |
+| `vcs`          | `log()`, `blame()`, `diff()`                      | TCG stage, staleness detection          |
+| `persistence`  | `persist(entities, rels)`, `query(cypher)`         | KG plugin only                         |
+
+When core needs an LLM (e.g., `iw index export --focus X --explain`), it asks the
+registry: `registry.getCapability<LlmCapability>("llm")`. If no plugin provides it,
+the command prints: _"No LLM provider installed. Run: iw plugin add llm"_.
+
+This decouples reports from the KG plugin. A lightweight `plugin-llm` can provide
+just the LLM capability (~50 lines + `openai` dep) without Neo4j, the analyzer pipeline,
+or any KG infrastructure.
+
+```typescript
+// @intentweave/core/src/capabilities.ts
+export interface LlmCapability {
+  name: "llm";
+  generate(prompt: string, options?: { model?: string; maxTokens?: number }): Promise<string>;
+}
+
+export interface VcsCapability {
+  name: "vcs";
+  log(file: string, limit?: number): Promise<CommitInfo[]>;
+  blame(file: string): Promise<BlameInfo[]>;
+}
+
+export type Capability = LlmCapability | VcsCapability;
+```
+
+### 11.3 KG Plugin Extraction _(KG, L)_ ✅
+
+Decouple all KG-related code from the core CLI via a **dual-backend** persistence
+architecture. A lightweight CypherLite engine translates the Cypher subset used in
+IntentWeave to SQL, so the consuming code (query, context, persist, impact) speaks
+Cypher regardless of backend.
+
+#### 11.3a CypherLite Engine (`@intentweave/cypher-lite`, M) ✅
+
+A zero-dependency Cypher subset parser + SQLite transpiler (~800 lines).
+
+**Supported Cypher subset** (covers 100% of existing queries):
+- `MATCH (n:Label) WHERE n.prop = $param` → `SELECT ... FROM ... WHERE`
+- `MATCH (a)-[r:REL]->(b)` → `JOIN kg_relationships`
+- `MATCH (a)-[r*1..N]-(b)` → Recursive CTEs
+- `OPTIONAL MATCH` → `LEFT JOIN`
+- `MERGE ... ON CREATE SET ... ON MATCH SET` → `INSERT OR REPLACE`
+- `CREATE` / `DELETE` / `DETACH DELETE` → `INSERT` / `DELETE`
+- `UNWIND $list AS x` → parameter expansion
+- `RETURN ... ORDER BY ... LIMIT` → `SELECT ... ORDER BY ... LIMIT`
+- Functions: `toLower()`, `coalesce()`, `count()`, `collect()`, `DISTINCT`
+- Predicates: `CONTAINS`, `STARTS WITH`, `ENDS WITH`, `IN`, `ANY(...)`
+- `WITH` clause for chaining
+
+**Out of scope:** `SHORTEST PATH`, `APOC`, graph algorithms, `CALL`, subqueries.
+
+**SQLite Schema:**
+```sql
+-- Core KG tables
+CREATE TABLE kg_entities (
+  id          INTEGER PRIMARY KEY,
+  canon_id    TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  type        TEXT NOT NULL,
+  session_id  TEXT NOT NULL,
+  aliases     TEXT,          -- JSON array
+  confidence  REAL DEFAULT 1.0,
+  artifact_id TEXT,
+  run_id      TEXT,
+  workspace_id TEXT,
+  track       TEXT DEFAULT 'open',
+  props       TEXT,          -- JSON for extra properties
+  created_at  TEXT,
+  updated_at  TEXT,
+  UNIQUE(canon_id, session_id)
+);
+
+CREATE TABLE kg_relationships (
+  id          INTEGER PRIMARY KEY,
+  from_id     INTEGER NOT NULL REFERENCES kg_entities(id),
+  to_id       INTEGER NOT NULL REFERENCES kg_entities(id),
+  predicate   TEXT NOT NULL,
+  confidence  REAL DEFAULT 1.0,
+  raw_predicate TEXT,
+  artifact_id TEXT,
+  run_id      TEXT,
+  track       TEXT DEFAULT 'open',
+  props       TEXT           -- JSON for extra properties
+);
+
+CREATE TABLE kg_raw_triples (
+  id             INTEGER PRIMARY KEY,
+  subject        TEXT,
+  predicate      TEXT,
+  object         TEXT,
+  subject_kind   TEXT,
+  object_kind    TEXT,
+  confidence     REAL,
+  rationale      TEXT,
+  triple_index   INTEGER,
+  artifact_id    TEXT,
+  source_file    TEXT,
+  session_id     TEXT NOT NULL,
+  run_id         TEXT,
+  track          TEXT DEFAULT 'open',
+  created_at     TEXT,
+  subject_canon_id TEXT,
+  object_canon_id  TEXT
+);
+
+CREATE INDEX idx_kg_entities_session ON kg_entities(session_id);
+CREATE INDEX idx_kg_entities_name ON kg_entities(name);
+CREATE INDEX idx_kg_entities_type ON kg_entities(type);
+CREATE INDEX idx_kg_rels_from ON kg_relationships(from_id);
+CREATE INDEX idx_kg_rels_to ON kg_relationships(to_id);
+CREATE INDEX idx_kg_raw_session ON kg_raw_triples(session_id);
+```
+
+#### 11.3b KG-Lite Plugin (`@intentweave/plugin-kg-lite`, M) ✅
+
+`PersistenceCapability` backed by CypherLite + better-sqlite3. Ships with the CLI
+by default — zero config, no external database.
+
+#### 11.3c KG Plugin (`@intentweave/plugin-kg`, L) ✅
+
+Existing Neo4j code extracted into a plugin. Passthrough to `neo4j-driver`.
+Installed via `iw plugin add kg`.
+
+#### Architecture
+
+```
+PersistenceCapability.query(cypher, params)
+       │
+       ├──▶ plugin-kg (Neo4j)        → pass through to neo4j-driver
+       │
+       └──▶ plugin-kg-lite (SQLite)  → CypherLite parser → SQL → better-sqlite3
+```
+
+**What moves to plugin-kg:**
+- Commands: `iw run`, `iw query`, `iw context`, `iw persist`, `iw impact`,
+  `iw doc-health --neo4j`, `iw xlink`
+- MCP tools: `kg_query`, `kg_context`, `kg_entities`, `kg_impact`, `kg_doc_health`,
+  `kg_schema`
+- Dependencies: `neo4j-driver`
+
+**What stays in core CLI:**
+- All `iw index *` commands (CARI)
+- All `cari_*` MCP tools
+- `iw init`, `iw plugin *`
+- `iw doc-health` (CARI mode — default)
+
+**Result:** `npm install -g @intentweave/cli` installs CARI + KG-Lite. Full Neo4j
+users run `iw plugin add kg` for the production backend. The consuming code
+(query.ts, context.ts, persist.ts, impact.ts) speaks Cypher to whichever backend
+is active — zero code changes needed.
+
+### 11.4 Plugin CLI Commands _(CARI, S)_ ✅
+
+Add `iw plugin` subcommands for plugin lifecycle management:
+
+```bash
+iw plugin list                  # show installed plugins + capabilities
+iw plugin add <name>            # npm install -g @intentweave/plugin-<name>
+iw plugin remove <name>         # npm uninstall -g @intentweave/plugin-<name>
+iw plugin info <name>           # show plugin details, version, capabilities
+```
+
+`iw plugin list` output:
+
+```
+Plugin          Version  Capabilities    Commands Added
+──────────────  ───────  ──────────────  ─────────────────────
+kg              0.8.0    llm, persist    run, query, context, persist, impact
+llm             0.1.0    llm             (none — enhances --explain/--provider)
+swift           0.8.0    language:swift  (extends iw index build)
+```
+
+### 11.5 Lightweight LLM Plugin _(INT, S)_ ✅
+
+A minimal plugin that provides just the `LlmCapability` — OpenAI SDK + a thin wrapper.
+No Neo4j, no analyzer, no pipeline. For users who want `--explain` and `--provider`
+on reports without the full KG stack.
+
+```bash
+iw plugin add llm
+iw index export --html --provider openai          # now works
+iw index export --focus auth.ts --explain          # now works
+```
+
+Package: `@intentweave/plugin-llm`. Dependencies: just `openai`.
+
+### 11.6 Language Parser as Plugins _(AX, M)_ ✅
+
+Convert existing language parsers to the plugin format. The `LanguageRegistry` from 7.2
+already defines the adapter interface — plugins register their adapters at discovery time.
+
+```bash
+# Core ships with: TS/JS (built-in)
+# Optional:
+iw plugin add swift           # @intentweave/plugin-swift
+iw plugin add python          # @intentweave/plugin-python
+```
+
+Core's `LanguageRegistry` gains a `registerFromPlugin(plugin)` method. Each language
+plugin implements `IWPlugin` with a `registerLanguages?(registry)` hook.
+
+This means `tree-sitter-swift` and `tree-sitter-python` native binaries are only
+downloaded by users who need them — not everyone.
+
+### 11.7 CLI Neo4j Migration to PersistenceCapability _(KG, L)_
+
+Migrate CLI commands that currently import `neo4j-driver` directly to route through
+`PersistenceCapability.query()` instead. This enables `query.ts`, `context.ts`,
+`persist.ts`, `impact.ts`, `doc-health.ts`, `xlink.ts`, and MCP `kg_*` tools to
+work against **either** backend (Neo4j or SQLite) transparently.
+
+**Scope:**
+- ~12 files in `packages/cli/src/` with direct `neo4j-driver` imports
+- Move `kg_*` MCP tools to `plugin-kg`'s `registerMcpTools()`
+- Remove `neo4j-driver` from CLI's direct dependencies (keep only in `plugin-kg`)
+- Result: `@intentweave/cli` ships zero-Neo4j — full Neo4j via `iw plugin add kg`
+
+### 11.8 Selective Semantic Enrichment _(CARI + KG, L)_
+
+**Problem:** Full KG extraction (FX + KX on every file) is expensive and slow. But pure
+CARI misses semantic relationships that only an LLM can extract: decisions, rationale,
+cross-doc contradictions, intent-to-code links. Most files don't need semantic analysis —
+only the ones CARI flags as high-value or ambiguous.
+
+**Solution:** A budget-controlled enrichment pass that uses CARI signals to select targets,
+runs LLM extraction on just those files, and writes the results back into the same
+`index.db` via CypherLite's `kg_*` tables.
+
+#### Architecture
+
+```
+iw index build                           # 1. CARI pass (free, fast)
+     │
+     ├─ hotspotPriority()                # high-churn, low-doc files
+     ├─ orphanedSections()               # doc sections with no code grounding
+     ├─ hubs()                           # god-nodes needing semantic context
+     ├─ moduleCoverage() < threshold     # under-documented modules
+     ├─ crossGroupDrift()                # conflicting doc groups
+     │
+     └──▶ enrichment candidate list (ranked by impact score)
+
+iw index enrich [--budget 20] [--provider openai]
+     │                                   # 2. Targeted LLM (budget-controlled)
+     ├─ FX (extract triples for top-N files only)
+     ├─ KX (canonicalize entities + predicates)
+     ├─ Bridge: inject Canon entities → CARI annotation engine
+     └─ Write to kg_* tables in index.db  # Same SQLite file!
+     │
+iw index retrieve "auth decisions"       # 3. Unified query
+     └─ returns CARI annotations + semantic triples in one result
+```
+
+**Storage:** Semantic triples live in `kg_entities` / `kg_relationships` tables alongside
+CARI's `symbols` / `annotations` tables — single `index.db` file, no second database.
+Canonical entities are also injected via the Entity Bridge (`registerEntities()`) so CARI
+queries like `retrieve`, `connections`, and `mentions_of` surface them naturally.
+
+**Budget control:**
+- `--budget N` limits to N LLM calls (default: 20)
+- `--threshold 0.7` only enriches files with impact score ≥ 0.7
+- `--focus "packages/auth/"` restricts to a directory subtree
+- Incremental: re-enrichment skips files whose content hash hasn't changed
+
+**Impact scoring** (composite of CARI signals):
+
+```
+impact = w₁ · hotspot_rank + w₂ · orphan_ratio + w₃ · hub_degree
+       + w₄ · (1 - module_coverage) + w₅ · drift_severity
+```
+
+Default weights bias toward orphaned sections (high w₂) and hotspots (high w₁) — files
+where understanding is most needed and most likely stale.
+
+#### Use Cases for Selective Enrichment
+
+Each use case follows the same pattern: CARI identifies the target, LLM extracts the
+semantics, CARI validates the result against the code graph.
+
+**1. ASCII / Mermaid diagram validation** _(extends 5.8)_
+
+Instead of requiring a formal `.iw/architecture.yaml`, the LLM reads ASCII art or
+Mermaid diagrams embedded in docs and extracts component-flow triples:
+
+```
+CARI detects:  README.md has a ```mermaid block mentioning 6 components
+LLM extracts:  (AX Stage) -[FLOWS_TO]-> (Annotator) -[FLOWS_TO]-> (Writer)
+CARI validates: import graph confirms AX→Annotator, but Writer←IDF is undocumented
+```
+
+No manual YAML authoring — the diagram **is** the architecture spec. The LLM parses it,
+CypherLite stores it, CARI validates it. Closes the loop on 5.8 without requiring format
+changes to existing docs.
+
+**2. Decision-to-implementation tracking**
+
+```
+CARI detects:  docs/decisions/ has 12 ADR files, 4 mention entities with no code grounding
+LLM extracts:  (ADR-007: Use JWT) -[DECIDED_FOR]-> (JWT) -[IMPLEMENTED_BY]-> (AuthService)
+CARI validates: AuthService symbol exists → grounded ✓. ADR-011 mentions "Redis cache"
+               → no symbol found → flagged as unimplemented decision
+```
+
+**3. Cross-document contradiction detection**
+
+```
+CARI detects:  crossGroupDrift() flags AuthService coverage conflict between API.md
+               and ARCHITECTURE.md
+LLM extracts:  API.md says (AuthService) -[USES]-> (session tokens)
+               ARCHITECTURE.md says (AuthService) -[USES]-> (JWT stateless)
+Enriched:      contradicting USES predicates on same entity → surfaced as conflict
+```
+
+**4. Config-to-docs synchronisation**
+
+```
+CARI detects:  config.ts exports 14 constants, docs reference only 6
+LLM extracts:  "MAX_RETRIES controls retry count for API calls" →
+               (MAX_RETRIES) -[CONTROLS]-> (API retry behaviour)
+CARI validates: MAX_RETRIES=5 in code, docs say "3 retries" → value drift
+```
+
+**5. Error-path documentation**
+
+```
+CARI detects:  errorHandler.ts is a hub (high fan-in) with zero doc coverage
+LLM extracts:  (RateLimitError) -[TRIGGERS]-> (429 response) -[FOLLOWS]-> (retry-after header)
+CARI validates: RateLimitError class exists ✓, but retry-after header not in response builder → gap
+```
+
+**6. Onboarding / setup instruction validation**
+
+```
+CARI detects:  CONTRIBUTING.md references 8 commands, 3 don't match package.json scripts
+LLM extracts:  (Step 1: pnpm install) -[PRECEDES]-> (Step 2: pnpm build) -[PRECEDES]-> (Step 3: pnpm test)
+CARI validates: scripts exist ✓, but build depends on codegen step not mentioned → missing step
+```
+
+#### CLI & MCP
+
+```bash
+# Enrich top-20 highest-impact files
+iw index enrich --budget 20 --provider openai
+
+# Enrich only a specific area
+iw index enrich --focus "packages/auth/" --provider openai
+
+# Dry run — show what would be enriched and why
+iw index enrich --dry-run
+
+# Re-enrich only changed files
+iw index enrich -i --provider openai
+
+# Query enriched data alongside CARI results
+iw index retrieve "authentication decisions"   # both code symbols and KG entities
+iw index connections "AuthService"              # structural + semantic connections
+```
+
+MCP tools: existing `cari_retrieve`, `cari_connections` etc. return enriched results
+automatically — no new tools needed. Add `cari_enrich` for triggering enrichment from
+Copilot: _"Enrich the auth module with semantic analysis"_.
+
+#### Dependencies
+
+- CypherLite (11.3a ✅) — SQLite KG storage
+- Entity Bridge (exists ✅) — inject KG entities into CARI queries
+- LLM Capability (11.5 ✅) — `plugin-llm` provides the LLM calls
+- FX/KX stages (exist ✅) — extraction + canonicalization
+- CARI scoring queries (exist ✅) — hotspots, hubs, orphans, coverage, drift
+
+---
+
+## 12. Intent Verification (Future Vision)
+
+> _The "weave" in IntentWeave — bridging what you said you'd build with what you actually built._
+
+### 12.1 Spec-to-Code Verification _(KG + CARI, L)_
+
+Given a specification document (requirements, user stories, ADRs), verify that each
+stated intent has a corresponding implementation in the codebase:
+
+1. **KG** extracts requirements/decisions/constraints from the spec as entities
+2. **CARI** maps those entities to code symbols via the annotation engine
+3. **Verification** checks: is each requirement entity grounded in at least one code
+   symbol? Are implementation constraints (max retries, timeout values, etc.) reflected
+   in the actual code?
+
+```bash
+iw verify specs/auth-requirements.md
+
+# ✓ "Rate limiting on all endpoints" → found: rateLimiter middleware in routes/*.ts
+# ✗ "Max 3 retries on token refresh" → code has MAX_RETRIES=5 (constraint mismatch)
+# ✗ "Audit logging for all admin actions" → no code references found (unimplemented)
+# ⚠ "OAuth2 PKCE flow" → mentioned in auth.ts but no test coverage
+```
+
+Depends on: `plugin-kg` (entity extraction), CARI (code grounding), entity bridge (8.0a).
+
+### 12.2 Constraint Consistency Check _(KG, M)_
+
+Verify that constraints stated across different spec documents don't contradict each
+other. Uses KG entity relationships to find constraint entities and checks for conflicts:
+
+```bash
+iw verify --consistency specs/
+
+# ✗ ARCHITECTURE.md says "stateless services" but AUTH-SPEC.md requires "session store"
+# ⚠ API-SPEC.md says "max 100 items per page" but PERF-SPEC.md says "max 50 items"
+# ✓ 14/16 constraints are internally consistent
+```
+
+Depends on: `plugin-kg` (constraint extraction with relationship types).
+
+### 12.3 Living Documentation Score _(KG + CARI, M)_
+
+A composite score per project combining:
+
+- **Spec coverage** (12.1): % of requirements with code grounding
+- **Constraint consistency** (12.2): % of constraints without contradictions
+- **Documentation freshness** (existing `doc-health`): % of docs up to date
+- **Architecture conformance** (5.1b, 5.8): % of imports respecting boundaries
+
+```bash
+iw verify --score
+
+# Living Documentation Score: 78/100
+#   Spec coverage:           85% (17/20 requirements grounded)
+#   Constraint consistency:  94% (15/16 consistent)
+#   Doc freshness:           72% (18/25 docs current)
+#   Architecture conformance: 60% (3 layer violations, 2 boundary violations)
+```
 
 ---
 
@@ -804,3 +1290,12 @@ CLI: `iw index export --obsidian`.
 | 10.2 | Watch mode                       | CARI | M      | Medium | incremental (exists) |         |
 | 10.3 | Git hooks integration            | CARI | S      | Medium | 10.2                 |         |
 | 10.4 | Obsidian vault export            | CARI | M      | Low    | 9.1                  |         |
+| 11.1 | Plugin interface & registry      | CARI | M      | High   | None                 |         |
+| 11.2 | Capability provider system       | CARI | M      | High   | 11.1                 |         |
+| 11.3 | KG plugin extraction (CypherLite)| KG   | L      | High   | 11.1, 11.2           |         |
+| 11.4 | Plugin CLI commands              | CARI | S      | High   | 11.1                 |         |
+| 11.5 | Lightweight LLM plugin           | INT  | S      | Medium | 11.2                 |         |
+| 11.6 | Language parser as plugins       | AX   | M      | Medium | 11.1, 7.2            |         |
+| 12.1 | Spec-to-code verification        | KG   | L      | High   | plugin-kg, 8.0a      |         |
+| 12.2 | Constraint consistency check     | KG   | M      | High   | plugin-kg            |         |
+| 12.3 | Living documentation score       | KG   | M      | Medium | 12.1, 12.2           |         |

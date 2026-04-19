@@ -61,3 +61,7 @@ export * from "./bundle/index.js";
 
 // Weave (WX canonicalization stage)
 export * from "./weave/index.js";
+
+// Plugin system (11.1 + 11.2)
+export * from "./plugin.js";
+export * from "./pluginRegistry.js";

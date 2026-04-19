@@ -38,6 +38,14 @@
       "types": "./dist/schemas/index.d.ts",
       "import": "./dist/schemas/index.js"
     },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
+    "./pluginRegistry": {
+      "types": "./dist/pluginRegistry.d.ts",
+      "import": "./dist/pluginRegistry.js"
+    },
     "./schemas/*.json": {
       "import": "./schemas/*.json"
     }

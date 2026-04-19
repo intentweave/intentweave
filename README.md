@@ -1,20 +1,34 @@
 # IntentWeave
 
-**Semantic knowledge extraction platform** — build queryable knowledge graphs from documents and code,
-with a zero-cost code-aware retrieval index for everyday use.
+**From code graph to intent graph** — a unified platform that builds a queryable index
+of your codebase, enriches it with semantic understanding, and weaves code intent with
+implementation reality.
 
-IntentWeave provides two complementary systems:
+IntentWeave is built as three composable layers:
 
-1. **CARI (Code-Aware Retrieval Index)** — Builds a lightweight SQLite index from your code's AST,
-   document keywords, and git history. No LLM calls, no external services, no cost. Produces ranked
-   file retrieval, cross-layer connection discovery, CI drift detection, and **interactive architecture
-   visualization** with automatically inferred layers, communities, and dependency analysis.
+1. **CARI (Code-Aware Retrieval Index)** — A zero-cost SQLite index built from your
+   code's AST, document keywords, and git history. No LLM, no servers, no API keys.
+   Produces ranked retrieval, architecture visualization, dependency analysis, clone
+   detection, CI drift checks, and 30+ code intelligence queries. **This is the
+   foundation — always free, always local.**
 
-2. **Knowledge Graph (KG)** — Uses LLMs to extract entities, decisions, and relationships from
-   natural-language documents. Persists to Neo4j for rich semantic queries, impact analysis, and
-   documentation health checks.
+2. **Semantic Enrichment** — Selectively apply LLM extraction to the files CARI flags
+   as highest-value (hotspots, orphaned docs, architectural hubs). Budget-controlled,
+   stored in the same SQLite index. Unlocks decision tracking, diagram validation,
+   cross-doc contradiction detection, and config-to-docs synchronization — without
+   processing your entire codebase.
 
-Both are available through CLI, MCP tools (GitHub Copilot), REST API, and a React UI.
+3. **Knowledge Graph** — For teams needing full-scale semantic analysis, persist to
+   Neo4j for rich queries, impact analysis, and documentation health checks. The same
+   Cypher queries work against both SQLite (via CypherLite) and Neo4j — swap backends
+   with a single plugin command.
+
+The name pays off at the top: CARI gives you the **code graph**, enrichment gives you
+the **intent graph**, and the third layer **weaves them together** — bridging what you
+said you'd build with what you actually built.
+
+All layers are available through CLI, MCP tools (GitHub Copilot), REST API, and a
+plugin architecture that keeps the core lightweight.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
@@ -90,29 +104,11 @@ Two depth modes:
 - `--depth structured` (default) — headings, bold text, code spans only. Fast and precise.
 - `--depth full` — adds body text scanning with IDF noise filtering. +72% more annotations.
 
-### Knowledge Graph — LLM Semantic Extraction
+### Knowledge Graph — Full Semantic Extraction (Optional)
 
-### Install from npm
-
-```bash
-npm install -g @intentweave/cli
-iw --help
-```
-
-Or use `npx` without installing:
+For teams needing full-scale semantic analysis beyond selective enrichment:
 
 ```bash
-npx @intentweave/cli run docs/*.md --track open -i -v
-```
-
-### First project setup
-
-```bash
-cd /path/to/your/project
-
-# Initialize workspace
-iw init
-
 # Start Neo4j (requires Docker)
 docker run -d --name neo4j \
   -p 7474:7474 -p 7687:7687 \
@@ -152,6 +148,72 @@ pnpm dev
 # → 📖 API docs:   http://localhost:3000/docs
 # → ❤️  Health:     http://localhost:3000/health
 ```
+
+---
+
+## Selective Semantic Enrichment (Layer 2)
+
+The bridge between free static analysis and full KG extraction. CARI identifies the
+highest-value targets, the LLM extracts semantic triples for just those files, and
+the results go back into the same SQLite index.
+
+```bash
+# Enrich top-20 highest-impact files (hotspots, orphans, hubs)
+iw index enrich --budget 20 --provider openai
+
+# Dry run — see what would be enriched and why
+iw index enrich --dry-run
+
+# Query both code structure and semantic relationships
+iw index retrieve "authentication decisions"
+iw index connections "AuthService"         # structural + semantic connections
+```
+
+**What enrichment unlocks:**
+
+| Use Case | How It Works |
+|----------|-------------|
+| **Architecture diagram validation** | LLM reads ASCII/Mermaid diagrams in your docs, extracts component flows, CARI validates against the actual import graph |
+| **Decision tracking** | LLM extracts decision triples from ADRs, CARI checks which decisions have code grounding |
+| **Cross-doc contradiction detection** | LLM extracts conflicting predicates from docs that CARI flags as drifted |
+| **Config-to-docs sync** | LLM maps config parameters to docs, CARI detects value mismatches |
+| **Setup instruction validation** | LLM extracts step sequences from CONTRIBUTING.md, CARI validates commands exist |
+
+Budget-controlled: set `--budget N` to cap LLM calls. Incremental: unchanged files
+are skipped. All stored in the same `index.db` — no second database.
+
+---
+
+## What's Coming
+
+IntentWeave is built around a [feature backlog](docs/BACKLOG.md) with 80+ specced
+features. Here's what's already shipped and what's next:
+
+### Shipped (40+ features)
+
+| Area | Features |
+|------|----------|
+| **Document Intelligence** | doc-group classification, cross-group drift, orphaned sections, module coverage, terminology inconsistency, doc completeness scoring |
+| **Code Duplication** | exact clone detection, structural (Type 2) clone detection |
+| **Dependencies** | circular imports, unused exports, dependency depth, boundary violations |
+| **Architecture** | layer inference, layer validation, as-is vs as-should comparison, hierarchical sub-layering, vertical slice detection, interface conformance, dead feature detection, API surface changelog |
+| **Git Intelligence** | hotspot priority, co-change coupling, ownership tracking |
+| **Graph Topology** | community detection (3 modes), hub analysis, surprising connections, rationale extraction |
+| **Visualisation** | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports |
+| **Languages** | TypeScript/JavaScript (built-in), Python, Swift (plugins) |
+| **Plugin System** | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j) |
+| **Integration** | CariIndex facade, entity bridge, 34 MCP tools, REST API |
+
+### Next Up
+
+| Feature | Description |
+|---------|-------------|
+| **Selective enrichment** (11.8) | Budget-controlled LLM on CARI-selected targets — the bridge between layers 1 and 2 |
+| **Architecture diagram validation** (5.8 + 11.8) | LLM parses ASCII/Mermaid diagrams, CARI validates against import graph — no YAML config needed |
+| **Intent verification** (12.x) | Spec-to-code verification, constraint checking, living documentation scores |
+| **More languages** | Go, Rust, Java via tree-sitter plugins |
+| **Watch mode** | Continuous re-indexing on file save |
+| **CI action** | `uses: intentweave/doc-health-action@v1` for GitHub Actions |
 
 ---
 
@@ -448,46 +510,62 @@ VS Code auto-discovers via `.vscode/mcp.json`:
 ## Architecture
 
 ```
-apps/
-  server/               → Runnable server (composes core + open)
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Layer 3: Intent Verification                 │
+│  "Does the code match what the docs say?"                           │
+│  Spec-to-code verification · constraint checking · living doc score │
+│                                  (planned)                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                        Layer 2: Semantic Enrichment                 │
+│  Budget-controlled LLM extraction on CARI-selected targets          │
+│  Decision tracking · diagram validation · contradiction detection   │
+│  plugin-llm (OpenAI) · plugin-kg-lite (SQLite) · plugin-kg (Neo4j) │
+├─────────────────────────────────────────────────────────────────────┤
+│                        Layer 1: CARI Index (always $0)              │
+│  AST · keywords · git history · annotations · co-occurrences        │
+│  30+ queries · architecture viz · communities · layers · drift      │
+│  @intentweave/index · @intentweave/ast-extractor · @intentweave/cli │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
+### Packages
+
+```
 packages/
-  core/                 → @intentweave/core — types, predicates, interfaces
-  analyzer/             → @intentweave/analyzer — pipeline engine (IN→FX→KX→GX)
-  index/                → @intentweave/index — CARI SQLite index (annotator, IDF, queries)
-  cli/                  → @intentweave/cli — `iw` commands + MCP server
-  server-core/          → @intentweave/server-core — Fastify + Neo4j + middleware
-  server-open/          → @intentweave/server-open — open track API routes
-  profiles/             → @intentweave/profiles — extraction profile packs
-  ast-extractor/        → @intentweave/ast-extractor — tree-sitter TS/JS extraction
-  swift-parser/         → @intentweave/swift-parser — tree-sitter Swift extraction
-  python-parser/        → @intentweave/python-parser — tree-sitter Python extraction
+  core/                → shared types, plugin registry, capability interfaces
+  index/               → CARI SQLite index (annotator, IDF, 30+ queries, HTML export)
+  analyzer/            → pipeline engine (IN→FX→KX→GX), language registry
+  cli/                 → `iw` commands + MCP server (34 tools)
+  ast-extractor/       → tree-sitter TS/JS extraction (built-in)
+  cypher-lite/         → zero-dep Cypher→SQL transpiler for SQLite KG
+  profiles/            → extraction profile packs
+
+plugins/                                        # install only what you need
+  plugin-llm/          → LLM provider (OpenAI) — enables --explain, --provider
+  plugin-kg-lite/      → SQLite KG persistence via CypherLite (zero config)
+  plugin-kg/           → Neo4j KG persistence (production graph database)
+  plugin-swift/        → Swift language support via tree-sitter
+  plugin-python/       → Python language support via tree-sitter
+
+apps/
+  server/              → Fastify REST API (composes server-core + server-open)
 ```
 
-### Server Plugin Architecture
+### Plugin Architecture
 
-The server is built on a layered plugin model:
+Plugins are npm packages discovered automatically at startup. Install only
+what you need:
 
+```bash
+iw plugin list                         # see installed plugins
+iw plugin add llm                      # adds LLM capability (--explain, --provider)
+iw plugin add kg                       # adds Neo4j persistence backend
+iw plugin add swift                    # adds Swift language support
 ```
-┌──────────────────────────────────────────┐
-│          @intentweave/server-core         │
-│  Fastify 5 + Neo4j pool + context MW     │
-│  Health + SSE + OpenAPI (Swagger)        │
-└──────────┬───────────────────────────────┘
-           │
-┌──────────▼───────────────────────────────┐
-│         @intentweave/server-open          │
-│  POST /api/query   — KG query (NL+Cypher)│
-│  POST /api/context — RAG context          │
-│  POST /api/run     — pipeline execution   │
-│  POST /api/persist — Neo4j persistence    │
-│  POST /api/impact  — impact analysis      │
-│  POST /api/doc-health — doc freshness     │
-│  GET  /api/entities — entity listing      │
-│  GET  /api/schema  — graph schema         │
-│  POST /api/xlink   — code linking         │
-└──────────────────────────────────────────┘
-```
+
+The core CLI ships with CARI + KG-Lite (SQLite) — zero external dependencies.
+Each plugin provides a typed capability (LLM, persistence, language) that core
+features consume without knowing which plugin is active.
 
 ---
 
@@ -564,11 +642,13 @@ pnpm --filter @intentweave/cli publish --access public
 
 ### Project Stats
 
-- **11 packages** + 1 app
-- **1240+ tests**, all passing
+- **18 packages** + 1 app (including 6 plugins)
+- **1375+ tests**, all passing
 - **TypeScript 5.6**, ESM, strict mode
+- **Plugin architecture** — registry + auto-discovery, 3 capability types (LLM, persistence, language)
+- **Dual KG backend** — SQLite via CypherLite (zero config) or Neo4j (production)
 - **Fastify 5**, Neo4j 5, SQLite (better-sqlite3), Turbo, pnpm workspaces
-- **31 CARI query modes** + interactive HTML architecture report with multi-view community modes
+- **30+ CARI query modes** + interactive HTML architecture report with multi-view community modes
 - **34 MCP tools** for GitHub Copilot integration
 
 ---

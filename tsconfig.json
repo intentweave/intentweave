@@ -7,6 +7,15 @@
     { "path": "packages/server-open" },
     { "path": "packages/profiles" },
     { "path": "packages/ast-extractor" },
+    { "path": "packages/index" },
+    { "path": "packages/cypher-lite" },
+    { "path": "packages/python-parser" },
+    { "path": "packages/swift-parser" },
+    { "path": "packages/plugin-llm" },
+    { "path": "packages/plugin-kg" },
+    { "path": "packages/plugin-kg-lite" },
+    { "path": "packages/plugin-swift" },
+    { "path": "packages/plugin-python" },
     { "path": "apps/server" }
   ],
   "files": []

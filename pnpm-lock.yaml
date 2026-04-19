@@ -98,12 +98,6 @@ importers:
       '@intentweave/profiles':
         specifier: workspace:*
         version: link:../profiles
-      '@intentweave/python-parser':
-        specifier: workspace:*
-        version: link:../python-parser
-      '@intentweave/swift-parser':
-        specifier: workspace:*
-        version: link:../swift-parser
       beautiful-mermaid:
         specifier: ^1.1.3
         version: 1.1.3
@@ -194,6 +188,22 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+    optionalDependencies:
+      '@intentweave/plugin-kg':
+        specifier: workspace:*
+        version: link:../plugin-kg
+      '@intentweave/plugin-kg-lite':
+        specifier: workspace:*
+        version: link:../plugin-kg-lite
+      '@intentweave/plugin-llm':
+        specifier: workspace:*
+        version: link:../plugin-llm
+      '@intentweave/plugin-python':
+        specifier: workspace:*
+        version: link:../plugin-python
+      '@intentweave/plugin-swift':
+        specifier: workspace:*
+        version: link:../plugin-swift
 
   packages/core:
     dependencies:
@@ -201,6 +211,21 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+
+  packages/cypher-lite:
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
+      better-sqlite3:
+        specifier: ^11.7.0
+        version: 11.10.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -229,6 +254,95 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.12
         version: 7.6.13
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+
+  packages/plugin-kg:
+    dependencies:
+      '@intentweave/core':
+        specifier: workspace:*
+        version: link:../core
+      neo4j-driver:
+        specifier: ^5.27.0
+        version: 5.28.3
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+
+  packages/plugin-kg-lite:
+    dependencies:
+      '@intentweave/core':
+        specifier: workspace:*
+        version: link:../core
+      '@intentweave/cypher-lite':
+        specifier: workspace:*
+        version: link:../cypher-lite
+      better-sqlite3:
+        specifier: ^11.9.0
+        version: 11.10.0
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.11
+        version: 7.6.13
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+
+  packages/plugin-llm:
+    dependencies:
+      '@intentweave/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+
+  packages/plugin-python:
+    dependencies:
+      '@intentweave/analyzer':
+        specifier: workspace:*
+        version: link:../analyzer
+      '@intentweave/core':
+        specifier: workspace:*
+        version: link:../core
+      '@intentweave/python-parser':
+        specifier: workspace:*
+        version: link:../python-parser
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.37)(lightningcss@1.31.1)
+
+  packages/plugin-swift:
+    dependencies:
+      '@intentweave/analyzer':
+        specifier: workspace:*
+        version: link:../analyzer
+      '@intentweave/core':
+        specifier: workspace:*
+        version: link:../core
+      '@intentweave/swift-parser':
+        specifier: workspace:*
+        version: link:../swift-parser
+    devDependencies:
       typescript:
         specifier: ^5.6.0
         version: 5.9.3

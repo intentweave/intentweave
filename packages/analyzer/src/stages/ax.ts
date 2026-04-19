@@ -5,9 +5,9 @@
  * AX Stage - AST Extraction
  *
  * Extracts code symbols from source files using tree-sitter via a
- * language-agnostic adapter registry. Built-in adapters support
- * TypeScript/JavaScript, Swift, and Python. Adding a new language
- * requires one adapter factory + one `registry.register()` call.
+ * language-agnostic adapter registry. TypeScript/JavaScript is built‑in;
+ * additional languages (Swift, Python, etc.) are contributed by
+ * language plugins discovered at runtime via the PluginRegistry.
  *
  * Design principles:
  * - Per-file processing (stable provenance, incremental updates)
@@ -22,7 +22,6 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as crypto from "crypto";
 import {
   createExtractor,
   type FileExtractionResult,
@@ -31,23 +30,24 @@ import {
 } from "@intentweave/ast-extractor";
 
 import {
-  createSwiftExtractor,
-  type SwiftSymbol,
-  type SwiftFileResult,
-} from "@intentweave/swift-parser";
-
-import {
-  createPythonExtractor,
-  type PythonSymbol,
-  type PythonFileResult,
-} from "@intentweave/python-parser";
-
-import {
   LanguageRegistry,
   type LanguageAdapter,
   type LanguageAdapterOptions,
   type LanguageAdapterFactory,
 } from "./languageRegistry.js";
+
+import {
+  generateSymbolId,
+  hashFileContent,
+  computeBodyHash,
+  extractTodos,
+  extractRationale,
+} from "./ax-helpers.js";
+
+import {
+  getPluginRegistry,
+  type LanguageCapability,
+} from "@intentweave/core";
 
 // ============================================================================
 // AX Output Types
@@ -253,41 +253,12 @@ export interface AxStageOptions {
 
   /** Max depth for nested symbols (default: 2) */
   maxDepth?: number;
-}
 
-// ============================================================================
-// ID Generation
-// ============================================================================
-
-/**
- * Generate stable symbol ID
- * Format: impl:<path>#<kind>:<name>(<sigHash>)
- */
-function generateSymbolId(
-  filePath: string,
-  kind: string,
-  name: string,
-  container?: string,
-  signature?: string,
-): string {
-  const base = container ? `${container}.${name}` : name;
-  const sigHash = signature
-    ? crypto.createHash("sha256").update(signature).digest("hex").slice(0, 8)
-    : "";
-
-  // Normalize path for cross-platform stability
-  const normalizedPath = filePath.replace(/\\/g, "/");
-
-  return sigHash
-    ? `impl:${normalizedPath}#${kind}:${base}(${sigHash})`
-    : `impl:${normalizedPath}#${kind}:${base}`;
-}
-
-/**
- * Generate file content hash for change detection
- */
-function hashFileContent(content: string): string {
-  return crypto.createHash("sha256").update(content).digest("hex").slice(0, 16);
+  /**
+   * Additional language adapters to register (e.g. from language plugins).
+   * These are registered alongside the built-in TypeScript/JavaScript adapter.
+   */
+  extraAdapters?: LanguageAdapter[];
 }
 
 // ============================================================================
@@ -363,259 +334,8 @@ function convertSymbol(
 }
 
 // ============================================================================
-// Swift Symbol Mapping
+// Import / Resolve Helpers
 // ============================================================================
-
-/**
- * Map Swift SymbolKind to AX SymbolKind
- */
-function mapSwiftSymbolKind(
-  kind: SwiftSymbol["kind"],
-): AxSymbol["kind"] | null {
-  switch (kind) {
-    case "function":
-      return "function";
-    case "class":
-      return "class";
-    case "struct":
-      return "struct";
-    case "protocol":
-      return "protocol";
-    case "enum":
-      return "enum";
-    case "method":
-      return "method";
-    case "property":
-      return "property";
-    case "initializer":
-      return "initializer";
-    case "extension":
-      return "extension";
-    case "typealias":
-    case "associatedtype":
-      return "type";
-    // Skip these for now
-    case "variable":
-    case "operator":
-    case "macro":
-    case "subscript":
-      return null;
-    default:
-      return null;
-  }
-}
-
-/**
- * Convert Swift symbol to AX symbol
- */
-function convertSwiftSymbol(
-  symbol: SwiftSymbol,
-  filePath: string,
-): AxSymbol | null {
-  const kind = mapSwiftSymbolKind(symbol.kind);
-  if (!kind) return null;
-
-  return {
-    id: generateSymbolId(
-      filePath,
-      kind,
-      symbol.name,
-      symbol.parent,
-      symbol.signature,
-    ),
-    kind,
-    name: symbol.name,
-    container: symbol.parent,
-    signature: symbol.signature,
-    filePath,
-    span: {
-      startLine: symbol.range.startLine,
-      startCol: symbol.range.startColumn,
-      endLine: symbol.range.endLine,
-      endCol: symbol.range.endColumn,
-    },
-    export: symbol.isExported ? "exported" : "internal",
-    parameters: symbol.parameters,
-    docSummary: symbol.docSummary,
-  };
-}
-
-// ============================================================================
-// Python Symbol Mapping
-// ============================================================================
-
-/**
- * Map Python SymbolKind to AX SymbolKind
- */
-function mapPythonSymbolKind(
-  kind: PythonSymbol["kind"],
-): AxSymbol["kind"] | null {
-  switch (kind) {
-    case "function":
-      return "function";
-    case "class":
-      return "class";
-    case "method":
-      return "method";
-    case "property":
-      return "property";
-    // Skip module-level variables (like Swift)
-    case "variable":
-    case "module":
-      return null;
-    default:
-      return null;
-  }
-}
-
-/**
- * Convert Python symbol to AX symbol
- */
-function convertPythonSymbol(
-  symbol: PythonSymbol,
-  filePath: string,
-): AxSymbol | null {
-  const kind = mapPythonSymbolKind(symbol.kind);
-  if (!kind) return null;
-
-  return {
-    id: generateSymbolId(
-      filePath,
-      kind,
-      symbol.name,
-      symbol.parent,
-      symbol.signature,
-    ),
-    kind,
-    name: symbol.name,
-    container: symbol.parent,
-    signature: symbol.signature,
-    filePath,
-    span: {
-      startLine: symbol.range.startLine,
-      startCol: symbol.range.startColumn,
-      endLine: symbol.range.endLine,
-      endCol: symbol.range.endColumn,
-    },
-    export: symbol.isExported ? "exported" : "internal",
-    parameters: symbol.parameters,
-    docSummary: symbol.docSummary,
-  };
-}
-
-// ============================================================================
-// Body Hash / Import / TODO Helpers
-// ============================================================================
-
-/** Minimum body lines to qualify for clone detection */
-const MIN_BODY_LINES = 4;
-
-/** Regex matching TODO / FIXME / HACK / XXX markers in comments */
-const TODO_PATTERN =
-  /(?:\/\/|\/\*|^\s*\*)\s*(TODO|FIXME|HACK|XXX)\b[:\s]*(.*)/i;
-
-/** Regex matching WHY / NOTE / IMPORTANT / DESIGN rationale markers in comments */
-const RATIONALE_PATTERN =
-  /(?:\/\/|\/\*|^\s*\*|#)\s*(WHY|NOTE|IMPORTANT|DESIGN)\b[:\s]*(.*)/i;
-
-/**
- * Compute a normalised body hash for clone detection.
- * Modifies the symbol in place (sets bodyHash / bodyLines).
- */
-function computeBodyHash(sym: AxSymbol, lines: string[]): void {
-  const bodyLineCount = sym.span.endLine - sym.span.startLine + 1;
-  if (bodyLineCount < MIN_BODY_LINES) return;
-
-  const body = lines
-    .slice(sym.span.startLine - 1, sym.span.endLine)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith("//"))
-    .join("\n");
-
-  if (body.length === 0) return;
-
-  sym.bodyHash = crypto
-    .createHash("sha256")
-    .update(body)
-    .digest("hex")
-    .slice(0, 16);
-  sym.bodyLines = bodyLineCount;
-
-  // Also compute structural hash (Type 2 clone detection)
-  computeStructureHash(sym, body);
-}
-
-/** Regex patterns for normalising identifiers and literals to placeholders */
-const STRING_LITERAL = /(['"`])(?:(?!\1|\\).|\\.)*\1/g;
-const NUMERIC_LITERAL = /\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi;
-const IDENTIFIER = /\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g;
-
-/** Reserved words that should NOT be replaced (they define structure) */
-const RESERVED = new Set([
-  "async",
-  "await",
-  "break",
-  "case",
-  "catch",
-  "class",
-  "const",
-  "continue",
-  "debugger",
-  "default",
-  "delete",
-  "do",
-  "else",
-  "enum",
-  "export",
-  "extends",
-  "false",
-  "finally",
-  "for",
-  "function",
-  "if",
-  "implements",
-  "import",
-  "in",
-  "instanceof",
-  "interface",
-  "let",
-  "new",
-  "null",
-  "of",
-  "return",
-  "static",
-  "super",
-  "switch",
-  "this",
-  "throw",
-  "true",
-  "try",
-  "type",
-  "typeof",
-  "undefined",
-  "var",
-  "void",
-  "while",
-  "with",
-  "yield",
-]);
-
-/**
- * Compute a structural hash by replacing identifiers and literals with
- * placeholders. Catches renamed-variable copies (Type 2 clones).
- */
-function computeStructureHash(sym: AxSymbol, normalisedBody: string): void {
-  const structural = normalisedBody
-    .replace(STRING_LITERAL, '"S"')
-    .replace(NUMERIC_LITERAL, "0")
-    .replace(IDENTIFIER, (match) => (RESERVED.has(match) ? match : "_"));
-
-  sym.structureHash = crypto
-    .createHash("sha256")
-    .update(structural)
-    .digest("hex")
-    .slice(0, 16);
-}
 
 /**
  * Convert ast-extractor imports to AxImport[].
@@ -669,48 +389,15 @@ function resolveImportPath(
   return undefined;
 }
 
-/**
- * Extract TODO / FIXME / HACK / XXX markers from source lines.
- */
-function extractTodos(lines: string[]): AxTodo[] {
-  const todos: AxTodo[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = TODO_PATTERN.exec(lines[i]);
-    if (m) {
-      todos.push({
-        line: i + 1,
-        kind: m[1].toLowerCase() as AxTodo["kind"],
-        text: m[2].trim(),
-      });
-    }
-  }
-  return todos;
-}
-
-/**
- * Extract WHY / NOTE / IMPORTANT / DESIGN rationale markers from source lines.
- */
-function extractRationale(lines: string[]): AxRationale[] {
-  const items: AxRationale[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = RATIONALE_PATTERN.exec(lines[i]);
-    if (m) {
-      items.push({
-        line: i + 1,
-        kind: m[1].toLowerCase() as AxRationale["kind"],
-        text: m[2].trim(),
-      });
-    }
-  }
-  return items;
-}
-
 // ============================================================================
 // File Discovery
 // ============================================================================
 
 /**
- * Find source files in workspace (TypeScript, JavaScript, Swift, Python)
+ * Find source files in workspace.
+ *
+ * Default patterns cover TypeScript/JavaScript only. Additional file
+ * extensions are contributed by language plugins via the LanguageRegistry.
  */
 async function discoverFiles(
   workspaceRoot: string,
@@ -719,8 +406,6 @@ async function discoverFiles(
     "**/*.tsx",
     "**/*.js",
     "**/*.jsx",
-    "**/*.swift",
-    "**/*.py",
   ],
   exclude: string[] = [
     "**/node_modules/**",
@@ -728,9 +413,6 @@ async function discoverFiles(
     "**/*.d.ts",
     "**/*.test.ts",
     "**/*.spec.ts",
-    "**/.build/**",
-    "**/Pods/**",
-    "**/DerivedData/**",
   ],
 ): Promise<string[]> {
   const { glob } = await import("glob");
@@ -802,119 +484,6 @@ async function processFile(
   };
 }
 
-/**
- * Check whether a file path looks like a Swift source file
- */
-function isSwiftFile(filePath: string): boolean {
-  return filePath.endsWith(".swift");
-}
-
-/**
- * Check whether a file path looks like a Python source file
- */
-function isPythonFile(filePath: string): boolean {
-  return filePath.endsWith(".py");
-}
-
-/**
- * Process a single Swift file
- */
-async function processSwiftFile(
-  swiftExtractor: ReturnType<typeof createSwiftExtractor>,
-  workspaceRoot: string,
-  relativePath: string,
-): Promise<AxFileResult> {
-  const absolutePath = path.join(workspaceRoot, relativePath);
-
-  // Read file content for hash
-  const content = await fs.promises.readFile(absolutePath, "utf-8");
-  const contentHash = hashFileContent(content);
-  const lines = content.split("\n");
-
-  // Extract symbols
-  const result = await swiftExtractor.extractFile(absolutePath);
-
-  // Convert symbols + compute body hashes
-  const symbols: AxSymbol[] = [];
-  for (const symbol of result.symbols) {
-    const axSymbol = convertSwiftSymbol(symbol, relativePath);
-    if (axSymbol) {
-      computeBodyHash(axSymbol, lines);
-      symbols.push(axSymbol);
-    }
-  }
-
-  // Extract TODOs and rationale (no imports for Swift yet)
-  const todos = extractTodos(lines);
-  const rationale = extractRationale(lines);
-
-  return {
-    filePath: relativePath,
-    contentHash,
-    language: "swift",
-    symbols,
-    imports: [],
-    todos,
-    rationale,
-    extractedAt: Date.now(),
-    errors: result.errors,
-  };
-}
-
-/**
- * Process a single Python file
- */
-async function processPythonFile(
-  pythonExtractor: ReturnType<typeof createPythonExtractor>,
-  workspaceRoot: string,
-  relativePath: string,
-): Promise<AxFileResult> {
-  const absolutePath = path.join(workspaceRoot, relativePath);
-
-  // Read file content for hash
-  const content = await fs.promises.readFile(absolutePath, "utf-8");
-  const contentHash = hashFileContent(content);
-  const lines = content.split("\n");
-
-  // Extract symbols
-  const result = await pythonExtractor.extractFile(absolutePath);
-
-  // Convert symbols + compute body hashes
-  const symbols: AxSymbol[] = [];
-  for (const symbol of result.symbols) {
-    const axSymbol = convertPythonSymbol(symbol, relativePath);
-    if (axSymbol) {
-      computeBodyHash(axSymbol, lines);
-      symbols.push(axSymbol);
-    }
-  }
-
-  // Convert Python imports to AX imports
-  const imports: AxImport[] = result.imports.map((imp) => ({
-    moduleSpecifier: imp.moduleName,
-    isRelative: imp.isRelative,
-    importedNames: imp.isWholeModule
-      ? [imp.alias || imp.moduleName]
-      : imp.importedNames.map((n) => n.alias || n.name),
-  }));
-
-  // Extract TODOs and rationale
-  const todos = extractTodos(lines);
-  const rationale = extractRationale(lines);
-
-  return {
-    filePath: relativePath,
-    contentHash,
-    language: "python",
-    symbols,
-    imports,
-    todos,
-    rationale,
-    extractedAt: Date.now(),
-    errors: result.errors,
-  };
-}
-
 // ============================================================================
 // Language Adapter Factories
 // ============================================================================
@@ -950,78 +519,32 @@ export function createTypeScriptAdapter(
 }
 
 /**
- * Create a Swift language adapter.
- */
-export function createSwiftAdapter(
-  options: LanguageAdapterOptions,
-): LanguageAdapter {
-  let extractor: ReturnType<typeof createSwiftExtractor> | null = null;
-
-  function getExtractor() {
-    if (!extractor) {
-      extractor = createSwiftExtractor(options.workspaceRoot, {
-        includePrivate: options.includePrivate,
-        includeMembers: options.includeMembers,
-        maxDepth: options.maxDepth,
-        includeDocSummary: true,
-        includeParameters: true,
-      });
-    }
-    return extractor;
-  }
-
-  return {
-    extensions: [".swift"],
-
-    async processFile(workspaceRoot, relativePath) {
-      return processSwiftFile(getExtractor(), workspaceRoot, relativePath);
-    },
-  };
-}
-
-/**
- * Create a Python language adapter.
- */
-export function createPythonAdapter(
-  options: LanguageAdapterOptions,
-): LanguageAdapter {
-  let extractor: ReturnType<typeof createPythonExtractor> | null = null;
-
-  function getExtractor() {
-    if (!extractor) {
-      extractor = createPythonExtractor(options.workspaceRoot, {
-        includePrivate: options.includePrivate,
-        includeMembers: options.includeMembers,
-        maxDepth: options.maxDepth,
-        includeDocSummary: true,
-        includeParameters: true,
-      });
-    }
-    return extractor;
-  }
-
-  return {
-    extensions: [".py"],
-
-    async processFile(workspaceRoot, relativePath) {
-      return processPythonFile(getExtractor(), workspaceRoot, relativePath);
-    },
-  };
-}
-
-/**
- * Create a LanguageRegistry with all built-in language adapters.
- *
- * Built-in adapters: TypeScript/JavaScript, Swift, Python.
- * Use `registry.register()` to add custom adapters.
+ * Create a LanguageRegistry with built-in TypeScript/JavaScript adapter
+ * plus any language plugins discovered by the PluginRegistry.
  */
 export function createLanguageRegistry(
   options: LanguageAdapterOptions,
 ): LanguageRegistry {
   const registry = new LanguageRegistry();
   registry.register(createTypeScriptAdapter(options));
-  registry.register(createSwiftAdapter(options));
-  registry.register(createPythonAdapter(options));
+
+  // Auto-discover language plugins from the global PluginRegistry
+  try {
+    const pluginRegistry = getPluginRegistry();
+    const caps = pluginRegistry.getAllCapabilities<LanguageCapability>("language");
+    for (const cap of caps) {
+      const adapter = cap.createAdapter({
+        workspaceRoot: options.workspaceRoot,
+        includePrivate: options.includePrivate,
+        includeMembers: options.includeMembers,
+        maxDepth: options.maxDepth,
+      }) as LanguageAdapter;
+      registry.register(adapter);
+    }
+  } catch {
+    // PluginRegistry not initialized — skip plugin adapters
+  }
+
   return registry;
 }
 
@@ -1036,15 +559,23 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
     includePrivate = true,
     includeMembers = true,
     maxDepth = 2,
+    extraAdapters,
   } = options;
 
-  // Create language registry with all built-in adapters
+  // Create language registry with built-in TS/JS adapter
   const registry = createLanguageRegistry({
     workspaceRoot,
     includePrivate,
     includeMembers,
     maxDepth,
   });
+
+  // Register plugin-provided language adapters
+  if (extraAdapters) {
+    for (const adapter of extraAdapters) {
+      registry.register(adapter);
+    }
+  }
 
   // Discover files (use registry patterns if no explicit include)
   const files = await discoverFiles(
@@ -1135,6 +666,7 @@ export async function runAxStageIncremental(
     includePrivate = true,
     includeMembers = true,
     maxDepth = 2,
+    extraAdapters,
   } = options;
 
   // Build lookup for previous file hashes
@@ -1143,13 +675,20 @@ export async function runAxStageIncremental(
     previousHashes.set(file.filePath, file.contentHash);
   }
 
-  // Create language registry with all built-in adapters (lazy initialization)
+  // Create language registry with built-in TS/JS adapter
   const registry = createLanguageRegistry({
     workspaceRoot,
     includePrivate,
     includeMembers,
     maxDepth,
   });
+
+  // Register plugin-provided language adapters
+  if (extraAdapters) {
+    for (const adapter of extraAdapters) {
+      registry.register(adapter);
+    }
+  }
 
   // Discover current files
   const currentFiles = await discoverFiles(

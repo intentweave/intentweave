@@ -217,7 +217,8 @@ describe("createLanguageRegistry", () => {
       maxDepth: 2,
     });
 
-    expect(registry.size).toBe(3);
+    // Only TS/JS is built-in; Swift/Python come from language plugins
+    expect(registry.size).toBe(1);
   });
 
   it("routes TS/JS files to TypeScript adapter", async () => {
@@ -236,7 +237,7 @@ describe("createLanguageRegistry", () => {
     expect(registry.adapterFor("lib/App.jsx")).not.toBeNull();
   });
 
-  it("routes Swift files to Swift adapter", async () => {
+  it("does not route Swift files without plugin", async () => {
     const { createLanguageRegistry } = await import("../stages/ax.js");
 
     const registry = createLanguageRegistry({
@@ -246,10 +247,11 @@ describe("createLanguageRegistry", () => {
       maxDepth: 2,
     });
 
-    expect(registry.adapterFor("Sources/main.swift")).not.toBeNull();
+    // Swift adapter is now a plugin — not built-in
+    expect(registry.adapterFor("Sources/main.swift")).toBeNull();
   });
 
-  it("routes Python files to Python adapter", async () => {
+  it("does not route Python files without plugin", async () => {
     const { createLanguageRegistry } = await import("../stages/ax.js");
 
     const registry = createLanguageRegistry({
@@ -259,7 +261,8 @@ describe("createLanguageRegistry", () => {
       maxDepth: 2,
     });
 
-    expect(registry.adapterFor("scripts/build.py")).not.toBeNull();
+    // Python adapter is now a plugin — not built-in
+    expect(registry.adapterFor("scripts/build.py")).toBeNull();
   });
 
   it("returns null for unsupported file types", async () => {
@@ -292,8 +295,9 @@ describe("createLanguageRegistry", () => {
     expect(patterns).toContain("**/*.tsx");
     expect(patterns).toContain("**/*.js");
     expect(patterns).toContain("**/*.jsx");
-    expect(patterns).toContain("**/*.swift");
-    expect(patterns).toContain("**/*.py");
+    // Swift/Python patterns only present when language plugins are discovered
+    expect(patterns).not.toContain("**/*.swift");
+    expect(patterns).not.toContain("**/*.py");
   });
 });
 
@@ -316,13 +320,11 @@ describe("Custom adapter registration", () => {
     const goAdapter = makeMockAdapter([".go"], "go");
     registry.register(goAdapter);
 
-    expect(registry.size).toBe(4);
+    expect(registry.size).toBe(2);
     expect(registry.adapterFor("cmd/main.go")).toBe(goAdapter);
     expect(registry.includePatterns()).toContain("**/*.go");
 
-    // Built-in adapters still work
+    // Built-in TS/JS adapter still works
     expect(registry.adapterFor("src/index.ts")).not.toBeNull();
-    expect(registry.adapterFor("main.swift")).not.toBeNull();
-    expect(registry.adapterFor("app.py")).not.toBeNull();
   });
 });

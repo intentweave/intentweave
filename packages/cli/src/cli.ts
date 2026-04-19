@@ -34,6 +34,7 @@ process.stderr.on("error", (err: NodeJS.ErrnoException) => {
 
 import { Command } from "commander";
 import { createRequire } from "node:module";
+import { getPluginRegistry } from "@intentweave/core";
 import { aggregateCommand } from "./commands/aggregate.js";
 import { analyzeCommand } from "./commands/analyze.js";
 import { bundleCommand } from "./commands/bundle.js";
@@ -53,6 +54,7 @@ import { linkCommand } from "./commands/link.js";
 import { mcpCommand } from "./commands/mcp.js";
 import { openCommand } from "./commands/open.js";
 import { persistCommand } from "./commands/persist.js";
+import { pluginCommand } from "./commands/plugin.js";
 import { queryCommand } from "./commands/query.js";
 import { reportCommand, explainCommand } from "./commands/report.js";
 import { roleCommand } from "./commands/role.js";
@@ -99,6 +101,7 @@ program.addCommand(linkCommand);
 program.addCommand(mcpCommand);
 program.addCommand(openCommand);
 program.addCommand(persistCommand);
+program.addCommand(pluginCommand);
 program.addCommand(queryCommand);
 program.addCommand(reportCommand);
 program.addCommand(roleCommand);
@@ -110,6 +113,18 @@ program.addCommand(vizCommand);
 program.addCommand(watchCommand);
 program.addCommand(weaveCommand);
 program.addCommand(xlinkCommand);
+
+// ─── Plugin discovery ────────────────────────────────────────────────────────
+// Auto-discover installed @intentweave/plugin-* packages and register their
+// CLI commands. Failures are silently ignored — missing plugins are normal.
+const registry = getPluginRegistry();
+await registry.discover((pkg) => import(pkg));
+registry.registerAllCommands(program, {
+  workspaceRoot: process.cwd(),
+  indexDbPath: `${process.cwd()}/.iw/index.db`,
+  session: process.env.IW_SESSION ?? "default",
+  verbose: process.argv.includes("-v") || process.argv.includes("--verbose"),
+});
 
 // Parse and execute
 program.parse();

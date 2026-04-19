@@ -49,6 +49,7 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { getPluginRegistry } from "@intentweave/core";
 import {
   buildTopicContext as sharedBuildTopicContext,
   buildEntityContext as sharedBuildEntityContext,
@@ -2794,6 +2795,17 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
       }
     },
   );
+
+  // ── Plugin MCP tools ─────────────────────────────────────────────────
+  const registry = getPluginRegistry();
+  await registry.discover((pkg) => import(pkg));
+  registry.registerAllMcpTools(server, {
+    workspaceRoot: process.cwd(),
+    indexDbPath: path.join(process.cwd(), ".iw", "index.db"),
+    session: sessionId,
+    verbose: !!verbose,
+  });
+  log(`Discovered ${registry.size} plugin(s)`);
 
   // ── Connect via stdio ───────────────────────────────────────────────
   const transport = new StdioServerTransport();

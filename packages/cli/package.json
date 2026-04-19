@@ -70,6 +70,13 @@
     "neo4j-driver": "^5.27.0",
     "zod": "^3.23.8"
   },
+  "optionalDependencies": {
+    "@intentweave/plugin-llm": "workspace:*",
+    "@intentweave/plugin-kg": "workspace:*",
+    "@intentweave/plugin-kg-lite": "workspace:*",
+    "@intentweave/plugin-swift": "workspace:*",
+    "@intentweave/plugin-python": "workspace:*"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "better-sqlite3": "^11.7.0",

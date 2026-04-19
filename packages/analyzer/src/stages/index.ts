@@ -21,6 +21,9 @@ export * from "./ref.js";
 // AX Stage - AST Extraction (code symbols)
 export * from "./ax.js";
 
+// AX Helpers - shared utilities for language adapter plugins
+export * from "./ax-helpers.js";
+
 // CX Stage - Consolidation
 export * from "./cx.js";
 

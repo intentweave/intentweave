@@ -1,0 +1,47 @@
+{
+  "name": "@intentweave/plugin-kg-lite",
+  "version": "0.8.0",
+  "description": "Lightweight KG persistence plugin for IntentWeave — SQLite backend via CypherLite",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prepublishOnly": "npm run build",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'TODO: eslint'",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@intentweave/core": "workspace:*",
+    "@intentweave/cypher-lite": "workspace:*",
+    "better-sqlite3": "^11.9.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "intentweave": {
+    "tier": "oss",
+    "description": "KG-Lite plugin — zero-config SQLite persistence via CypherLite engine"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "Apache-2.0"
+}
