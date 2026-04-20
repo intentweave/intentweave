@@ -62,4 +62,9 @@ export { focus, focusFromDb } from "./focus.js";
 export { impact, impactFromDb, formatCariImpact } from "./impact.js";
 export { archReport, archReportFromDb } from "./archReport.js";
 export type { ArchReportOptions } from "./archReport.js";
+export {
+  enrichmentScore,
+  enrichmentScoreFromDb,
+} from "./enrichmentScore.js";
+export type { EnrichmentScoreOptions } from "./enrichmentScore.js";
 export { openIndex } from "./shared.js";

@@ -2678,6 +2678,196 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
     },
   );
 
+  // ── Tool: cari_enrich ───────────────────────────────────────────────
+
+  server.tool(
+    "cari_enrich",
+    "Selective semantic enrichment — score files for LLM enrichment candidacy, or trigger enrichment. " +
+      "Uses CARI signals (hotspots, orphans, hubs, coverage, drift) to rank files by impact. " +
+      "With dryRun=true (default), returns scored candidates. With dryRun=false, runs FX+KX extraction.",
+    {
+      budget: z
+        .number()
+        .optional()
+        .describe("Maximum files to enrich (default: 20)"),
+      threshold: z
+        .number()
+        .optional()
+        .describe("Minimum impact score to qualify (default: 0.1)"),
+      focus: z
+        .string()
+        .optional()
+        .describe("Restrict to files under this directory prefix"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true (default), only score and return candidates. If false, run LLM enrichment.",
+        ),
+      incremental: z
+        .boolean()
+        .optional()
+        .describe("Skip files unchanged since last enrichment"),
+    },
+    async (args) => {
+      try {
+        log(
+          `cari_enrich: budget=${args.budget}, threshold=${args.threshold}, focus=${args.focus}, dryRun=${args.dryRun}`,
+        );
+
+        const { enrichmentScore } = await import("@intentweave/index");
+        const scoreResult = enrichmentScore(resolveIndexDb(), {
+          focus: args.focus,
+          incremental: args.incremental,
+        });
+
+        const threshold = args.threshold ?? 0.1;
+        const budget = args.budget ?? 20;
+        const eligible = scoreResult.candidates.filter((c) => {
+          if (c.impactScore < threshold) return false;
+          if (args.incremental && c.alreadyEnriched) return false;
+          return true;
+        });
+        const selected = eligible.slice(0, budget);
+
+        const dryRun = args.dryRun !== false; // default true
+
+        if (dryRun) {
+          const lines: string[] = [
+            `## Enrichment Candidates (${selected.length} of ${scoreResult.totalEvaluated} files)`,
+            "",
+          ];
+
+          if (selected.length === 0) {
+            lines.push(
+              "No files qualify for enrichment. Try lowering the threshold.",
+            );
+          } else {
+            lines.push(
+              "| File | Impact Score | Hotspot | Orphan | Hub | Coverage Gap | Drift |",
+              "|------|-------------|---------|--------|-----|-------------|-------|",
+            );
+            for (const c of selected) {
+              lines.push(
+                `| ${c.filePath} | ${c.impactScore.toFixed(3)} | ${c.signals.hotspotRank.toFixed(2)} | ${c.signals.orphanRatio.toFixed(2)} | ${c.signals.hubDegree.toFixed(2)} | ${c.signals.coverageGap.toFixed(2)} | ${c.signals.driftSeverity.toFixed(2)} |`,
+              );
+            }
+          }
+
+          lines.push(
+            "",
+            `> Set \`dryRun: false\` to run LLM enrichment on these files.`,
+          );
+
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        }
+
+        // Actual enrichment (dryRun=false)
+        const { writeKgResults, bridgeKgEntities } = await import(
+          "@intentweave/index"
+        );
+        const { runInStage, runFxStage, runKxStage, NoopLogger } = await import(
+          "@intentweave/analyzer"
+        );
+        const { OpenAILLMProvider } = await import(
+          "@intentweave/analyzer/llm"
+        );
+        const { sumTokenUsage, zeroTokenUsage } = await import(
+          "@intentweave/core"
+        );
+        const fsSync = await import("node:fs");
+
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "OPENAI_API_KEY required for enrichment. Set the environment variable.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const llmProvider = new OpenAILLMProvider({
+          apiKey,
+          model: process.env.IW_LLM_MODEL ?? "gpt-4o-mini",
+        });
+
+        const workspaceRoot = process.cwd();
+        const kgInputs: any[] = [];
+        let totalTokenUsage = zeroTokenUsage();
+
+        for (const candidate of selected) {
+          const absPath = path.resolve(workspaceRoot, candidate.filePath);
+          if (!fsSync.existsSync(absPath)) continue;
+
+          const content = fsSync.readFileSync(absPath, "utf-8");
+          const artifactId = candidate.filePath
+            .replace(/[/\\]/g, ".")
+            .replace(/\.[^.]+$/, "");
+
+          const inResult = await runInStage({
+            artifactId,
+            filePath: candidate.filePath,
+            content,
+          }, { logger: new NoopLogger() } as any);
+
+          const fxOutput = await runFxStage(
+            { artifactId, filePath: candidate.filePath, chunks: inResult.chunks },
+            { llmProvider, concurrency: 3 },
+          );
+
+          const kxOutput = await runKxStage(
+            { artifactId, fxOutput },
+            llmProvider,
+          );
+
+          if (fxOutput.tokenUsage) {
+            totalTokenUsage = sumTokenUsage(totalTokenUsage, fxOutput.tokenUsage);
+          }
+          if (kxOutput.tokenUsage) {
+            totalTokenUsage = sumTokenUsage(totalTokenUsage, kxOutput.tokenUsage);
+          }
+
+          kgInputs.push({
+            sourceFile: candidate.filePath,
+            artifactId,
+            canonEntities: kxOutput.canonEntities,
+            canonTriples: kxOutput.canonTriples,
+            rawTriples: fxOutput.triples.map((t: any) => ({
+              subject: t.subject,
+              predicate: t.predicate,
+              object: t.object,
+              subjectKind: t.subjectKind,
+              objectKind: t.objectKind,
+              confidence: t.confidence,
+            })),
+          });
+        }
+
+        const writeResult = writeKgResults(resolveIndexDb(), kgInputs);
+        const bridgeResult = bridgeKgEntities(resolveIndexDb());
+
+        const lines: string[] = [
+          "## Enrichment Complete",
+          "",
+          `- **${kgInputs.length}** files enriched`,
+          `- **${writeResult.entityCount}** entities written`,
+          `- **${writeResult.relationshipCount}** relationships written`,
+          `- **${bridgeResult.entitiesWritten}** entities bridged into CARI`,
+          "",
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
   // ── Plugin MCP tools ─────────────────────────────────────────────────
   if (options.neo4jUri) {
     process.env.NEO4J_URI = options.neo4jUri;

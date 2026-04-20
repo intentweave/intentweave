@@ -59,6 +59,9 @@ import {
   isExcluded,
 } from "@intentweave/index";
 
+// Enrichment subcommand (11.8)
+import { indexEnrichSubcommand } from "./indexEnrich.js";
+
 export {
   DEFAULT_EXCLUDES,
   loadIwIgnore,
@@ -2814,7 +2817,8 @@ export const indexCommand = new Command("index")
   .addCommand(indexSlicesSubcommand)
   .addCommand(indexFocusSubcommand)
   .addCommand(indexImpactSubcommand)
-  .addCommand(indexExportSubcommand);
+  .addCommand(indexExportSubcommand)
+  .addCommand(indexEnrichSubcommand);
 
 // ── LLM narrative generation for --explain ──────────────────────
 

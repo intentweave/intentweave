@@ -1012,7 +1012,7 @@ plugin implements `IWPlugin` with a `registerLanguages?(registry)` hook.
 This means `tree-sitter-swift` and `tree-sitter-python` native binaries are only
 downloaded by users who need them — not everyone.
 
-### 11.7 CLI Neo4j Migration to PersistenceCapability _(KG, L)_
+### 11.7 CLI Neo4j Migration to PersistenceCapability _(KG, L)_ ✅
 
 Migrate CLI commands that currently import `neo4j-driver` directly to route through
 `PersistenceCapability.query()` instead. This enables `query.ts`, `context.ts`,
@@ -1026,7 +1026,7 @@ work against **either** backend (Neo4j or SQLite) transparently.
 - Remove `neo4j-driver` from CLI's direct dependencies (keep only in `plugin-kg`)
 - Result: `@intentweave/cli` ships zero-Neo4j — full Neo4j via `iw plugin add kg`
 
-### 11.8 Selective Semantic Enrichment _(CARI + KG, L)_
+### 11.8 Selective Semantic Enrichment _(CARI + KG, L)_ ✅
 
 **Problem:** Full KG extraction (FX + KX on every file) is expensive and slow. But pure
 CARI misses semantic relationships that only an LLM can extract: decisions, rationale,
@@ -1299,12 +1299,14 @@ iw verify --score
 | 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists) |         |
 | 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                 |         |
 | 10.4 | Obsidian vault export             | CARI | M      | Low    | 9.1                  |         |
-| 11.1 | Plugin interface & registry       | CARI | M      | High   | None                 |         |
-| 11.2 | Capability provider system        | CARI | M      | High   | 11.1                 |         |
-| 11.3 | KG plugin extraction (CypherLite) | KG   | L      | High   | 11.1, 11.2           |         |
-| 11.4 | Plugin CLI commands               | CARI | S      | High   | 11.1                 |         |
-| 11.5 | Lightweight LLM plugin            | INT  | S      | Medium | 11.2                 |         |
-| 11.6 | Language parser as plugins        | AX   | M      | Medium | 11.1, 7.2            |         |
+| 11.1 | Plugin interface & registry       | CARI | M      | High   | None                 | ✅      |
+| 11.2 | Capability provider system        | CARI | M      | High   | 11.1                 | ✅      |
+| 11.3 | KG plugin extraction (CypherLite) | KG   | L      | High   | 11.1, 11.2           | ✅      |
+| 11.4 | Plugin CLI commands               | CARI | S      | High   | 11.1                 | ✅      |
+| 11.5 | Lightweight LLM plugin            | INT  | S      | Medium | 11.2                 | ✅      |
+| 11.6 | Language parser as plugins        | AX   | M      | Medium | 11.1, 7.2            | ✅      |
+| 11.7 | CLI Neo4j migration               | KG   | L      | High   | 11.2, 11.3           | ✅      |
+| 11.8 | Selective semantic enrichment     | KG   | L      | High   | 11.3a, 11.5, 8.0a   | ✅      |
 | 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a      |         |
 | 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg            |         |
 | 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2           |         |

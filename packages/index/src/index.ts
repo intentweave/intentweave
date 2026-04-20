@@ -15,6 +15,10 @@ export { annotate, toSlug, tokenize } from "./annotator.js";
 export type { AnnotateOptions } from "./annotator.js";
 export { computeIdf } from "./idf.js";
 
+// KG writer (Selective Semantic Enrichment — 11.8)
+export { writeKgResults, bridgeKgEntities } from "./kgWriter.js";
+export type { KgWriteInput, KgWriteResult } from "./kgWriter.js";
+
 // Phase 4: Incremental updates
 export { detectChanges, applyChanges, hashFile } from "./incremental.js";
 export type {
@@ -108,6 +112,8 @@ export {
   formatCariImpact,
   archReport,
   archReportFromDb,
+  enrichmentScore,
+  enrichmentScoreFromDb,
   openIndex,
 } from "./queries/index.js";
 
@@ -122,6 +128,7 @@ export type {
   ReportOptions,
   ArchReportOptions,
   DeadFeatureOptions,
+  EnrichmentScoreOptions,
 } from "./queries/index.js";
 
 export type {
@@ -216,4 +223,10 @@ export type {
   CariImpactResult,
   CariImpactFile,
   CariImpactDoc,
+  // Enrichment types (11.8)
+  EnrichmentWeights,
+  EnrichmentCandidate,
+  EnrichmentScoreResult,
+  EnrichOptions,
+  EnrichResult,
 } from "./types.js";

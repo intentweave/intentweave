@@ -1527,3 +1527,91 @@ export interface ApiSurfaceResult {
   /** Number of code files analyzed. */
   filesAnalyzed: number;
 }
+
+// =============================================================================
+// Selective Semantic Enrichment (11.8)
+// =============================================================================
+
+/** Weights for the enrichment impact scoring formula. */
+export interface EnrichmentWeights {
+  hotspot: number;
+  orphan: number;
+  hub: number;
+  coverage: number;
+  drift: number;
+}
+
+/** A file scored as a candidate for semantic enrichment. */
+export interface EnrichmentCandidate {
+  /** File path (workspace-relative). */
+  filePath: string;
+  /** Composite impact score (higher = more valuable to enrich). */
+  impactScore: number;
+  /** Breakdown of signal contributions. */
+  signals: {
+    hotspotRank: number;
+    orphanRatio: number;
+    hubDegree: number;
+    coverageGap: number;
+    driftSeverity: number;
+  };
+  /** Whether this file was already enriched (content hash matched). */
+  alreadyEnriched: boolean;
+}
+
+/** Result of scoring files for enrichment candidacy. */
+export interface EnrichmentScoreResult {
+  /** Candidates sorted by impactScore descending. */
+  candidates: EnrichmentCandidate[];
+  /** Total files evaluated. */
+  totalEvaluated: number;
+}
+
+/** Options for the enrich command. */
+export interface EnrichOptions {
+  /** Max number of LLM calls (files to enrich). Default: 20. */
+  budget?: number;
+  /** Minimum impact score to qualify. Default: 0.1. */
+  threshold?: number;
+  /** Restrict to files under this directory prefix. */
+  focus?: string;
+  /** LLM provider name: "openai" or "smart-mock". */
+  provider?: string;
+  /** LLM model name. */
+  model?: string;
+  /** OpenAI API key override. */
+  apiKey?: string;
+  /** Skip files whose content hash hasn't changed since last enrichment. */
+  incremental?: boolean;
+  /** Only show what would be enriched, don't run LLM. */
+  dryRun?: boolean;
+  /** Verbose output. */
+  verbose?: boolean;
+  /** Custom weights for impact scoring. */
+  weights?: Partial<EnrichmentWeights>;
+}
+
+/** Result of running semantic enrichment. */
+export interface EnrichResult {
+  /** Files that were enriched. */
+  enriched: Array<{
+    filePath: string;
+    impactScore: number;
+    entityCount: number;
+    tripleCount: number;
+    tokensUsed?: number;
+  }>;
+  /** Files skipped (already enriched / below threshold). */
+  skipped: Array<{
+    filePath: string;
+    reason: "already-enriched" | "below-threshold" | "outside-focus";
+  }>;
+  /** Total entities written to kg_entities. */
+  totalEntities: number;
+  /** Total relationships written to kg_relationships. */
+  totalRelationships: number;
+  /** Total entities bridged into CARI via registerEntities(). */
+  totalBridged: number;
+  /** Token usage summary. */
+  tokenUsage?: { prompt: number; completion: number; costUsd?: number };
+}

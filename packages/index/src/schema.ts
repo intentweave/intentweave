@@ -149,6 +149,63 @@ CREATE TABLE IF NOT EXISTS external_entities (
 CREATE INDEX IF NOT EXISTS idx_external_entities_name ON external_entities(name);
 CREATE INDEX IF NOT EXISTS idx_external_entities_type ON external_entities(type);
 
+-- KG tables (Selective Semantic Enrichment — 11.8)
+
+CREATE TABLE IF NOT EXISTS kg_entities (
+  id          INTEGER PRIMARY KEY,
+  canon_id    TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  type        TEXT NOT NULL,
+  aliases     TEXT,
+  confidence  REAL DEFAULT 1.0,
+  artifact_id TEXT,
+  source_file TEXT,
+  created_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS kg_relationships (
+  id          INTEGER PRIMARY KEY,
+  from_id     INTEGER NOT NULL REFERENCES kg_entities(id),
+  to_id       INTEGER NOT NULL REFERENCES kg_entities(id),
+  predicate   TEXT NOT NULL,
+  confidence  REAL DEFAULT 1.0,
+  raw_predicate TEXT,
+  artifact_id TEXT,
+  source_file TEXT
+);
+
+CREATE TABLE IF NOT EXISTS kg_raw_triples (
+  id               INTEGER PRIMARY KEY,
+  subject          TEXT,
+  predicate        TEXT,
+  object           TEXT,
+  subject_kind     TEXT,
+  object_kind      TEXT,
+  confidence       REAL,
+  source_file      TEXT,
+  artifact_id      TEXT,
+  subject_canon_id TEXT,
+  object_canon_id  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS enrichment_meta (
+  file_path    TEXT PRIMARY KEY,
+  content_hash TEXT NOT NULL,
+  enriched_at  TEXT NOT NULL,
+  entity_count INTEGER NOT NULL DEFAULT 0,
+  triple_count INTEGER NOT NULL DEFAULT 0,
+  impact_score REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name);
+CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(type);
+CREATE INDEX IF NOT EXISTS idx_kg_entities_canon_id ON kg_entities(canon_id);
+CREATE INDEX IF NOT EXISTS idx_kg_entities_source ON kg_entities(source_file);
+CREATE INDEX IF NOT EXISTS idx_kg_rels_from ON kg_relationships(from_id);
+CREATE INDEX IF NOT EXISTS idx_kg_rels_to ON kg_relationships(to_id);
+CREATE INDEX IF NOT EXISTS idx_kg_rels_predicate ON kg_relationships(predicate);
+CREATE INDEX IF NOT EXISTS idx_kg_raw_source ON kg_raw_triples(source_file);
+
 -- Metadata table for schema version tracking
 
 CREATE TABLE IF NOT EXISTS _meta (
@@ -168,6 +225,6 @@ export function initSchema(db: Database.Database): void {
 
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '4')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '5')`,
   ).run();
 }
