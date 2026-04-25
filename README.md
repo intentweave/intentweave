@@ -202,7 +202,8 @@ features. Here's what's already shipped and what's next:
 | **Visualisation**         | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports                                                                                           |
 | **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                   |
 | **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                     |
-| **Integration**           | CariIndex facade, entity bridge, 34 MCP tools, REST API                                                                                                                                     |
+| **Intent Verification**   | living documentation score (`iw verify --score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`)                                                           |
+| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API                                                                                                                                     |
 
 ### Next Up
 
@@ -210,7 +211,7 @@ features. Here's what's already shipped and what's next:
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | **Selective enrichment** (11.8)                  | Budget-controlled LLM on CARI-selected targets — the bridge between layers 1 and 2             |
 | **Architecture diagram validation** (5.8 + 11.8) | LLM parses ASCII/Mermaid diagrams, CARI validates against import graph — no YAML config needed |
-| **Intent verification** (12.x)                   | Spec-to-code verification, constraint checking, living documentation scores                    |
+| **Living documentation** (12.x continued)         | Constraint consistency checks, automated spec-to-code verification, watch mode integration     |
 | **More languages**                               | Go, Rust, Java via tree-sitter plugins                                                         |
 | **Watch mode**                                   | Continuous re-indexing on file save                                                            |
 | **CI action**                                    | `uses: intentweave/doc-health-action@v1` for GitHub Actions                                    |
@@ -382,6 +383,10 @@ iw impact src/auth.ts -s my-project
 iw doc-health
 iw doc-health --neo4j -s my-project   # full KG mode
 
+# Living Documentation Score (no Neo4j needed)
+iw verify --score                       # composite 0-100/A-F: freshness + arch conformance
+iw verify --score -f json               # JSON output for CI integration
+
 # Cross-layer code linking
 iw xlink . --session my-project --persist
 
@@ -435,6 +440,12 @@ Additional CARI queries are available as CLI subcommands, MCP tools, and via the
 | `iw index dead-features`                   | —                          | Dead feature detection (unused + undocumented + stale)         |
 | `iw index api-surface`                     | —                          | API surface changelog (additions, removals, signature changes) |
 | `iw index focus <target>`                  | `cari_focus`               | Focused architecture view around a target entity               |
+| `iw index arch-check`                      | `cari_arch_check`          | Validate architecture diagrams against CARI import evidence    |
+| `iw index scan-diagrams`                   | —                          | Discover and extract component flows from ASCII/Mermaid diagrams |
+| —                                          | `cari_resolve`             | Ground a diagram component name to code symbols + doc files    |
+| —                                          | `cari_arch_diff`           | Validate diagram entity flows against CARI evidence            |
+| —                                          | `cari_component_evidence`  | All CARI evidence for a single architecture component          |
+| `iw verify --score`                        | `cari_living_score`        | Composite living documentation score (A-F grade)               |
 | `iw index export --html`                   | —                          | Generate standalone interactive architecture report            |
 | `iw index export --html --provider openai` | `cari_layers_name`         | LLM-generated layer & directory names for the report           |
 | `iw index export --focus <target>`         | —                          | Focused Graphviz SVG architecture report                       |
@@ -485,6 +496,11 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `cari_layers_check`        | Validate imports against layer config       | `allowSkipLayer?`                |
 | `cari_layers_name`         | LLM-generated layer & directory names       | `provider`, `model?`, `api_key?` |
 | `cari_focus`               | Focused architecture view around a target   | `target`, `hops?`, `maxNodes?`   |
+| `cari_arch_check`          | Validate diagrams against import evidence   | `paths?`, `provider?`            |
+| `cari_resolve`             | Ground diagram component to code + docs     | `name`, `limitSymbols?`          |
+| `cari_arch_diff`           | Validate diagram flows against CARI evidence| `paths?`, `provider?`, `refresh?`|
+| `cari_component_evidence`  | All CARI evidence for one component         | `name`, `limit?`                 |
+| `cari_living_score`        | Composite living documentation score        | `minConfidence?`, `allowSkipLayer?`|
 
 Start the MCP server:
 
@@ -649,7 +665,7 @@ pnpm --filter @intentweave/cli publish --access public
 - **Dual KG backend** — SQLite via CypherLite (zero config) or Neo4j (production)
 - **Fastify 5**, Neo4j 5, SQLite (better-sqlite3), Turbo, pnpm workspaces
 - **30+ CARI query modes** + interactive HTML architecture report with multi-view community modes
-- **34 MCP tools** for GitHub Copilot integration
+- **35 MCP tools** for GitHub Copilot integration
 
 ---
 
