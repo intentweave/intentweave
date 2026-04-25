@@ -186,6 +186,8 @@ iw context "authentication" -s my-project                 # RAG context
 iw impact src/auth.ts -s my-project                       # Impact analysis
 iw doc-health                                               # Doc health (CARI default)
 iw doc-health --neo4j -s my-project                         # Doc health (full KG mode)
+iw verify --score                                           # Living Documentation Score (12.3): composite 0-100/A-F
+iw verify --score -f json                                   # JSON output for CI integration
 ```
 
 ### Key Files
@@ -202,10 +204,11 @@ iw doc-health --neo4j -s my-project                         # Doc health (full K
 | `packages/cli/src/impact/impactAnalyzer.ts`        | Impact analysis engine                |
 | `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer (Neo4j) |
 | `packages/cli/src/doc-health/cariDocHealth.ts`     | Documentation health analyzer (CARI)  |
+| `packages/index/src/queries/livingScore.ts`         | Living Documentation Score (12.3)     |
 
 ## MCP Tools
 
-The MCP server exposes 31 tools for GitHub Copilot (6 KG + 25 CARI).
+The MCP server exposes 35 tools for GitHub Copilot (6 KG + 29 CARI).
 
 All CARI query functions are also available as CLI subcommands
 (e.g., `iw index clones`, `iw index todos`) and via the `@intentweave/index`
@@ -252,6 +255,10 @@ programmatic API.
 | `cari_layers_infer`        | Auto-infer architectural layers   | _(none)_                               |
 | `cari_layers_check`        | Validate imports vs. layer config | `allowSkipLayer?`                      |
 | `cari_focus`               | Focused architecture view         | `target`, `hops?`, `maxNodes?`         |
+| `cari_resolve`             | Resolve diagram component to code symbols + docs | `name`, `limitSymbols?`, `limitDocs?` |
+| `cari_arch_diff`           | Validate diagram entities/flows against CARI evidence | `paths?`, `provider?`, `refresh?` |
+| `cari_component_evidence`  | All CARI evidence for one architecture component | `name`, `limit?` |
+| `cari_living_score`        | Composite living documentation score (12.3) | `minConfidence?`, `allowSkipLayer?` |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
@@ -282,6 +289,7 @@ All CARI query functions are available as direct API calls, MCP tools, and CLI s
 | `layersInfer()`              | `iw index layers-infer`        | Auto-infer architectural layers from import graph        |
 | `layersCheck()`              | `iw index layers-check`        | Validate imports against layer configuration             |
 | `focus()`                    | `iw index focus`               | Focused architecture view around a target entity         |
+| `livingScore()`              | `iw verify --score`            | Composite living documentation score (spec + consistency + freshness + arch conformance) |
 
 ### Entity Bridge
 
