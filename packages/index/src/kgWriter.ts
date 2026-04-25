@@ -118,18 +118,16 @@ export function writeKgResults(
       );
       // We need entity IDs before we can delete relationships
       const oldEntityIds = db
-        .prepare(
-          `SELECT id FROM kg_entities WHERE source_file = ?`,
-        )
+        .prepare(`SELECT id FROM kg_entities WHERE source_file = ?`)
         .all(input.sourceFile) as Array<{ id: number }>;
       if (oldEntityIds.length > 0) {
         const ids = oldEntityIds.map((e) => e.id);
         db.prepare(
           `DELETE FROM kg_relationships WHERE from_id IN (${ids.join(",")}) OR to_id IN (${ids.join(",")})`,
         ).run();
-        db.prepare(
-          `DELETE FROM kg_entities WHERE source_file = ?`,
-        ).run(input.sourceFile);
+        db.prepare(`DELETE FROM kg_entities WHERE source_file = ?`).run(
+          input.sourceFile,
+        );
       }
 
       // Write entities
@@ -211,9 +209,10 @@ export function writeKgResults(
  * Bridge canonical entities into the CARI annotation engine
  * so that retrieve/connections/mentionsOf surface KG entities.
  */
-export function bridgeKgEntities(
-  dbPath: string,
-): { entitiesWritten: number; annotationsCreated: number } {
+export function bridgeKgEntities(dbPath: string): {
+  entitiesWritten: number;
+  annotationsCreated: number;
+} {
   // Read all kg_entities and convert to ExternalEntity format
   const db = new Database(dbPath, { readonly: true });
   db.pragma("journal_mode = WAL");

@@ -114,8 +114,32 @@ export {
   archReportFromDb,
   enrichmentScore,
   enrichmentScoreFromDb,
+  verify,
+  verifyFromDb,
+  consistency,
+  consistencyFromDb,
+  archCheck,
+  archCheckFromDb,
+  parseArchitectureYaml,
+  inferArchConfigFromKg,
+  inferArchConfigFromKgDb,
+  enrichArchConfigWithFiles,
+  diagramEntityCheck,
+  diagramEntityCheckFromDb,
+  resolveComponent,
+  resolveComponentFromDb,
   openIndex,
 } from "./queries/index.js";
+export type {
+  DiagramEntityCheckResult,
+  EntityGrounding,
+} from "./queries/diagramEntityCheck.js";
+export type {
+  ResolvedComponent,
+  ResolvedSymbol,
+  ResolveComponentParams,
+  ResolveComponentResult,
+} from "./types.js";
 
 export {
   renderArchReportHtml,
@@ -229,4 +253,24 @@ export type {
   EnrichmentScoreResult,
   EnrichOptions,
   EnrichResult,
+  // Verification types (12.1)
+  GroundingStatus,
+  VerifyEntityResult,
+  VerifyParams,
+  VerifyResult,
+  // Consistency types (12.2)
+  ConflictSeverity,
+  ConstraintConflict,
+  ConsistencyParams,
+  ConsistencyResult,
+  // Architecture check types (5.8)
+  ArchComponent,
+  ArchFlow,
+  ArchConstraint,
+  ArchConfig,
+  FlowStatus,
+  ArchFlowResult,
+  UndocumentedFlow,
+  ArchConstraintViolation,
+  ArchCheckResult,
 } from "./types.js";

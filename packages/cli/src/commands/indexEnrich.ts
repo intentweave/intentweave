@@ -93,11 +93,14 @@ async function enrichFile(
 
   // IN stage — chunk the file (only uses ctx.logger)
   const minimalCtx = { logger: new NoopLogger() } as unknown as PipelineContext;
-  const inResult = await runInStage({
-    artifactId,
-    filePath,
-    content,
-  }, minimalCtx);
+  const inResult = await runInStage(
+    {
+      artifactId,
+      filePath,
+      content,
+    },
+    minimalCtx,
+  );
 
   // FX stage — free extraction
   const fxInput: FxStageInput = {
@@ -150,16 +153,8 @@ export const indexEnrichSubcommand = new Command("enrich")
     "Selective semantic enrichment — LLM-extract high-value files into the CARI index",
   )
   .option("--db <path>", "Path to index.db")
-  .option(
-    "-b, --budget <n>",
-    "Maximum files to enrich (LLM calls)",
-    "20",
-  )
-  .option(
-    "-t, --threshold <n>",
-    "Minimum impact score to qualify",
-    "0.1",
-  )
+  .option("-b, --budget <n>", "Maximum files to enrich (LLM calls)", "20")
+  .option("-t, --threshold <n>", "Minimum impact score to qualify", "0.1")
   .option("--focus <dir>", "Restrict to files under this directory prefix")
   .option(
     "--provider <name>",
@@ -174,8 +169,11 @@ export const indexEnrichSubcommand = new Command("enrich")
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
-    const budget = parseInt(opts.budget, 10) || 20;
-    const threshold = parseFloat(opts.threshold) || 0.1;
+    const parsedBudget = Number.parseInt(String(opts.budget), 10);
+    const budget =
+      Number.isFinite(parsedBudget) && parsedBudget > 0 ? parsedBudget : 20;
+    const parsedThreshold = Number.parseFloat(String(opts.threshold));
+    const threshold = Number.isFinite(parsedThreshold) ? parsedThreshold : 0.1;
     const verbose = !!opts.verbose;
 
     if (!fs.existsSync(dbPath)) {
@@ -207,7 +205,13 @@ export const indexEnrichSubcommand = new Command("enrich")
     const selected = eligible.slice(0, budget);
 
     if (opts.format === "json" && opts.dryRun) {
-      console.log(JSON.stringify({ candidates: selected, totalEvaluated: scoreResult.totalEvaluated }, null, 2));
+      console.log(
+        JSON.stringify(
+          { candidates: selected, totalEvaluated: scoreResult.totalEvaluated },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
@@ -294,7 +298,9 @@ export const indexEnrichSubcommand = new Command("enrich")
         });
         if (verbose) {
           console.log(
-            chalk.gray(`  [${i + 1}/${selected.length}] Skip (not found): ${candidate.filePath}`),
+            chalk.gray(
+              `  [${i + 1}/${selected.length}] Skip (not found): ${candidate.filePath}`,
+            ),
           );
         }
         continue;
@@ -322,7 +328,8 @@ export const indexEnrichSubcommand = new Command("enrich")
           entityCount: kgInput.canonEntities.length,
           tripleCount: kgInput.canonTriples.length,
           tokensUsed: tokenUsage
-            ? (tokenUsage.promptTokens ?? 0) + (tokenUsage.completionTokens ?? 0)
+            ? (tokenUsage.promptTokens ?? 0) +
+              (tokenUsage.completionTokens ?? 0)
             : undefined,
         });
 
@@ -398,7 +405,10 @@ export const indexEnrichSubcommand = new Command("enrich")
       `  ${chalk.green("✓")} ${result.totalBridged} entities bridged into CARI`,
     );
 
-    if (result.tokenUsage && (result.tokenUsage.prompt > 0 || result.tokenUsage.completion > 0)) {
+    if (
+      result.tokenUsage &&
+      (result.tokenUsage.prompt > 0 || result.tokenUsage.completion > 0)
+    ) {
       console.log(
         chalk.gray(
           `\n  Tokens: ${result.tokenUsage.prompt + result.tokenUsage.completion} (prompt: ${result.tokenUsage.prompt}, completion: ${result.tokenUsage.completion})`,

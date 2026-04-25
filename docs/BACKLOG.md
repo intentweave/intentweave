@@ -298,7 +298,7 @@ CLI: `iw index slices`. MCP: `cari_slices`.
 
 Depends on: 5.1a (layers), 9.1 (communities).
 
-### 5.8 Architecture Diagram Validation _(CARI, L)_
+### 5.8 Architecture Diagram Validation _(CARI, L)_ ✅
 
 **Problem:** Teams document intended architectures as diagrams (pipeline flows, component
 boundaries, data-flow graphs), but nothing validates whether the code actually conforms
@@ -1185,7 +1185,7 @@ Copilot: _"Enrich the auth module with semantic analysis"_.
 
 > _The "weave" in IntentWeave — bridging what you said you'd build with what you actually built._
 
-### 12.1 Spec-to-Code Verification _(KG + CARI, L)_
+### 12.1 Spec-to-Code Verification _(KG + CARI, L)_ ✅
 
 Given a specification document (requirements, user stories, ADRs), verify that each
 stated intent has a corresponding implementation in the codebase:
@@ -1207,7 +1207,7 @@ iw verify specs/auth-requirements.md
 
 Depends on: `plugin-kg` (entity extraction), CARI (code grounding), entity bridge (8.0a).
 
-### 12.2 Constraint Consistency Check _(KG, M)_
+### 12.2 Constraint Consistency Check _(KG, M)_ ✅
 
 Verify that constraints stated across different spec documents don't contradict each
 other. Uses KG entity relationships to find constraint entities and checks for conflicts:
@@ -1272,7 +1272,7 @@ iw verify --score
 | 5.5  | Hierarchical sub-layering         | CARI | M      | High   | 5.1a, 3.4            |         |
 | 5.6  | As-is vs. as-should comparison    | CARI | M      | High   | 5.1a, 5.1b           | ✅ Done |
 | 5.7  | Vertical slice detection          | CARI | M      | High   | 5.1a, 9.1            | ✅ Done |
-| 5.8  | Architecture diagram validation   | CARI | L      | High   | imports (exists)     |         |
+| 5.8  | Architecture diagram validation   | CARI | L      | High   | imports (exists)     | ✅      |
 | 6.1  | Naming convention checks          | CARI | S      | Low    | None                 |         |
 | 6.4  | Comment-to-code ratio             | CARI | S      | Low    | None                 |         |
 | 5.4  | API surface changelog             | CARI | M      | Medium | Git history          | ✅ Done |
@@ -1306,7 +1306,7 @@ iw verify --score
 | 11.5 | Lightweight LLM plugin            | INT  | S      | Medium | 11.2                 | ✅      |
 | 11.6 | Language parser as plugins        | AX   | M      | Medium | 11.1, 7.2            | ✅      |
 | 11.7 | CLI Neo4j migration               | KG   | L      | High   | 11.2, 11.3           | ✅      |
-| 11.8 | Selective semantic enrichment     | KG   | L      | High   | 11.3a, 11.5, 8.0a   | ✅      |
-| 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a      |         |
-| 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg            |         |
+| 11.8 | Selective semantic enrichment     | KG   | L      | High   | 11.3a, 11.5, 8.0a    | ✅      |
+| 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a      | ✅      |
+| 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg            | ✅      |
 | 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2           |         |

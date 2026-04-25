@@ -39,6 +39,9 @@
  *   - cari_layers_check:     Validate imports against layer configuration
  *   - cari_layers_name:      LLM-generated descriptive layer names (5.1c)
  *   - cari_slices:           Vertical slice detection (communities × layers)
+ *   - cari_resolve:          Ground a diagram component name to code symbols + doc files
+ *   - cari_arch_diff:        Validate diagram flows against entity evidence (annotations + co-occurrences)
+ *   - cari_component_evidence: All CARI evidence for a single architecture component
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
@@ -2763,18 +2766,13 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
         }
 
         // Actual enrichment (dryRun=false)
-        const { writeKgResults, bridgeKgEntities } = await import(
-          "@intentweave/index"
-        );
-        const { runInStage, runFxStage, runKxStage, NoopLogger } = await import(
-          "@intentweave/analyzer"
-        );
-        const { OpenAILLMProvider } = await import(
-          "@intentweave/analyzer/llm"
-        );
-        const { sumTokenUsage, zeroTokenUsage } = await import(
-          "@intentweave/core"
-        );
+        const { writeKgResults, bridgeKgEntities } =
+          await import("@intentweave/index");
+        const { runInStage, runFxStage, runKxStage, NoopLogger } =
+          await import("@intentweave/analyzer");
+        const { OpenAILLMProvider } = await import("@intentweave/analyzer/llm");
+        const { sumTokenUsage, zeroTokenUsage } =
+          await import("@intentweave/core");
         const fsSync = await import("node:fs");
 
         const apiKey = process.env.OPENAI_API_KEY;
@@ -2808,14 +2806,21 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
             .replace(/[/\\]/g, ".")
             .replace(/\.[^.]+$/, "");
 
-          const inResult = await runInStage({
-            artifactId,
-            filePath: candidate.filePath,
-            content,
-          }, { logger: new NoopLogger() } as any);
+          const inResult = await runInStage(
+            {
+              artifactId,
+              filePath: candidate.filePath,
+              content,
+            },
+            { logger: new NoopLogger() } as any,
+          );
 
           const fxOutput = await runFxStage(
-            { artifactId, filePath: candidate.filePath, chunks: inResult.chunks },
+            {
+              artifactId,
+              filePath: candidate.filePath,
+              chunks: inResult.chunks,
+            },
             { llmProvider, concurrency: 3 },
           );
 
@@ -2825,10 +2830,16 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
           );
 
           if (fxOutput.tokenUsage) {
-            totalTokenUsage = sumTokenUsage(totalTokenUsage, fxOutput.tokenUsage);
+            totalTokenUsage = sumTokenUsage(
+              totalTokenUsage,
+              fxOutput.tokenUsage,
+            );
           }
           if (kxOutput.tokenUsage) {
-            totalTokenUsage = sumTokenUsage(totalTokenUsage, kxOutput.tokenUsage);
+            totalTokenUsage = sumTokenUsage(
+              totalTokenUsage,
+              kxOutput.tokenUsage,
+            );
           }
 
           kgInputs.push({
@@ -2859,6 +2870,875 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
           `- **${bridgeResult.entitiesWritten}** entities bridged into CARI`,
           "",
         ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_verify ───────────────────────────────────────────────
+  server.tool(
+    "cari_verify",
+    "Spec-to-code verification: check whether KG entities (from enrichment) are grounded in code symbols. " +
+      "Returns grounded/ungrounded/partial/untested status for each entity. " +
+      "Requires prior enrichment (iw index enrich). " +
+      "Use to validate that documented decisions, requirements, and components have corresponding code.",
+    {
+      files: z
+        .array(z.string())
+        .optional()
+        .describe("Restrict to entities from these source files"),
+      types: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Only verify entities of these types (e.g., decision, requirement, component)",
+        ),
+      minConfidence: z
+        .number()
+        .optional()
+        .describe(
+          "Minimum annotation confidence to count as grounded (default: 0.5)",
+        ),
+      checkTests: z
+        .boolean()
+        .optional()
+        .describe("Check test coverage for grounded entities (default: true)"),
+    },
+    async (args) => {
+      try {
+        log(
+          `cari_verify: files=${args.files}, types=${args.types}, checkTests=${args.checkTests}`,
+        );
+
+        const { verify } = await import("@intentweave/index");
+        const dbPath = resolveIndexDb();
+
+        const result = verify(dbPath, {
+          files: args.files,
+          types: args.types,
+          minConfidence: args.minConfidence,
+          checkTests: args.checkTests,
+        });
+
+        if (result.entities.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No KG entities found. Run `iw index enrich` first to extract semantic entities.",
+              },
+            ],
+          };
+        }
+
+        const { summary } = result;
+        const lines: string[] = [
+          `## Spec-to-Code Verification`,
+          "",
+          `**${summary.total}** entities checked — **${summary.coveragePercent}%** spec coverage`,
+          "",
+          "| Status | Entity | Type | Source | Grounded In |",
+          "|--------|--------|------|--------|-------------|",
+        ];
+
+        const STATUS_ICONS: Record<string, string> = {
+          grounded: "✓",
+          untested: "⚠",
+          partial: "~",
+          ungrounded: "✗",
+        };
+
+        for (const e of result.entities) {
+          const icon = STATUS_ICONS[e.status] ?? "?";
+          const groundedStr =
+            e.groundedIn.length > 0
+              ? e.groundedIn
+                  .map((g) => `${g.symbolName} (${g.filePath})`)
+                  .join(", ")
+              : "—";
+          lines.push(
+            `| ${icon} ${e.status} | ${e.name} | ${e.entityType} | ${e.sourceFile} | ${groundedStr} |`,
+          );
+        }
+
+        lines.push(
+          "",
+          "### Summary",
+          "",
+          `- ✓ **${summary.grounded}** grounded`,
+          `- ⚠ **${summary.untested}** untested (code found but no tests)`,
+          `- ~ **${summary.partial}** partial (mentioned in docs, no code symbol)`,
+          `- ✗ **${summary.ungrounded}** ungrounded (no code references)`,
+        );
+
+        if (result.byFile.length > 1) {
+          lines.push("", "### By File", "");
+          for (const f of result.byFile) {
+            lines.push(
+              `- **${f.file}**: ${f.coveragePercent}% (${f.grounded}/${f.total})`,
+            );
+          }
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_verify ───────────────────────────────────────────────
+  server.tool(
+    "cari_verify",
+    "Spec-to-code verification: check whether KG entities (from enrichment) are grounded in code symbols. " +
+      "Returns grounded/ungrounded/partial/untested status for each entity. " +
+      "Requires prior enrichment (iw index enrich). " +
+      "Use to validate that documented decisions, requirements, and components have corresponding code.",
+    {
+      files: z
+        .array(z.string())
+        .optional()
+        .describe("Restrict to entities from these source files"),
+      types: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Only verify entities of these types (e.g., decision, requirement, component)",
+        ),
+      minConfidence: z
+        .number()
+        .optional()
+        .describe(
+          "Minimum annotation confidence to count as grounded (default: 0.5)",
+        ),
+      checkTests: z
+        .boolean()
+        .optional()
+        .describe("Check test coverage for grounded entities (default: true)"),
+    },
+    async (args) => {
+      try {
+        log(
+          `cari_verify: files=${args.files}, types=${args.types}, checkTests=${args.checkTests}`,
+        );
+
+        const { verify } = await import("@intentweave/index");
+        const dbPath = resolveIndexDb();
+
+        const result = verify(dbPath, {
+          files: args.files,
+          types: args.types,
+          minConfidence: args.minConfidence,
+          checkTests: args.checkTests,
+        });
+
+        if (result.entities.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No KG entities found. Run `iw index enrich` first to extract semantic entities.",
+              },
+            ],
+          };
+        }
+
+        const { summary } = result;
+        const lines: string[] = [
+          `## Spec-to-Code Verification`,
+          "",
+          `**${summary.total}** entities checked — **${summary.coveragePercent}%** spec coverage`,
+          "",
+          "| Status | Entity | Type | Source | Grounded In |",
+          "|--------|--------|------|--------|-------------|",
+        ];
+
+        const STATUS_ICONS: Record<string, string> = {
+          grounded: "✓",
+          untested: "⚠",
+          partial: "~",
+          ungrounded: "✗",
+        };
+
+        for (const e of result.entities) {
+          const icon = STATUS_ICONS[e.status] ?? "?";
+          const groundedStr =
+            e.groundedIn.length > 0
+              ? e.groundedIn
+                  .map((g) => `${g.symbolName} (${g.filePath})`)
+                  .join(", ")
+              : "—";
+          lines.push(
+            `| ${icon} ${e.status} | ${e.name} | ${e.entityType} | ${e.sourceFile} | ${groundedStr} |`,
+          );
+        }
+
+        lines.push(
+          "",
+          "### Summary",
+          "",
+          `- ✓ **${summary.grounded}** grounded`,
+          `- ⚠ **${summary.untested}** untested (code found but no tests)`,
+          `- ~ **${summary.partial}** partial (mentioned in docs, no code symbol)`,
+          `- ✗ **${summary.ungrounded}** ungrounded (no code references)`,
+        );
+
+        if (result.byFile.length > 1) {
+          lines.push("", "### By File", "");
+          for (const f of result.byFile) {
+            lines.push(
+              `- **${f.file}**: ${f.coveragePercent}% (${f.grounded}/${f.total})`,
+            );
+          }
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_consistency ──────────────────────────────────────────
+  server.tool(
+    "cari_consistency",
+    "Constraint consistency check: detect contradictions between KG relationships across different " +
+      "source documents. Finds opposing predicates (e.g., REQUIRES vs DECIDED_AGAINST the same entity) " +
+      "and exclusive-predicate conflicts (e.g., DECIDED_FOR two different targets). " +
+      "Requires prior enrichment (iw index enrich).",
+    {
+      files: z
+        .array(z.string())
+        .optional()
+        .describe("Restrict to relationships from these source files"),
+      types: z
+        .array(z.string())
+        .optional()
+        .describe("Only check relationships involving entities of these types"),
+      minConfidence: z
+        .number()
+        .optional()
+        .describe("Minimum relationship confidence to include (default: 0.5)"),
+    },
+    async (args) => {
+      try {
+        log(`cari_consistency: files=${args.files}, types=${args.types}`);
+
+        const { consistency } = await import("@intentweave/index");
+        const dbPath = resolveIndexDb();
+
+        const result = consistency(dbPath, {
+          files: args.files,
+          types: args.types,
+          minConfidence: args.minConfidence,
+        });
+
+        const { summary } = result;
+
+        if (result.conflicts.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `## Constraint Consistency\n\n` +
+                  `✓ All **${summary.totalRelationships}** relationships are internally consistent.`,
+              },
+            ],
+          };
+        }
+
+        const lines: string[] = [
+          `## Constraint Consistency`,
+          "",
+          `**${summary.totalRelationships}** relationships checked — **${summary.consistencyPercent}%** consistent`,
+          "",
+          "| Sev | Entity A | Predicate A | Entity B | Predicate B | Source A | Source B |",
+          "|-----|----------|-------------|----------|-------------|---------|---------|",
+        ];
+
+        for (const c of result.conflicts) {
+          const icon = c.severity === "error" ? "✗" : "⚠";
+          lines.push(
+            `| ${icon} | ${c.entityA.name} | ${c.predicateA} | ${c.entityB.name} | ${c.predicateB} | ${c.sourceFileA} | ${c.sourceFileB} |`,
+          );
+        }
+
+        lines.push(
+          "",
+          "### Summary",
+          "",
+          `- ✗ **${summary.errors}** errors (hard contradictions)`,
+          `- ⚠ **${summary.warnings}** warnings (potential conflicts)`,
+          `- ✓ **${summary.consistencyPercent}%** consistent`,
+        );
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_arch_check ─────────────────────────────────────────
+  server.tool(
+    "cari_arch_check",
+    `Validate code imports against the architecture diagram (.iw/architecture.yaml).
+Confirms declared component flows, detects undocumented flows, and checks dependency constraints.
+
+Returns:
+- Confirmed vs. missing declared flows
+- Undocumented cross-component imports not in the diagram
+- Constraint violations (forbidden dependencies)
+- Conformance percentage`,
+    {
+      config: z
+        .string()
+        .optional()
+        .describe("Path to architecture.yaml (default: .iw/architecture.yaml)"),
+      strict: z
+        .boolean()
+        .optional()
+        .describe("Treat undocumented flows as errors"),
+      fromDiagrams: z
+        .boolean()
+        .optional()
+        .describe(
+          "Infer architecture config from enriched diagram triples (no YAML required)",
+        ),
+    },
+    async (args) => {
+      try {
+        const { archCheck, parseArchitectureYaml, inferArchConfigFromKg } =
+          await loadIndex();
+        const { readFile } = await import("node:fs/promises");
+        const dbPath = resolveIndexDb();
+        let config: ReturnType<typeof parseArchitectureYaml> | null = null;
+        let usedDiagramFallback = false;
+
+        if (args.fromDiagrams) {
+          config = inferArchConfigFromKg(dbPath, {
+            requireDiagramHints: true,
+            workspaceRoot: process.cwd(),
+          });
+
+          if (!config.components || config.components.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "✗ No architecture triples found from diagrams. Run `iw index enrich --provider openai` first, or provide `config`.",
+                },
+              ],
+              isError: true,
+            };
+          }
+        } else {
+          const configPath =
+            args.config ?? path.join(process.cwd(), ".iw", "architecture.yaml");
+
+          let configContent: string;
+          try {
+            configContent = await readFile(configPath, "utf-8");
+          } catch {
+            config = inferArchConfigFromKg(dbPath, {
+              requireDiagramHints: true,
+              workspaceRoot: process.cwd(),
+            });
+
+            if (!config.components || config.components.length === 0) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `✗ Architecture config not found at ${configPath}, and no diagram triples were inferred. Use fromDiagrams=true after enrichment or create .iw/architecture.yaml.`,
+                  },
+                ],
+                isError: true,
+              };
+            }
+            usedDiagramFallback = true;
+            configContent = "";
+          }
+
+          if (configContent) {
+            config = parseArchitectureYaml(configContent);
+          }
+        }
+
+        if (!config) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "✗ Failed to load architecture config.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const result = archCheck(dbPath, config);
+        const { summary } = result;
+
+        if (
+          summary.missingFlows === 0 &&
+          summary.undocumentedFlows === 0 &&
+          summary.constraintViolations === 0
+        ) {
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `✓ Architecture fully conformant. **${summary.confirmedFlows}** flows confirmed, no undocumented imports or constraint violations. ` +
+                  `Conformance: **${summary.conformancePercent}%**`,
+              },
+            ],
+          };
+        }
+
+        const lines: string[] = [
+          `## Architecture Validation`,
+          "",
+          `**${summary.conformancePercent}%** conformance`,
+          "",
+        ];
+
+        if (usedDiagramFallback) {
+          lines.push(
+            "⚠ Config missing; used inferred architecture from enriched diagram triples.",
+            "",
+          );
+        }
+
+        // Component summary
+        lines.push("### Components", "");
+        for (const c of result.componentSummary) {
+          lines.push(`- **${c.name}**: ${c.fileCount} files`);
+        }
+        lines.push("");
+
+        // Flows
+        if (result.flows.length > 0) {
+          lines.push(
+            "### Declared Flows",
+            "",
+            "| Status | From | To | Evidence |",
+            "|--------|------|----|----------|",
+          );
+          for (const f of result.flows) {
+            const icon = f.status === "confirmed" ? "✓" : "⚠";
+            const evidence =
+              f.status === "confirmed"
+                ? `${f.evidence.length} import(s)`
+                : "no imports found";
+            lines.push(`| ${icon} | ${f.from} | ${f.to} | ${evidence} |`);
+          }
+          lines.push("");
+        }
+
+        // Undocumented
+        if (result.undocumented.length > 0) {
+          lines.push(
+            "### Undocumented Flows",
+            "",
+            "| From | To | Imports |",
+            "|------|----|---------|",
+          );
+          for (const u of result.undocumented) {
+            lines.push(`| ${u.from} | ${u.to} | ${u.edges.length} |`);
+          }
+          lines.push("");
+        }
+
+        // Violations
+        if (result.constraintViolations.length > 0) {
+          lines.push(
+            "### Constraint Violations",
+            "",
+            "| From | To | Reason | Imports |",
+            "|------|----|--------|---------|",
+          );
+          for (const v of result.constraintViolations) {
+            lines.push(
+              `| ${v.from} | ${v.to} | ${v.reason} | ${v.edges.length} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        lines.push(
+          "### Summary",
+          "",
+          `- ✓ **${summary.confirmedFlows}** confirmed flows`,
+          `- ⚠ **${summary.missingFlows}** missing flows`,
+          `- ✗ **${summary.undocumentedFlows}** undocumented flows`,
+          `- ! **${summary.constraintViolations}** constraint violations`,
+        );
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_resolve ──────────────────────────────────────────────
+  server.tool(
+    "cari_resolve",
+    `Ground a diagram component name against the CARI index — map it to concrete code symbols, doc files, and co-occurrence evidence.
+
+Returns:
+- Resolved terms (normalised aliases usable as lookup keys)
+- Matched code symbols (name, kind, file path)
+- Documentation files that mention the component
+- Confidence score (0–1) and evidence summary
+
+Use this before \`cari_arch_diff\` when a component name is ambiguous, or to understand what concrete artifacts a high-level label refers to.
+
+No LLM or Neo4j needed — pure SQLite.`,
+    {
+      name: z
+        .string()
+        .describe(
+          "Diagram component name to resolve (e.g. 'Authentication', 'PaymentService')",
+        ),
+      limitSymbols: z
+        .number()
+        .optional()
+        .default(10)
+        .describe("Maximum code symbols to return (default: 10)"),
+      limitDocs: z
+        .number()
+        .optional()
+        .default(5)
+        .describe("Maximum doc files to return (default: 5)"),
+    },
+    async (args) => {
+      log(`cari_resolve: name="${args.name}"`);
+      try {
+        const { resolveComponent } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = resolveComponent(dbPath, {
+          name: args.name,
+          limitSymbols: args.limitSymbols,
+          limitDocs: args.limitDocs,
+        });
+        const r = result.resolved;
+
+        const lines: string[] = [
+          `## Resolve: "${r.name}"`,
+          "",
+          `**Confidence**: ${r.confidence.toFixed(2)}`,
+          "",
+        ];
+
+        if (r.evidence.length > 0) {
+          lines.push("**Evidence**:", ...r.evidence.map((e) => `- ${e}`), "");
+        }
+
+        if (r.terms.length > 0) {
+          lines.push(`**Resolved Terms**: ${r.terms.join(", ")}`, "");
+        }
+
+        if (r.symbols.length > 0) {
+          lines.push(
+            "### Matched Symbols",
+            "",
+            "| Name | Kind | File |",
+            "|------|------|------|",
+            ...r.symbols.map(
+              (s) => `| ${s.name} | ${s.kind} | ${s.filePath} |`,
+            ),
+            "",
+          );
+        } else {
+          lines.push("*No code symbols found.*", "");
+        }
+
+        if (r.docFiles.length > 0) {
+          lines.push(
+            "### Documentation Files",
+            "",
+            ...r.docFiles.map((f) => `- ${f}`),
+            "",
+          );
+        } else {
+          lines.push("*No documentation files found.*", "");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_arch_diff ─────────────────────────────────────────────
+  server.tool(
+    "cari_arch_diff",
+    `Validate architecture diagram flows against CARI entity evidence (annotations + co-occurrences).
+
+Scans markdown diagrams via LLM to extract components and declared flows (result is cached by content hash),
+then checks each declared flow against co-occurrence and annotation signals in the CARI index.
+
+Returns:
+- Per-component grounding status (co_occurrence / annotation / none)
+- Missing flows (declared in diagram but no entity evidence)
+- Ungrounded flows (both ends lack index evidence)
+- Conformance percentage
+
+Use for drift analysis between documented and actual architecture — without needing import-level code analysis.
+
+No Neo4j needed — LLM is used only for the initial diagram scan (cached after first run).`,
+    {
+      paths: z
+        .array(z.string())
+        .optional()
+        .default(["docs"])
+        .describe(
+          "Directories or files to scan for diagrams (default: ['docs'])",
+        ),
+      provider: z
+        .enum(["openai", "smart-mock"])
+        .optional()
+        .default("smart-mock")
+        .describe(
+          "LLM provider for diagram interpretation (default: smart-mock)",
+        ),
+      refresh: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Ignore cache and re-scan diagrams (default: false)"),
+    },
+    async (args) => {
+      log(
+        `cari_arch_diff: paths=${JSON.stringify(args.paths)}, provider=${args.provider}, refresh=${args.refresh}`,
+      );
+      try {
+        const { buildArchConfigFromDiagrams } =
+          await import("../commands/indexScanDiagrams.js");
+        const { diagramEntityCheck } = await loadIndex();
+        const dbPath = resolveIndexDb();
+
+        const resolvedPaths = (args.paths ?? ["docs"]).map((p) =>
+          path.isAbsolute(p) ? p : path.resolve(process.cwd(), p),
+        );
+
+        const archConfig = await buildArchConfigFromDiagrams({
+          provider: args.provider,
+          paths: resolvedPaths,
+          silent: true,
+          refresh: args.refresh ?? false,
+        });
+
+        if (archConfig.components.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No architecture components found in diagrams. Make sure your docs contain Mermaid or PlantUML diagrams.",
+              },
+            ],
+          };
+        }
+
+        const result = diagramEntityCheck(dbPath, archConfig);
+        const { summary } = result;
+
+        const lines: string[] = [
+          "## Architecture Diff (Entity Evidence)",
+          "",
+          `**${summary.conformancePercent}%** conformance — ${summary.confirmedFlows} confirmed, ${summary.missingFlows} missing`,
+          "",
+        ];
+
+        // Component grounding
+        lines.push("### Component Grounding", "");
+        if (result.entityGrounding && result.entityGrounding.length > 0) {
+          lines.push(
+            "| Component | Grounded In | Mentions | Docs |",
+            "|-----------|-------------|----------|------|",
+          );
+          for (const g of result.entityGrounding) {
+            const icon =
+              g.groundedIn === "none"
+                ? "✗"
+                : g.groundedIn === "annotation"
+                  ? "✓"
+                  : "~";
+            lines.push(
+              `| ${icon} ${g.name} | ${g.groundedIn} | ${g.mentionCount} | ${g.docCount} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        // Flows
+        if (result.flows.length > 0) {
+          lines.push(
+            "### Declared Flows",
+            "",
+            "| Status | From | To | Evidence |",
+            "|--------|------|----|----------|",
+          );
+          for (const f of result.flows) {
+            const icon = f.status === "confirmed" ? "✓" : "⚠";
+            const ev =
+              f.status === "confirmed"
+                ? `${f.evidence.length} signal(s)`
+                : "no evidence";
+            lines.push(`| ${icon} | ${f.from} | ${f.to} | ${ev} |`);
+          }
+          lines.push("");
+        }
+
+        // Summary
+        lines.push(
+          "### Summary",
+          "",
+          `- ✓ **${summary.confirmedFlows}** confirmed flows`,
+          `- ⚠ **${summary.missingFlows}** missing flows`,
+          `- ✗ **${summary.undocumentedFlows}** undocumented flows`,
+        );
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_component_evidence ───────────────────────────────────
+  server.tool(
+    "cari_component_evidence",
+    `Get all CARI evidence for a single architecture component: resolved code symbols, documentation mentions, and cross-layer connections.
+
+Combines three signals:
+1. Symbol resolution (exact + FTS match against the code index)
+2. Documentation annotations (which doc files mention this component)
+3. CARI connections (co-occurrence, co-change, and import-graph neighbours)
+
+Use after \`cari_arch_diff\` to drill into a specific ungrounded or missing component.
+
+No LLM or Neo4j needed — pure SQLite.`,
+    {
+      name: z
+        .string()
+        .describe(
+          "Component name to investigate (e.g. 'AuthService', 'Pipeline')",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(10)
+        .describe("Maximum items per evidence section (default: 10)"),
+    },
+    async (args) => {
+      log(`cari_component_evidence: name="${args.name}" limit=${args.limit}`);
+      try {
+        const { resolveComponent, connections } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const lim = args.limit ?? 10;
+
+        // Layer 1: symbol resolution
+        const resolved = resolveComponent(dbPath, {
+          name: args.name,
+          limitSymbols: lim,
+          limitDocs: lim,
+        }).resolved;
+
+        // Layer 2: CARI connections (co-occ, co-change, imports)
+        const conns = connections(dbPath, { entity: args.name, limit: lim });
+
+        const lines: string[] = [
+          `## Component Evidence: "${args.name}"`,
+          "",
+          `**Confidence**: ${resolved.confidence.toFixed(2)}`,
+        ];
+
+        if (resolved.evidence.length > 0) {
+          lines.push(
+            "",
+            "**Evidence**:",
+            ...resolved.evidence.map((e) => `- ${e}`),
+          );
+        }
+
+        // Symbols
+        if (resolved.symbols.length > 0) {
+          lines.push(
+            "",
+            "### Code Symbols",
+            "",
+            "| Name | Kind | File |",
+            "|------|------|------|",
+            ...resolved.symbols.map(
+              (s) => `| ${s.name} | ${s.kind} | ${s.filePath} |`,
+            ),
+          );
+        }
+
+        // Doc files
+        if (resolved.docFiles.length > 0) {
+          lines.push(
+            "",
+            "### Documentation Files",
+            "",
+            ...resolved.docFiles.map((f) => `- ${f}`),
+          );
+        }
+
+        // Connections
+        const allConns = (conns.connections ?? []).slice(0, lim);
+
+        if (allConns.length > 0) {
+          lines.push(
+            "",
+            "### Connections",
+            "",
+            "| Entity | Source Types | Score |",
+            "|--------|-------------|-------|",
+            ...allConns.map((c) => {
+              const types = c.sources.map((s) => s.type).join(", ");
+              const maxScore = Math.max(...c.sources.map((s) => s.score));
+              return `| ${c.name} | ${types} | ${maxScore.toFixed(2)} |`;
+            }),
+          );
+        }
+
+        // Gaps
+        if (conns.gaps && conns.gaps.length > 0) {
+          lines.push(
+            "",
+            "### Gaps (evidence-layer disagreements)",
+            "",
+            ...conns.gaps.map((g) => `- **${g.severity}**: ${g.description}`),
+          );
+        }
+
+        if (
+          resolved.symbols.length === 0 &&
+          resolved.docFiles.length === 0 &&
+          allConns.length === 0
+        ) {
+          lines.push(
+            "",
+            "⚠ No evidence found. Try running `iw index build` or check the component name spelling.",
+          );
+        }
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {

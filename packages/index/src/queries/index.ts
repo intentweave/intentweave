@@ -62,9 +62,28 @@ export { focus, focusFromDb } from "./focus.js";
 export { impact, impactFromDb, formatCariImpact } from "./impact.js";
 export { archReport, archReportFromDb } from "./archReport.js";
 export type { ArchReportOptions } from "./archReport.js";
-export {
-  enrichmentScore,
-  enrichmentScoreFromDb,
-} from "./enrichmentScore.js";
+export { enrichmentScore, enrichmentScoreFromDb } from "./enrichmentScore.js";
 export type { EnrichmentScoreOptions } from "./enrichmentScore.js";
+export { verify, verifyFromDb } from "./verify.js";
+export { consistency, consistencyFromDb } from "./consistency.js";
+export {
+  archCheck,
+  archCheckFromDb,
+  parseArchitectureYaml,
+  inferArchConfigFromKg,
+  inferArchConfigFromKgDb,
+  enrichArchConfigWithFiles,
+} from "./archCheck.js";
+export {
+  diagramEntityCheck,
+  diagramEntityCheckFromDb,
+} from "./diagramEntityCheck.js";
+export type {
+  DiagramEntityCheckResult,
+  EntityGrounding,
+} from "./diagramEntityCheck.js";
+export {
+  resolveComponent,
+  resolveComponentFromDb,
+} from "./resolveComponent.js";
 export { openIndex } from "./shared.js";

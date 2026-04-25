@@ -43,10 +43,50 @@ function seedFixtures(d: Database.Database) {
     INSERT INTO symbols (id, name, kind, container, signature, file_path, line, end_line, export)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  insertSym.run("s1", "AuthService", "class", null, "class AuthService", "src/auth/service.ts", 10, 100, "exported");
-  insertSym.run("s2", "UserRepo", "class", null, "class UserRepo", "src/user/repo.ts", 5, 80, "exported");
-  insertSym.run("s3", "validate", "function", null, "function validate()", "src/auth/validate.ts", 1, 20, "exported");
-  insertSym.run("s4", "helper", "function", null, "function helper()", "src/utils/helper.ts", 1, 10, "internal");
+  insertSym.run(
+    "s1",
+    "AuthService",
+    "class",
+    null,
+    "class AuthService",
+    "src/auth/service.ts",
+    10,
+    100,
+    "exported",
+  );
+  insertSym.run(
+    "s2",
+    "UserRepo",
+    "class",
+    null,
+    "class UserRepo",
+    "src/user/repo.ts",
+    5,
+    80,
+    "exported",
+  );
+  insertSym.run(
+    "s3",
+    "validate",
+    "function",
+    null,
+    "function validate()",
+    "src/auth/validate.ts",
+    1,
+    20,
+    "exported",
+  );
+  insertSym.run(
+    "s4",
+    "helper",
+    "function",
+    null,
+    "function helper()",
+    "src/utils/helper.ts",
+    1,
+    10,
+    "internal",
+  );
 
   // ── Files ──
   const insertFile = d.prepare(`
@@ -73,7 +113,15 @@ function seedFixtures(d: Database.Database) {
   insertAnno.run("docs/AUTH.md", 5, "AuthService", "s1", 0.9, "exact", null);
   insertAnno.run("docs/AUTH.md", 10, "validate", "s3", 0.8, "slug", null);
   // Orphaned annotation in AUTH.md
-  insertAnno.run("docs/AUTH.md", 15, "OAuthProvider", null, 0.0, "ungrounded", null);
+  insertAnno.run(
+    "docs/AUTH.md",
+    15,
+    "OAuthProvider",
+    null,
+    0.0,
+    "ungrounded",
+    null,
+  );
   // Grounded annotation in API.md
   insertAnno.run("docs/API.md", 3, "UserRepo", "s2", 0.7, "exact", null);
 
@@ -82,15 +130,34 @@ function seedFixtures(d: Database.Database) {
     INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
     VALUES (?, ?, ?, ?, ?)
   `);
-  insertImport.run("src/auth/service.ts", "src/user/repo.ts", "../user/repo", 1, "UserRepo");
-  insertImport.run("src/auth/validate.ts", "src/auth/service.ts", "./service", 1, "AuthService");
+  insertImport.run(
+    "src/auth/service.ts",
+    "src/user/repo.ts",
+    "../user/repo",
+    1,
+    "UserRepo",
+  );
+  insertImport.run(
+    "src/auth/validate.ts",
+    "src/auth/service.ts",
+    "./service",
+    1,
+    "AuthService",
+  );
 
   // ── Co-occurrences ──
   const insertCoOcc = d.prepare(`
     INSERT INTO co_occurrences (entity_a, entity_b, count, score, source, file_paths)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
-  insertCoOcc.run("AuthService", "UserRepo", 3, 0.8, "doc_cooc", "docs/AUTH.md");
+  insertCoOcc.run(
+    "AuthService",
+    "UserRepo",
+    3,
+    0.8,
+    "doc_cooc",
+    "docs/AUTH.md",
+  );
 }
 
 // =============================================================================
@@ -137,11 +204,13 @@ describe("enrichmentScore", () => {
 
   it("should track already-enriched files when incremental", () => {
     // First, mark a file as enriched
-    db.prepare(`
+    db.prepare(
+      `
       INSERT OR REPLACE INTO enrichment_meta
         (file_path, content_hash, enriched_at, entity_count, triple_count)
       VALUES ('src/auth/service.ts', 'hash-auth-1', datetime('now'), 5, 10)
-    `).run();
+    `,
+    ).run();
 
     const result = enrichmentScoreFromDb(db, { incremental: true });
     const authService = result.candidates.find(
@@ -152,7 +221,9 @@ describe("enrichmentScore", () => {
     expect(authService!.alreadyEnriched).toBe(true);
 
     // Clean up
-    db.prepare(`DELETE FROM enrichment_meta WHERE file_path = 'src/auth/service.ts'`).run();
+    db.prepare(
+      `DELETE FROM enrichment_meta WHERE file_path = 'src/auth/service.ts'`,
+    ).run();
   });
 
   it("should include signal breakdown", () => {
@@ -238,9 +309,9 @@ describe("writeKgResults", () => {
     expect(rels[0].predicate).toBe("USES");
 
     // Verify raw triples
-    const raws = readDb
-      .prepare(`SELECT * FROM kg_raw_triples`)
-      .all() as Array<Record<string, unknown>>;
+    const raws = readDb.prepare(`SELECT * FROM kg_raw_triples`).all() as Array<
+      Record<string, unknown>
+    >;
     expect(raws.length).toBe(1);
 
     // Verify enrichment_meta
@@ -284,7 +355,9 @@ describe("writeKgResults", () => {
     expect(entities.length).toBe(1);
 
     const rels = readDb
-      .prepare(`SELECT * FROM kg_relationships WHERE source_file = 'docs/AUTH.md'`)
+      .prepare(
+        `SELECT * FROM kg_relationships WHERE source_file = 'docs/AUTH.md'`,
+      )
       .all();
     expect(rels.length).toBe(0);
 

@@ -62,6 +62,12 @@ import {
 // Enrichment subcommand (11.8)
 import { indexEnrichSubcommand } from "./indexEnrich.js";
 
+// Diagram scanner subcommand
+import {
+  indexScanDiagramsSubcommand,
+  buildArchConfigFromDiagrams,
+} from "./indexScanDiagrams.js";
+
 export {
   DEFAULT_EXCLUDES,
   loadIwIgnore,
@@ -195,6 +201,11 @@ import {
   renderArchReportHtml,
   renderFocusReportHtml,
   analyzeFocusInsights,
+  archCheck,
+  parseArchitectureYaml,
+  inferArchConfigFromKg,
+  enrichArchConfigWithFiles,
+  diagramEntityCheck,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -202,6 +213,7 @@ import type {
   CheckParams,
   ExternalEntity,
   LayerConfig,
+  ArchConfig,
 } from "@intentweave/index";
 
 function resolveDbPath(output?: string): string {
@@ -2089,6 +2101,298 @@ function parseLayersYaml(content: string): LayerConfig {
   return { layers };
 }
 
+// ── iw index arch-check ───────────────────────────────────────────
+
+const indexArchCheckSubcommand = new Command("arch-check")
+  .description(
+    "Validate code imports against architecture intent (YAML config, enriched diagram triples, or direct diagram scan)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "-c, --config <path>",
+    "Path to architecture.yaml (default: .iw/architecture.yaml)",
+  )
+  .option(
+    "--from-diagrams",
+    "Infer architecture config from enriched diagram triples in index.db (requires prior `iw index enrich`)",
+    false,
+  )
+  .option(
+    "--from-scan [paths...]",
+    "Scan markdown files for diagrams and interpret via LLM directly (no enrichment needed)",
+  )
+  .option(
+    "--provider <name>",
+    "LLM provider for --from-scan: openai or smart-mock",
+    "smart-mock",
+  )
+  .option("--model <name>", "LLM model for --from-scan (default: gpt-4o-mini)")
+  .option(
+    "--api-key <key>",
+    "OpenAI API key for --from-scan (overrides OPENAI_API_KEY)",
+  )
+  .option(
+    "--refresh",
+    "Re-run LLM scan even if a valid cache exists (for use with --from-scan)",
+    false,
+  )
+  .option(
+    "--strict",
+    "Fail on undocumented flows (exit code 1 even without violations)",
+    false,
+  )
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    let config: ArchConfig | null = null;
+
+    // ── Priority 1: --from-scan — scan diagrams via LLM directly ────────────
+    if (opts.fromScan !== undefined) {
+      const scanPaths: string[] =
+        Array.isArray(opts.fromScan) && opts.fromScan.length > 0
+          ? opts.fromScan
+          : typeof opts.fromScan === "string"
+            ? [opts.fromScan]
+            : ["."];
+
+      if (opts.format !== "json") {
+        console.log(
+          chalk.blue("\n  ▸ Architecture Diagram Validation (--from-scan)\n"),
+        );
+      }
+
+      config = await buildArchConfigFromDiagrams({
+        paths: scanPaths,
+        provider: opts.provider,
+        model: opts.model,
+        apiKey: opts.apiKey,
+        silent: opts.format === "json",
+        refresh: opts.refresh ?? false,
+      });
+
+      if (!config.components || config.components.length === 0) {
+        console.error(
+          chalk.red(
+            "\n  ✗ No components found in scanned diagrams.\n" +
+              "    Check that the scanned paths contain Mermaid or ASCII-art diagrams.\n",
+          ),
+        );
+        process.exit(1);
+      }
+
+      // Enrich empty file arrays with inferred globs from the index
+      config = enrichArchConfigWithFiles(dbPath, config);
+
+      if (opts.format !== "json") {
+        console.log(
+          chalk.gray(
+            `\n  ▸ Extracted ${config.components.length} components, ${config.flows?.length ?? 0} flows from diagrams\n`,
+          ),
+        );
+      }
+
+      // ── Priority 2: --from-diagrams — use enriched KG triples ───────────────
+    } else if (opts.fromDiagrams) {
+      config = inferArchConfigFromKg(dbPath, {
+        requireDiagramHints: true,
+        workspaceRoot: process.cwd(),
+      });
+
+      if (!config.components || config.components.length === 0) {
+        console.error(
+          chalk.red(
+            "\n  ✗ No architecture triples found from diagrams.\n    Run `iw index enrich --provider openai` first, or use --from-scan.\n",
+          ),
+        );
+        process.exit(1);
+      }
+
+      // ── Priority 3: YAML config (explicit or auto-discovered) ───────────────
+    } else {
+      const configPath =
+        opts.config ?? path.join(process.cwd(), ".iw", "architecture.yaml");
+
+      const { readFile } = await import("node:fs/promises");
+      let configContent: string;
+      try {
+        configContent = await readFile(configPath, "utf-8");
+      } catch {
+        config = inferArchConfigFromKg(dbPath, {
+          requireDiagramHints: true,
+          workspaceRoot: process.cwd(),
+        });
+
+        if (!config.components || config.components.length === 0) {
+          console.error(
+            chalk.red(
+              `\n  ✗ Architecture config not found at ${configPath}, and no diagram triples were inferred.\n` +
+                `    Run --from-scan <paths> to scan diagrams directly, or create .iw/architecture.yaml.\n`,
+            ),
+          );
+          process.exit(1);
+        }
+
+        if (opts.format !== "json") {
+          console.log(
+            chalk.yellow(
+              `\n  ⚠ Architecture config not found at ${configPath}; using inferred diagram triples instead.\n`,
+            ),
+          );
+        }
+        configContent = "";
+      }
+
+      if (configContent) {
+        try {
+          config = parseArchitectureYaml(configContent);
+        } catch (err: any) {
+          console.error(
+            chalk.red(`\n  ✗ Failed to parse ${configPath}: ${err.message}\n`),
+          );
+          process.exit(1);
+        }
+      }
+    }
+
+    if (!config) {
+      console.error(chalk.red("\n  ✗ Failed to load architecture config.\n"));
+      process.exit(1);
+    }
+
+    // --from-scan uses entity-level validation; everything else uses file-import validation
+    const isEntityMode = opts.fromScan !== undefined;
+    const result = isEntityMode
+      ? diagramEntityCheck(dbPath, config)
+      : archCheck(dbPath, config);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      const { summary } = result;
+      const entityResult = isEntityMode
+        ? (result as ReturnType<typeof diagramEntityCheck>)
+        : null;
+
+      if (!isEntityMode) {
+        console.log(chalk.blue(`\n  ▸ Architecture Diagram Validation\n`));
+      }
+
+      // Component summary
+      console.log(chalk.bold("  Components:"));
+      for (const c of result.componentSummary) {
+        const grounding = entityResult?.entityGrounding.find(
+          (g) => g.name === c.name,
+        );
+        if (grounding) {
+          const icon =
+            grounding.groundedIn === "none" ? chalk.red("✗") : chalk.green("✓");
+          const detail =
+            grounding.groundedIn === "none"
+              ? "ungrounded"
+              : `${grounding.mentionCount} mentions in ${grounding.docCount} doc${grounding.docCount !== 1 ? "s" : ""} (${grounding.groundedIn})`;
+          console.log(chalk.gray(`    ${icon} ${c.name}: ${detail}`));
+        } else {
+          console.log(chalk.gray(`    ${c.name}: ${c.fileCount} files`));
+        }
+      }
+      console.log("");
+
+      // Declared flows
+      if (result.flows.length > 0) {
+        console.log(chalk.bold("  Declared Flows:"));
+        for (const f of result.flows) {
+          const icon =
+            f.status === "confirmed" ? chalk.green("✓") : chalk.yellow("⚠");
+          let status: string;
+          if (f.status === "confirmed") {
+            if (entityResult) {
+              // Show entity-level evidence source
+              const evidenceSrc =
+                f.evidence[0]?.sourceFile ?? "entity evidence";
+              status = `confirmed (${evidenceSrc})`;
+            } else {
+              status = `confirmed (${f.evidence.length} import${f.evidence.length !== 1 ? "s" : ""})`;
+            }
+          } else {
+            status = entityResult
+              ? "MISSING — no co-occurrence or co-annotation evidence found"
+              : "MISSING — no direct import path found";
+          }
+          console.log(`    ${icon} ${f.from} → ${f.to}: ${status}`);
+        }
+        console.log("");
+      }
+
+      // Undocumented flows
+      if (result.undocumented.length > 0) {
+        const undocLabel = entityResult
+          ? "  Undocumented Entity Connections (co-occurring but not declared):"
+          : "  Undocumented Flows (not in diagram):";
+        console.log(chalk.bold.yellow(undocLabel));
+        for (const u of result.undocumented) {
+          if (entityResult) {
+            const score = u.edges[0]?.sourceFile ?? "";
+            console.log(
+              `    ${chalk.yellow("~")} ${u.from} ↔ ${u.to}: ${score}`,
+            );
+          } else {
+            console.log(
+              `    ${chalk.red("✗")} ${u.from} → ${u.to} (${u.edges.length} import${u.edges.length !== 1 ? "s" : ""})`,
+            );
+          }
+        }
+        console.log("");
+      }
+
+      // Constraint violations
+      if (result.constraintViolations.length > 0) {
+        console.log(chalk.bold.red("  Constraint Violations:"));
+        for (const v of result.constraintViolations) {
+          console.log(
+            `    ${chalk.red("✗")} ${v.from} → ${v.to}: ${v.reason} (${v.edges.length} import${v.edges.length !== 1 ? "s" : ""})`,
+          );
+        }
+        console.log("");
+      }
+
+      // Summary
+      console.log(chalk.bold("  Summary:"));
+      if (entityResult) {
+        const groundedCount = entityResult.entityGrounding.filter(
+          (g) => g.groundedIn !== "none",
+        ).length;
+        const totalComponents = entityResult.entityGrounding.length;
+        console.log(
+          `    ${chalk.green("✓")} ${summary.confirmedFlows}/${summary.totalFlows} flows confirmed (entity-level)  ` +
+            `${chalk.yellow("⚠")} ${summary.missingFlows} missing  ` +
+            `${chalk.yellow("~")} ${summary.undocumentedFlows} undocumented connections`,
+        );
+        console.log(
+          `    Components grounded: ${groundedCount}/${totalComponents}  ` +
+            `(${Math.round((groundedCount / Math.max(totalComponents, 1)) * 100)}% coverage)`,
+        );
+      } else {
+        console.log(
+          `    ${chalk.green("✓")} ${summary.confirmedFlows}/${summary.totalFlows} flows confirmed  ` +
+            `${chalk.yellow("⚠")} ${summary.missingFlows} missing  ` +
+            `${chalk.red("✗")} ${summary.undocumentedFlows} undocumented  ` +
+            `${chalk.red("!")} ${summary.constraintViolations} constraint violations`,
+        );
+      }
+      console.log(
+        `    Architecture conformance: ${summary.conformancePercent}%`,
+      );
+      console.log("");
+    }
+
+    // Exit codes: 2 = constraint violations, 1 = strict + undocumented, 0 = OK
+    if (result.constraintViolations.length > 0) {
+      process.exit(2);
+    } else if (opts.strict && result.undocumented.length > 0) {
+      process.exit(1);
+    }
+  });
+
 // ── iw index conformance ──────────────────────────────────────────
 
 const indexConformanceSubcommand = new Command("conformance")
@@ -2811,6 +3115,7 @@ export const indexCommand = new Command("index")
   .addCommand(indexBoundaryViolationsSubcommand)
   .addCommand(indexLayersInferSubcommand)
   .addCommand(indexLayersCheckSubcommand)
+  .addCommand(indexArchCheckSubcommand)
   .addCommand(indexConformanceSubcommand)
   .addCommand(indexDeadFeaturesSubcommand)
   .addCommand(indexApiSurfaceSubcommand)
@@ -2818,7 +3123,8 @@ export const indexCommand = new Command("index")
   .addCommand(indexFocusSubcommand)
   .addCommand(indexImpactSubcommand)
   .addCommand(indexExportSubcommand)
-  .addCommand(indexEnrichSubcommand);
+  .addCommand(indexEnrichSubcommand)
+  .addCommand(indexScanDiagramsSubcommand);
 
 // ── LLM narrative generation for --explain ──────────────────────
 

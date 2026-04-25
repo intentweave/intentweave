@@ -31,10 +31,10 @@ import { crossGroupDriftFromDb } from "./crossGroupDrift.js";
 /** Default weights — orphans and hotspots get the most weight. */
 const DEFAULT_WEIGHTS: EnrichmentWeights = {
   hotspot: 0.25,
-  orphan: 0.30,
+  orphan: 0.3,
   hub: 0.15,
-  coverage: 0.20,
-  drift: 0.10,
+  coverage: 0.2,
+  drift: 0.1,
 };
 
 export interface EnrichmentScoreOptions {
@@ -86,7 +86,9 @@ export function enrichmentScoreFromDb(
   // Collect current content hashes from files table
   const fileHashes = new Map<string, string>();
   const fileRows = db
-    .prepare(`SELECT path, content_hash FROM files WHERE content_hash IS NOT NULL`)
+    .prepare(
+      `SELECT path, content_hash FROM files WHERE content_hash IS NOT NULL`,
+    )
     .all() as Array<{ path: string; content_hash: string }>;
   for (const r of fileRows) fileHashes.set(r.path, r.content_hash);
 
@@ -128,9 +130,8 @@ export function enrichmentScoreFromDb(
   // ── Signal 3: Hub degree (normalized) ─────────────────────────
   const hubs = hubsFromDb(db);
   const hubMap = new Map<string, number>();
-  const maxDegree = hubs.hubs.length > 0
-    ? Math.max(...hubs.hubs.map((h) => h.totalDegree))
-    : 1;
+  const maxDegree =
+    hubs.hubs.length > 0 ? Math.max(...hubs.hubs.map((h) => h.totalDegree)) : 1;
   for (const h of hubs.hubs) {
     hubMap.set(h.filePath, h.totalDegree / maxDegree);
   }
@@ -150,10 +151,7 @@ export function enrichmentScoreFromDb(
     const severity = d.groups.length / Math.max(drift.totalDrifts, 1);
     for (const g of d.groups) {
       for (const docPath of g.docPaths) {
-        driftMap.set(
-          docPath,
-          Math.max(driftMap.get(docPath) ?? 0, severity),
-        );
+        driftMap.set(docPath, Math.max(driftMap.get(docPath) ?? 0, severity));
       }
     }
   }
@@ -161,9 +159,9 @@ export function enrichmentScoreFromDb(
   // ── Collect all unique files ──────────────────────────────────
   const allFiles = new Set<string>();
   // Include both code and doc files
-  const allFileRows = db
-    .prepare(`SELECT path FROM files`)
-    .all() as Array<{ path: string }>;
+  const allFileRows = db.prepare(`SELECT path FROM files`).all() as Array<{
+    path: string;
+  }>;
   for (const f of allFileRows) allFiles.add(f.path);
 
   // ── Score each file ───────────────────────────────────────────

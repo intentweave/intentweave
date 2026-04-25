@@ -1615,3 +1615,300 @@ export interface EnrichResult {
   /** Token usage summary. */
   tokenUsage?: { prompt: number; completion: number; costUsd?: number };
 }
+
+// =============================================================================
+// Spec-to-Code Verification (12.1)
+// =============================================================================
+
+/** Grounding status for a single KG entity. */
+export type GroundingStatus =
+  | "grounded"
+  | "ungrounded"
+  | "partial"
+  | "untested";
+
+/** A single entity verification finding. */
+export interface VerifyEntityResult {
+  /** Canonical entity ID from kg_entities. */
+  canonId: string;
+  /** Entity display name. */
+  name: string;
+  /** Entity type (decision, requirement, component, etc.). */
+  entityType: string;
+  /** Source doc file the entity was extracted from. */
+  sourceFile: string;
+  /** Grounding status. */
+  status: GroundingStatus;
+  /** Code symbols that ground this entity (empty if ungrounded). */
+  groundedIn: Array<{
+    symbolId: string;
+    symbolName: string;
+    filePath: string;
+    kind: string;
+    confidence: number;
+  }>;
+  /** Whether the grounded symbols have test coverage. */
+  hasCoverage: boolean;
+  /** Human-readable summary of the finding. */
+  message: string;
+}
+
+/** Parameters for the verify query. */
+export interface VerifyParams {
+  /** Restrict verification to entities from these source files. */
+  files?: string[];
+  /** Only verify entities of these types. */
+  types?: string[];
+  /** Minimum annotation confidence to count as grounded. */
+  minConfidence?: number;
+  /** Check test coverage for grounded entities. */
+  checkTests?: boolean;
+}
+
+/** Result of spec-to-code verification. */
+export interface VerifyResult {
+  /** All entity verification findings. */
+  entities: VerifyEntityResult[];
+  /** Summary statistics. */
+  summary: {
+    total: number;
+    grounded: number;
+    ungrounded: number;
+    partial: number;
+    untested: number;
+    coveragePercent: number;
+  };
+  /** Per-source-file breakdown. */
+  byFile: Array<{
+    file: string;
+    total: number;
+    grounded: number;
+    ungrounded: number;
+    coveragePercent: number;
+  }>;
+}
+
+// =============================================================================
+// Query: consistency (12.2 — Constraint Consistency Check)
+// =============================================================================
+
+/** Severity of a constraint conflict. */
+export type ConflictSeverity = "error" | "warning";
+
+/** A single detected constraint conflict between two relationships. */
+export interface ConstraintConflict {
+  /** Entity on the "from" side of both relationships. */
+  entityA: { canonId: string; name: string };
+  /** Entity on the "to" side of both relationships. */
+  entityB: { canonId: string; name: string };
+  /** Predicate in the first relationship. */
+  predicateA: string;
+  /** Predicate in the second (contradicting) relationship. */
+  predicateB: string;
+  /** Source file of the first relationship. */
+  sourceFileA: string;
+  /** Source file of the second relationship. */
+  sourceFileB: string;
+  /** Error = hard contradiction, warning = potential conflict. */
+  severity: ConflictSeverity;
+  /** Human-readable conflict description. */
+  message: string;
+}
+
+/** Parameters for the consistency check. */
+export interface ConsistencyParams {
+  /** Restrict check to relationships from these source files. */
+  files?: string[];
+  /** Only check relationships involving entities of these types. */
+  types?: string[];
+  /** Minimum relationship confidence to include. */
+  minConfidence?: number;
+}
+
+/** Result of constraint consistency check. */
+export interface ConsistencyResult {
+  /** All detected conflicts. */
+  conflicts: ConstraintConflict[];
+  /** Summary statistics. */
+  summary: {
+    totalRelationships: number;
+    totalConflicts: number;
+    errors: number;
+    warnings: number;
+    consistencyPercent: number;
+  };
+}
+
+// =============================================================================
+// Query: archCheck (5.8 — Architecture Diagram Validation)
+// =============================================================================
+
+/** A named component defined in architecture.yaml. */
+export interface ArchComponent {
+  /** Component display name. */
+  name: string;
+  /** File glob patterns that belong to this component. */
+  files: string[];
+  /**
+   * Alternative names / known code symbols for this component.
+   * Populated by the LLM at scan-diagrams time for noise-free entity matching.
+   * E.g. KWG → ["keyword graph", "kwxStage", "heuristicExtractor"]
+   */
+  aliases?: string[];
+}
+
+/** A declared data flow between components. */
+export interface ArchFlow {
+  /** Source component name. */
+  from: string;
+  /** Target component name(s). */
+  to: string | string[];
+}
+
+/** A forbidden-dependency constraint. */
+export interface ArchConstraint {
+  /** Constraint type. */
+  type: "no-direct-dependency";
+  /** Source component name. */
+  from: string;
+  /** Target component name. */
+  to: string;
+  /** Human-readable reason for the constraint. */
+  reason?: string;
+}
+
+/** Architecture diagram configuration (from .iw/architecture.yaml). */
+export interface ArchConfig {
+  components: ArchComponent[];
+  flows?: ArchFlow[];
+  constraints?: ArchConstraint[];
+}
+
+/** Status of a declared flow. */
+export type FlowStatus = "confirmed" | "missing";
+
+/** A validated architecture flow finding. */
+export interface ArchFlowResult {
+  /** Source component. */
+  from: string;
+  /** Target component. */
+  to: string;
+  /** Whether the flow exists in the import graph. */
+  status: FlowStatus;
+  /** Import edges that confirm the flow (empty if missing). */
+  evidence: Array<{ sourceFile: string; targetFile: string }>;
+}
+
+/** An undocumented import between components not declared in any flow. */
+export interface UndocumentedFlow {
+  /** Source component. */
+  from: string;
+  /** Target component. */
+  to: string;
+  /** Import edges that constitute this undocumented flow. */
+  edges: Array<{ sourceFile: string; targetFile: string }>;
+}
+
+/** A constraint violation finding. */
+export interface ArchConstraintViolation {
+  /** Source component. */
+  from: string;
+  /** Target component. */
+  to: string;
+  /** Constraint reason. */
+  reason: string;
+  /** Import edges that violate the constraint. */
+  edges: Array<{ sourceFile: string; targetFile: string }>;
+}
+
+// =============================================================================
+// Query: resolveComponent
+// =============================================================================
+
+/**
+ * A code symbol matched to an architecture diagram component.
+ */
+export interface ResolvedSymbol {
+  /** Stable symbol ID from AX (impl:<path>#<kind>:<name>) */
+  id: string;
+  /** Symbol name as it appears in code */
+  name: string;
+  /** Symbol kind: class | function | variable | interface | type | etc. */
+  kind: string;
+  /** File path (relative to workspace) */
+  filePath: string;
+}
+
+/**
+ * Result of resolving an architecture diagram component name against
+ * the CARI index (symbols, annotations, co-occurrences).
+ */
+export interface ResolvedComponent {
+  /** Original diagram component name */
+  name: string;
+
+  /**
+   * Normalized search terms derived from the index, suitable for use in
+   * co-occurrence / annotation lookups. These replace LLM-guessed aliases
+   * with index-grounded terms.
+   *
+   * Includes: normalised component name + matched symbol names + matched
+   * annotation text values, all lowercased and deduplicated.
+   */
+  terms: string[];
+
+  /** Code symbols that matched the component name */
+  symbols: ResolvedSymbol[];
+
+  /** Doc files that mention this component (ordered by mention count) */
+  docFiles: string[];
+
+  /**
+   * Overall confidence that the component name resolves to real index entries.
+   * - 0.0 = nothing found
+   * - 0.0–0.3 = co-occurrence signal only
+   * - 0.3–0.6 = annotation match (ungrounded)
+   * - 0.6–0.85 = annotation match (grounded to symbol)
+   * - 0.85–1.0 = exact symbol name match
+   */
+  confidence: number;
+
+  /** Human-readable explanation of how the component was resolved */
+  evidence: string[];
+}
+
+export interface ResolveComponentParams {
+  /** Diagram component name to resolve */
+  name: string;
+
+  /** Maximum symbols to return (default: 10) */
+  limitSymbols?: number;
+
+  /** Maximum doc files to return (default: 5) */
+  limitDocs?: number;
+}
+
+export interface ResolveComponentResult {
+  resolved: ResolvedComponent;
+}
+
+/** Result of architecture diagram validation. */
+export interface ArchCheckResult {
+  /** Validated declared flows. */
+  flows: ArchFlowResult[];
+  /** Imports between components not declared in any flow. */
+  undocumented: UndocumentedFlow[];
+  /** Constraint violations. */
+  constraintViolations: ArchConstraintViolation[];
+  /** Components and their assigned file counts. */
+  componentSummary: Array<{ name: string; fileCount: number }>;
+  /** Summary statistics. */
+  summary: {
+    totalFlows: number;
+    confirmedFlows: number;
+    missingFlows: number;
+    undocumentedFlows: number;
+    constraintViolations: number;
+    conformancePercent: number;
+  };
+}
