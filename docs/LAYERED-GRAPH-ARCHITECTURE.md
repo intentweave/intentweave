@@ -376,6 +376,26 @@ graphs, build/runtime wiring, and schema definitions.
 - ❌ Extended sub-graphs (API Surface, Test Coverage, Config, Build/Runtime) not yet implemented
 - Reference: `codegraphchat-v2/packages/cli/src/scg/scgPersist.ts` for SCG Neo4j model
 
+**AX Output Contract (`packages/analyzer/src/stages/ax.ts`):**
+
+The AX stage is language-agnostic. New languages are contributed via `LanguageAdapter` plugins
+discovered at runtime by `LanguageRegistry`. The entry point is `runAxStage(options)`.
+
+| Type / Function          | Role                                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------------------- |
+| `runAxStage`             | Main entry point — dispatches to `LanguageRegistry`, writes `ax.json`                        |
+| `runAxStageIncremental`  | Incremental variant — skips unchanged files using `contentHash`                               |
+| `AxStageOptions`         | Input config: `workspaceRoot`, `include/exclude` globs, `extraAdapters` for language plugins  |
+| `AxOutput`               | Top-level output: `version`, `workspaceRoot`, `totalFiles`, `totalSymbols`, `files[]`, `stats`|
+| `AxFileResult`           | Per-file result: `filePath`, `contentHash`, `language`, `symbols[]`, `imports[]`, `todos[]`, `rationale[]` |
+| `AxSymbol`               | One extracted symbol: `id` (`impl:<path>#<kind>:<name>`), `kind`, `name`, `isExported`, `body`/`structureHash` |
+| `AxImport`               | One import statement: `moduleSpecifier`, `resolvedPath`, `isRelative`, `importedNames[]`      |
+| `AxTodo`                 | TODO/FIXME/HACK/XXX marker: `line`, `kind`, `text`                                            |
+| `AxRationale`            | WHY/NOTE/IMPORTANT/DESIGN comment: `line`, `kind`, `text`                                     |
+| `LanguageAdapter`        | Interface plugins must implement: `supports(file)`, `extract(file, options)` → `AxFileResult` |
+| `LanguageRegistry`       | Runtime adapter registry — `register(adapter)`, `getAdapter(filePath)`, `extractFile(...)`    |
+| `createLanguageRegistry` | Factory; registers the built-in TypeScript/JS adapter and any `extraAdapters` from options    |
+
 **SCG ↔ KWG cross-link:** This is a **query-time join**, not a build step. When `AuthService`
 appears as a KWG keyword in `src/auth.ts`, and the SCG has `Entity:Class{name:"AuthService"}` in
 `src/auth.ts`, the link is: same file path + same name. No separate extraction needed.
