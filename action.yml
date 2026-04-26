@@ -1,0 +1,225 @@
+# Copyright 2025-2026 Benjamin Becker
+# SPDX-License-Identifier: Apache-2.0
+#
+# IntentWeave Doc-Health Action
+#
+# Composite GitHub Action that runs CARI drift detection and living-score
+# checks on pull requests.  Publish as intentweave/doc-health-action@v1.
+#
+# Usage:
+#   - uses: intentweave/doc-health-action@v1
+#     with:
+#       severity-threshold: warning
+#       post-comment: true
+
+name: "IntentWeave Doc Health"
+description: >
+  Run CARI drift detection and living-documentation score check.
+  Posts a PR comment with findings, optionally fails the build.
+
+branding:
+  icon: "book-open"
+  color: "purple"
+
+inputs:
+  severity-threshold:
+    description: >
+      Minimum severity level that causes a build failure.
+      One of: info | warning | critical.
+    required: false
+    default: "warning"
+
+  post-comment:
+    description: "Post a summary comment on the pull request."
+    required: false
+    default: "true"
+
+  iw-version:
+    description: >
+      Version of @intentweave/cli to install (npm tag or semver range).
+      Defaults to 'latest'.
+    required: false
+    default: "latest"
+
+  working-directory:
+    description: "Workspace root to run iw commands from."
+    required: false
+    default: "."
+
+  build-index:
+    description: >
+      Whether to run 'iw index build' before checking.
+      Set to 'false' if you restore a cached index.
+    required: false
+    default: "true"
+
+  score-threshold:
+    description: >
+      Minimum living-documentation score (0–100) required to pass.
+      Set to '0' to disable the score gate.
+    required: false
+    default: "0"
+
+outputs:
+  score:
+    description: "Living Documentation Score (0–100)."
+    value: ${{ steps.score.outputs.score }}
+
+  grade:
+    description: "Living Documentation Grade (A–F)."
+    value: ${{ steps.score.outputs.grade }}
+
+  drift-count:
+    description: "Number of drift findings at or above the severity threshold."
+    value: ${{ steps.check.outputs.drift-count }}
+
+runs:
+  using: "composite"
+  steps:
+    # ── 1. Install iw CLI ──────────────────────────────────────────────────
+    - name: Install IntentWeave CLI
+      shell: bash
+      run: npm install -g @intentweave/cli@${{ inputs.iw-version }}
+
+    # ── 2. Build or update the CARI index ─────────────────────────────────
+    - name: Build CARI index
+      if: inputs.build-index == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: iw index build -v
+
+    # ── 3. Determine changed files (PR diff or push diff) ─────────────────
+    - name: Get changed files
+      id: changed
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+          BASE=${{ github.event.pull_request.base.sha }}
+        else
+          BASE=HEAD~1
+        fi
+        FILES=$(git diff --name-only "$BASE" HEAD -- 2>/dev/null | tr '\n' ' ')
+        echo "files=$FILES" >> "$GITHUB_OUTPUT"
+        echo "Changed files: $FILES"
+
+    # ── 4. Run drift detection ─────────────────────────────────────────────
+    - name: Run drift check
+      id: check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        FILES="${{ steps.changed.outputs.files }}"
+        if [ -z "$FILES" ]; then
+          echo "No changed files detected — skipping drift check."
+          echo "drift-count=0" >> "$GITHUB_OUTPUT"
+          echo "check-output=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Run check, capture output + exit code
+        set +e
+        OUTPUT=$(iw index check \
+          --severity "${{ inputs.severity-threshold }}" \
+          --format github \
+          $FILES 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        # Count finding lines (GitHub annotation format: ::warning:: or ::error::)
+        COUNT=$(echo "$OUTPUT" | grep -cE '^::(warning|error)::' || true)
+        echo "drift-count=$COUNT" >> "$GITHUB_OUTPUT"
+        echo "check-output<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$OUTPUT" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+        # Emit GitHub annotations inline
+        echo "$OUTPUT"
+
+        if [ "$EXIT_CODE" -ne 0 ]; then
+          echo "::error::Drift check found $COUNT finding(s) at severity '${{ inputs.severity-threshold }}' or above."
+          exit 1
+        fi
+
+    # ── 5. Compute living-documentation score ─────────────────────────────
+    - name: Compute living score
+      id: score
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        OUTPUT=$(iw verify --score --format json 2>/dev/null || echo '{}')
+        SCORE=$(echo "$OUTPUT" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const o=JSON.parse(d);process.stdout.write(String(o.score??0))}catch{process.stdout.write('0')}})" 2>/dev/null || echo "0")
+        GRADE=$(echo "$OUTPUT" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const o=JSON.parse(d);process.stdout.write(String(o.grade??'?'))}catch{process.stdout.write('?')}})" 2>/dev/null || echo "?")
+
+        echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+        echo "grade=$GRADE" >> "$GITHUB_OUTPUT"
+        echo "Living Documentation Score: $SCORE / 100 (Grade $GRADE)"
+
+        THRESHOLD="${{ inputs.score-threshold }}"
+        if [ "$THRESHOLD" -gt 0 ] && [ "$SCORE" -lt "$THRESHOLD" ]; then
+          echo "::error::Living Documentation Score $SCORE is below threshold $THRESHOLD."
+          exit 1
+        fi
+
+    # ── 6. Post PR comment ─────────────────────────────────────────────────
+    - name: Post PR comment
+      if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const driftCount = parseInt('${{ steps.check.outputs.drift-count }}' || '0', 10);
+          const checkOutput = `${{ steps.check.outputs.check-output }}`;
+          const score = '${{ steps.score.outputs.score }}';
+          const grade = '${{ steps.score.outputs.grade }}';
+          const threshold = '${{ inputs.severity-threshold }}';
+
+          const gradeEmoji = { A: '🟢', B: '🟡', C: '🟠', D: '🔴', F: '🔴' }[grade] ?? '⚪';
+          const driftEmoji = driftCount === 0 ? '✅' : '⚠️';
+
+          let body = `## 📚 IntentWeave Doc Health\n\n`;
+          body += `| Metric | Value |\n|--------|-------|\n`;
+          body += `| ${gradeEmoji} Living Score | **${score}/100** (Grade ${grade}) |\n`;
+          body += `| ${driftEmoji} Drift findings (≥${threshold}) | **${driftCount}** |\n\n`;
+
+          if (driftCount > 0 && checkOutput) {
+            // Strip GitHub annotation prefixes for readable display
+            const findings = checkOutput
+              .split('\n')
+              .filter(l => l.startsWith('::'))
+              .map(l => l.replace(/^::(warning|error)::/,'').trim())
+              .filter(Boolean)
+              .slice(0, 20)
+              .map(l => `- ${l}`)
+              .join('\n');
+            if (findings) {
+              body += `<details>\n<summary>Drift findings</summary>\n\n${findings}\n</details>\n`;
+            }
+          }
+
+          body += `\n_Generated by [IntentWeave](https://github.com/intentweave/intentweave) · [docs](https://github.com/intentweave/intentweave/blob/main/docs/CLI-USAGE.md)_`;
+
+          // Find and update existing comment, or create new one
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.pull_request.number,
+          });
+
+          const marker = '## 📚 IntentWeave Doc Health';
+          const existing = comments.find(c => c.body?.includes(marker));
+
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+          }

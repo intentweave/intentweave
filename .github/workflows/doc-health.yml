@@ -1,0 +1,85 @@
+# Copyright 2025-2026 Benjamin Becker
+# SPDX-License-Identifier: Apache-2.0
+#
+# Documentation health check on pull requests.
+# Uses the composite IntentWeave Doc-Health Action defined in action.yml.
+#
+# Runs:
+#   - iw index build   (or restores a cached index)
+#   - iw index check   (drift detection on changed files)
+#   - iw verify --score (living documentation score gate)
+#
+# Post a PR comment summarising findings and score.
+
+name: Doc Health
+
+on:
+  pull_request:
+    branches: [main]
+    # Run on any file change — index build is cheap and covers all types
+    paths:
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/*.js"
+      - "**/*.py"
+      - "**/*.swift"
+      - "**/*.md"
+      - "**/*.mdx"
+      - "**/*.rst"
+      - "**/*.adoc"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "**/package.json"
+
+concurrency:
+  group: doc-health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doc-health:
+    name: Doc Health Check
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write  # needed for PR comment
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch enough history for git diff to work
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cache the CARI index so subsequent runs are fast (<1s for unchanged files)
+      - name: Restore CARI index cache
+        id: cache-index
+        uses: actions/cache@v4
+        with:
+          path: .iw/index.db
+          key: cari-index-${{ github.ref }}-${{ hashFiles('**/*.ts','**/*.py','**/*.swift','**/*.md') }}
+          restore-keys: |
+            cari-index-${{ github.ref }}-
+            cari-index-
+
+      - name: Run IntentWeave Doc Health
+        uses: ./
+        with:
+          severity-threshold: warning
+          post-comment: true
+          # Skip full build if we restored a warm cache; use update instead
+          build-index: ${{ steps.cache-index.outputs.cache-hit != 'true' && 'true' || 'false' }}
+
+      # Incremental update when cache was hit
+      - name: Incremental index update (cache hit)
+        if: steps.cache-index.outputs.cache-hit == 'true'
+        run: pnpm --filter @intentweave/cli exec iw index update -v

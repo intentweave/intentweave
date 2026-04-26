@@ -612,7 +612,7 @@ Same concept for Python-ecosystem doc tools:
 - **MkDocs plugin**: runs `check` on build, injects admonitions into pages
 - Particularly valuable combined with 7.1 (Python AST support)
 
-### 8.4 CI Artifact Validation Action _(INT, M)_
+### 8.4 CI Artifact Validation Action _(INT, M)_ ✅
 
 GitHub Action / GitLab CI template that:
 
@@ -741,7 +741,7 @@ continuously up to date. Compose with `detectChanges` + `applyChanges` (already 
 
 CLI: `iw index watch`.
 
-### 10.3 Git Hooks Integration _(CARI, S)_
+### 10.3 Git Hooks Integration _(CARI, S)_ ✅
 
 `iw hook install` adds `post-commit` and `post-checkout` git hooks that run
 `iw index update` automatically. Graph stays current without manual intervention.
@@ -1288,7 +1288,7 @@ iw verify --score
 | 8.1  | Programmatic CARI API docs        | Docs | S      | High   | 8.0                  | ✅ Done |
 | 8.2  | Docusaurus/Starlight plugin       | INT  | M      | High   | 8.0                  |         |
 | 8.3  | Sphinx / MkDocs integration       | INT  | M      | Medium | 8.0                  |         |
-| 8.4  | CI artifact validation action     | INT  | M      | High   | `iw index check`     |         |
+| 8.4  | CI artifact validation action     | INT  | M      | High   | `iw index check`     | ✅ Done |
 | 8.5  | REST API for doc systems          | INT  | S      | Medium | server-core (exists) |         |
 | 8.6  | Webhook-triggered re-index        | INT  | M      | Medium | 8.5                  |         |
 | 9.1  | Community detection               | CARI | M      | High   | co_occ + imports     | ✅ Done |
@@ -1297,7 +1297,7 @@ iw verify --score
 | 9.4  | Rationale extraction              | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
 | 10.1 | Standalone HTML architecture rpt  | CARI | M      | High   | 5.1a, 9.1, 3.3       | ✅ Done |
 | 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists) | ✅ Done |
-| 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                 |         |
+| 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                 | ✅ Done |
 | 10.4 | Obsidian vault export             | CARI | M      | Low    | 9.1                  |         |
 | 11.1 | Plugin interface & registry       | CARI | M      | High   | None                 | ✅      |
 | 11.2 | Capability provider system        | CARI | M      | High   | 11.1                 | ✅      |

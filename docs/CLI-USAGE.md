@@ -247,6 +247,29 @@ iw doc-health --neo4j -s my-project
 iw doc-health --neo4j -s my-project --only doc-code,deps
 ```
 
+### `iw hook` — Git hooks integration
+
+Keep the CARI index current automatically without manual `iw index build` calls.
+
+```bash
+# Install post-commit and post-checkout hooks
+iw hook install
+
+# Install with verbose output
+iw hook install --verbose
+
+# Remove iw-managed hook sections (leaves any existing hook content intact)
+iw hook uninstall
+
+# Check installation status
+iw hook status
+```
+
+The installed hooks run `iw index update` after every commit and branch switch.
+If an existing hook is already present the iw block is appended rather than
+overwriting it. `iw hook uninstall` only removes the iw section, leaving any
+other hook logic untouched.
+
 ### `iw persist` — Write to Neo4j
 
 ```bash
