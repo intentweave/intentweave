@@ -707,6 +707,238 @@ const indexUpdateSubcommand = new Command("update")
     }
   });
 
+// ── iw index watch ─────────────────────────────────────────────
+
+const WATCH_IGNORE_RE =
+  /[/\\](node_modules|\.git|dist|build|coverage)[/\\]|[/\\]\.iw[/\\]|\.min\.js$|\.map$/;
+
+function isWatchIgnored(filePath: string): boolean {
+  return WATCH_IGNORE_RE.test(filePath);
+}
+
+const indexWatchSubcommand = new Command("watch")
+  .description(
+    "Watch the workspace and incrementally update the CARI index on file changes",
+  )
+  .argument("[paths...]", "Scope to specific directories (default: workspace root)")
+  .option("--db <path>", "Path to index.db")
+  .option("--exclude <patterns...>", "Exclude files matching these globs")
+  .option("--debounce <ms>", "Debounce delay in ms (default: 500)", parseInt)
+  .option("-v, --verbose", "Verbose output", false)
+  .action(async (paths: string[], opts) => {
+    const cwd = process.cwd();
+    const dbPath = resolveDbPath(opts.db);
+    const verbose: boolean = opts.verbose;
+    const debounceMs: number = opts.debounce ?? 500;
+
+    const log = verbose
+      ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
+      : () => {};
+
+    // Verify existing index
+    const fsSync = await import("node:fs");
+    if (!fsSync.existsSync(dbPath)) {
+      console.error(
+        chalk.red(
+          `\n  ✗ No index found at ${dbPath}. Run "iw index build" first.\n`,
+        ),
+      );
+      process.exit(1);
+    }
+
+    const iwIgnorePatterns = await loadIwIgnore(cwd);
+    const cliExcludes: string[] = opts.exclude ?? [];
+    const excludePatterns = buildExcludeList(cliExcludes, iwIgnorePatterns, true);
+
+    const watchPaths =
+      paths.length > 0
+        ? paths.map((p) => (path.isAbsolute(p) ? p : path.join(cwd, p)))
+        : [cwd];
+
+    console.log(chalk.blue(`\n  ▸ CARI Watch Mode`));
+    console.log(chalk.blue("  " + "═".repeat(40)));
+    console.log(`    Watching: ${watchPaths.map((p) => path.relative(cwd, p) || ".").join(", ")}`);
+    console.log(`    Index:    ${path.relative(cwd, dbPath)}`);
+    console.log(`    Debounce: ${debounceMs}ms`);
+    console.log(chalk.dim("\n    Press Ctrl+C to stop.\n"));
+
+    let running = false;
+    let pendingPaths: Set<string> = new Set();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cycleCount = 0;
+
+    /** Pretty-print a compact timestamp. */
+    function ts(): string {
+      return chalk.dim(new Date().toLocaleTimeString());
+    }
+
+    /** Run one incremental update cycle. */
+    async function runCycle(changedAbsPaths: string[]): Promise<void> {
+      if (running) {
+        for (const p of changedAbsPaths) pendingPaths.add(p);
+        return;
+      }
+      running = true;
+      cycleCount++;
+
+      const relChanged = changedAbsPaths.map((p) => path.relative(cwd, p));
+      console.log(
+        `${ts()} ${chalk.magenta(`Cycle #${cycleCount}`)} — ${changedAbsPaths.length} file(s) changed`,
+      );
+      if (verbose) {
+        for (const rp of relChanged) console.log(`    ${chalk.dim(rp)}`);
+      }
+
+      const cycleStart = performance.now();
+      try {
+        // 1. Discover all current files
+        const docFiles = await discoverFiles(watchPaths, cwd, {
+          exclude: excludePatterns,
+        });
+        const axOutput = await runAxStage({ workspaceRoot: cwd });
+        const allCodeFiles = axOutput.files.map((f) =>
+          path.resolve(cwd, f.filePath),
+        );
+        const allFiles = [...docFiles, ...allCodeFiles];
+
+        // 2. Detect changes
+        const changes = detectChanges(dbPath, cwd, allFiles);
+        if (changes.length === 0) {
+          console.log(`${ts()} ${chalk.green("✓")} Index up to date`);
+          running = false;
+          flushPending();
+          return;
+        }
+
+        console.log(
+          chalk.cyan(
+            `    ${changes.length} change(s): ` +
+              `${changes.filter((c) => c.status === "added").length} added, ` +
+              `${changes.filter((c) => c.status === "modified").length} modified, ` +
+              `${changes.filter((c) => c.status === "deleted").length} deleted`,
+          ),
+        );
+
+        // 3. Re-extract changed doc files
+        const changedDocs = changes.filter(
+          (c) => c.isDoc && c.status !== "deleted",
+        );
+        const kwxOutputs: KwxStageOutput[] = [];
+        const ctx = createMinimalContext(verbose);
+
+        for (const change of changedDocs) {
+          const abs = path.resolve(cwd, change.path);
+          log(`KWX: ${change.path}`);
+          const content = await fs.readFile(abs, "utf-8");
+          const artifactId = toArtifactId(abs, cwd);
+          const inInput: InStageInput = { artifactId, filePath: change.path, content };
+          const inOutput = await runInStage(inInput, ctx as any);
+          const kwxOutput = await runKwxStage({ inOutput });
+          kwxOutputs.push(kwxOutput);
+        }
+
+        const coxOutput =
+          kwxOutputs.length > 0 ? await runCoxStage({ kwxOutputs }) : undefined;
+        const annotations =
+          kwxOutputs.length > 0 ? annotate(axOutput, kwxOutputs, { log }) : [];
+
+        // 4. Refresh TCG (lightweight)
+        const tcxOutput = await runTcxStage({
+          workspaceRoot: cwd,
+          depth: 100,
+          log: verbose
+            ? (msg: string) => console.log(chalk.gray(`    tcx: ${msg}`))
+            : undefined,
+        });
+        const cocOutput = runCocStage({ tcxOutput });
+        const hotOutput = runHotStage({ tcxOutput });
+        const ownOutput = runOwnStage({ tcxOutput });
+        const stlOutput = runStlStage({ tcxOutput, workspaceRoot: cwd });
+        const tcgOutput: TcgPipelineOutput = {
+          tcx: tcxOutput,
+          coc: cocOutput,
+          hot: hotOutput,
+          own: ownOutput,
+          stl: stlOutput,
+          meta: {
+            session: "watch",
+            workspaceRoot: cwd,
+            gitDepth: "100 commits",
+            totalDurationMs: 0,
+          },
+        };
+
+        // 5. Apply changes
+        const result = applyChanges(
+          dbPath,
+          changes,
+          { ax: axOutput, kwxOutputs, cox: coxOutput, annotations, tcg: tcgOutput },
+          { dbPath, workspaceRoot: cwd, log },
+        );
+
+        const elapsed = ((performance.now() - cycleStart) / 1000).toFixed(1);
+        console.log(
+          `${ts()} ${chalk.green("✓")} Updated in ${elapsed}s — ` +
+            chalk.gray(
+              `symbols=${result.updated.symbols} annotations=${result.updated.annotations} files=${result.updated.files}`,
+            ),
+        );
+      } catch (err: any) {
+        console.error(
+          `${ts()} ${chalk.red("✗")} Update failed: ${err.message}`,
+        );
+        if (verbose && err.stack) console.error(chalk.gray(err.stack));
+      } finally {
+        running = false;
+        flushPending();
+      }
+    }
+
+    function flushPending(): void {
+      if (pendingPaths.size > 0) {
+        const batch = [...pendingPaths];
+        pendingPaths = new Set();
+        void runCycle(batch);
+      }
+    }
+
+    function scheduleCycle(absPath: string): void {
+      pendingPaths.add(absPath);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        const batch = [...pendingPaths];
+        pendingPaths = new Set();
+        void runCycle(batch);
+      }, debounceMs);
+    }
+
+    // Start chokidar watcher
+    const { watch: chokidarWatch } = await import("chokidar");
+    const watcher = chokidarWatch(watchPaths, {
+      ignored: isWatchIgnored,
+      ignoreInitial: true,
+      persistent: true,
+      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
+    });
+
+    watcher.on("add", (p) => scheduleCycle(p));
+    watcher.on("change", (p) => scheduleCycle(p));
+    watcher.on("unlink", (p) => scheduleCycle(p));
+    watcher.on("error", (err) =>
+      console.error(chalk.red(`  Watcher error: ${err}`)),
+    );
+
+    // Graceful shutdown
+    process.on("SIGINT", () => {
+      console.log(chalk.dim("\n\n  Stopping watcher..."));
+      void watcher.close().then(() => process.exit(0));
+    });
+    process.on("SIGTERM", () => {
+      void watcher.close().then(() => process.exit(0));
+    });
+  });
+
 // ── iw index clones ────────────────────────────────────────────
 
 const indexClonesSubcommand = new Command("clones")
@@ -3088,6 +3320,7 @@ export const indexCommand = new Command("index")
   .description("CARI — Code-Aware Retrieval Index commands")
   .addCommand(indexBuildSubcommand)
   .addCommand(indexUpdateSubcommand)
+  .addCommand(indexWatchSubcommand)
   .addCommand(indexRetrieveSubcommand)
   .addCommand(indexConnectionsSubcommand)
   .addCommand(indexCheckSubcommand)
