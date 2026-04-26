@@ -203,7 +203,8 @@ features. Here's what's already shipped and what's next:
 | **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                   |
 | **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                     |
 | **Intent Verification**   | living documentation score (`iw verify --score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`)                                                           |
-| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API                                                                                                                                     |
+| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API v1.0.0 ([`docs/API.md`](docs/API.md))                                                                                              |
+| **CI & Automation**       | watch mode (`iw index watch`), doc-health GitHub Action (`intentweave/doc-health-action@v1`), git hooks (`iw hook install/uninstall/status`)                                                |
 
 ### Next Up
 
@@ -211,10 +212,8 @@ features. Here's what's already shipped and what's next:
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | **Selective enrichment** (11.8)                  | Budget-controlled LLM on CARI-selected targets — the bridge between layers 1 and 2             |
 | **Architecture diagram validation** (5.8 + 11.8) | LLM parses ASCII/Mermaid diagrams, CARI validates against import graph — no YAML config needed |
-| **Living documentation** (12.x continued)        | Constraint consistency checks, automated spec-to-code verification, watch mode integration     |
+| **Living documentation** (12.x continued)        | Constraint consistency checks, automated spec-to-code verification                             |
 | **More languages**                               | Go, Rust, Java via tree-sitter plugins                                                         |
-| **Watch mode**                                   | Continuous re-indexing on file save                                                            |
-| **CI action**                                    | `uses: intentweave/doc-health-action@v1` for GitHub Actions                                    |
 
 ---
 
