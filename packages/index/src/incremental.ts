@@ -96,15 +96,19 @@ export function detectChanges(
 
       if (storedHash === undefined) {
         changes.push({ path: rel, status: "added", isDoc: isDocFile(rel) });
-      } else if (storedHash !== currentHash) {
+      } else if (storedHash !== null && storedHash !== currentHash) {
+        // storedHash === null means the file is tracked via git history only
+        // (not a doc or code file we hash), so we can't detect changes — skip it.
         changes.push({ path: rel, status: "modified", isDoc: isDocFile(rel) });
       }
-      // else: unchanged → skip
+      // else: unchanged (or null hash / no content tracking) → skip
     }
 
-    // Detect deleted files
-    for (const indexedPath of indexed.keys()) {
-      if (!seen.has(indexedPath)) {
+    // Detect deleted files — only for entries that had a content hash
+    // (null-hash entries are git-tracked files we don't hash; they are never
+    // reported as deleted since we never had a meaningful hash to compare against)
+    for (const [indexedPath, storedHash] of indexed) {
+      if (storedHash !== null && !seen.has(indexedPath)) {
         changes.push({
           path: indexedPath,
           status: "deleted",
