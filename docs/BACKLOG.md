@@ -632,7 +632,7 @@ GitHub Action / GitLab CI template that:
 Already partially possible with `iw index check` — this wraps it for CI ergonomics.
 CI mode uses CLI (not library) — no dependency on 8.0.
 
-### 8.5 REST API for External Doc Systems _(INT, S)_
+### 8.5 REST API for External Doc Systems _(INT, S)_ ✅
 
 The server (`@intentweave/server-core` + `@intentweave/server-open`) already exposes
 REST endpoints for queries, context, health. Document and version-stamp the API so
@@ -1289,7 +1289,7 @@ iw verify --score
 | 8.2  | Docusaurus/Starlight plugin       | INT  | M      | High   | 8.0                  |         |
 | 8.3  | Sphinx / MkDocs integration       | INT  | M      | Medium | 8.0                  |         |
 | 8.4  | CI artifact validation action     | INT  | M      | High   | `iw index check`     | ✅ Done |
-| 8.5  | REST API for doc systems          | INT  | S      | Medium | server-core (exists) |         |
+| 8.5  | REST API for doc systems          | INT  | S      | Medium | server-core (exists) | ✅ Done |
 | 8.6  | Webhook-triggered re-index        | INT  | M      | Medium | 8.5                  |         |
 | 9.1  | Community detection               | CARI | M      | High   | co_occ + imports     | ✅ Done |
 | 9.2  | God-node / hub analysis           | CARI | S      | High   | None                 | ✅ Done |

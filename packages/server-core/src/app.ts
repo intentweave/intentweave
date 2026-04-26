@@ -13,7 +13,7 @@ import { rateLimitPlugin } from "./plugins/rate-limit.js";
 import { authPlugin } from "./plugins/auth.js";
 import type { ServerConfig, IwServer } from "./types.js";
 
-const VERSION = "0.1.0";
+const VERSION = "1.0.0";
 
 /**
  * Create a configured Fastify server with IntentWeave core plugins.
@@ -80,7 +80,18 @@ export async function createServer(config: ServerConfig): Promise<IwServer> {
           { name: "impact", description: "Semantic impact analysis" },
           { name: "doc-health", description: "Documentation health analysis" },
           { name: "xlink", description: "Cross-layer code linking" },
+          { name: "sessions", description: "Session management" },
+          { name: "schema", description: "Knowledge graph schema" },
         ],
+        components: {
+          securitySchemes: {
+            bearerAuth: {
+              type: "http",
+              scheme: "bearer",
+              description: "API key — set via apiKeys in ServerConfig",
+            },
+          },
+        },
       },
     });
 
@@ -103,6 +114,11 @@ export async function createServer(config: ServerConfig): Promise<IwServer> {
 
   await server.register(healthPlugin);
   await server.register(ssePlugin);
+
+  // -- x-api-version header on all responses --
+  server.addHook("onSend", async (_req, reply) => {
+    reply.header("x-api-version", VERSION);
+  });
 
   // -- Rate limiting --
   await server.register(rateLimitPlugin, {
