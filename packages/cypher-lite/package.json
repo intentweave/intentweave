@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/cypher-lite",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Lightweight Cypher subset parser and SQLite transpiler for IntentWeave KG-Lite",
   "type": "module",
   "main": "./dist/index.js",

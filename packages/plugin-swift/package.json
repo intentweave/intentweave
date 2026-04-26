@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/plugin-swift",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Swift language plugin for IntentWeave — AST extraction via tree-sitter-swift",
   "type": "module",
   "main": "./dist/index.js",
