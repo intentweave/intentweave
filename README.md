@@ -211,7 +211,7 @@ features. Here's what's already shipped and what's next:
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | **Selective enrichment** (11.8)                  | Budget-controlled LLM on CARI-selected targets — the bridge between layers 1 and 2             |
 | **Architecture diagram validation** (5.8 + 11.8) | LLM parses ASCII/Mermaid diagrams, CARI validates against import graph — no YAML config needed |
-| **Living documentation** (12.x continued)         | Constraint consistency checks, automated spec-to-code verification, watch mode integration     |
+| **Living documentation** (12.x continued)        | Constraint consistency checks, automated spec-to-code verification, watch mode integration     |
 | **More languages**                               | Go, Rust, Java via tree-sitter plugins                                                         |
 | **Watch mode**                                   | Continuous re-indexing on file save                                                            |
 | **CI action**                                    | `uses: intentweave/doc-health-action@v1` for GitHub Actions                                    |
@@ -411,44 +411,44 @@ iw index update
 
 Additional CARI queries are available as CLI subcommands, MCP tools, and via the programmatic API:
 
-| CLI Command                                | MCP Tool                   | What It Does                                                   |
-| ------------------------------------------ | -------------------------- | -------------------------------------------------------------- |
-| `iw index clones`                          | `cari_clones`              | Exact code clone detection (identical body hash)               |
-| `iw index structural-clones`               | `cari_structural_clones`   | Type 2 clones (same control flow, different identifiers)       |
-| `iw index circular-imports`                | `cari_circular_imports`    | Detect import cycles (A → B → C → A)                           |
-| `iw index unused-exports`                  | `cari_unused_exports`      | Exported symbols never imported anywhere                       |
-| `iw index hotspot-priority`                | `cari_hotspot_priority`    | High-churn + low-doc files ranked by documentation urgency     |
-| `iw index todos`                           | `cari_todos`               | TODO/FIXME/HACK/XXX inventory with file, line, and kind        |
-| `iw index module-coverage`                 | `cari_module_coverage`     | Documentation coverage % per directory                         |
-| `iw index orphaned-sections`               | `cari_orphaned_sections`   | Doc sections where all mentions are unresolved                 |
-| `iw index doc-completeness`                | `cari_doc_completeness`    | Per-doc score: covered vs. total exports from referenced files |
-| `iw index cross-group-drift`               | `cari_cross_group_drift`   | Entity coverage conflicts between doc groups                   |
-| `iw index mentions-of <id>`                | `cari_mentions_of`         | Find doc mentions of a code or external entity                 |
-| `iw index annotations-for <file>`          | `cari_annotations_for`     | List all annotations for a documentation file                  |
-| `iw index test-coverage`                   | `cari_test_coverage`       | Map test files to source files, find untested exports          |
-| `iw index hubs`                            | `cari_hubs`                | God-node / hub analysis (degree centrality)                    |
-| `iw index communities`                     | `cari_communities`         | Community detection (structural / semantic / temporal modes)   |
-| `iw index surprises`                       | `cari_surprises`           | Surprising connection ranking (composite score)                |
-| `iw index rationale`                       | `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                  |
-| `iw index terminology`                     | `cari_terminology`         | Terminology inconsistency detection                            |
-| `iw index dep-depth`                       | `cari_dep_depth`           | Transitive import depth + fan-in/fan-out risk                  |
-| `iw index boundary-violations`             | `cari_boundary_violations` | Cross-package internal import detection                        |
-| `iw index layers-infer`                    | `cari_layers_infer`        | Auto-infer architectural layers from import graph              |
-| `iw index layers-check`                    | `cari_layers_check`        | Validate imports against layer configuration                   |
-| `iw index layers-check --compare`          | —                          | As-is vs. as-should layer comparison (three-column delta view) |
-| `iw index conformance`                     | —                          | Interface conformance drift (missing methods, mismatches)      |
-| `iw index dead-features`                   | —                          | Dead feature detection (unused + undocumented + stale)         |
-| `iw index api-surface`                     | —                          | API surface changelog (additions, removals, signature changes) |
-| `iw index focus <target>`                  | `cari_focus`               | Focused architecture view around a target entity               |
-| `iw index arch-check`                      | `cari_arch_check`          | Validate architecture diagrams against CARI import evidence    |
+| CLI Command                                | MCP Tool                   | What It Does                                                     |
+| ------------------------------------------ | -------------------------- | ---------------------------------------------------------------- |
+| `iw index clones`                          | `cari_clones`              | Exact code clone detection (identical body hash)                 |
+| `iw index structural-clones`               | `cari_structural_clones`   | Type 2 clones (same control flow, different identifiers)         |
+| `iw index circular-imports`                | `cari_circular_imports`    | Detect import cycles (A → B → C → A)                             |
+| `iw index unused-exports`                  | `cari_unused_exports`      | Exported symbols never imported anywhere                         |
+| `iw index hotspot-priority`                | `cari_hotspot_priority`    | High-churn + low-doc files ranked by documentation urgency       |
+| `iw index todos`                           | `cari_todos`               | TODO/FIXME/HACK/XXX inventory with file, line, and kind          |
+| `iw index module-coverage`                 | `cari_module_coverage`     | Documentation coverage % per directory                           |
+| `iw index orphaned-sections`               | `cari_orphaned_sections`   | Doc sections where all mentions are unresolved                   |
+| `iw index doc-completeness`                | `cari_doc_completeness`    | Per-doc score: covered vs. total exports from referenced files   |
+| `iw index cross-group-drift`               | `cari_cross_group_drift`   | Entity coverage conflicts between doc groups                     |
+| `iw index mentions-of <id>`                | `cari_mentions_of`         | Find doc mentions of a code or external entity                   |
+| `iw index annotations-for <file>`          | `cari_annotations_for`     | List all annotations for a documentation file                    |
+| `iw index test-coverage`                   | `cari_test_coverage`       | Map test files to source files, find untested exports            |
+| `iw index hubs`                            | `cari_hubs`                | God-node / hub analysis (degree centrality)                      |
+| `iw index communities`                     | `cari_communities`         | Community detection (structural / semantic / temporal modes)     |
+| `iw index surprises`                       | `cari_surprises`           | Surprising connection ranking (composite score)                  |
+| `iw index rationale`                       | `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                    |
+| `iw index terminology`                     | `cari_terminology`         | Terminology inconsistency detection                              |
+| `iw index dep-depth`                       | `cari_dep_depth`           | Transitive import depth + fan-in/fan-out risk                    |
+| `iw index boundary-violations`             | `cari_boundary_violations` | Cross-package internal import detection                          |
+| `iw index layers-infer`                    | `cari_layers_infer`        | Auto-infer architectural layers from import graph                |
+| `iw index layers-check`                    | `cari_layers_check`        | Validate imports against layer configuration                     |
+| `iw index layers-check --compare`          | —                          | As-is vs. as-should layer comparison (three-column delta view)   |
+| `iw index conformance`                     | —                          | Interface conformance drift (missing methods, mismatches)        |
+| `iw index dead-features`                   | —                          | Dead feature detection (unused + undocumented + stale)           |
+| `iw index api-surface`                     | —                          | API surface changelog (additions, removals, signature changes)   |
+| `iw index focus <target>`                  | `cari_focus`               | Focused architecture view around a target entity                 |
+| `iw index arch-check`                      | `cari_arch_check`          | Validate architecture diagrams against CARI import evidence      |
 | `iw index scan-diagrams`                   | —                          | Discover and extract component flows from ASCII/Mermaid diagrams |
-| —                                          | `cari_resolve`             | Ground a diagram component name to code symbols + doc files    |
-| —                                          | `cari_arch_diff`           | Validate diagram entity flows against CARI evidence            |
-| —                                          | `cari_component_evidence`  | All CARI evidence for a single architecture component          |
-| `iw verify --score`                        | `cari_living_score`        | Composite living documentation score (A-F grade)               |
-| `iw index export --html`                   | —                          | Generate standalone interactive architecture report            |
-| `iw index export --html --provider openai` | `cari_layers_name`         | LLM-generated layer & directory names for the report           |
-| `iw index export --focus <target>`         | —                          | Focused Graphviz SVG architecture report                       |
+| —                                          | `cari_resolve`             | Ground a diagram component name to code symbols + doc files      |
+| —                                          | `cari_arch_diff`           | Validate diagram entity flows against CARI evidence              |
+| —                                          | `cari_component_evidence`  | All CARI evidence for a single architecture component            |
+| `iw verify --score`                        | `cari_living_score`        | Composite living documentation score (A-F grade)                 |
+| `iw index export --html`                   | —                          | Generate standalone interactive architecture report              |
+| `iw index export --html --provider openai` | `cari_layers_name`         | LLM-generated layer & directory names for the report             |
+| `iw index export --focus <target>`         | —                          | Focused Graphviz SVG architecture report                         |
 
 > See [docs/CLI-USAGE.md](docs/CLI-USAGE.md) for the full command reference, workflows, and troubleshooting.
 
@@ -467,40 +467,40 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 
 **CARI tools** (no Neo4j or LLM needed):
 
-| Tool                       | Purpose                                     | Key Parameters                   |
-| -------------------------- | ------------------------------------------- | -------------------------------- |
-| `cari_retrieve`            | Ranked file retrieval by topic or symbol    | `query`, `scope?`, `limit?`      |
-| `cari_connections`         | Cross-layer connection discovery + gaps     | `entity`, `include?`, `limit?`   |
-| `cari_check`               | CI drift detection for changed files        | `changed`, `severity?`           |
-| `cari_clones`              | Exact code clone detection                  | _(none)_                         |
-| `cari_structural_clones`   | Type 2 clone detection                      | _(none)_                         |
-| `cari_circular_imports`    | Import cycle detection                      | _(none)_                         |
-| `cari_unused_exports`      | Unused exported symbols                     | `limit?`                         |
-| `cari_hotspot_priority`    | High-churn low-doc file ranking             | `limit?`                         |
-| `cari_todos`               | TODO/FIXME/HACK/XXX inventory               | `kind?`, `limit?`                |
-| `cari_module_coverage`     | Documentation coverage % per directory      | _(none)_                         |
-| `cari_orphaned_sections`   | Doc sections with all-ungrounded mentions   | _(none)_                         |
-| `cari_doc_completeness`    | Per-doc completeness vs. referenced exports | _(none)_                         |
-| `cari_cross_group_drift`   | Cross-group entity coverage conflicts       | _(none)_                         |
-| `cari_mentions_of`         | Entity → doc mentions                       | `entityId`, `minConfidence?`     |
-| `cari_annotations_for`     | File → all annotations                      | `filePath`, `minConfidence?`     |
-| `cari_test_coverage`       | Test→source mapping + gaps                  | `limit?`                         |
-| `cari_hubs`                | God-node / hub analysis                     | `limit?`                         |
-| `cari_communities`         | Community detection (3 modes)               | `mode?`, `resolution?`, `limit?` |
-| `cari_surprises`           | Surprising connection ranking               | `limit?`                         |
-| `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN inventory         | `kind?`, `limit?`                |
-| `cari_terminology`         | Terminology inconsistency detection         | `limit?`                         |
-| `cari_dep_depth`           | Transitive import depth analysis            | `limit?`                         |
-| `cari_boundary_violations` | Package boundary violation detection        | _(none)_                         |
-| `cari_layers_infer`        | Auto-infer architectural layers             | _(none)_                         |
-| `cari_layers_check`        | Validate imports against layer config       | `allowSkipLayer?`                |
-| `cari_layers_name`         | LLM-generated layer & directory names       | `provider`, `model?`, `api_key?` |
-| `cari_focus`               | Focused architecture view around a target   | `target`, `hops?`, `maxNodes?`   |
-| `cari_arch_check`          | Validate diagrams against import evidence   | `paths?`, `provider?`            |
-| `cari_resolve`             | Ground diagram component to code + docs     | `name`, `limitSymbols?`          |
-| `cari_arch_diff`           | Validate diagram flows against CARI evidence| `paths?`, `provider?`, `refresh?`|
-| `cari_component_evidence`  | All CARI evidence for one component         | `name`, `limit?`                 |
-| `cari_living_score`        | Composite living documentation score        | `minConfidence?`, `allowSkipLayer?`|
+| Tool                       | Purpose                                      | Key Parameters                      |
+| -------------------------- | -------------------------------------------- | ----------------------------------- |
+| `cari_retrieve`            | Ranked file retrieval by topic or symbol     | `query`, `scope?`, `limit?`         |
+| `cari_connections`         | Cross-layer connection discovery + gaps      | `entity`, `include?`, `limit?`      |
+| `cari_check`               | CI drift detection for changed files         | `changed`, `severity?`              |
+| `cari_clones`              | Exact code clone detection                   | _(none)_                            |
+| `cari_structural_clones`   | Type 2 clone detection                       | _(none)_                            |
+| `cari_circular_imports`    | Import cycle detection                       | _(none)_                            |
+| `cari_unused_exports`      | Unused exported symbols                      | `limit?`                            |
+| `cari_hotspot_priority`    | High-churn low-doc file ranking              | `limit?`                            |
+| `cari_todos`               | TODO/FIXME/HACK/XXX inventory                | `kind?`, `limit?`                   |
+| `cari_module_coverage`     | Documentation coverage % per directory       | _(none)_                            |
+| `cari_orphaned_sections`   | Doc sections with all-ungrounded mentions    | _(none)_                            |
+| `cari_doc_completeness`    | Per-doc completeness vs. referenced exports  | _(none)_                            |
+| `cari_cross_group_drift`   | Cross-group entity coverage conflicts        | _(none)_                            |
+| `cari_mentions_of`         | Entity → doc mentions                        | `entityId`, `minConfidence?`        |
+| `cari_annotations_for`     | File → all annotations                       | `filePath`, `minConfidence?`        |
+| `cari_test_coverage`       | Test→source mapping + gaps                   | `limit?`                            |
+| `cari_hubs`                | God-node / hub analysis                      | `limit?`                            |
+| `cari_communities`         | Community detection (3 modes)                | `mode?`, `resolution?`, `limit?`    |
+| `cari_surprises`           | Surprising connection ranking                | `limit?`                            |
+| `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN inventory          | `kind?`, `limit?`                   |
+| `cari_terminology`         | Terminology inconsistency detection          | `limit?`                            |
+| `cari_dep_depth`           | Transitive import depth analysis             | `limit?`                            |
+| `cari_boundary_violations` | Package boundary violation detection         | _(none)_                            |
+| `cari_layers_infer`        | Auto-infer architectural layers              | _(none)_                            |
+| `cari_layers_check`        | Validate imports against layer config        | `allowSkipLayer?`                   |
+| `cari_layers_name`         | LLM-generated layer & directory names        | `provider`, `model?`, `api_key?`    |
+| `cari_focus`               | Focused architecture view around a target    | `target`, `hops?`, `maxNodes?`      |
+| `cari_arch_check`          | Validate diagrams against import evidence    | `paths?`, `provider?`               |
+| `cari_resolve`             | Ground diagram component to code + docs      | `name`, `limitSymbols?`             |
+| `cari_arch_diff`           | Validate diagram flows against CARI evidence | `paths?`, `provider?`, `refresh?`   |
+| `cari_component_evidence`  | All CARI evidence for one component          | `name`, `limit?`                    |
+| `cari_living_score`        | Composite living documentation score         | `minConfidence?`, `allowSkipLayer?` |
 
 Start the MCP server:
 

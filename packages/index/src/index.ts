@@ -128,6 +128,8 @@ export {
   diagramEntityCheckFromDb,
   resolveComponent,
   resolveComponentFromDb,
+  livingScore,
+  livingScoreFromDb,
   openIndex,
 } from "./queries/index.js";
 export type {
@@ -273,4 +275,8 @@ export type {
   UndocumentedFlow,
   ArchConstraintViolation,
   ArchCheckResult,
+  // Living documentation score types (12.3)
+  LivingScoreParams,
+  LivingScoreDimension,
+  LivingScoreResult,
 } from "./types.js";

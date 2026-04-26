@@ -1740,6 +1740,50 @@ export interface ConsistencyResult {
 }
 
 // =============================================================================
+// Query: livingScore (12.3 — Living Documentation Score)
+// =============================================================================
+
+/** Parameters for computing the living documentation score. */
+export interface LivingScoreParams {
+  /** Minimum annotation confidence to count as grounded (default: 0.5). */
+  minConfidence?: number;
+  /** Allow skipping layer-order violations in layer check (default: false). */
+  allowSkipLayer?: boolean;
+}
+
+/** A single dimension of the living documentation score. */
+export interface LivingScoreDimension {
+  /** Human-readable label for the dimension. */
+  label: string;
+  /** Numeric score, 0–100. */
+  score: number;
+  /** Raw numerator (e.g. grounded entities count). */
+  numerator: number;
+  /** Raw denominator (e.g. total entities). */
+  denominator: number;
+  /** Short note — e.g. "17/20 requirements grounded". */
+  detail: string;
+  /** Whether the underlying data was available (false = dimension skipped). */
+  available: boolean;
+}
+
+/** Composite living documentation score. */
+export interface LivingScoreResult {
+  /** Overall score 0–100, average of available dimensions. */
+  score: number;
+  /** Grade: A (≥90), B (≥75), C (≥60), D (≥45), F (<45). */
+  grade: "A" | "B" | "C" | "D" | "F";
+  /** Spec coverage (12.1): % of KG entities grounded in code. */
+  specCoverage: LivingScoreDimension;
+  /** Constraint consistency (12.2): % of constraints without contradictions. */
+  constraintConsistency: LivingScoreDimension;
+  /** Documentation freshness: % of docs not stale (from report). */
+  docFreshness: LivingScoreDimension;
+  /** Architecture conformance: % of layer imports without violations. */
+  archConformance: LivingScoreDimension;
+}
+
+// =============================================================================
 // Query: archCheck (5.8 — Architecture Diagram Validation)
 // =============================================================================
 

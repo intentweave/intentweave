@@ -86,4 +86,5 @@ export {
   resolveComponent,
   resolveComponentFromDb,
 } from "./resolveComponent.js";
+export { livingScore, livingScoreFromDb } from "./livingScore.js";
 export { openIndex } from "./shared.js";

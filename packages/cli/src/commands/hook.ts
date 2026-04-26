@@ -249,10 +249,10 @@ const statusCmd = new Command("status")
       if (!status.exists) {
         console.log(`  ${chalk.dim(name)}: ${chalk.dim("not installed")}`);
       } else if (status.hasIwSection) {
-        const extra = status.otherContent
-          ? chalk.dim(" (+ other hooks)")
-          : "";
-        console.log(`  ${chalk.green(name)}: ${chalk.green("installed")}${extra}`);
+        const extra = status.otherContent ? chalk.dim(" (+ other hooks)") : "";
+        console.log(
+          `  ${chalk.green(name)}: ${chalk.green("installed")}${extra}`,
+        );
       } else {
         console.log(
           `  ${chalk.yellow(name)}: ${chalk.yellow("hook exists but iw section not found")}`,

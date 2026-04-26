@@ -42,6 +42,7 @@
  *   - cari_resolve:          Ground a diagram component name to code symbols + doc files
  *   - cari_arch_diff:        Validate diagram flows against entity evidence (annotations + co-occurrences)
  *   - cari_component_evidence: All CARI evidence for a single architecture component
+ *   - cari_living_score:     Composite living documentation score (12.3): spec + consistency + freshness + arch
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
@@ -788,7 +789,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -897,7 +898,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -951,7 +952,7 @@ Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
         const body = formatCheck(result, "text");
         return { content: [{ type: "text", text: header + body }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -999,7 +1000,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1050,7 +1051,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1094,7 +1095,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1151,7 +1152,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1202,7 +1203,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1276,7 +1277,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1317,7 +1318,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1361,7 +1362,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1424,7 +1425,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1479,7 +1480,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1543,7 +1544,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1609,7 +1610,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1697,7 +1698,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1748,7 +1749,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1830,7 +1831,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1880,7 +1881,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1949,7 +1950,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2011,7 +2012,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2064,7 +2065,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2121,7 +2122,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2233,7 +2234,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2326,7 +2327,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2424,7 +2425,7 @@ Requires an OpenAI API key (OPENAI_API_KEY env var or api_key parameter).`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2516,7 +2517,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2675,7 +2676,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2873,7 +2874,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2986,7 +2987,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3099,7 +3100,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3181,7 +3182,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3386,7 +3387,7 @@ Returns:
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3478,7 +3479,7 @@ No LLM or Neo4j needed — pure SQLite.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3615,7 +3616,7 @@ No Neo4j needed — LLM is used only for the initial diagram scan (cached after 
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3742,7 +3743,77 @@ No LLM or Neo4j needed — pure SQLite.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err);
+        const msg = handleCariError(err as { message?: string });
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_living_score ─────────────────────────────────────────
+  server.tool(
+    "cari_living_score",
+    `Compute the Living Documentation Score (12.3) — a composite 0–100 score with letter grade (A–F) across four dimensions:
+- Spec Coverage: % of KG entities grounded in code (requires prior \`iw run\` enrichment)
+- Constraint Consistency: % of constraints without contradictions (requires prior enrichment)
+- Doc Freshness: % of documentation files not stale
+- Architecture Conformance: % of import edges respecting inferred layer boundaries
+
+Unavailable dimensions (e.g., no enrichment run) are excluded from the composite average.
+Grades: A ≥ 90, B ≥ 75, C ≥ 60, D ≥ 45, F < 45.
+Use to get an at-a-glance health score for a project's living documentation.`,
+    {
+      minConfidence: z
+        .number()
+        .optional()
+        .default(0.5)
+        .describe("Minimum annotation confidence (0–1) for spec grounding"),
+      allowSkipLayer: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Allow imports that skip layers without counting as violations",
+        ),
+    },
+    async (args) => {
+      log(
+        `cari_living_score: minConfidence=${args.minConfidence}, allowSkipLayer=${args.allowSkipLayer}`,
+      );
+      try {
+        const { livingScore } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = livingScore(dbPath, {
+          minConfidence: args.minConfidence,
+          allowSkipLayer: args.allowSkipLayer,
+        });
+
+        const GRADE_EMOJI: Record<string, string> = {
+          A: "🟢",
+          B: "🟡",
+          C: "🟠",
+          D: "🔴",
+          F: "⛔",
+        };
+        const dims = [
+          result.specCoverage,
+          result.constraintConsistency,
+          result.docFreshness,
+          result.archConformance,
+        ];
+        const gradeEmoji = GRADE_EMOJI[result.grade] ?? "";
+        const lines = [
+          `## Living Documentation Score: ${result.score}/100  (${gradeEmoji} Grade ${result.grade})`,
+          "",
+          "| Dimension | Score | Detail | Available |",
+          "|-----------|-------|--------|-----------|",
+          ...dims.map(
+            (d) =>
+              `| ${d.label} | ${d.available ? `${d.score}%` : "N/A"} | ${d.detail} | ${d.available ? "✓" : "✗"} |`,
+          ),
+        ];
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: unknown) {
+        const msg = handleCariError(err as { message?: string });
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },

@@ -505,12 +505,12 @@ iw index watch [options]
 Continuously watches the workspace for file changes and incrementally re-indexes on
 every save. Keeps `.iw/index.db` up to date without manual intervention.
 
-| Option              | Default      | Description                        |
-| ------------------- | ------------ | ---------------------------------- |
-| `--db <path>`       | `.iw/index.db` | Path to the SQLite index           |
-| `--exclude <globs>` | —            | Comma-separated glob patterns to exclude |
-| `--debounce <ms>`   | `500`        | Debounce window in milliseconds    |
-| `-v`                | off          | Show cycle details                 |
+| Option              | Default        | Description                              |
+| ------------------- | -------------- | ---------------------------------------- |
+| `--db <path>`       | `.iw/index.db` | Path to the SQLite index                 |
+| `--exclude <globs>` | —              | Comma-separated glob patterns to exclude |
+| `--debounce <ms>`   | `500`          | Debounce window in milliseconds          |
+| `-v`                | off            | Show cycle details                       |
 
 Run in a background terminal while developing:
 

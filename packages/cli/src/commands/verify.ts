@@ -22,12 +22,13 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { verify, consistency } from "@intentweave/index";
+import { verify, consistency, livingScore } from "@intentweave/index";
 import type {
   VerifyResult,
   VerifyEntityResult,
   ConsistencyResult,
   ConstraintConflict,
+  LivingScoreResult,
 } from "@intentweave/index";
 
 function resolveDbPath(dbOpt?: string): string {
@@ -68,6 +69,10 @@ export const verifyCommand = new Command("verify")
     "-c, --consistency",
     "Check constraint consistency across documents (12.2)",
   )
+  .option(
+    "-s, --score",
+    "Compute composite living documentation score (12.3): spec coverage + constraint consistency + doc freshness + arch conformance",
+  )
   .option("-f, --format <format>", "Output format: text or json", "text")
   .option("-o, --output <path>", "Write output to file")
   .option("-v, --verbose", "Show detailed grounding info")
@@ -88,6 +93,38 @@ export const verifyCommand = new Command("verify")
       : undefined;
     const minConfidence = parseFloat(opts.minConfidence) || 0.5;
     const checkTests = opts.tests !== false;
+
+    // ── 12.3: Living documentation score ─────────────────────────────────
+    if (opts.score) {
+      const result = livingScore(dbPath, { minConfidence });
+
+      if (opts.format === "json") {
+        const output = JSON.stringify(result, null, 2);
+        if (opts.output) {
+          fs.writeFileSync(opts.output, output, "utf-8");
+          console.log(chalk.green(`Written to ${opts.output}`));
+        } else {
+          console.log(output);
+        }
+      } else {
+        const lines = formatLivingScore(result);
+        const output = lines.join("\n");
+        if (opts.output) {
+          fs.writeFileSync(opts.output, output, "utf-8");
+          console.log(chalk.green(`Written to ${opts.output}`));
+        } else {
+          console.log(output);
+        }
+      }
+
+      // Exit code based on grade
+      if (result.grade === "F" || result.grade === "D") {
+        process.exit(2);
+      } else if (result.grade === "C") {
+        process.exit(1);
+      }
+      return;
+    }
 
     // ── 12.2: Consistency check mode ──────────────────────────────────────
     if (opts.consistency) {
@@ -172,9 +209,54 @@ export const verifyCommand = new Command("verify")
     }
   });
 
+function formatLivingScore(result: LivingScoreResult): string[] {
+  const GRADE_COLORS: Record<string, (s: string) => string> = {
+    A: chalk.green,
+    B: chalk.green,
+    C: chalk.yellow,
+    D: chalk.red,
+    F: chalk.red,
+  };
+  const gradeColor = GRADE_COLORS[result.grade] ?? chalk.white;
+  const lines: string[] = [
+    chalk.bold(
+      `Living Documentation Score: ${gradeColor(`${result.score}/100`)}  (${gradeColor(`Grade ${result.grade}`)})`,
+    ),
+    "",
+  ];
+
+  const dims = [
+    result.specCoverage,
+    result.constraintConsistency,
+    result.docFreshness,
+    result.archConformance,
+  ];
+
+  const padLabel = 30;
+  for (const d of dims) {
+    const label = d.label.padEnd(padLabel);
+    if (!d.available) {
+      lines.push(
+        `  ${chalk.dim(label)}  ${chalk.dim("N/A")}  ${chalk.dim(d.detail)}`,
+      );
+    } else {
+      const scoreStr = `${d.score}%`.padStart(5);
+      const bar = renderBar(d.score);
+      lines.push(`  ${label}  ${bar}  ${scoreStr}  ${chalk.dim(d.detail)}`);
+    }
+  }
+  return lines;
+}
+
+function renderBar(score: number): string {
+  const filled = Math.round(score / 10);
+  const empty = 10 - filled;
+  return chalk.green("█".repeat(filled)) + chalk.dim("░".repeat(empty));
+}
+
 function formatVerifyResult(result: VerifyResult, verbose: boolean): string[] {
   const lines: string[] = [];
-  const { summary } = result;
+  const summary = result.summary;
 
   lines.push("");
   lines.push(

@@ -720,7 +720,10 @@ const indexWatchSubcommand = new Command("watch")
   .description(
     "Watch the workspace and incrementally update the CARI index on file changes",
   )
-  .argument("[paths...]", "Scope to specific directories (default: workspace root)")
+  .argument(
+    "[paths...]",
+    "Scope to specific directories (default: workspace root)",
+  )
   .option("--db <path>", "Path to index.db")
   .option("--exclude <patterns...>", "Exclude files matching these globs")
   .option("--debounce <ms>", "Debounce delay in ms (default: 500)", parseInt)
@@ -748,7 +751,11 @@ const indexWatchSubcommand = new Command("watch")
 
     const iwIgnorePatterns = await loadIwIgnore(cwd);
     const cliExcludes: string[] = opts.exclude ?? [];
-    const excludePatterns = buildExcludeList(cliExcludes, iwIgnorePatterns, true);
+    const excludePatterns = buildExcludeList(
+      cliExcludes,
+      iwIgnorePatterns,
+      true,
+    );
 
     const watchPaths =
       paths.length > 0
@@ -757,7 +764,9 @@ const indexWatchSubcommand = new Command("watch")
 
     console.log(chalk.blue(`\n  ▸ CARI Watch Mode`));
     console.log(chalk.blue("  " + "═".repeat(40)));
-    console.log(`    Watching: ${watchPaths.map((p) => path.relative(cwd, p) || ".").join(", ")}`);
+    console.log(
+      `    Watching: ${watchPaths.map((p) => path.relative(cwd, p) || ".").join(", ")}`,
+    );
     console.log(`    Index:    ${path.relative(cwd, dbPath)}`);
     console.log(`    Debounce: ${debounceMs}ms`);
     console.log(chalk.dim("\n    Press Ctrl+C to stop.\n"));
@@ -831,7 +840,11 @@ const indexWatchSubcommand = new Command("watch")
           log(`KWX: ${change.path}`);
           const content = await fs.readFile(abs, "utf-8");
           const artifactId = toArtifactId(abs, cwd);
-          const inInput: InStageInput = { artifactId, filePath: change.path, content };
+          const inInput: InStageInput = {
+            artifactId,
+            filePath: change.path,
+            content,
+          };
           const inOutput = await runInStage(inInput, ctx as any);
           const kwxOutput = await runKwxStage({ inOutput });
           kwxOutputs.push(kwxOutput);
@@ -872,7 +885,13 @@ const indexWatchSubcommand = new Command("watch")
         const result = applyChanges(
           dbPath,
           changes,
-          { ax: axOutput, kwxOutputs, cox: coxOutput, annotations, tcg: tcgOutput },
+          {
+            ax: axOutput,
+            kwxOutputs,
+            cox: coxOutput,
+            annotations,
+            tcg: tcgOutput,
+          },
           { dbPath, workspaceRoot: cwd, log },
         );
 
