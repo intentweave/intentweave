@@ -1,4 +1,12 @@
-# IntentWeave
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/intentweave/intentweave.org/main/logo-github-org-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/intentweave/intentweave.org/main/logo-github-org.svg">
+    <img alt="IntentWeave Logo" src="https://raw.githubusercontent.com/intentweave/intentweave.org/main/logo-github-org.svg" width="128">
+  </picture>
+
+  <h1>IntentWeave</h1>
+</div>
 
 **From code graph to intent graph** — a unified platform that builds a queryable index
 of your codebase, enriches it with semantic understanding, and weaves code intent with
