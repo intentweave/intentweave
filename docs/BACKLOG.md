@@ -733,7 +733,7 @@ hop depth and max nodes.
 
 CLI: `iw index export --focus <target>`. MCP: `cari_focus`.
 
-### 10.3 Watch Mode _(CARI, M)_
+### 10.3 Watch Mode _(CARI, M)_ ✅
 
 Run `iw index watch` in a background terminal. On file save: code files trigger instant
 AST re-extraction (no LLM), doc changes re-run annotation matching. Keeps `.iw/index.db`
@@ -1222,7 +1222,7 @@ iw verify --consistency specs/
 
 Depends on: `plugin-kg` (constraint extraction with relationship types).
 
-### 12.3 Living Documentation Score _(KG + CARI, M)_
+### 12.3 Living Documentation Score _(KG + CARI, M)_ ✅
 
 A composite score per project combining:
 
@@ -1296,7 +1296,7 @@ iw verify --score
 | 9.3  | Surprising connection ranking     | CARI | M      | High   | 9.1                  | ✅ Done |
 | 9.4  | Rationale extraction              | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
 | 10.1 | Standalone HTML architecture rpt  | CARI | M      | High   | 5.1a, 9.1, 3.3       | ✅ Done |
-| 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists) |         |
+| 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists) | ✅ Done |
 | 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                 |         |
 | 10.4 | Obsidian vault export             | CARI | M      | Low    | 9.1                  |         |
 | 11.1 | Plugin interface & registry       | CARI | M      | High   | None                 | ✅      |
@@ -1309,4 +1309,4 @@ iw verify --score
 | 11.8 | Selective semantic enrichment     | KG   | L      | High   | 11.3a, 11.5, 8.0a    | ✅      |
 | 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a      | ✅      |
 | 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg            | ✅      |
-| 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2           |         |
+| 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2           | ✅      |

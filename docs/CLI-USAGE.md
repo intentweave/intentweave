@@ -473,6 +473,31 @@ Incremental index update. Re-indexes only files whose content hash has changed.
 
 Typical update time: < 1 second for small changes.
 
+#### `iw index watch`
+
+```bash
+iw index watch [options]
+```
+
+Continuously watches the workspace for file changes and incrementally re-indexes on
+every save. Keeps `.iw/index.db` up to date without manual intervention.
+
+| Option              | Default      | Description                        |
+| ------------------- | ------------ | ---------------------------------- |
+| `--db <path>`       | `.iw/index.db` | Path to the SQLite index           |
+| `--exclude <globs>` | —            | Comma-separated glob patterns to exclude |
+| `--debounce <ms>`   | `500`        | Debounce window in milliseconds    |
+| `-v`                | off          | Show cycle details                 |
+
+Run in a background terminal while developing:
+
+```bash
+iw index watch -v
+```
+
+Press `Ctrl+C` to stop. The watcher ignores `node_modules`, `.git`, `dist`, `build`,
+`coverage`, `.iw`, and minified/map files automatically.
+
 #### CARI CLI Subcommands & Programmatic API
 
 All CARI analysis queries are available as CLI subcommands (`iw index <command>`) and
