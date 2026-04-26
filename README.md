@@ -203,7 +203,7 @@ features. Here's what's already shipped and what's next:
 | **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                   |
 | **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                     |
 | **Intent Verification**   | living documentation score (`iw verify --score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`)                                                           |
-| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API v1.0.0 ([`docs/API.md`](docs/API.md))                                                                                              |
+| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API v1.0.0 ([`docs/API.md`](docs/API.md))                                                                                               |
 | **CI & Automation**       | watch mode (`iw index watch`), doc-health GitHub Action (`intentweave/doc-health-action@v1`), git hooks (`iw hook install/uninstall/status`)                                                |
 
 ### Next Up

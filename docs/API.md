@@ -3,7 +3,7 @@
 # IntentWeave REST API — v1.0.0
 
 This document describes the versioned HTTP API exposed by the IntentWeave server
-(`@intentweave/server-core` + `@intentweave/server-open`).  It is the stable
+(`@intentweave/server-core` + `@intentweave/server-open`). It is the stable
 integration surface for external doc platforms (Confluence, Notion, custom wikis)
 and any tooling that cannot use the CLI or MCP server directly.
 
@@ -41,13 +41,13 @@ http://<host>:<port>/
 Default: `http://localhost:3000/`
 
 The API is **version-stamped** via the `x-api-version` response header on every
-response.  The current version is **1.0.0**.
+response. The current version is **1.0.0**.
 
 ```
 x-api-version: 1.0.0
 ```
 
-Breaking changes will increment the major version.  Non-breaking additions
+Breaking changes will increment the major version. Non-breaking additions
 (new optional fields, new endpoints) increment the minor version.
 
 ---
@@ -61,20 +61,20 @@ routes require a bearer token:
 Authorization: Bearer <api-key>
 ```
 
-When `apiKeys` is not set (default), the API is open.  Never expose an
+When `apiKeys` is not set (default), the API is open. Never expose an
 unauthenticated server on a public network.
 
 ---
 
 ## Common Headers
 
-| Header             | Direction | Description                              |
-| ------------------ | --------- | ---------------------------------------- |
-| `Content-Type`     | Request   | `application/json` for all POST bodies   |
-| `Authorization`    | Request   | `Bearer <api-key>` when auth is enabled  |
-| `x-session-id`     | Request   | Override the session for this request    |
-| `x-api-version`    | Response  | Server API version (`1.0.0`)             |
-| `x-trace-id`       | Both      | Optional trace ID for distributed tracing|
+| Header          | Direction | Description                               |
+| --------------- | --------- | ----------------------------------------- |
+| `Content-Type`  | Request   | `application/json` for all POST bodies    |
+| `Authorization` | Request   | `Bearer <api-key>` when auth is enabled   |
+| `x-session-id`  | Request   | Override the session for this request     |
+| `x-api-version` | Response  | Server API version (`1.0.0`)              |
+| `x-trace-id`    | Both      | Optional trace ID for distributed tracing |
 
 ---
 
@@ -142,7 +142,7 @@ List all available sessions across graph layers (Canon / KWG / TCG).
 #### `GET /api/schema`
 
 Describe the knowledge graph schema — node labels, relationship types,
-canonical predicates, and entity types.  Useful for building query UIs.
+canonical predicates, and entity types. Useful for building query UIs.
 
 **Response 200**
 
@@ -150,7 +150,13 @@ canonical predicates, and entity types.  Useful for building query UIs.
 {
   "nodeLabels": ["Canon", "Entity", "RawTriple", "Session"],
   "relationshipTypes": ["CANON_REL", "CANONICALIZED_FROM", "CONTAINS"],
-  "canonicalPredicates": ["CONTAINS", "DEPENDS_ON", "IMPLEMENTS", "CALLS", "..."],
+  "canonicalPredicates": [
+    "CONTAINS",
+    "DEPENDS_ON",
+    "IMPLEMENTS",
+    "CALLS",
+    "..."
+  ],
   "entityTypes": ["concept", "decision", "component", "technology", "..."]
 }
 ```
@@ -165,14 +171,14 @@ Execute a natural-language or raw Cypher query against the knowledge graph.
 
 **Body**
 
-| Field       | Type    | Required | Default | Description                                  |
-| ----------- | ------- | -------- | ------- | -------------------------------------------- |
-| `question`  | string  | either   | —       | NL question; LLM translates to Cypher        |
-| `cypher`    | string  | either   | —       | Raw Cypher; bypasses LLM                     |
-| `session`   | string  | no       | default | Session to scope the query                   |
-| `limit`     | integer | no       | 25      | Max results                                  |
-| `summarize` | boolean | no       | true    | LLM-summarize results (NL mode only)         |
-| `format`    | string  | no       | `json`  | `json` or `table`                            |
+| Field       | Type    | Required | Default | Description                           |
+| ----------- | ------- | -------- | ------- | ------------------------------------- |
+| `question`  | string  | either   | —       | NL question; LLM translates to Cypher |
+| `cypher`    | string  | either   | —       | Raw Cypher; bypasses LLM              |
+| `session`   | string  | no       | default | Session to scope the query            |
+| `limit`     | integer | no       | 25      | Max results                           |
+| `summarize` | boolean | no       | true    | LLM-summarize results (NL mode only)  |
+| `format`    | string  | no       | `json`  | `json` or `table`                     |
 
 **Example — NL query**
 
@@ -196,9 +202,7 @@ Execute a natural-language or raw Cypher query against the knowledge graph.
 
 ```json
 {
-  "rows": [
-    { "n.name": "Use Neo4j for graph storage", "n.type": "decision" }
-  ],
+  "rows": [{ "n.name": "Use Neo4j for graph storage", "n.type": "decision" }],
   "summary": "Two decisions concern the database: ...",
   "cypher": "MATCH (n:Canon:Entity) ...",
   "durationMs": 45
@@ -211,19 +215,19 @@ Execute a natural-language or raw Cypher query against the knowledge graph.
 
 #### `POST /api/context`
 
-Build RAG context from the knowledge graph.  Returns entities and relationships
+Build RAG context from the knowledge graph. Returns entities and relationships
 suitable for injecting into an LLM prompt.
 
 **Body**
 
-| Field    | Type    | Required  | Default  | Description                                    |
-| -------- | ------- | --------- | -------- | ---------------------------------------------- |
-| `topic`  | string  | see note¹ | —        | NL topic; LLM picks relevant entities          |
-| `entity` | string  | see note¹ | —        | Seed entity name for neighborhood expansion    |
-| `all`    | boolean | see note¹ | false    | Dump entire session                            |
-| `session`| string  | no        | default  | Session to scope                               |
-| `hops`   | integer | no        | 2        | Expansion depth (entity mode)                  |
-| `format` | string  | no        | `json`   | `json` or `markdown`                           |
+| Field     | Type    | Required  | Default | Description                                 |
+| --------- | ------- | --------- | ------- | ------------------------------------------- |
+| `topic`   | string  | see note¹ | —       | NL topic; LLM picks relevant entities       |
+| `entity`  | string  | see note¹ | —       | Seed entity name for neighborhood expansion |
+| `all`     | boolean | see note¹ | false   | Dump entire session                         |
+| `session` | string  | no        | default | Session to scope                            |
+| `hops`    | integer | no        | 2       | Expansion depth (entity mode)               |
+| `format`  | string  | no        | `json`  | `json` or `markdown`                        |
 
 > ¹ Exactly one of `topic`, `entity`, or `all: true` is required.
 
@@ -265,12 +269,12 @@ List or search canonical entities.
 
 **Query parameters**
 
-| Param    | Type    | Default | Description                                          |
-| -------- | ------- | ------- | ---------------------------------------------------- |
-| `type`   | string  | —       | Filter by entity type (e.g. `component`, `decision`) |
-| `search` | string  | —       | Case-insensitive name contains filter                |
-| `session`| string  | default | Session to scope                                     |
-| `limit`  | integer | 50      | Max results                                          |
+| Param     | Type    | Default | Description                                          |
+| --------- | ------- | ------- | ---------------------------------------------------- |
+| `type`    | string  | —       | Filter by entity type (e.g. `component`, `decision`) |
+| `search`  | string  | —       | Case-insensitive name contains filter                |
+| `session` | string  | default | Session to scope                                     |
+| `limit`   | integer | 50      | Max results                                          |
 
 **Example**
 
@@ -306,12 +310,12 @@ find which concepts and documents are affected.
 
 **Body**
 
-| Field    | Type     | Required | Default | Description                         |
-| -------- | -------- | -------- | ------- | ----------------------------------- |
-| `files`  | string[] | yes      | —       | File paths to analyze               |
-| `session`| string   | no       | default | Session                             |
-| `hops`   | integer  | no       | 2       | Ripple analysis depth               |
-| `format` | string   | no       | `json`  | `json` or `markdown`                |
+| Field     | Type     | Required | Default | Description           |
+| --------- | -------- | -------- | ------- | --------------------- |
+| `files`   | string[] | yes      | —       | File paths to analyze |
+| `session` | string   | no       | default | Session               |
+| `hops`    | integer  | no       | 2       | Ripple analysis depth |
+| `format`  | string   | no       | `json`  | `json` or `markdown`  |
 
 **Example**
 
@@ -331,7 +335,11 @@ find which concepts and documents are affected.
     { "entity": "RunCommand", "type": "component", "confidence": 0.9 }
   ],
   "ripple": [
-    { "entity": "PipelineOrchestrator", "type": "component", "via": "DEPENDS_ON" }
+    {
+      "entity": "PipelineOrchestrator",
+      "type": "component",
+      "via": "DEPENDS_ON"
+    }
   ],
   "risks": [],
   "summary": "Changing run.ts directly affects RunCommand and ripples to ...",
@@ -349,11 +357,11 @@ Documentation freshness analysis — detect stale, drifted, and contradicted doc
 
 **Body**
 
-| Field    | Type     | Required | Default | Description                                     |
-| -------- | -------- | -------- | ------- | ----------------------------------------------- |
-| `files`  | string[] | no       | all     | Specific files to check (omit = check all)      |
-| `session`| string   | no       | default | Session                                         |
-| `format` | string   | no       | `json`  | `json` or `markdown`                            |
+| Field     | Type     | Required | Default | Description                                |
+| --------- | -------- | -------- | ------- | ------------------------------------------ |
+| `files`   | string[] | no       | all     | Specific files to check (omit = check all) |
+| `session` | string   | no       | default | Session                                    |
+| `format`  | string   | no       | `json`  | `json` or `markdown`                       |
 
 **Example**
 
@@ -393,17 +401,17 @@ Documentation freshness analysis — detect stale, drifted, and contradicted doc
 #### `POST /api/xlink`
 
 Cross-layer linking — connects semantic knowledge graph entities to source code
-symbols using four strategies: `dep`, `import`, `name`, `path`.  Creates
+symbols using four strategies: `dep`, `import`, `name`, `path`. Creates
 `CodeRef` nodes and `REALIZED_BY` relationships.
 
 **Body**
 
-| Field      | Type     | Required | Default         | Description                            |
-| ---------- | -------- | -------- | --------------- | -------------------------------------- |
-| `session`  | string   | no       | default         | Session                                |
-| `strategies`| string[]| no       | all four        | Subset of `dep`, `import`, `name`, `path` |
-| `persist`  | boolean  | no       | false           | Write CodeRef nodes to Neo4j           |
-| `format`   | string   | no       | `json`          | `json` or `markdown`                   |
+| Field        | Type     | Required | Default  | Description                               |
+| ------------ | -------- | -------- | -------- | ----------------------------------------- |
+| `session`    | string   | no       | default  | Session                                   |
+| `strategies` | string[] | no       | all four | Subset of `dep`, `import`, `name`, `path` |
+| `persist`    | boolean  | no       | false    | Write CodeRef nodes to Neo4j              |
+| `format`     | string   | no       | `json`   | `json` or `markdown`                      |
 
 **Response 200**
 
@@ -428,21 +436,21 @@ symbols using four strategies: `dep`, `import`, `name`, `path`.  Creates
 
 #### `POST /api/run`
 
-Execute the open-track extraction pipeline on the server.  Requires
-`workspaceRoot` in the server config.  Progress events are published on the
+Execute the open-track extraction pipeline on the server. Requires
+`workspaceRoot` in the server config. Progress events are published on the
 SSE stream.
 
 **Body**
 
-| Field      | Type     | Required | Default        | Description                                    |
-| ---------- | -------- | -------- | -------------- | ---------------------------------------------- |
-| `files`    | string[] | no       | all workspace  | Paths or globs to process                      |
-| `session`  | string   | no       | default        | Session ID for the run                         |
-| `provider` | string   | no       | `smart-mock`   | LLM provider: `smart-mock` or `openai`         |
-| `model`    | string   | no       | `gpt-4o-mini`  | LLM model name                                 |
-| `track`    | string   | no       | `open`         | Pipeline track: `open`, `main`, or `both`      |
-| `profile`  | string   | no       | `standard`     | Extraction profile name                        |
-| `persist`  | boolean  | no       | false          | Auto-persist to Neo4j after completion         |
+| Field      | Type     | Required | Default       | Description                               |
+| ---------- | -------- | -------- | ------------- | ----------------------------------------- |
+| `files`    | string[] | no       | all workspace | Paths or globs to process                 |
+| `session`  | string   | no       | default       | Session ID for the run                    |
+| `provider` | string   | no       | `smart-mock`  | LLM provider: `smart-mock` or `openai`    |
+| `model`    | string   | no       | `gpt-4o-mini` | LLM model name                            |
+| `track`    | string   | no       | `open`        | Pipeline track: `open`, `main`, or `both` |
+| `profile`  | string   | no       | `standard`    | Extraction profile name                   |
+| `persist`  | boolean  | no       | false         | Auto-persist to Neo4j after completion    |
 
 **Response 200** — run started
 
@@ -475,16 +483,16 @@ Poll run status.
 
 #### `POST /api/persist`
 
-Persist extraction results to Neo4j.  Requires `workspaceRoot` in server config.
+Persist extraction results to Neo4j. Requires `workspaceRoot` in server config.
 
 **Body**
 
-| Field    | Type    | Required | Default | Description                          |
-| -------- | ------- | -------- | ------- | ------------------------------------ |
-| `runId`  | string  | either   | —       | Specific run to persist              |
-| `latest` | boolean | either   | false   | Persist the most recent run          |
-| `session`| string  | no       | default | Session                              |
-| `mode`   | string  | no       | `delta` | `delta` (diff-only) or `full`        |
+| Field     | Type    | Required | Default | Description                   |
+| --------- | ------- | -------- | ------- | ----------------------------- |
+| `runId`   | string  | either   | —       | Specific run to persist       |
+| `latest`  | boolean | either   | false   | Persist the most recent run   |
+| `session` | string  | no       | default | Session                       |
+| `mode`    | string  | no       | `delta` | `delta` (diff-only) or `full` |
 
 **Response 200**
 
@@ -510,15 +518,15 @@ All errors follow a consistent shape:
 }
 ```
 
-| Status | Meaning                                                               |
-| ------ | --------------------------------------------------------------------- |
-| 400    | Invalid request body or missing required field                        |
-| 401    | Missing or invalid `Authorization` header (when auth is enabled)      |
-| 404    | Resource not found (e.g. unknown `runId`)                             |
-| 429    | Rate limit exceeded                                                   |
-| 500    | Internal server error                                                 |
-| 501    | Feature not available (e.g. NL query without LLM configured)          |
-| 503    | Dependency unavailable (e.g. Neo4j unreachable)                       |
+| Status | Meaning                                                          |
+| ------ | ---------------------------------------------------------------- |
+| 400    | Invalid request body or missing required field                   |
+| 401    | Missing or invalid `Authorization` header (when auth is enabled) |
+| 404    | Resource not found (e.g. unknown `runId`)                        |
+| 429    | Rate limit exceeded                                              |
+| 500    | Internal server error                                            |
+| 501    | Feature not available (e.g. NL query without LLM configured)     |
+| 503    | Dependency unavailable (e.g. Neo4j unreachable)                  |
 
 ---
 
@@ -581,7 +589,10 @@ const HEADERS = {
 const health = await fetch(`${BASE}/api/doc-health`, {
   method: "POST",
   headers: HEADERS,
-  body: JSON.stringify({ files: ["docs/ARCHITECTURE.md"], session: "my-project" }),
+  body: JSON.stringify({
+    files: ["docs/ARCHITECTURE.md"],
+    session: "my-project",
+  }),
 }).then((r) => r.json());
 
 // List components
