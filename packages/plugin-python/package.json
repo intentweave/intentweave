@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/plugin-python",
   "version": "0.11.0",
-  "description": "Python language plugin for IntentWeave \u2014 AST extraction via tree-sitter-python",
+  "description": "Python language plugin for IntentWeave — AST extraction via tree-sitter-python",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -37,7 +37,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Python language plugin \u2014 tree-sitter Python AST extraction behind the LanguageCapability interface"
+    "description": "Python language plugin — tree-sitter Python AST extraction behind the LanguageCapability interface"
   },
   "engines": {
     "node": ">=20.0.0"

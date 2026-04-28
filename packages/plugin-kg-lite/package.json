@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/plugin-kg-lite",
   "version": "0.11.0",
-  "description": "Lightweight KG persistence plugin for IntentWeave \u2014 SQLite backend via CypherLite",
+  "description": "Lightweight KG persistence plugin for IntentWeave — SQLite backend via CypherLite",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -38,7 +38,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "KG-Lite plugin \u2014 zero-config SQLite persistence via CypherLite engine"
+    "description": "KG-Lite plugin — zero-config SQLite persistence via CypherLite engine"
   },
   "engines": {
     "node": ">=20.0.0"

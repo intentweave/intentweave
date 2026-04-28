@@ -35,7 +35,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Zero-dependency Cypher subset engine \u2014 parses, transpiles to SQL, powers KG-Lite"
+    "description": "Zero-dependency Cypher subset engine — parses, transpiles to SQL, powers KG-Lite"
   },
   "engines": {
     "node": ">=20.0.0"
