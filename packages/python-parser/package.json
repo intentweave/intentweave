@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/python-parser",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Tree-sitter based AST extractor for Python source files",
   "type": "module",
   "main": "./dist/index.js",
@@ -36,7 +36,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Python AST extraction engine — open-source, enables code linking for Python projects"
+    "description": "Python AST extraction engine \u2014 open-source, enables code linking for Python projects"
   },
   "license": "Apache-2.0",
   "repository": {

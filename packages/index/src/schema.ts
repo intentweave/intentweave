@@ -30,7 +30,11 @@ CREATE TABLE IF NOT EXISTS symbols (
   body_hash TEXT,
   body_lines INTEGER,
   structure_hash TEXT,
-  implements TEXT
+  implements TEXT,
+  deprecated INTEGER NOT NULL DEFAULT 0,
+  deprecated_note TEXT,
+  is_internal INTEGER NOT NULL DEFAULT 0,
+  decorators TEXT
 );
 
 CREATE TABLE IF NOT EXISTS annotations (
@@ -75,7 +79,11 @@ CREATE TABLE IF NOT EXISTS files (
   bus_factor INTEGER,
   is_doc BOOLEAN,
   content_hash TEXT,
-  doc_group TEXT
+  doc_group TEXT,
+  indexed INTEGER NOT NULL DEFAULT 1,
+  skip_reason TEXT,
+  comment_lines INTEGER NOT NULL DEFAULT 0,
+  code_lines INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS imports (
@@ -104,12 +112,71 @@ CREATE TABLE IF NOT EXISTS rationale (
   symbol TEXT
 );
 
+-- Semantic usage tables (13.1)
+
+CREATE TABLE IF NOT EXISTS symbol_calls (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  caller_file  TEXT NOT NULL,
+  caller_name  TEXT,
+  caller_line  INTEGER,
+  callee_name  TEXT NOT NULL,
+  callee_id    TEXT,
+  is_method    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS property_accesses (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  file        TEXT NOT NULL,
+  symbol_name TEXT,
+  line        INTEGER,
+  chain       TEXT NOT NULL,
+  root        TEXT NOT NULL,
+  depth       INTEGER NOT NULL
+);
+
+-- Type assertion inventory (14.3)
+
+CREATE TABLE IF NOT EXISTS type_assertions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  file        TEXT NOT NULL,
+  line        INTEGER,
+  kind        TEXT NOT NULL,
+  context     TEXT,
+  target_type TEXT
+);
+
+-- ADR conformance snapshots (14.5)
+
+CREATE TABLE IF NOT EXISTS conformance_snapshots (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     TEXT NOT NULL,
+  timestamp       INTEGER NOT NULL,
+  rule_id         TEXT NOT NULL,
+  adr             TEXT,
+  files_in_scope  INTEGER,
+  files_clean     INTEGER,
+  violation_count INTEGER NOT NULL DEFAULT 0,
+  conformance_pct REAL
+);
+
+-- Test descriptions (14.6)
+
+CREATE TABLE IF NOT EXISTS test_descriptions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  file        TEXT NOT NULL,
+  line        INTEGER NOT NULL,
+  kind        TEXT NOT NULL,
+  description TEXT NOT NULL
+);
+
 -- Indexes for retrieval
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
 CREATE INDEX IF NOT EXISTS idx_symbols_body_hash ON symbols(body_hash);
 CREATE INDEX IF NOT EXISTS idx_symbols_structure_hash ON symbols(structure_hash);
+CREATE INDEX IF NOT EXISTS idx_symbols_deprecated ON symbols(deprecated);
+CREATE INDEX IF NOT EXISTS idx_symbols_is_internal ON symbols(is_internal);
 CREATE INDEX IF NOT EXISTS idx_annotations_doc ON annotations(doc_path);
 CREATE INDEX IF NOT EXISTS idx_annotations_symbol ON annotations(symbol_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_confidence ON annotations(confidence);
@@ -123,6 +190,18 @@ CREATE INDEX IF NOT EXISTS idx_todos_file ON todos(file_path);
 CREATE INDEX IF NOT EXISTS idx_todos_kind ON todos(kind);
 CREATE INDEX IF NOT EXISTS idx_rationale_file ON rationale(file_path);
 CREATE INDEX IF NOT EXISTS idx_rationale_kind ON rationale(kind);
+CREATE INDEX IF NOT EXISTS idx_calls_caller_file ON symbol_calls(caller_file);
+CREATE INDEX IF NOT EXISTS idx_calls_callee_name ON symbol_calls(callee_name);
+CREATE INDEX IF NOT EXISTS idx_calls_callee_id ON symbol_calls(callee_id);
+CREATE INDEX IF NOT EXISTS idx_prop_access_file ON property_accesses(file);
+CREATE INDEX IF NOT EXISTS idx_prop_access_chain ON property_accesses(chain);
+CREATE INDEX IF NOT EXISTS idx_prop_access_root ON property_accesses(root);
+CREATE INDEX IF NOT EXISTS idx_type_assertions_file ON type_assertions(file);
+CREATE INDEX IF NOT EXISTS idx_type_assertions_kind ON type_assertions(kind);
+CREATE INDEX IF NOT EXISTS idx_conformance_snapshots_rule ON conformance_snapshots(rule_id);
+CREATE INDEX IF NOT EXISTS idx_conformance_snapshots_snapshot ON conformance_snapshots(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_test_descriptions_file ON test_descriptions(file);
+CREATE INDEX IF NOT EXISTS idx_test_descriptions_kind ON test_descriptions(kind);
 
 -- Full-text search
 
@@ -225,6 +304,6 @@ export function initSchema(db: Database.Database): void {
 
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '5')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '10')`,
   ).run();
 }

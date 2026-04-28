@@ -70,8 +70,27 @@ import {
   slicesFromDb,
   focusFromDb,
   archReportFromDb,
+  namingViolationsFromDb,
+  commentCodeRatioFromDb,
+  skippedFilesFromDb,
+  rulesCheckFromDb,
+  deprecatedCallersFromDb,
+  internalViolationsFromDb,
+  typeAssertionsFromDb,
+  layersFromDecoratorsFromDb,
+  rulesTrendFromDb,
+  testIntentFromDb,
 } from "./queries/index.js";
-import type { ReportOptions } from "./queries/index.js";
+import type {
+  ReportOptions,
+  RulesCheckOptions,
+  DeprecatedCallersOptions,
+  InternalViolationsOptions,
+  TypeAssertionsOptions,
+  LayersFromDecoratorsOptions,
+  RulesTrendOptions,
+  TestIntentOptions,
+} from "./queries/index.js";
 
 import type {
   IndexBuildOptions,
@@ -117,6 +136,17 @@ import type {
   SlicesResult,
   FocusParams,
   FocusResult,
+  NamingViolationsResult,
+  CommentCodeRatioResult,
+  SkippedFilesResult,
+  RulesConfig,
+  RulesCheckResult,
+  DeprecatedCallersResult,
+  InternalViolationsResult,
+  TypeAssertionsResult,
+  LayersFromDecoratorsResult,
+  RulesTrendResult,
+  TestIntentResult,
 } from "./types.js";
 
 import type { ArchReportOptions } from "./queries/archReport.js";
@@ -150,6 +180,13 @@ export interface CariConfig {
 
   /** Output path for the SQLite database (default: .iw/index.db) */
   outputPath?: string;
+
+  /**
+   * Maximum file size in bytes for AX extraction.
+   * Files larger than this will be skipped and recorded with indexed=false.
+   * Default: 65536 (64 KiB)
+   */
+  maxFileSize?: number;
 
   /** Logging callback */
   log?: (msg: string) => void;
@@ -326,6 +363,7 @@ export async function buildFromPaths(
     include,
     session = path.basename(workspaceRoot),
     outputPath,
+    maxFileSize = 65536,
     log = () => {},
     onProgress,
   } = config;
@@ -349,16 +387,27 @@ export async function buildFromPaths(
 
   // ── 1. AX: code symbol extraction ───────────────────────────
   const axStart = performance.now();
-  const axOutput = await analyzer.runAxStage({ workspaceRoot });
+  const axOutput = await analyzer.runAxStage({ workspaceRoot, maxFileSize });
   const axMs = performance.now() - axStart;
 
+  const skippedCount = axOutput.files.filter(
+    (f: { skipped?: boolean }) => f.skipped,
+  ).length;
   log(
     `AX: ${axOutput.totalFiles} files, ${axOutput.totalSymbols} symbols (${(axMs / 1000).toFixed(1)}s)`,
   );
+  if (skippedCount > 0) {
+    const skippedPaths = axOutput.files
+      .filter((f: { skipped?: boolean }) => f.skipped)
+      .map((f: { filePath: string }) => f.filePath);
+    log(
+      `AX WARNING: ${skippedCount} file(s) skipped (too large). Use --max-file-size to adjust. Skipped:\n  ${skippedPaths.join("\n  ")}`,
+    );
+  }
   onProgress?.({
     stage: "ax",
     durationMs: axMs,
-    detail: `${axOutput.totalFiles} files, ${axOutput.totalSymbols} symbols`,
+    detail: `${axOutput.totalFiles} files, ${axOutput.totalSymbols} symbols${skippedCount > 0 ? `, ${skippedCount} skipped` : ""}`,
   });
 
   // Build symbol dictionary for body-text matching (full depth)
@@ -618,6 +667,65 @@ export class CariIndex {
   /** TODO/FIXME/HACK/XXX inventory. */
   todos(): TodosResult {
     return todosFromDb(this.db);
+  }
+
+  /** Naming convention violations (6.1). */
+  namingViolations(): NamingViolationsResult {
+    return namingViolationsFromDb(this.db);
+  }
+
+  /** Comment-to-code ratio anomalies (6.4). */
+  commentCodeRatio(): CommentCodeRatioResult {
+    return commentCodeRatioFromDb(this.db);
+  }
+
+  /** Files skipped during AX extraction due to size (6.5). */
+  skippedFiles(): SkippedFilesResult {
+    return skippedFilesFromDb(this.db);
+  }
+
+  /** Semantic rule checking against .iw/rules.yaml (13.2/13.3). */
+  rulesCheck(
+    config: RulesConfig,
+    opts: RulesCheckOptions = {},
+  ): RulesCheckResult {
+    return rulesCheckFromDb(this.db, config, opts);
+  }
+
+  /** Find active callers of @deprecated symbols (14.1). */
+  deprecatedCallers(
+    opts: DeprecatedCallersOptions = {},
+  ): DeprecatedCallersResult {
+    return deprecatedCallersFromDb(this.db, opts);
+  }
+
+  /** Detect @internal / _prefix symbols imported across package boundaries (14.2). */
+  internalViolations(
+    opts: InternalViolationsOptions = {},
+  ): InternalViolationsResult {
+    return internalViolationsFromDb(this.db, opts);
+  }
+
+  /** Inventory type assertions: `as any`, double casts, angle-bracket casts (14.3). */
+  typeAssertions(opts: TypeAssertionsOptions = {}): TypeAssertionsResult {
+    return typeAssertionsFromDb(this.db, opts);
+  }
+
+  /** Derive architectural layer assignments from decorator metadata (14.4). */
+  layersFromDecorators(
+    opts: LayersFromDecoratorsOptions = {},
+  ): LayersFromDecoratorsResult {
+    return layersFromDecoratorsFromDb(this.db, opts);
+  }
+
+  /** ADR conformance trend over time (14.5). */
+  rulesTrend(opts: RulesTrendOptions = {}): RulesTrendResult {
+    return rulesTrendFromDb(this.db, opts);
+  }
+
+  /** Find stale test descriptions and orphaned test files (14.6). */
+  testIntent(opts: TestIntentOptions = {}): TestIntentResult {
+    return testIntentFromDb(this.db, opts);
   }
 
   /** Documentation coverage percentage per directory. */

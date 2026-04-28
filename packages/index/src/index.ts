@@ -10,7 +10,11 @@
 
 // Phase 1: Core index
 export { initSchema } from "./schema.js";
-export { buildIndex, registerExternalEntities } from "./writer.js";
+export {
+  buildIndex,
+  registerExternalEntities,
+  snapshotConformance,
+} from "./writer.js";
 export { annotate, toSlug, tokenize } from "./annotator.js";
 export type { AnnotateOptions } from "./annotator.js";
 export { computeIdf } from "./idf.js";
@@ -55,6 +59,9 @@ export {
   clonesFromDb,
   structuralClones,
   structuralClonesFromDb,
+  type ClonesOptions,
+  type StructuralClonesOptions,
+  type CloneLayerAnalysis,
   circularImports,
   circularImportsFromDb,
   unusedExports,
@@ -65,6 +72,26 @@ export {
   todosFromDb,
   moduleCoverage,
   moduleCoverageFromDb,
+  namingViolations,
+  namingViolationsFromDb,
+  commentCodeRatio,
+  commentCodeRatioFromDb,
+  skippedFiles,
+  skippedFilesFromDb,
+  rulesCheck,
+  rulesCheckFromDb,
+  deprecatedCallers,
+  deprecatedCallersFromDb,
+  internalViolations,
+  internalViolationsFromDb,
+  typeAssertions,
+  typeAssertionsFromDb,
+  layersFromDecorators,
+  layersFromDecoratorsFromDb,
+  rulesTrend,
+  rulesTrendFromDb,
+  testIntent,
+  testIntentFromDb,
   orphanedSections,
   orphanedSectionsFromDb,
   docCompleteness,
@@ -155,7 +182,16 @@ export type {
   ArchReportOptions,
   DeadFeatureOptions,
   EnrichmentScoreOptions,
+  RulesCheckOptions,
+  DeprecatedCallersOptions,
+  InternalViolationsOptions,
+  TypeAssertionsOptions,
+  LayersFromDecoratorsOptions,
+  RulesTrendOptions,
+  TestIntentOptions,
 } from "./queries/index.js";
+
+export type { NamingViolationsOptions } from "./queries/namingViolations.js";
 
 export type {
   // Core types
@@ -279,4 +315,31 @@ export type {
   LivingScoreParams,
   LivingScoreDimension,
   LivingScoreResult,
+  // Code quality types (6.x)
+  NamingViolation,
+  NamingViolationsResult,
+  CommentCodeRatioEntry,
+  CommentCodeRatioResult,
+  SkippedFileEntry,
+  SkippedFilesResult,
+  // Semantic rule types (13.x)
+  RuleForbidden,
+  RuleDefinition,
+  RulesConfig,
+  RulesViolation,
+  RulesCheckResult,
+  // Signal layer types (14.x)
+  DeprecatedCallerEntry,
+  DeprecatedCallersResult,
+  InternalViolation,
+  InternalViolationsResult,
+  TypeAssertionEntry,
+  TypeAssertionsResult,
+  DecoratorLayerAssignment,
+  LayersFromDecoratorsResult,
+  ConformanceSnapshot,
+  RuleTrend,
+  RulesTrendResult,
+  TestDescriptionMatch,
+  TestIntentResult,
 } from "./types.js";

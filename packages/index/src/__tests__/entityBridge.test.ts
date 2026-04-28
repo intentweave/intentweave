@@ -182,7 +182,7 @@ describe("Entity Bridge — schema", () => {
     const row = db
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as { value: string };
-    expect(row.value).toBe("5");
+    expect(row.value).toBe("10");
   });
 });
 

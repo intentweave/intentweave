@@ -159,6 +159,61 @@ pnpm dev
 
 ---
 
+## Ensure the Intent in the Code (Semantic Rule Checking 0.11.0)
+
+Vibe-coding AI agents and busy developers can easily implement against architectural decisions. IntentWeave turns your Architectural Decision Records (ADRs) and conventions into enforceable code constraints—without requiring Neo4j or LLMs in your CI.
+
+### 1. Extract and Enforce ADRs
+
+Translate intent from plain-text markdown and check it in CI milliseconds later.
+
+```bash
+# LLM-assisted: Extract architectural constraints from an ADR into .iw/rules.yaml
+iw index rules-extract docs/ADR-003.md --provider openai --output .iw/rules.yaml
+
+# CI Validation: Check if the codebase violates any architectural rules
+iw index rules-check --changed src/auth.ts --severity high --format text
+```
+
+- **`rules-extract` options:** `--provider` (e.g. openai), `--output` (specify rules file path).
+- **`rules-check` options:** `--changed <files>` (incremental CI mode), `--severity <level>` (filter by high/medium/low), `--rule-id <id>` (check specific rule), `--format <format>` (json/text).
+
+### 2. Architecture Diagram Validation
+
+Let the diagram _be_ the specification. Extract component flows directly from Mermaid or ASCII diagrams in your markdown files and validate them against actual code imports.
+
+```bash
+# Validate AST imports against flows found in diagrams
+iw index arch-check --from-scan docs/ARCHITECTURE.md --provider openai --strict
+```
+
+- **`arch-check` options:** `--from-scan <paths>` (extract on-the-fly), `--from-diagrams` (use previously enriched `.db` diagrams), `--strict` (fail on undocumented flows), `--refresh` (ignore cache).
+
+### 3. Built-in Intent Enforcements (Zero Config)
+
+No LLM or config file required. These built-in rules run via fast AST analysis:
+
+- **Deprecated active callers:** Find active components ignoring `@deprecated` signals.
+  ```bash
+  iw index deprecated-callers --limit 50
+  ```
+- **Internal boundary violations:** Enforce `@internal` and `_` prefix visibility across package boundaries.
+  ```bash
+  iw index internal-violations --changed src/ --no-underscore
+  ```
+- **Type safety bypassed:** Track down `as any` casts in high-fan-in (highly depended upon) files.
+  ```bash
+  iw index type-assertions --kind as_any --risk-sort
+  ```
+- **Test-intent drift:** Detect tests whose descriptions refer to code symbols that no longer exist.
+  ```bash
+  iw index test-intent --format json
+  ```
+
+These rules run offline in milliseconds and plug straight into CI. Let standard tools review formatting, and let IntentWeave guard the architectural intent.
+
+---
+
 ## Selective Semantic Enrichment (Layer 2)
 
 The bridge between free static analysis and full KG extraction. CARI identifies the
@@ -199,29 +254,29 @@ features. Here's what's already shipped and what's next:
 
 ### Shipped (40+ features)
 
-| Area                      | Features                                                                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Document Intelligence** | doc-group classification, cross-group drift, orphaned sections, module coverage, terminology inconsistency, doc completeness scoring                                                        |
-| **Code Duplication**      | exact clone detection, structural (Type 2) clone detection                                                                                                                                  |
-| **Dependencies**          | circular imports, unused exports, dependency depth, boundary violations                                                                                                                     |
-| **Architecture**          | layer inference, layer validation, as-is vs as-should comparison, hierarchical sub-layering, vertical slice detection, interface conformance, dead feature detection, API surface changelog |
-| **Git Intelligence**      | hotspot priority, co-change coupling, ownership tracking                                                                                                                                    |
-| **Graph Topology**        | community detection (3 modes), hub analysis, surprising connections, rationale extraction                                                                                                   |
-| **Visualisation**         | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports                                                                                           |
-| **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                   |
-| **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                     |
-| **Intent Verification**   | living documentation score (`iw verify --score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`)                                                           |
-| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API v1.0.0 ([`docs/API.md`](docs/API.md))                                                                                               |
-| **CI & Automation**       | watch mode (`iw index watch`), doc-health GitHub Action (`intentweave/doc-health-action@v1`), git hooks (`iw hook install/uninstall/status`)                                                |
+| Area                      | Features                                                                                                                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Document Intelligence** | doc-group classification, cross-group drift, orphaned sections, module coverage, terminology inconsistency, doc completeness scoring                                                                                 |
+| **Code Duplication**      | exact clone detection, structural (Type 2) clone detection                                                                                                                                                           |
+| **Dependencies**          | circular imports, unused exports, dependency depth, boundary violations                                                                                                                                              |
+| **Architecture**          | layer inference, layer validation, as-is vs as-should comparison, hierarchical sub-layering, vertical slice detection, interface conformance, dead feature detection, API surface changelog                          |
+| **Git Intelligence**      | hotspot priority, co-change coupling, ownership tracking                                                                                                                                                             |
+| **Graph Topology**        | community detection (3 modes), hub analysis, surprising connections, rationale extraction                                                                                                                            |
+| **Visualisation**         | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports                                                                                                                    |
+| **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                                            |
+| **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                                              |
+| **Intent Verification**   | living documentation score (`iw verify --score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`), semantic rules checking (`iw index rules-check`), internal/deprecated enforcement |
+| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API v1.0.0 ([`docs/API.md`](docs/API.md))                                                                                                                        |
+| **CI & Automation**       | watch mode (`iw index watch`), doc-health GitHub Action (`intentweave/doc-health-action@v1`), git hooks (`iw hook install/uninstall/status`)                                                                         |
 
 ### Next Up
 
-| Feature                                          | Description                                                                                    |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| **Selective enrichment** (11.8)                  | Budget-controlled LLM on CARI-selected targets — the bridge between layers 1 and 2             |
-| **Architecture diagram validation** (5.8 + 11.8) | LLM parses ASCII/Mermaid diagrams, CARI validates against import graph — no YAML config needed |
-| **Living documentation** (12.x continued)        | Constraint consistency checks, automated spec-to-code verification                             |
-| **More languages**                               | Go, Rust, Java via tree-sitter plugins                                                         |
+| Feature                               | Description                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Semantic Clone Detection** (Type 3) | LLM-powered similarity scoring to catch behaviourally equivalent but structurally different snippets   |
+| **Decision Lifecycle Tracking**       | Track ADRs through state changes (proposed → accepted → deprecated) and detect unimplemented decisions |
+| **Ecosystem Integrations**            | Native plugins and exports for Docusaurus, Starlight, and Obsidian                                     |
+| **More languages**                    | Go, Rust, Java via tree-sitter plugins                                                                 |
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/plugin-kg",
-  "version": "0.10.0",
-  "description": "Neo4j KG persistence plugin for IntentWeave — production-grade graph database backend",
+  "version": "0.11.0",
+  "description": "Neo4j KG persistence plugin for IntentWeave \u2014 production-grade graph database backend",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,7 +36,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "KG plugin — Neo4j persistence backend for production graph database deployments"
+    "description": "KG plugin \u2014 Neo4j persistence backend for production graph database deployments"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -26,6 +26,8 @@ import {
   createExtractor,
   type FileExtractionResult,
   type ExtractedSymbol,
+  type ExtractedCall,
+  type ExtractedPropertyAccess,
   type ExtractionOptions,
 } from "@intentweave/ast-extractor";
 
@@ -116,6 +118,18 @@ export interface AxSymbol {
 
   /** Interfaces this class implements (class symbols only) */
   implements?: string[];
+
+  /** True when the JSDoc block contains @deprecated */
+  deprecated?: boolean;
+
+  /** The text argument of @deprecated (if any) */
+  deprecatedNote?: string;
+
+  /** True when JSDoc contains @internal or name starts with _ */
+  isInternal?: boolean;
+
+  /** Decorator names applied to this symbol (e.g. ["Controller", "Injectable"]) */
+  decorators?: string[];
 }
 
 /**
@@ -161,6 +175,51 @@ export interface AxRationale {
 }
 
 /**
+ * A function / method call site extracted from a file body.
+ * Mirrors ExtractedCall from @intentweave/ast-extractor.
+ */
+export interface AxCall {
+  callerName: string | null;
+  callerLine: number;
+  calleeName: string;
+  calleeId: string | null;
+  isMethod: boolean;
+}
+
+/**
+ * A property access chain of depth ≥ 3 extracted from a file body.
+ * Mirrors ExtractedPropertyAccess from @intentweave/ast-extractor.
+ */
+export interface AxPropertyAccess {
+  symbolName: string | null;
+  line: number;
+  chain: string;
+  root: string;
+  depth: number;
+}
+
+/**
+ * A type assertion extracted from a file (as any, double cast, angle cast).
+ * Mirrors ExtractedTypeAssertion from @intentweave/ast-extractor.
+ */
+export interface AxTypeAssertion {
+  line: number;
+  kind: "as_any" | "double_cast" | "angle_cast" | "as_cast";
+  context: string | null;
+  targetType: string | null;
+}
+
+/**
+ * Test description extracted from describe(), it(), test() calls (14.6).
+ * Mirrors ExtractedTestDescription from @intentweave/ast-extractor.
+ */
+export interface AxTestDescription {
+  line: number;
+  kind: "describe" | "it" | "test";
+  description: string;
+}
+
+/**
  * Per-file extraction result
  */
 export interface AxFileResult {
@@ -192,8 +251,32 @@ export interface AxFileResult {
   /** WHY / NOTE / IMPORTANT / DESIGN rationale comments found in this file */
   rationale: AxRationale[];
 
+  /** Call expressions found in this file's code bodies */
+  calls?: AxCall[];
+
+  /** Property access chains of depth ≥ 3 found in this file's code bodies */
+  propertyAccesses?: AxPropertyAccess[];
+
+  /** Type assertions (as any, double cast, angle cast) found in this file */
+  typeAssertions?: AxTypeAssertion[];
+
+  /** Test descriptions from describe/it/test calls (14.6) */
+  testDescriptions?: AxTestDescription[];
+
   /** Extraction timestamp */
   extractedAt: number;
+
+  /** Number of comment lines (single-line and block comments) */
+  commentLines?: number;
+
+  /** Number of non-blank, non-comment code lines */
+  codeLines?: number;
+
+  /** True when this file was skipped due to size limit (symbols/imports will be empty) */
+  skipped?: boolean;
+
+  /** Reason for skipping (e.g. 'file too large') */
+  skipReason?: string;
 
   /** Parse errors (if any) */
   errors?: string[];
@@ -256,6 +339,13 @@ export interface AxStageOptions {
    * These are registered alongside the built-in TypeScript/JavaScript adapter.
    */
   extraAdapters?: LanguageAdapter[];
+
+  /**
+   * Maximum file size in bytes before AX extraction is skipped.
+   * Files larger than this will be recorded in the index with indexed=false.
+   * Default: 65536 (64 KiB)
+   */
+  maxFileSize?: number;
 }
 
 // ============================================================================
@@ -327,6 +417,10 @@ function convertSymbol(
     parameters: symbol.parameters,
     docSummary: symbol.docSummary,
     implements: symbol.implements,
+    deprecated: symbol.deprecated,
+    deprecatedNote: symbol.deprecatedNote,
+    isInternal: symbol.isInternal,
+    decorators: symbol.decorators,
   };
 }
 
@@ -429,6 +523,53 @@ async function discoverFiles(
 // ============================================================================
 
 /**
+ * Count comment lines and non-blank non-comment code lines in a source file.
+ * Handles single-line (//) and block comments (/* ... *\/).
+ */
+function countCommentAndCodeLines(lines: string[]): {
+  commentLines: number;
+  codeLines: number;
+} {
+  let commentLines = 0;
+  let codeLines = 0;
+  let inBlock = false;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === "") continue;
+
+    if (inBlock) {
+      commentLines++;
+      if (line.includes("*/")) inBlock = false;
+    } else if (
+      line.startsWith("//") ||
+      line.startsWith("*") ||
+      line.startsWith("#")
+    ) {
+      commentLines++;
+    } else if (
+      line.startsWith("/*") ||
+      line.startsWith('"""') ||
+      line.startsWith("'''")
+    ) {
+      commentLines++;
+      // Check if block ends on the same line
+      const afterOpen = line.startsWith("/*") ? line.slice(2) : line.slice(3);
+      const closeToken = line.startsWith("/*")
+        ? "*/"
+        : line.startsWith('"""')
+          ? '"""'
+          : "'''";
+      if (!afterOpen.includes(closeToken)) inBlock = true;
+    } else {
+      codeLines++;
+    }
+  }
+
+  return { commentLines, codeLines };
+}
+
+/**
  * Process a single file
  */
 async function processFile(
@@ -442,6 +583,9 @@ async function processFile(
   const content = await fs.promises.readFile(absolutePath, "utf-8");
   const contentHash = hashFileContent(content);
   const lines = content.split("\n");
+
+  // Count comment and code lines
+  const { commentLines, codeLines } = countCommentAndCodeLines(lines);
 
   // Extract symbols
   const result = await extractor.extractFile(absolutePath);
@@ -463,6 +607,42 @@ async function processFile(
   const todos = extractTodos(lines);
   const rationale = extractRationale(lines);
 
+  // Map calls and property accesses from extractor
+  const calls: AxCall[] = (result.calls ?? []).map((c) => ({
+    callerName: c.callerName,
+    callerLine: c.callerLine,
+    calleeName: c.calleeName,
+    calleeId: c.calleeId,
+    isMethod: c.isMethod,
+  }));
+
+  const propertyAccesses: AxPropertyAccess[] = (
+    result.propertyAccesses ?? []
+  ).map((p) => ({
+    symbolName: p.symbolName,
+    line: p.line,
+    chain: p.chain,
+    root: p.root,
+    depth: p.depth,
+  }));
+
+  const typeAssertions: AxTypeAssertion[] = (result.typeAssertions ?? []).map(
+    (a) => ({
+      line: a.line,
+      kind: a.kind,
+      context: a.context,
+      targetType: a.targetType,
+    }),
+  );
+
+  const testDescriptions: AxTestDescription[] = (
+    result.testDescriptions ?? []
+  ).map((t) => ({
+    line: t.line,
+    kind: t.kind,
+    description: t.description,
+  }));
+
   return {
     filePath: relativePath,
     contentHash,
@@ -471,6 +651,12 @@ async function processFile(
     imports,
     todos,
     rationale,
+    calls,
+    propertyAccesses,
+    typeAssertions,
+    testDescriptions,
+    commentLines,
+    codeLines,
     extractedAt: Date.now(),
     errors: result.errors,
   };
@@ -553,6 +739,7 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
     includeMembers = true,
     maxDepth = 2,
     extraAdapters,
+    maxFileSize = 65536,
   } = options;
 
   // Create language registry with built-in TS/JS adapter
@@ -587,6 +774,25 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
   for (const file of files) {
     const adapter = registry.adapterFor(file);
     if (!adapter) continue;
+
+    // Check file size before extraction
+    const absolutePath = path.join(workspaceRoot, file);
+    const stat = await fs.promises.stat(absolutePath).catch(() => null);
+    if (stat && stat.size > maxFileSize) {
+      fileResults.push({
+        filePath: file,
+        contentHash: "",
+        language: "typescript",
+        symbols: [],
+        imports: [],
+        todos: [],
+        rationale: [],
+        skipped: true,
+        skipReason: `file too large (${stat.size} bytes > ${maxFileSize} bytes)`,
+        extractedAt: Date.now(),
+      });
+      continue;
+    }
 
     const result = await adapter.processFile(workspaceRoot, file);
     fileResults.push(result);

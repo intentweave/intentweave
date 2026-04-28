@@ -4,6 +4,47 @@
 
 ---
 
+## Sprint Theme: _"Ensure the intent in the code"_
+
+> The vision behind IntentWeave is bridging **intent** and **implementation** — confirming
+> that what the team decided is actually what the code does. Every feature in this backlog
+> serves one of four intent-enforcement dimensions:
+
+```
+         INTENT SOURCES                   ENFORCEMENT MECHANISM
+         ──────────────                   ─────────────────────
+
+  ┌─────────────────────────┐
+  │  Document-side intent   │   ADRs, specs, architecture docs
+  │  (Sections 12, 13)      │──► rules-extract → .iw/rules.yaml → rulesCheck
+  └─────────────────────────┘
+  ┌─────────────────────────┐
+  │  Structural intent      │   Import topology, clone patterns, dependency depth
+  │  (Sections 3, 5, 9)     │──► layers-check, boundary-violations, arch-check
+  └─────────────────────────┘
+  ┌─────────────────────────┐
+  │  Code-annotation intent │   @deprecated, @internal, decorators, visibility
+  │  (Section 14 — new)     │──► assertionCheck → CI violations
+  └─────────────────────────┘
+  ┌─────────────────────────┐
+  │  Behavioral intent      │   Test descriptions, interface contracts, type assertions
+  │  (Sections 6, 12, 14)   │──► test-intent-alignment, as-any inventory
+  └─────────────────────────┘
+```
+
+**Sprint delivery path:**
+
+```
+Foundation                 Signal layer                  Trend & zero-config
+───────────                ────────────                  ───────────────────
+6.5  File skip warning     14.1  @deprecated callers     14.5  ADR conformance trend
+13.1 symbol_calls +        14.2  @internal enforcement   14.4  Decorator-derived layers
+     property_accesses     14.6  Test–symbol alignment   13.4  rules-extract from ADR
+13.2 rulesCheck + CI gate  14.3  as any inventory
+```
+
+---
+
 ## Legend
 
 | Tag       | Meaning                       |
@@ -124,6 +165,38 @@ Surface: _"auth.ts now owned by @alice but AUTH.md last edited by @bob (6 months
 Files that historically co-change but haven't recently — either the coupling broke
 (refactor) or one side is silently drifting. Surface: _"auth.ts and user.ts co-changed
 in 12/15 commits but diverged 3 months ago."_
+
+### 4.5 Co-Change Coupling as Shared-Utility Signal _(CARI, S)_
+
+> **Derived from ARC-372:** `iw index focus` on SignalView revealed a **0.60 Jaccard
+> co-change score** with EventView. Both files were later found to contain identical
+> ADR-003 violations (`refToFqn`, `entityByFqn`, `$ref` parsing). High co-change
+> coupling between files with similar violation patterns is a strong signal that the
+> shared logic should be extracted to a utility — but currently `focus` only reports
+> the score, not the implication.
+
+**Problem:** High co-change coupling between two files in the same layer (both at Layer 3
+UI, both containing duplicated resolver logic) hints that the repeated pattern should
+become a shared utility. No current tool surfaces this inference.
+
+**Solution:** Extend `co_changes` analysis with a **shared-utility signal**:
+
+- When two files have co-change Jaccard ≥ 0.5 **and** share ≥2 structurally cloned
+  symbols (from 2.2), emit:
+  ```
+  ⚠ Shared-utility candidate:
+    SignalView.tsx  ←→  EventView.tsx  (co-change: 0.60)
+    3 shared structural clones: refToFqn, entityByFqn, useParamRows
+    → Consider extracting to a shared utility module
+  ```
+- Combine with layer data (5.1a): if both files are in the same layer, the signal is a
+  DRY extraction candidate. If they're in different layers, the clone is an architectural
+  violation (one copy is misplaced).
+
+CLI: `iw index co-change-signals` (or extend `iw index surprises`). MCP: extend
+`cari_surprises` to include this class of signal.
+
+Depends on: `co_changes` table (exists), 2.2 (structural clones), 5.1a (layers).
 
 ### 4.3 Hotspot → Documentation Priority _(CARI, S)_ ✅
 
@@ -353,11 +426,91 @@ CLI: `iw index arch-check`. MCP: `cari_arch_check`.
 
 Depends on: `imports` table (exists), file glob resolution (exists).
 
+### 5.9 Cross-Layer Clone Analysis _(CARI, S)_ ✅
+
+> **Derived from ARC-372:** `iw index clones` found 24 exact clone groups (58 symbols)
+> and `structural-clones` found 91 groups (255 symbols). The results were useful for
+> finding `extractShortId` / `generateYAML` duplicates, but didn't distinguish between
+> two qualitatively different problems: DRY violations (copies within the same layer) and
+> architectural violations (copies that span layers, meaning the same logic is
+> reimplemented at multiple tiers).
+
+**Problem:** A `refToFqn()` clone appearing in 4 UI view components is a DRY violation
+— it should be extracted to a shared utility. The same helper appearing in _both_ the UI
+layer and the resolver layer is a more severe architectural violation — one layer is
+reimplementing logic that belongs exclusively to the other.
+
+Current clone output lists groups without layer context.
+
+**Solution:** Extend `iw index clones` and `iw index structural-clones` with layer
+annotations. For each clone group, report:
+
+- **Within-layer copies** (DRY violations): all members at the same layer depth →
+  suggestion: extract to shared utility
+- **Cross-layer copies** (architectural violations): members span ≥2 layers →
+  suggestion: the higher-layer copy is a forbidden reimplementation
+
+```
+iw index clones --layer-analysis
+
+Clone group: refToFqn (4 copies)
+  ARCHITECTURAL ⚠  — members span 2 layers:
+    Layer 3 (UI):        apps/ui/views/SignalView.tsx:51
+    Layer 3 (UI):        apps/ui/views/EventView.tsx:31
+    Layer 3 (UI):        apps/ui/views/ServiceInterfaceView.tsx:62
+    Layer 2 (resolver):  packages/resolver/src/fqn-utils.ts:12
+  → The 3 UI copies are unauthorized reimplementations of resolver logic.
+    Reference: packages/resolver/src/fqn-utils.ts:12
+
+Clone group: extractShortId (3 copies)
+  DRY ⚠  — all members in same layer (Layer 3, UI):
+    apps/ui/components/EntityCard.tsx:44
+    apps/ui/components/EntityList.tsx:91
+    apps/ui/views/PduView.tsx:670
+  → Extract to shared UI utility.
+```
+
+CLI: `iw index clones --layer-analysis`. MCP: extend `cari_clones` + `cari_structural_clones`
+with `layerAnalysis` boolean parameter.
+
+Depends on: 2.1 (exact clones), 2.2 (structural clones), 5.1a (layer inference).
+
+### 5.10 `arch-check` UX — LLM Requirement Clarity _(CARI, S)_ ✅
+
+> **Derived from ARC-372:** Running `iw index arch-check --from-scan docs/ADR-003.md
+--provider smart-mock` produced an empty result without any error. The user had no way
+> to know whether the ADR contained no relevant architecture info, or whether the
+> smart-mock provider was simply incapable of interpreting diagram content. The evaluation
+> noted: "smart-mock couldn't extract components from the diagrams (it's a mock LLM, not
+> a real one)."
+
+**Two concrete UX improvements:**
+
+1. **Upfront capability check.** When `--from-scan` is invoked with a provider that
+   cannot perform content understanding (smart-mock, or no provider configured), emit:
+
+   ```
+   ✗ arch-check --from-scan requires a real LLM provider.
+     smart-mock cannot interpret diagram content.
+     Configure a provider: --provider openai
+     Or set in .iw/config.yaml: provider: openai
+   ```
+
+   Exit with code 2 (config error) rather than producing an empty success result.
+
+2. **`architecture.yaml` format documentation.** The `arch-check` config format is not
+   documented in `--help` output or on the website. Users who want to encode rules
+   manually (without LLM scan) have no guide. Add:
+   - `iw index arch-check --help` should include the full YAML schema with examples
+   - A worked example in the docs showing how to encode one ADR constraint as YAML
+
+Depends on: `arch-check` command (exists).
+
 ---
 
 ## 6. Quality & Consistency Checks
 
-### 6.1 Naming Convention Violations _(AX, S)_
+### 6.1 Naming Convention Violations _(AX, S)_ ✅
 
 Check symbol names against configurable patterns (camelCase functions, PascalCase classes,
 UPPER_SNAKE constants). Flag violations per file. No new dependencies — regex on existing
@@ -375,11 +528,46 @@ Extract inline markers from source during AX. Store in index with file, line, ag
 (git blame). Surface: _"47 TODOs, 12 older than 6 months, 3 reference deleted functions."_
 Cross-reference with doc coverage — undocumented TODOs are invisible technical debt.
 
-### 6.4 Comment-to-Code Ratio Anomalies _(AX, S)_
+### 6.4 Comment-to-Code Ratio Anomalies _(AX, S)_ ✅
 
 Flag files with unusually low or high comment ratios compared to workspace average.
 Very low → complex undocumented code. Very high → possibly stale comments describing
 old behaviour.
+
+### 6.5 AX File Skip Warning + Configurable Size Threshold _(AX, S)_ ✅
+
+> **Derived from ARC-372:** `PduView.tsx` (84KB, 2325 lines) was silently excluded from
+> the CARI index. This was the single largest violating file in the audit — and it was
+> invisible to all `iw index` commands. The user only discovered the gap via direct
+> `sqlite3` inspection.
+
+**Problem:** When AX extraction skips a file due to size or line-count limits, the skip
+is completely silent. Queries return results as if those files don't exist.
+
+**Solution:**
+
+1. **Warning at build time:** After `iw index build`, emit a summary:
+
+   ```
+   ⚠  4 files exceeded the size threshold and were not indexed:
+      PduView.tsx         84KB  (2,325 lines)
+      ServiceInterfaceView.tsx  61KB  (1,841 lines)
+      SignalView.tsx      42KB  (1,203 lines)
+      EventView.tsx       38KB  (1,094 lines)
+
+   These files will not appear in symbol queries, clone detection, or rules checks.
+   Raise the limit with: iw index build --max-file-size 200000
+   ```
+
+2. **`--max-file-size <bytes>` flag** on `iw index build`. Default: 65536 (64KB).
+   Store in `.iw/config.yaml` so incremental builds respect it.
+
+3. **`files` table row with `indexed=false`:** Store skipped files in the `files` table
+   with an `indexed` boolean column. This lets `iw index report` surface
+   "N files too large to index" in the health dashboard without code changes to
+   individual queries.
+
+Dependends on: AX extractor size check (already exists, just needs surfacing).
 
 ---
 
@@ -1243,70 +1431,459 @@ iw verify --score
 
 ---
 
+## 13. Semantic Rule Checking (ADR Enforcement)
+
+> **Motivation:** CARI's architecture checks all operate on the import graph — they detect
+> _which_ files import _which_. ADR-level violations often live inside syntactically-correct
+> imports: a UI component imports the right API but then accesses raw internal fields or
+> re-implements resolver logic. No import-graph tool can detect this class of violation.
+>
+> See the full concept in [SEMANTIC-RULES-SPEC.md](SEMANTIC-RULES-SPEC.md), derived from a
+> the real-world ADR failure report.
+
+### 13.1 `symbol_calls` + `property_accesses` Tables _(AX, M)_ ✅ Done
+
+Extend the AX (AST extractor) tree-sitter traversal to capture two new facts per symbol:
+
+- **`symbol_calls`** — every function call expression within each symbol's body
+  (`callee_name`, `caller_file`, `caller_symbol`, `line`)
+- **`property_accesses`** — property access chains of depth ≥ 2
+  (`chain`, `root`, `file`, `symbol_name`, `line`)
+
+Write these to new SQLite tables during the `iw index build` pipeline. Both tables are
+incremental: recomputed only when a file's `body_hash` changes.
+
+**Why this matters:** These are the raw facts that all semantic rule checks (13.2+) query.
+Without them, any usage-pattern check requires re-parsing source files at query time.
+
+Depends on: AX AST traversal (exists), `symbols` table (exists).
+
+### 13.2 `rulesCheck` Query + `.iw/rules.yaml` Config _(CARI, M)_ ✅ Done
+
+New CARI query: `rulesCheck()`. Loads `.iw/rules.yaml` and validates the index against
+four rule types:
+
+| Rule type         | Detects                                          | Table                      |
+| ----------------- | ------------------------------------------------ | -------------------------- |
+| `property_access` | Access to a property chain matching a pattern    | `property_accesses` (13.1) |
+| `call`            | Invocation of a function matching a name pattern | `symbol_calls` (13.1)      |
+| `symbol_name`     | Declaration of a named symbol matching a pattern | `symbols` (existing)       |
+| `import_pattern`  | Import of a path matching a pattern              | `imports` (existing)       |
+
+Each rule has `in:` (file scope glob), `except:` (whitelist), and `severity:` fields.
+Rules are linked back to ADR IDs for traceability.
+
+```yaml
+# .iw/rules.yaml
+version: 1
+rules:
+  - id: no-source-path-parsing-in-ui
+    adr: ADR-003
+    severity: high
+    forbidden:
+      - type: property_access
+        chain: "**.source.path"
+        in: "apps/ui/**"
+```
+
+**Fan-in impact scoring** (derived from ARC-372 `dep-depth` finding: `api.ts` had 28
+direct importers): violations in high-fan-in files are higher-risk because a fix
+requires updating all dependents. Cross-reference each violation's file against the
+`dep-depth` data and surface an `impact` score: `impact = fan_in * severity_weight`.
+Output: violations sorted by impact descending so the riskiest ones appear first.
+
+CLI: `iw index rules-check`. MCP: `cari_rules_check`.
+
+Depends on: 13.1 (new tables), 3.3 (dep-depth, for impact scoring).
+
+### 13.3 Incremental Rules CI Mode _(CARI, S)_ ✅ Done
+
+`iw index rules-check --changed <files>` — only report violations in modified files.
+Produces non-zero exit code on violations for PR gate integration.
+
+```bash
+iw index rules-check --severity high --changed apps/ui/PduView.tsx
+```
+
+Depends on: 13.2.
+
+### 13.4 `rules-extract` — ADR to Rule Config _(KG, M)_ ✅ Done
+
+LLM-assisted command: reads one or more ADR markdown files, identifies architectural
+constraints stated in prose, and emits a structured `.iw/rules.yaml` draft:
+
+```bash
+iw index rules-extract docs/ADR-003.md --provider openai --output .iw/rules.yaml
+```
+
+Uses the existing LLM provider pipeline (same as KG extraction). Once the YAML is
+committed, all CI enforcement is $0 — no further LLM calls.
+
+Depends on: 13.2 (rule format), KG LLM pipeline (exists).
+
+---
+
+## 14. Intent from Code Annotations
+
+> The three previous sections extract intent from **external documents** (ADRs, specs,
+> architecture diagrams). This section covers intent that teams encode **directly in the
+> code itself** — via JSDoc/TSDoc tags, TypeScript decorators, visibility modifiers, test
+> descriptions, and type assertion patterns. These are typically checked only by the
+> compiler (or not at all). CARI can surface them as architectural signals.
+
+### 14.1 `@deprecated` Caller Detection _(AX + CARI, S)_ ✅ Done
+
+> **Sprint contribution:** "Ensure the intent" — the intent of `@deprecated` is that
+> callers should migrate away. CARI makes that intent enforceable in CI.
+
+**Problem:** Teams mark symbols `@deprecated` in JSDoc to signal that callers should
+stop using them. TypeScript emits a soft warning at hover; nothing enforces it. Over time
+deprecated APIs accumulate active callers and can never be safely removed.
+
+**Solution:** During AX traversal, extract JSDoc `@deprecated` tags from symbol
+definitions and store them in the `symbols` table (`deprecated: boolean`, `deprecated_note: text`).
+Cross-reference against `symbol_calls` (13.1) to find all active callers:
+
+```bash
+iw index deprecated-callers
+
+  ⚠ 12 symbols marked @deprecated have active callers:
+
+  refToFqn()  [deprecated since v1.2]
+    Called from:
+      apps/ui/views/SignalView.tsx:51
+      apps/ui/views/EventView.tsx:31
+      apps/ui/views/ServiceInterfaceView.tsx:62
+    Migration: use entity._resolved.fqn instead
+
+  generateYAML()  [deprecated: use serialize()]
+    Called from:
+      scripts/export.ts:44
+
+iw index deprecated-callers --fail-on-any   # non-zero exit for CI gate
+```
+
+CLI: `iw index deprecated-callers`. MCP: `cari_deprecated_callers`.
+
+Depends on: AX JSDoc parsing (partial — exists for rationale), 13.1 (`symbol_calls`).
+
+### 14.2 `@internal` and `_` Convention Enforcement _(AX + CARI, S)_ ✅ Done
+
+> **Sprint contribution:** Enforces the team's visibility intent ($0, no type-system
+> changes needed) — directly analogous to `boundary-violations` but at symbol level.
+
+**Problem:** TypeScript has no built-in `@internal` enforcement. Monorepos routinely use
+`_` prefixes or JSDoc `@internal` to signal "don't import this from outside the package",
+but nothing checks this at scale.
+
+**Solution:** Two enforcement modes from the same `symbols` table:
+
+1. **JSDoc `@internal` mode** — during AX, flag symbols with `@internal` tag.
+   Cross-reference against `imports` table to find external-package importers:
+
+   ```
+   ⚠ @internal symbol imported across package boundary:
+     packages/resolver/src/fqn-utils.internal.ts::resolveRawRef  (@internal)
+     Imported by: apps/ui/views/SignalView.tsx  (different package)
+   ```
+
+2. **`_` prefix convention mode** — treat any exported symbol starting with `_` as
+   internal. Same cross-reference against `imports`. Configurable on/off per scope.
+
+Both modes integrate with `.iw/rules.yaml` as rule type `visibility`:
+
+```yaml
+- id: no-internal-imports
+  severity: high
+  forbidden:
+    - type: visibility
+      marker: "@internal" # or "_prefix"
+      in: "packages/**" # check across these packages
+```
+
+CLI: `iw index internal-violations`. MCP: `cari_internal_violations`.
+
+Depends on: AX JSDoc parsing, `imports` table (exists). Optional: 13.2 (rules.yaml integration).
+
+### 14.3 `as any` / Type Assertion Inventory _(AX, S)_ ✅ Done
+
+> **Sprint contribution:** Surfaces bypasses of TypeScript's structural intent — places
+> where the compiler's type-safety guarantees are deliberately overridden.
+
+Detect and index `as any`, `as unknown as X`, and `(<Foo>bar)` cast patterns in
+TypeScript files during AX traversal. Store in a new `type_assertions` table:
+
+```sql
+CREATE TABLE type_assertions (
+  file        TEXT,
+  line        INTEGER,
+  kind        TEXT,    -- 'as_any' | 'double_cast' | 'angle_cast'
+  context     TEXT,    -- enclosing function name
+  target_type TEXT     -- the type being cast to (if known)
+);
+```
+
+```bash
+iw index type-assertions
+
+  42 type assertions found (12 as-any, 30 double-casts)
+
+  as-any (12 occurrences) — bypasses type safety entirely:
+    apps/ui/views/PduView.tsx:892    entity as any  (in renderCommRows)
+    packages/resolver/src/adapter.ts:44  response as any  (in parseResponse)
+    ...
+
+  High-risk (in high-fan-in files):
+    packages/core/src/types.ts:22  as any  [fan-in: 34]
+```
+
+Cross-reference with `dep-depth` (3.3) to rank by risk. Flag `as any` in high-fan-in
+files first — those bypass type-safety in the most-depended-on code.
+
+CLI: `iw index type-assertions`. MCP: `cari_type_assertions`.
+
+Depends on: AX traversal (new node type: `as_expression`), 3.3 (dep-depth for risk ranking).
+
+### 14.4 Decorator-Derived Layer Assignment _(AX + CARI, M)_ ✅ Done
+
+> **Sprint contribution:** Zero-config layering — teams using NestJS, Angular, Spring,
+> or FastAPI get architectural layer assignments from decorators they've already written,
+> with no manual `layers.yaml`.
+
+**Problem:** `iw index layers-infer` derives layers from import topology. This works but
+requires manual review and curation of the output. Teams using framework decorators have
+already declared their architectural intent in the code:
+
+- `@Controller`, `@Get`, `@Post` → HTTP interface layer
+- `@Injectable`, `@Service` → business logic layer
+- `@Repository`, `@Entity`, `@Table` → data access layer
+- `@Component`, `@Directive`, `@Pipe` → UI/presentation layer
+
+**Solution:** Extract decorator names during AX traversal. Store in `symbols` table as
+`decorator: text`. New query `layersFromDecorators()` maps decorator patterns to layer
+assignments via a configurable mapping (built-in presets for NestJS, Angular, Spring):
+
+```yaml
+# .iw/decorator-layers.yaml   (or use built-in preset: nestjs | angular | spring)
+preset: nestjs
+overrides:
+  - decorator: "@ArcController"
+    layer: "interface"
+  - decorator: "@ArcRepository"
+    layer: "data"
+```
+
+```bash
+iw index layers-infer --from-decorators
+# Inferred 4 layers from 312 decorated symbols:
+#   Layer 3 (interface): 18 files  [@Controller, @Get, @Post, @Put, @Delete]
+#   Layer 2 (business):  64 files  [@Injectable, @Service]
+#   Layer 1 (data):      23 files  [@Repository, @Entity]
+#   Layer 0 (infra):     12 files  [@Module, @Global]
+# Written to .iw/layers.yaml
+```
+
+Decorator-derived layers are more stable than topology-derived ones for DI frameworks
+where everything technically imports `@Injectable` services. This replaces the inference
+phase for framework projects and produces a much more semantically meaningful layer map.
+
+CLI: `iw index layers-infer --from-decorators`. MCP: extend `cari_layers_infer`.
+
+Depends on: AX decorator extraction (new), 5.1a (layer inference infrastructure).
+
+### 14.5 ADR Conformance Trend _(CARI + Git, M)_ ✅ Done
+
+> **Sprint contribution:** Answers "are we getting better or worse at enforcing our
+> architectural decisions?" — the longitudinal view of semantic rule checking.
+
+**Problem:** `iw index rules-check` reports violations at a point in time. Teams need
+to know whether violation counts are improving (remediation in progress) or worsening
+(new violations being introduced). Without trend data, the CI gate is a blunt instrument.
+
+**Solution:** At each `iw index build`, record a conformance snapshot per ADR rule:
+
+```sql
+CREATE TABLE conformance_snapshots (
+  snapshot_id  TEXT,         -- git commit SHA
+  timestamp    INTEGER,
+  rule_id      TEXT,         -- matches .iw/rules.yaml rule id
+  adr          TEXT,         -- e.g. "ADR-003"
+  files_in_scope INTEGER,
+  files_clean    INTEGER,
+  violation_count INTEGER,
+  conformance_pct REAL       -- files_clean / files_in_scope * 100
+);
+```
+
+```bash
+iw index rules-trend
+
+  ADR Conformance Trend (last 30 days):
+
+  ADR-003 (no-source-path-parsing-in-ui)
+  ─────────────────────────────────────
+  2026-04-01  100%  ████████████████████  (0 violations)
+  2026-04-08  100%  ████████████████████
+  2026-04-15   67%  █████████████░░░░░░░  ← PR #342 introduced 4 new violations
+  2026-04-22   67%  █████████████░░░░░░░  (unresolved)
+  2026-04-27   67%  █████████████░░░░░░░
+
+  ADR-005 (no-direct-db-in-services)
+  ─────────────────────────────────────
+  2026-04-01   80%  ████████████████░░░░
+  2026-04-27   92%  ██████████████████░░  ← improving ✓
+```
+
+Also surfaced in `iw verify --score` as a trend indicator in the Living Documentation Score.
+
+CLI: `iw index rules-trend`. MCP: `cari_rules_trend`.
+
+Depends on: 13.2 (rules-check), `conformance_snapshots` table (new), git (TCG, exists).
+
+### 14.6 Test Description ↔ Symbol Alignment _(CARI, S)_ ✅ Done
+
+> **Sprint contribution:** Detects stale tests — tests whose descriptions reference
+> symbols or behaviors that no longer exist, which silently lie about coverage.
+
+**Problem:** When a symbol is renamed or deleted, the tests that describe it often remain
+intact syntactically (they import a new mock or the test still passes for other reasons),
+but the `describe`/`it` text still refers to the old name. These are invisible stale
+tests — they appear in coverage reports but verify something the code no longer contains.
+
+**Solution:** During AX, extract test description strings from `describe()`, `it()`,
+`test()` call arguments in test files. Store in a `test_descriptions` table. Cross-reference
+against `symbols` table to find descriptions that contain symbol names that no longer exist:
+
+```bash
+iw index test-intent
+
+  6 test descriptions reference symbols not found in the index:
+
+  auth.test.ts:44
+    describe("AuthService should validate token expiry")
+    → "AuthService" not found. Renamed to "TokenValidator"?
+
+  resolver.test.ts:12
+    it("resolveRawRef converts $ref to FQN")
+    → "resolveRawRef" not found. Deleted or renamed?
+
+  3 test files describe behaviours with no matching code symbol:
+    → Possible dead tests or coverage for removed features
+```
+
+Extends `iw index test-coverage` (6.2) by adding description-to-symbol grounding,
+not just file-to-file mapping.
+
+CLI: `iw index test-intent`. MCP: `cari_test_intent`.
+
+Depends on: AX test call extraction (partial — 6.2 does file mapping), `symbols` table (exists).
+
+---
+
 ## Priority Matrix
 
-| #    | Feature                           | Tier | Size   | Value  | Dependencies         | Status  |
-| ---- | --------------------------------- | ---- | ------ | ------ | -------------------- | ------- |
-| 2.1  | Exact clone detection             | CARI | S      | High   | AX body_hash         | ✅      |
-| 1.1  | Doc-group classification          | CARI | S      | High   | None                 | ✅      |
-| 3.1  | Circular import detection         | CARI | S      | High   | AX imports (exists)  | ✅      |
-| 3.2  | Unused export detection           | CARI | S      | High   | AX imports (exists)  | ✅      |
-| 4.3  | Hotspot → doc priority            | CARI | S      | High   | TCG data (exists)    | ✅      |
-| 6.3  | TODO/FIXME inventory              | CARI | S      | High   | None                 | ✅      |
-| 1.4  | Coverage by module                | CARI | S      | Medium | None                 | ✅      |
-| 1.3  | Orphaned doc sections             | CARI | S      | Medium | None                 | ✅      |
-| 1.7  | Doc completeness scoring          | CARI | S      | Medium | None                 | ✅      |
-| 2.2  | Structural clones                 | CARI | M      | High   | 2.1                  | ✅      |
-| 1.2  | Cross-group drift                 | CARI | M      | High   | 1.1                  | ✅      |
-| 6.2  | Test coverage mapping             | CARI | M      | High   | AX imports (exists)  | ✅      |
-| 3.3  | Dependency depth                  | CARI | S      | Medium | AX imports (exists)  | ✅ Done |
-| 4.4  | Bus factor per module             | CARI | M      | Medium | TCG data (exists)    |         |
-| 3.4  | Package boundary violations       | CARI | M      | Medium | 5.1 concept          | ✅ Done |
-| 5.3  | Dead feature detection            | CARI | M      | Medium | 3.2, 1.3             | ✅ Done |
-| 4.1  | Ownership drift                   | CARI | S      | Medium | TCG data (exists)    |         |
-| 4.2  | Change coupling anomalies         | CARI | S      | Medium | TCG data (exists)    |         |
-| 1.5  | Terminology inconsistency         | CARI | M      | Medium | None                 | ✅ Done |
-| 5.1a | Layer inference                   | CARI | M      | High   | 9.1, 3.3             | ✅ Done |
-| 5.1b | Layer check                       | CARI | S      | High   | 5.1a                 | ✅ Done |
-| 5.1c | Layer naming suggestions          | KG   | S      | Low    | 5.1a                 | ✅      |
-| 5.5  | Hierarchical sub-layering         | CARI | M      | High   | 5.1a, 3.4            |         |
-| 5.6  | As-is vs. as-should comparison    | CARI | M      | High   | 5.1a, 5.1b           | ✅ Done |
-| 5.7  | Vertical slice detection          | CARI | M      | High   | 5.1a, 9.1            | ✅ Done |
-| 5.8  | Architecture diagram validation   | CARI | L      | High   | imports (exists)     | ✅      |
-| 6.1  | Naming convention checks          | CARI | S      | Low    | None                 |         |
-| 6.4  | Comment-to-code ratio             | CARI | S      | Low    | None                 |         |
-| 5.4  | API surface changelog             | CARI | M      | Medium | Git history          | ✅ Done |
-| 5.2  | Interface conformance             | AX   | M      | Medium | None                 | ✅ Done |
-| 2.4  | Clone lineage tracking            | CARI | M      | Low    | 2.1                  |         |
-| 1.6  | Decision lifecycle                | KG   | M      | Medium | Neo4j pipeline       |         |
-| 2.3  | Semantic clone detection          | KG   | L      | Medium | LLM embeddings       |         |
-| 7.1  | Python AST extractor              | AX   | M      | High   | tree-sitter-python   | ✅ Done |
-| 7.2  | Language-agnostic AX dispatch     | AX   | M      | High   | 7.1                  | ✅ Done |
-| 7.3  | Go / Rust / Java extractors       | AX   | M each | Medium | 7.2                  |         |
-| 8.0  | CariIndex facade + orchestration  | CARI | M      | High   | None (refactor)      | ✅ Done |
-| 8.0a | Entity bridge                     | CARI | M      | High   | 8.0                  | ✅ Done |
-| 8.1  | Programmatic CARI API docs        | Docs | S      | High   | 8.0                  | ✅ Done |
-| 8.2  | Docusaurus/Starlight plugin       | INT  | M      | High   | 8.0                  |         |
-| 8.3  | Sphinx / MkDocs integration       | INT  | M      | Medium | 8.0                  |         |
-| 8.4  | CI artifact validation action     | INT  | M      | High   | `iw index check`     | ✅ Done |
-| 8.5  | REST API for doc systems          | INT  | S      | Medium | server-core (exists) | ✅ Done |
-| 8.6  | Webhook-triggered re-index        | INT  | M      | Medium | 8.5                  |         |
-| 9.1  | Community detection               | CARI | M      | High   | co_occ + imports     | ✅ Done |
-| 9.2  | God-node / hub analysis           | CARI | S      | High   | None                 | ✅ Done |
-| 9.3  | Surprising connection ranking     | CARI | M      | High   | 9.1                  | ✅ Done |
-| 9.4  | Rationale extraction              | AX   | S      | Medium | TODO infra (exists)  | ✅ Done |
-| 10.1 | Standalone HTML architecture rpt  | CARI | M      | High   | 5.1a, 9.1, 3.3       | ✅ Done |
-| 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists) | ✅ Done |
-| 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                 | ✅ Done |
-| 10.4 | Obsidian vault export             | CARI | M      | Low    | 9.1                  |         |
-| 11.1 | Plugin interface & registry       | CARI | M      | High   | None                 | ✅      |
-| 11.2 | Capability provider system        | CARI | M      | High   | 11.1                 | ✅      |
-| 11.3 | KG plugin extraction (CypherLite) | KG   | L      | High   | 11.1, 11.2           | ✅      |
-| 11.4 | Plugin CLI commands               | CARI | S      | High   | 11.1                 | ✅      |
-| 11.5 | Lightweight LLM plugin            | INT  | S      | Medium | 11.2                 | ✅      |
-| 11.6 | Language parser as plugins        | AX   | M      | Medium | 11.1, 7.2            | ✅      |
-| 11.7 | CLI Neo4j migration               | KG   | L      | High   | 11.2, 11.3           | ✅      |
-| 11.8 | Selective semantic enrichment     | KG   | L      | High   | 11.3a, 11.5, 8.0a    | ✅      |
-| 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a      | ✅      |
-| 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg            | ✅      |
-| 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2           | ✅      |
+| #    | Feature                           | Tier | Size   | Value  | Dependencies          | Status  |
+| ---- | --------------------------------- | ---- | ------ | ------ | --------------------- | ------- |
+| 2.1  | Exact clone detection             | CARI | S      | High   | AX body_hash          | ✅      |
+| 1.1  | Doc-group classification          | CARI | S      | High   | None                  | ✅      |
+| 3.1  | Circular import detection         | CARI | S      | High   | AX imports (exists)   | ✅      |
+| 3.2  | Unused export detection           | CARI | S      | High   | AX imports (exists)   | ✅      |
+| 4.3  | Hotspot → doc priority            | CARI | S      | High   | TCG data (exists)     | ✅      |
+| 6.3  | TODO/FIXME inventory              | CARI | S      | High   | None                  | ✅      |
+| 1.4  | Coverage by module                | CARI | S      | Medium | None                  | ✅      |
+| 1.3  | Orphaned doc sections             | CARI | S      | Medium | None                  | ✅      |
+| 1.7  | Doc completeness scoring          | CARI | S      | Medium | None                  | ✅      |
+| 2.2  | Structural clones                 | CARI | M      | High   | 2.1                   | ✅      |
+| 1.2  | Cross-group drift                 | CARI | M      | High   | 1.1                   | ✅      |
+| 6.2  | Test coverage mapping             | CARI | M      | High   | AX imports (exists)   | ✅      |
+| 3.3  | Dependency depth                  | CARI | S      | Medium | AX imports (exists)   | ✅ Done |
+| 4.4  | Bus factor per module             | CARI | M      | Medium | TCG data (exists)     |         |
+| 3.4  | Package boundary violations       | CARI | M      | Medium | 5.1 concept           | ✅ Done |
+| 5.3  | Dead feature detection            | CARI | M      | Medium | 3.2, 1.3              | ✅ Done |
+| 4.1  | Ownership drift                   | CARI | S      | Medium | TCG data (exists)     |         |
+| 4.2  | Change coupling anomalies         | CARI | S      | Medium | TCG data (exists)     |         |
+| 1.5  | Terminology inconsistency         | CARI | M      | Medium | None                  | ✅ Done |
+| 5.1a | Layer inference                   | CARI | M      | High   | 9.1, 3.3              | ✅ Done |
+| 5.1b | Layer check                       | CARI | S      | High   | 5.1a                  | ✅ Done |
+| 5.1c | Layer naming suggestions          | KG   | S      | Low    | 5.1a                  | ✅      |
+| 5.5  | Hierarchical sub-layering         | CARI | M      | High   | 5.1a, 3.4             |         |
+| 5.6  | As-is vs. as-should comparison    | CARI | M      | High   | 5.1a, 5.1b            | ✅ Done |
+| 5.7  | Vertical slice detection          | CARI | M      | High   | 5.1a, 9.1             | ✅ Done |
+| 5.8  | Architecture diagram validation   | CARI | L      | High   | imports (exists)      | ✅      |
+| 6.1  | Naming convention checks          | CARI | S      | Low    | None                  | ✅ Done |
+| 6.4  | Comment-to-code ratio             | CARI | S      | Low    | None                  | ✅ Done |
+| 5.4  | API surface changelog             | CARI | M      | Medium | Git history           | ✅ Done |
+| 5.2  | Interface conformance             | AX   | M      | Medium | None                  | ✅ Done |
+| 2.4  | Clone lineage tracking            | CARI | M      | Low    | 2.1                   |         |
+| 1.6  | Decision lifecycle                | KG   | M      | Medium | Neo4j pipeline        |         |
+| 2.3  | Semantic clone detection          | KG   | L      | Medium | LLM embeddings        |         |
+| 7.1  | Python AST extractor              | AX   | M      | High   | tree-sitter-python    | ✅ Done |
+| 7.2  | Language-agnostic AX dispatch     | AX   | M      | High   | 7.1                   | ✅ Done |
+| 7.3  | Go / Rust / Java extractors       | AX   | M each | Medium | 7.2                   |         |
+| 8.0  | CariIndex facade + orchestration  | CARI | M      | High   | None (refactor)       | ✅ Done |
+| 8.0a | Entity bridge                     | CARI | M      | High   | 8.0                   | ✅ Done |
+| 8.1  | Programmatic CARI API docs        | Docs | S      | High   | 8.0                   | ✅ Done |
+| 8.2  | Docusaurus/Starlight plugin       | INT  | M      | High   | 8.0                   |         |
+| 8.3  | Sphinx / MkDocs integration       | INT  | M      | Medium | 8.0                   |         |
+| 8.4  | CI artifact validation action     | INT  | M      | High   | `iw index check`      | ✅ Done |
+| 8.5  | REST API for doc systems          | INT  | S      | Medium | server-core (exists)  | ✅ Done |
+| 8.6  | Webhook-triggered re-index        | INT  | M      | Medium | 8.5                   |         |
+| 9.1  | Community detection               | CARI | M      | High   | co_occ + imports      | ✅ Done |
+| 9.2  | God-node / hub analysis           | CARI | S      | High   | None                  | ✅ Done |
+| 9.3  | Surprising connection ranking     | CARI | M      | High   | 9.1                   | ✅ Done |
+| 9.4  | Rationale extraction              | AX   | S      | Medium | TODO infra (exists)   | ✅ Done |
+| 10.1 | Standalone HTML architecture rpt  | CARI | M      | High   | 5.1a, 9.1, 3.3        | ✅ Done |
+| 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists)  | ✅ Done |
+| 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                  | ✅ Done |
+| 10.4 | Obsidian vault export             | CARI | M      | Low    | 9.1                   |         |
+| 11.1 | Plugin interface & registry       | CARI | M      | High   | None                  | ✅      |
+| 11.2 | Capability provider system        | CARI | M      | High   | 11.1                  | ✅      |
+| 11.3 | KG plugin extraction (CypherLite) | KG   | L      | High   | 11.1, 11.2            | ✅      |
+| 11.4 | Plugin CLI commands               | CARI | S      | High   | 11.1                  | ✅      |
+| 11.5 | Lightweight LLM plugin            | INT  | S      | Medium | 11.2                  | ✅      |
+| 11.6 | Language parser as plugins        | AX   | M      | Medium | 11.1, 7.2             | ✅      |
+| 11.7 | CLI Neo4j migration               | KG   | L      | High   | 11.2, 11.3            | ✅      |
+| 11.8 | Selective semantic enrichment     | KG   | L      | High   | 11.3a, 11.5, 8.0a     | ✅      |
+| 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a       | ✅      |
+| 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg             | ✅      |
+| 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2            | ✅      |
+| 13.1 | symbol_calls + property_accesses  | AX   | M      | High   | AX traversal (exists) | ✅ Done |
+| 13.2 | rulesCheck query + rules.yaml     | CARI | M      | High   | 13.1                  | ✅ Done |
+| 13.3 | Incremental rules CI mode         | CARI | S      | High   | 13.2                  | ✅ Done |
+| 13.4 | rules-extract from ADR (LLM)      | KG   | M      | Medium | 13.2, KG pipeline     | ✅ Done |
+| 6.5  | AX file skip warning + threshold  | AX   | S      | High   | AX (exists)           | ✅ Done |
+| 5.9  | Cross-layer clone analysis        | CARI | S      | Medium | 2.1, 2.2, 5.1a        | ✅ Done |
+| 5.10 | arch-check UX + format docs       | CARI | S      | Medium | arch-check (exists)   | ✅ Done |
+| 4.5  | Co-change shared-utility signal   | CARI | S      | Medium | co_changes, 2.2, 5.1a |         |
+
+### Sprint: _"Ensure the intent in the code"_
+
+> Items below form a coherent sprint. Foundation items must ship first; signal-layer items
+> build on them; trend and zero-config items complete the intent-enforcement loop.
+> All CARI items run at $0 in CI after a one-time `iw index build`.
+
+**Foundation (ship first):**
+
+| #    | Feature                          | Tier | Size | Value | Dependencies          | Status  |
+| ---- | -------------------------------- | ---- | ---- | ----- | --------------------- | ------- |
+| 6.5  | AX file skip warning + threshold | AX   | S    | High  | AX (exists)           | ✅ Done |
+| 13.1 | symbol_calls + property_accesses | AX   | M    | High  | AX traversal (exists) | ✅ Done |
+| 13.2 | rulesCheck query + rules.yaml    | CARI | M    | High  | 13.1                  | ✅ Done |
+| 13.3 | Incremental rules CI mode        | CARI | S    | High  | 13.2                  | ✅ Done |
+
+**Signal layer (builds on 13.1 + 13.2):**
+
+| #    | Feature                           | Tier    | Size | Value  | Dependencies       | Status  |
+| ---- | --------------------------------- | ------- | ---- | ------ | ------------------ | ------- |
+| 14.1 | @deprecated caller detection      | AX+CARI | S    | High   | 13.1, AX JSDoc     | ✅ Done |
+| 14.2 | @internal / \_ enforcement        | AX+CARI | S    | High   | imports (exists)   | ✅ Done |
+| 14.6 | Test description ↔ symbol align   | CARI    | S    | Medium | symbols (exists)   | ✅ Done |
+| 14.3 | as any / type assertion inventory | AX      | S    | Medium | AX (new node type) | ✅ Done |
+
+**Trend & zero-config (complete the loop):**
+
+| #    | Feature                        | Tier    | Size | Value  | Dependencies      | Status  |
+| ---- | ------------------------------ | ------- | ---- | ------ | ----------------- | ------- |
+| 14.5 | ADR conformance trend          | CARI    | M    | High   | 13.2, git (TCG)   | ✅ Done |
+| 14.4 | Decorator-derived layer assign | AX+CARI | M    | High   | AX, 5.1a          | ✅ Done |
+| 13.4 | rules-extract from ADR (LLM)   | KG      | M    | Medium | 13.2, KG pipeline | ✅ Done |

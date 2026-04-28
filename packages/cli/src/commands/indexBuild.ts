@@ -22,6 +22,7 @@ import chalk from "chalk";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { performance } from "node:perf_hooks";
+import { load as yamlLoad } from "js-yaml";
 
 // Analyzer stages (used by update subcommand)
 import {
@@ -61,6 +62,9 @@ import {
 
 // Enrichment subcommand (11.8)
 import { indexEnrichSubcommand } from "./indexEnrich.js";
+
+// Rules extract subcommand (13.4)
+import { indexRulesExtractSubcommand } from "./indexRulesExtract.js";
 
 // Diagram scanner subcommand
 import {
@@ -104,6 +108,11 @@ const indexBuildSubcommand = new Command("build")
     "Disable built-in excludes (node_modules, dist, etc.)",
   )
   .option("-o, --output <path>", "Output path for the SQLite database")
+  .option(
+    "--max-file-size <bytes>",
+    "Skip source files larger than this size in bytes during AX extraction (default: 65536)",
+    "65536",
+  )
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
     if (!paths || paths.length === 0) paths = ["."];
@@ -127,6 +136,7 @@ const indexBuildSubcommand = new Command("build")
         include: opts.include,
         session,
         outputPath: opts.output,
+        maxFileSize: parseInt(opts.maxFileSize, 10),
         log: verbose
           ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
           : undefined,
@@ -147,6 +157,25 @@ const indexBuildSubcommand = new Command("build")
             `files=${result.counts.files}`,
         ),
       );
+
+      // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
+      try {
+        const { existsSync, readFileSync } = await import("node:fs");
+        const rulesYamlPath = path.join(process.cwd(), ".iw", "rules.yaml");
+        if (existsSync(rulesYamlPath)) {
+          const jsYaml = await import("js-yaml");
+          const raw = readFileSync(rulesYamlPath, "utf-8");
+          const config = jsYaml.load(
+            raw,
+          ) as import("@intentweave/index").RulesConfig;
+          if (config?.rules?.length) {
+            const snapshotId = `build-${Date.now()}`;
+            snapshotConformance(result.dbPath, config, snapshotId, Date.now());
+          }
+        }
+      } catch {
+        // Snapshot failure must not fail the build
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
@@ -206,6 +235,17 @@ import {
   inferArchConfigFromKg,
   enrichArchConfigWithFiles,
   diagramEntityCheck,
+  namingViolations,
+  commentCodeRatio,
+  skippedFiles,
+  rulesCheck,
+  deprecatedCallers,
+  internalViolations,
+  typeAssertions,
+  layersFromDecorators,
+  rulesTrend,
+  snapshotConformance,
+  testIntent,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -214,6 +254,7 @@ import type {
   ExternalEntity,
   LayerConfig,
   ArchConfig,
+  RulesConfig,
 } from "@intentweave/index";
 
 function resolveDbPath(output?: string): string {
@@ -964,9 +1005,14 @@ const indexClonesSubcommand = new Command("clones")
   .description("Detect exact code clones (identical body hash)")
   .option("--db <path>", "Path to index.db")
   .option("-f, --format <format>", "Output format: text or json", "text")
+  .option(
+    "--layer-analysis",
+    "Annotate each clone group with inferred layer context (DRY vs architectural violation)",
+    false,
+  )
   .action((opts) => {
     const dbPath = resolveDbPath(opts.db);
-    const result = clones(dbPath);
+    const result = clones(dbPath, { layerAnalysis: opts.layerAnalysis });
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));
@@ -985,15 +1031,34 @@ const indexClonesSubcommand = new Command("clones")
     );
 
     for (const group of result.cloneGroups) {
+      const la = group.layerAnalysis;
+      const layerTag = la
+        ? la.kind === "architectural"
+          ? chalk.red(
+              `  ⚠  ARCHITECTURAL VIOLATION (layers ${la.uniqueLayers.join(", ")})`,
+            )
+          : la.kind === "dry"
+            ? chalk.yellow(`  ⚠  DRY VIOLATION (layer ${la.uniqueLayers[0]})`)
+            : chalk.gray("  ·  UNKNOWN LAYER")
+        : "";
       console.log(
         chalk.cyan(
           `\n    Clone group (${group.bodyLines} lines, ${group.symbols.length} copies):`,
-        ),
+        ) + layerTag,
       );
-      for (const s of group.symbols) {
+      for (let i = 0; i < group.symbols.length; i++) {
+        const s = group.symbols[i];
+        const layerSuffix =
+          la && la.layers[i] !== undefined && la.layers[i] >= 0
+            ? chalk.gray(` [Layer ${la.layers[i]}]`)
+            : "";
         console.log(
-          chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`),
+          chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`) +
+            layerSuffix,
         );
+      }
+      if (la && la.kind !== "unknown") {
+        console.log(chalk.gray(`      → ${la.suggestion}`));
       }
     }
     console.log();
@@ -1007,9 +1072,16 @@ const indexStructuralClonesSubcommand = new Command("structural-clones")
   )
   .option("--db <path>", "Path to index.db")
   .option("-f, --format <format>", "Output format: text or json", "text")
+  .option(
+    "--layer-analysis",
+    "Annotate each clone group with inferred layer context (DRY vs architectural violation)",
+    false,
+  )
   .action((opts) => {
     const dbPath = resolveDbPath(opts.db);
-    const result = structuralClones(dbPath);
+    const result = structuralClones(dbPath, {
+      layerAnalysis: opts.layerAnalysis,
+    });
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));
@@ -1028,15 +1100,34 @@ const indexStructuralClonesSubcommand = new Command("structural-clones")
     );
 
     for (const group of result.cloneGroups) {
+      const la = group.layerAnalysis;
+      const layerTag = la
+        ? la.kind === "architectural"
+          ? chalk.red(
+              `  ⚠  ARCHITECTURAL VIOLATION (layers ${la.uniqueLayers.join(", ")})`,
+            )
+          : la.kind === "dry"
+            ? chalk.yellow(`  ⚠  DRY VIOLATION (layer ${la.uniqueLayers[0]})`)
+            : chalk.gray("  ·  UNKNOWN LAYER")
+        : "";
       console.log(
         chalk.cyan(
           `\n    Clone group (${group.bodyLines} lines, ${group.symbols.length} copies):`,
-        ),
+        ) + layerTag,
       );
-      for (const s of group.symbols) {
+      for (let i = 0; i < group.symbols.length; i++) {
+        const s = group.symbols[i];
+        const layerSuffix =
+          la && la.layers[i] !== undefined && la.layers[i] >= 0
+            ? chalk.gray(` [Layer ${la.layers[i]}]`)
+            : "";
         console.log(
-          chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`),
+          chalk.gray(`      ${s.kind} ${s.name} (${s.filePath}:${s.line})`) +
+            layerSuffix,
         );
+      }
+      if (la && la.kind !== "unknown") {
+        console.log(chalk.gray(`      → ${la.suggestion}`));
       }
     }
     console.log();
@@ -1844,6 +1935,665 @@ const indexRationaleSubcommand = new Command("rationale")
     console.log();
   });
 
+// ── iw index naming-violations ─────────────────────────────────
+
+const indexNamingViolationsSubcommand = new Command("naming-violations")
+  .description("List code symbols that violate naming conventions (6.1)")
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "--kind <kind>",
+    "Filter by symbol kind: function, class, method, etc.",
+  )
+  .option("--exported-only", "Only check exported symbols", false)
+  .option("-n, --limit <n>", "Maximum results", "50")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = namingViolations(dbPath, {
+      exportedOnly: opts.exportedOnly,
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    let items = result.violations;
+    if (opts.kind) {
+      items = items.filter(
+        (v) => v.kind.toLowerCase() === opts.kind.toLowerCase(),
+      );
+    }
+
+    if (items.length === 0) {
+      console.log(
+        chalk.green("\n  ✓ No naming convention violations found.\n"),
+      );
+      return;
+    }
+
+    const kindSummary = Object.entries(result.byKind)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(", ");
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.totalViolations} violation(s) (${kindSummary})`,
+      ),
+    );
+
+    const limit = parseInt(opts.limit, 10);
+    for (const v of items.slice(0, limit)) {
+      console.log(
+        `    ${chalk.red(v.kind.padEnd(12))} ${chalk.yellow(v.name.padEnd(30))} expected ${chalk.gray(v.expected)} — ${chalk.gray(v.filePath + ":" + v.line)}`,
+      );
+    }
+    if (items.length > limit) {
+      console.log(chalk.gray(`    ...and ${items.length - limit} more`));
+    }
+    console.log();
+  });
+
+// ── iw index comment-code-ratio ────────────────────────────────
+
+const indexCommentCodeRatioSubcommand = new Command("comment-code-ratio")
+  .description("Show comment-to-code ratio anomalies per file (6.4)")
+  .option("--db <path>", "Path to index.db")
+  .option("--all", "Show all files, not just anomalies")
+  .option("-n, --limit <n>", "Maximum results", "50")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = commentCodeRatio(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const items = opts.all ? result.files : result.anomalies;
+
+    if (items.length === 0) {
+      console.log(
+        chalk.green(
+          opts.all
+            ? "\n  ✓ No files with comment data found.\n"
+            : "\n  ✓ No comment-to-code ratio anomalies found.\n",
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${opts.all ? `${result.totalFiles} file(s)` : `${result.anomalies.length} anomaly(ies)`} — workspace average ratio: ${result.averageRatio.toFixed(3)}`,
+      ),
+    );
+
+    const limit = parseInt(opts.limit, 10);
+    for (const f of items.slice(0, limit)) {
+      const anomalyLabel =
+        f.anomaly === "under-commented"
+          ? chalk.yellow(" ⚠ under-commented")
+          : f.anomaly === "over-commented"
+            ? chalk.red(" ⚠ over-commented")
+            : "";
+      console.log(
+        `    ${chalk.gray(f.filePath.padEnd(50))} ratio=${f.ratio.toFixed(3)} (${f.commentLines}/${f.codeLines})${anomalyLabel}`,
+      );
+    }
+    if (items.length > limit) {
+      console.log(chalk.gray(`    ...and ${items.length - limit} more`));
+    }
+    console.log();
+  });
+
+// ── iw index skipped-files ─────────────────────────────────────
+
+const indexSkippedFilesSubcommand = new Command("skipped-files")
+  .description("List files that were skipped during AX extraction (6.5)")
+  .option("--db <path>", "Path to index.db")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = skippedFiles(dbPath);
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.totalSkipped === 0) {
+      console.log(
+        chalk.green("\n  ✓ No files were skipped during AX extraction.\n"),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.yellow(
+        `\n  ⚠ ${result.totalSkipped} file(s) skipped during AX extraction`,
+      ),
+    );
+    console.log(
+      chalk.gray("  Use --max-file-size to adjust the size threshold.\n"),
+    );
+    for (const f of result.skipped) {
+      console.log(`    ${chalk.gray(f.filePath)}`);
+      console.log(`      ${chalk.red(f.reason)}`);
+    }
+    console.log();
+  });
+
+// ── iw index rules-check ──────────────────────────────────────────────────────
+
+async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(configPath, "utf-8");
+  } catch {
+    throw new Error(
+      `Rules config not found: ${configPath}\n  Create a .iw/rules.yaml file to define architectural rules.`,
+    );
+  }
+  const parsed = yamlLoad(raw) as RulesConfig;
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`Invalid rules config: ${configPath}`);
+  }
+  if (!Array.isArray(parsed.rules)) {
+    throw new Error(`rules.yaml must have a top-level 'rules' array.`);
+  }
+  return parsed;
+}
+
+const SEVERITY_COLOR: Record<string, (s: string) => string> = {
+  high: chalk.red,
+  medium: chalk.yellow,
+  low: chalk.gray,
+};
+
+const indexRulesCheckSubcommand = new Command("rules-check")
+  .description(
+    "Check codebase against semantic architectural rules from .iw/rules.yaml (13.2/13.3)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option("--config <path>", "Path to rules.yaml", ".iw/rules.yaml")
+  .option(
+    "--severity <level>",
+    "Minimum severity to report: high | medium | low",
+    "low",
+  )
+  .option("--rule-id <id>", "Only check a specific rule by ID")
+  .option(
+    "--changed <files>",
+    "Comma-separated list of changed files (incremental CI mode; 13.3)",
+  )
+  .option("-n, --limit <n>", "Maximum violations to report", "100")
+  .option("-f, --format <format>", "Output format: text | json", "text")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const configPath = path.resolve(opts.config);
+
+    let config: RulesConfig;
+    try {
+      config = await loadRulesConfig(configPath);
+    } catch (err: any) {
+      console.error(chalk.red(`\n  ✗ ${err.message}\n`));
+      process.exitCode = 2;
+      return;
+    }
+
+    const changed = opts.changed
+      ? opts.changed
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : undefined;
+
+    const result = rulesCheck(dbPath, config, {
+      severity: opts.severity as "high" | "medium" | "low",
+      ruleId: opts.ruleId,
+      changed,
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      if (result.totalViolations > 0) process.exitCode = 1;
+      return;
+    }
+
+    if (result.violations.length === 0) {
+      const scope = changed ? ` (${changed.length} changed file(s))` : "";
+      console.log(
+        chalk.green(
+          `\n  ✓ No semantic rule violations found${scope}. (${result.rulesChecked} rule(s) checked)\n`,
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.red(`\n  ✗ ${result.totalViolations} semantic rule violation(s)\n`),
+    );
+
+    // Group by ruleId
+    const grouped = new Map<string, typeof result.violations>();
+    for (const v of result.violations) {
+      const arr = grouped.get(v.ruleId) ?? [];
+      arr.push(v);
+      grouped.set(v.ruleId, arr);
+    }
+
+    for (const [ruleId, violations] of grouped) {
+      const first = violations[0];
+      const sev = first.ruleSeverity.toUpperCase();
+      const colorFn = SEVERITY_COLOR[first.ruleSeverity] ?? chalk.white;
+      const adrStr = first.adr ? ` (${first.adr})` : "";
+      console.log(colorFn(`  Rule: ${ruleId}${adrStr} [${sev}]`));
+      if (first.ruleDescription) {
+        console.log(chalk.gray(`  ${first.ruleDescription}`));
+      }
+      console.log(chalk.gray("  " + "─".repeat(60)));
+
+      for (const v of violations) {
+        const loc = v.line != null ? `:${v.line}` : "";
+        console.log(
+          `  ${chalk.cyan(v.filePath + loc).padEnd(55)} ${chalk.white(v.detail)}`,
+        );
+      }
+      console.log();
+    }
+
+    if (result.totalViolations > result.violations.length) {
+      console.log(
+        chalk.gray(
+          `  ...showing ${result.violations.length} of ${result.totalViolations} total violations. Increase --limit to see more.\n`,
+        ),
+      );
+    }
+
+    process.exitCode = 1;
+  });
+
+// ── iw index deprecated-callers ─────────────────────────────────
+
+const indexDeprecatedCallersSubcommand = new Command("deprecated-callers")
+  .description("Find active callers of @deprecated symbols (14.1)")
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "--changed <files>",
+    "Comma-separated list of changed files (incremental CI mode)",
+  )
+  .option("-n, --limit <n>", "Maximum caller entries to report", "200")
+  .option("-f, --format <format>", "Output format: text | json", "text")
+  .option("--fail-on-any", "Exit with code 1 if any callers found (CI gate)")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const changed = opts.changed
+      ? opts.changed
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : undefined;
+
+    const result = deprecatedCallers(dbPath, {
+      changed,
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      if (opts.failOnAny && result.totalCallers > 0) process.exitCode = 1;
+      return;
+    }
+
+    if (result.callers.length === 0) {
+      const scope = changed ? ` (${changed.length} file(s) checked)` : "";
+      console.log(
+        chalk.green(
+          `\n  ✓ No active callers of @deprecated symbols${scope}. (${result.deprecatedSymbols} deprecated symbol(s) indexed)\n`,
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.yellow(
+        `\n  ⚠ ${result.totalCallers} caller(s) of ${result.symbolsWithCallers} @deprecated symbol(s):\n`,
+      ),
+    );
+
+    for (const sym of result.callers) {
+      const note = sym.deprecatedNote
+        ? chalk.gray(` — ${sym.deprecatedNote}`)
+        : "";
+      console.log(
+        chalk.bold(`  ${sym.symbolName}`) + chalk.gray(` [deprecated]`) + note,
+      );
+      console.log(
+        chalk.gray(`    Defined in: ${sym.symbolFile}:${sym.symbolLine}`),
+      );
+      console.log(chalk.gray("    Called from:"));
+      for (const caller of sym.callers) {
+        const loc = caller.callerLine != null ? `:${caller.callerLine}` : "";
+        const fn = caller.callerName ? ` (in ${caller.callerName})` : "";
+        console.log(
+          `      ${chalk.cyan(caller.callerFile + loc)}${chalk.gray(fn)}`,
+        );
+      }
+      console.log();
+    }
+
+    if (opts.failOnAny) process.exitCode = 1;
+  });
+
+// ── iw index internal-violations ────────────────────────────────
+
+const indexInternalViolationsSubcommand = new Command("internal-violations")
+  .description(
+    "Detect @internal / _prefix symbols imported across package boundaries (14.2)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "--changed <files>",
+    "Comma-separated list of changed files (incremental CI mode)",
+  )
+  .option("--no-jsdoc", "Skip @internal JSDoc enforcement")
+  .option("--no-underscore", "Skip _prefix convention enforcement")
+  .option("-n, --limit <n>", "Maximum violations to report", "200")
+  .option("-f, --format <format>", "Output format: text | json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const changed = opts.changed
+      ? opts.changed
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : undefined;
+
+    const result = internalViolations(dbPath, {
+      checkJsDoc: opts.jsdoc !== false,
+      checkUnderscore: opts.underscore !== false,
+      changed,
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      if (result.totalViolations > 0) process.exitCode = 1;
+      return;
+    }
+
+    if (result.violations.length === 0) {
+      const scope = changed ? ` (${changed.length} file(s) checked)` : "";
+      console.log(
+        chalk.green(
+          `\n  ✓ No @internal / _prefix boundary violations${scope}.\n`,
+        ),
+      );
+      return;
+    }
+
+    const jsdocCount = result.byMarker.jsdoc;
+    const underscoreCount = result.byMarker.underscore;
+    const summary = [
+      jsdocCount > 0 ? `${jsdocCount} @internal` : null,
+      underscoreCount > 0 ? `${underscoreCount} _prefix` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    console.log(
+      chalk.red(
+        `\n  ✗ ${result.totalViolations} boundary violation(s) [${summary}]:\n`,
+      ),
+    );
+
+    for (const v of result.violations) {
+      const tag =
+        v.marker === "jsdoc"
+          ? chalk.yellow("@internal")
+          : chalk.yellow("_prefix");
+      console.log(
+        `  ${chalk.bold(v.symbolName)} ${tag}  ${chalk.gray(`(${v.symbolFile}:${v.symbolLine})`)}`,
+      );
+      console.log(
+        `    ${chalk.gray("imported by:")} ${chalk.cyan(v.importerFile)}`,
+      );
+      console.log(
+        chalk.gray(`    packages: ${v.symbolPackage} → ${v.importerPackage}`),
+      );
+      console.log();
+    }
+
+    process.exitCode = 1;
+  });
+
+// ── iw index type-assertions ─────────────────────────────────
+
+const indexTypeAssertionsSubcommand = new Command("type-assertions")
+  .description(
+    "Inventory type assertion patterns: `as any`, double casts, and angle-bracket casts (14.3)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "--kind <kind>",
+    "Filter by kind: as_any | double_cast | angle_cast | as_cast",
+  )
+  .option("--risk-sort", "Sort by file fan-in (highest risk first)")
+  .option("-n, --limit <n>", "Maximum results", "100")
+  .option("-f, --format <format>", "Output format: text | json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = typeAssertions(dbPath, {
+      kind: opts.kind as
+        | "as_any"
+        | "double_cast"
+        | "angle_cast"
+        | "as_cast"
+        | undefined,
+      riskSort: opts.riskSort ?? false,
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.total === 0) {
+      console.log(chalk.green("\n  ✓ No type assertions found.\n"));
+      return;
+    }
+
+    const kindLabel = (k: string): string => {
+      if (k === "as_any") return chalk.red("as any");
+      if (k === "double_cast") return chalk.yellow("double cast");
+      if (k === "angle_cast") return chalk.yellow("angle cast");
+      return chalk.gray("as cast");
+    };
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ ${result.total} type assertion(s) found  ` +
+          `[as_any: ${result.byKind.as_any}  double: ${result.byKind.double_cast}  angle: ${result.byKind.angle_cast}  cast: ${result.byKind.as_cast}]`,
+      ),
+    );
+
+    if (result.highRisk.length > 0) {
+      console.log(
+        chalk.red(
+          `\n  High-risk (high fan-in files): ${result.highRisk.length}\n`,
+        ),
+      );
+    }
+
+    let lastFile = "";
+    for (const a of result.assertions) {
+      if (a.file !== lastFile) {
+        console.log(chalk.cyan(`\n  ${a.file}`));
+        lastFile = a.file;
+      }
+      const ctx = a.context ? chalk.gray(` in ${a.context}`) : "";
+      const type = a.targetType ? chalk.gray(` → ${a.targetType}`) : "";
+      const risk = (a.fanIn ?? 0) >= 5 ? chalk.red(" ★") : "";
+      console.log(
+        `    ${String(a.line).padStart(4)}  ${kindLabel(a.kind)}${type}${ctx}${risk}`,
+      );
+    }
+    console.log();
+  });
+
+// ── iw index test-intent ────────────────────────────────────────
+
+const indexTestIntentSubcommand = new Command("test-intent")
+  .description("Find stale test descriptions and orphaned test files (14.6)")
+  .option("--db <path>", "Path to index.db")
+  .option("-n, --limit <n>", "Maximum results", "50")
+  .option("-f, --format <format>", "Output format: text | json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = testIntent(dbPath, {
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.staleCount === 0 && result.orphanedFiles.length === 0) {
+      console.log(
+        chalk.green(
+          "\n  ✓ No stale test descriptions or orphaned files found.\n",
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ ${result.total} test description(s) analyzed`),
+    );
+
+    if (result.staleCount > 0) {
+      console.log(
+        chalk.yellow(`\n  Stale test descriptions (${result.staleCount}):\n`),
+      );
+
+      let lastFile = "";
+      for (const test of result.staleTests) {
+        if (test.file !== lastFile) {
+          console.log(chalk.cyan(`  ${test.file}`));
+          lastFile = test.file;
+        }
+        const kindLabel =
+          test.kind === "describe"
+            ? chalk.blue("describe")
+            : test.kind === "it"
+              ? chalk.cyan("it")
+              : chalk.green("test");
+        console.log(
+          `    ${String(test.line).padStart(4)}  ${kindLabel}  "${test.description}"`,
+        );
+        console.log(
+          `           ✗ missing symbol: ${chalk.red(test.missingSymbol)}`,
+        );
+      }
+    }
+
+    if (result.orphanedFiles.length > 0) {
+      console.log(
+        chalk.red(
+          `\n  Orphaned test files (${result.orphanedFiles.length}):\n`,
+        ),
+      );
+      for (const file of result.orphanedFiles) {
+        console.log(`    ${file}`);
+      }
+    }
+
+    console.log();
+  });
+
+// ── iw index rules-trend ─────────────────────────────────────
+
+const indexRulesTrendSubcommand = new Command("rules-trend")
+  .description("Show ADR conformance trend from historical snapshots (14.5)")
+  .option("--db <path>", "Path to index.db")
+  .option("--days <n>", "Time window in days", "30")
+  .option("--rule-id <id>", "Filter to a specific rule id")
+  .option("-f, --format <format>", "Output format: text | json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = rulesTrend(dbPath, {
+      days: parseInt(opts.days, 10),
+      ruleId: opts.ruleId,
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.rules.length === 0) {
+      console.log(
+        chalk.gray(
+          `\n  No conformance snapshots found in the last ${result.days} days.\n` +
+            `  Snapshots are recorded automatically after each \`iw index build\`.\n`,
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.blue(`\n  ▸ ADR conformance trend (last ${result.days} days)\n`),
+    );
+
+    for (const rule of result.rules) {
+      const trendIcon =
+        rule.trend === "improving"
+          ? chalk.green("↑")
+          : rule.trend === "worsening"
+            ? chalk.red("↓")
+            : rule.trend === "stable"
+              ? chalk.gray("→")
+              : chalk.gray("?");
+
+      const adr = rule.adr ? chalk.gray(` [${rule.adr}]`) : "";
+      console.log(
+        `  ${trendIcon} ${chalk.bold(rule.ruleId)}${adr}  ${chalk.gray(`(${rule.snapshots.length} snapshot(s))`)}`,
+      );
+
+      const last = rule.snapshots[rule.snapshots.length - 1];
+      if (last) {
+        const pct = last.conformancePct.toFixed(1);
+        const viol = last.violationCount;
+        const date = new Date(last.timestamp).toLocaleDateString();
+        console.log(
+          chalk.gray(
+            `      Latest (${date}): ${pct}% conformance  ${viol} violation(s)`,
+          ),
+        );
+      }
+
+      // ASCII trend bars (last 7 snapshots)
+      const recent = rule.snapshots.slice(-7);
+      if (recent.length > 1) {
+        const bars = recent.map((s) => {
+          const pct = s.conformancePct;
+          const bar = pct >= 90 ? "█" : pct >= 70 ? "▆" : pct >= 50 ? "▄" : "▂";
+          return pct >= 90
+            ? chalk.green(bar)
+            : pct >= 70
+              ? chalk.yellow(bar)
+              : chalk.red(bar);
+        });
+        console.log(`      ${bars.join("")}`);
+      }
+      console.log();
+    }
+  });
+
 // ── iw index terminology ──────────────────────────────────────
 
 const indexTerminologySubcommand = new Command("terminology")
@@ -2036,8 +2786,77 @@ const indexLayersInferSubcommand = new Command("layers-infer")
     "Minimum files for a package to get sub-layers (hierarchical mode)",
     "10",
   )
+  .option(
+    "--from-decorators",
+    "Use decorator metadata instead of import graph (14.4)",
+  )
+  .option(
+    "--preset <preset>",
+    "Decorator preset when --from-decorators is used: nestjs | angular | spring",
+    "nestjs",
+  )
+  .option(
+    "--write",
+    "Write inferred layers to .iw/layers.yaml (--from-decorators mode)",
+  )
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
+
+    // ── from-decorators mode (14.4) ──
+    if (opts.fromDecorators) {
+      const result = layersFromDecorators(dbPath, {
+        preset: opts.preset as "nestjs" | "angular" | "spring",
+        writeYaml: opts.write,
+        workspaceRoot: process.cwd(),
+      });
+
+      if (opts.format === "json") {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (result.assignments.length === 0) {
+        console.log(
+          chalk.gray(
+            `\n  No decorated symbols found. Make sure the index was built after adding decorator support.\n`,
+          ),
+        );
+        return;
+      }
+
+      console.log(
+        chalk.blue(
+          `\n  ▸ Decorator-derived layers (preset: ${result.preset})  —  ${result.totalSymbols} symbol(s)\n`,
+        ),
+      );
+
+      for (const [layerNum, layerDef] of Object.entries(result.layers)) {
+        console.log(
+          chalk.cyan(
+            `  Layer ${layerNum}: ${layerDef.name}  (${layerDef.files.length} file(s))`,
+          ),
+        );
+        const decoratorList = layerDef.decorators
+          .slice(0, 6)
+          .map((d) => `@${d}`)
+          .join(", ");
+        console.log(chalk.gray(`    decorators: ${decoratorList}`));
+        for (const f of layerDef.files.slice(0, 6)) {
+          console.log(chalk.gray(`    ${f}`));
+        }
+        if (layerDef.files.length > 6) {
+          console.log(
+            chalk.gray(`    … and ${layerDef.files.length - 6} more`),
+          );
+        }
+      }
+
+      if (opts.write) {
+        console.log(chalk.green(`\n  ✓ Wrote .iw/layers.yaml\n`));
+      }
+      return;
+    }
+
     const options = {
       hierarchical: opts.hierarchical ?? false,
       scope: opts.scope,
@@ -2393,12 +3212,56 @@ const indexArchCheckSubcommand = new Command("arch-check")
     false,
   )
   .option("-f, --format <format>", "Output format: text or json", "text")
+  .addHelpText(
+    "after",
+    `
+Architecture YAML schema example (.iw/architecture.yaml):
+  components:
+    - name: API
+      description: HTTP entry-point layer
+      files:
+        - "src/routes/**"
+        - "src/controllers/**"
+    - name: Services
+      description: Business logic
+      files:
+        - "src/services/**"
+    - name: Data
+      description: Database access layer
+      files:
+        - "src/repositories/**"
+        - "src/models/**"
+  flows:
+    - from: API
+      to: Services
+    - from: Services
+      to: Data
+
+Notes:
+  - Use --from-scan <paths> to auto-generate config from Mermaid/ASCII diagrams (requires --provider openai).
+  - Use --from-diagrams to infer config from previously enriched diagram triples.
+  - Omit --config to auto-discover .iw/architecture.yaml in the current directory.
+`,
+  )
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
     let config: ArchConfig | null = null;
 
     // ── Priority 1: --from-scan — scan diagrams via LLM directly ────────────
     if (opts.fromScan !== undefined) {
+      // 5.10: smart-mock cannot interpret diagram content — fail early with a clear message
+      if (opts.provider === "smart-mock") {
+        console.error(
+          chalk.red(
+            "\n  ✗ arch-check --from-scan requires a real LLM provider.\n" +
+              "    smart-mock cannot interpret diagram content.\n" +
+              "    Configure a provider: --provider openai\n",
+          ),
+        );
+        process.exitCode = 2;
+        return;
+      }
+
       const scanPaths: string[] =
         Array.isArray(opts.fromScan) && opts.fromScan.length > 0
           ? opts.fromScan
@@ -3363,6 +4226,15 @@ export const indexCommand = new Command("index")
   .addCommand(indexSurprisesSubcommand)
   .addCommand(indexRationaleSubcommand)
   .addCommand(indexTerminologySubcommand)
+  .addCommand(indexNamingViolationsSubcommand)
+  .addCommand(indexCommentCodeRatioSubcommand)
+  .addCommand(indexSkippedFilesSubcommand)
+  .addCommand(indexRulesCheckSubcommand)
+  .addCommand(indexDeprecatedCallersSubcommand)
+  .addCommand(indexInternalViolationsSubcommand)
+  .addCommand(indexTypeAssertionsSubcommand)
+  .addCommand(indexTestIntentSubcommand)
+  .addCommand(indexRulesTrendSubcommand)
   .addCommand(indexDepDepthSubcommand)
   .addCommand(indexBoundaryViolationsSubcommand)
   .addCommand(indexLayersInferSubcommand)
@@ -3376,6 +4248,7 @@ export const indexCommand = new Command("index")
   .addCommand(indexImpactSubcommand)
   .addCommand(indexExportSubcommand)
   .addCommand(indexEnrichSubcommand)
+  .addCommand(indexRulesExtractSubcommand)
   .addCommand(indexScanDiagramsSubcommand);
 
 // ── LLM narrative generation for --explain ──────────────────────

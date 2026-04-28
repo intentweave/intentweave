@@ -444,14 +444,20 @@ function parseLayersYamlForMcp(content: string): {
   return { layers };
 }
 
-function handleCariError(err: { message?: string }): string {
+function handleCariError(err: unknown): string {
   if (
-    err.message?.includes("SQLITE_CANTOPEN") ||
-    err.message?.includes("does not exist")
+    typeof err === "object" &&
+    err !== null &&
+    "message" in err &&
+    typeof (err as any).message === "string"
   ) {
-    return "CARI index not found. Run `iw index build` first to create .iw/index.db.";
+    const msg = (err as any).message;
+    if (msg.includes("SQLITE_CANTOPEN") || msg.includes("does not exist")) {
+      return "CARI index not found. Run `iw index build` first to create .iw/index.db.";
+    }
+    return `Error: ${msg}`;
   }
-  return `Error: ${err.message}`;
+  return `Error: ${String(err)}`;
 }
 
 // =============================================================================
@@ -789,7 +795,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -898,7 +904,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -952,7 +958,7 @@ Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
         const body = formatCheck(result, "text");
         return { content: [{ type: "text", text: header + body }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -964,13 +970,20 @@ Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
     `Detect exact code clones (Type 1). Finds functions/methods with identical normalised bodies (same body hash). Returns clone groups with file locations.
 
 No LLM or Neo4j needed — queries a local SQLite index.`,
-    {},
-    async () => {
+    {
+      layerAnalysis: z
+        .boolean()
+        .optional()
+        .describe(
+          "Annotate each clone group with inferred layer context, classifying groups as DRY violations (within-layer) or architectural violations (cross-layer reimplementations). Default: false.",
+        ),
+    },
+    async (args) => {
       log("cari_clones");
       try {
         const { clones } = await loadIndex();
         const dbPath = resolveIndexDb();
-        const result = clones(dbPath);
+        const result = clones(dbPath, { layerAnalysis: args.layerAnalysis });
 
         if (result.totalCloneGroups === 0) {
           return {
@@ -986,21 +999,39 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         ];
 
         for (const group of result.cloneGroups) {
+          const la = group.layerAnalysis;
+          const layerBadge = la
+            ? la.kind === "architectural"
+              ? ` 🔴 ARCHITECTURAL VIOLATION (layers ${la.uniqueLayers.join(", ")})`
+              : la.kind === "dry"
+                ? ` 🟡 DRY VIOLATION (layer ${la.uniqueLayers[0]})`
+                : ""
+            : "";
           lines.push(
-            `### Clone group (${group.bodyLines} lines, ${group.symbols.length} copies)`,
+            `### Clone group (${group.bodyLines} lines, ${group.symbols.length} copies)${layerBadge}`,
             "",
-            "| Symbol | File | Line | Kind |",
-            "|--------|------|------|------|",
+            "| Symbol | File | Line | Kind | Layer |",
+            "|--------|------|------|------|-------|",
           );
-          for (const s of group.symbols) {
-            lines.push(`| ${s.name} | ${s.filePath} | ${s.line} | ${s.kind} |`);
+          for (let i = 0; i < group.symbols.length; i++) {
+            const s = group.symbols[i];
+            const layerCell =
+              la && la.layers[i] !== undefined && la.layers[i] >= 0
+                ? String(la.layers[i])
+                : "—";
+            lines.push(
+              `| ${s.name} | ${s.filePath} | ${s.line} | ${s.kind} | ${layerCell} |`,
+            );
+          }
+          if (la && la.suggestion) {
+            lines.push("", `> ${la.suggestion}`);
           }
           lines.push("");
         }
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1012,13 +1043,22 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     `Detect structural code clones (Type 2). Finds functions/methods with the same control-flow structure but different identifiers or literals. Excludes groups that are already exact clones.
 
 No LLM or Neo4j needed — queries a local SQLite index.`,
-    {},
-    async () => {
+    {
+      layerAnalysis: z
+        .boolean()
+        .optional()
+        .describe(
+          "Annotate each clone group with inferred layer context, classifying groups as DRY violations (within-layer) or architectural violations (cross-layer reimplementations). Default: false.",
+        ),
+    },
+    async (args) => {
       log("cari_structural_clones");
       try {
         const { structuralClones } = await loadIndex();
         const dbPath = resolveIndexDb();
-        const result = structuralClones(dbPath);
+        const result = structuralClones(dbPath, {
+          layerAnalysis: args.layerAnalysis,
+        });
 
         if (result.totalCloneGroups === 0) {
           return {
@@ -1037,21 +1077,39 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         ];
 
         for (const group of result.cloneGroups) {
+          const la = group.layerAnalysis;
+          const layerBadge = la
+            ? la.kind === "architectural"
+              ? ` 🔴 ARCHITECTURAL VIOLATION (layers ${la.uniqueLayers.join(", ")})`
+              : la.kind === "dry"
+                ? ` 🟡 DRY VIOLATION (layer ${la.uniqueLayers[0]})`
+                : ""
+            : "";
           lines.push(
-            `### Clone group (${group.bodyLines} lines, ${group.symbols.length} copies)`,
+            `### Clone group (${group.bodyLines} lines, ${group.symbols.length} copies)${layerBadge}`,
             "",
-            "| Symbol | File | Line | Kind |",
-            "|--------|------|------|------|",
+            "| Symbol | File | Line | Kind | Layer |",
+            "|--------|------|------|------|-------|",
           );
-          for (const s of group.symbols) {
-            lines.push(`| ${s.name} | ${s.filePath} | ${s.line} | ${s.kind} |`);
+          for (let i = 0; i < group.symbols.length; i++) {
+            const s = group.symbols[i];
+            const layerCell =
+              la && la.layers[i] !== undefined && la.layers[i] >= 0
+                ? String(la.layers[i])
+                : "—";
+            lines.push(
+              `| ${s.name} | ${s.filePath} | ${s.line} | ${s.kind} | ${layerCell} |`,
+            );
+          }
+          if (la && la.suggestion) {
+            lines.push("", `> ${la.suggestion}`);
           }
           lines.push("");
         }
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1095,7 +1153,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1152,7 +1210,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1203,7 +1261,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1277,7 +1335,752 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_naming_violations ────────────────────────────────
+  server.tool(
+    "cari_naming_violations",
+    `List code symbols that violate standard naming conventions (camelCase for functions/methods, PascalCase for classes/interfaces/types, UPPER_SNAKE for constants). Skips $-prefixed names (JSON Schema convention), snake_case properties (external data/DB convention), and quoted names.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      kind: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by symbol kind: function, class, method, type, interface, etc.",
+        ),
+      exportedOnly: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Only check exported symbols (reduces noise from internal helpers)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(
+        `cari_naming_violations: kind=${args.kind ?? "all"} exportedOnly=${args.exportedOnly} limit=${args.limit}`,
+      );
+      try {
+        const { namingViolations } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = namingViolations(dbPath, {
+          exportedOnly: args.exportedOnly,
+        });
+
+        let items = result.violations;
+        if (args.kind) {
+          items = items.filter(
+            (v) => v.kind.toLowerCase() === args.kind!.toLowerCase(),
+          );
+        }
+        const limited = items.slice(0, args.limit ?? 50);
+
+        if (limited.length === 0) {
+          return {
+            content: [
+              { type: "text", text: "No naming convention violations found." },
+            ],
+          };
+        }
+
+        const kindSummary = Object.entries(result.byKind)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(", ");
+
+        const lines = [
+          `## Naming Violations — ${result.totalViolations} total (${kindSummary})`,
+          "",
+          "| Kind | Name | Expected | File | Line |",
+          "|------|------|----------|------|------|",
+          ...limited.map(
+            (v) =>
+              `| ${v.kind} | \`${v.name}\` | ${v.expected} | ${v.filePath} | ${v.line} |`,
+          ),
+        ];
+
+        if (items.length > limited.length) {
+          lines.push(
+            "",
+            `_Showing ${limited.length} of ${items.length}. Increase limit to see more._`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_comment_code_ratio ───────────────────────────────
+  server.tool(
+    "cari_comment_code_ratio",
+    `Show comment-to-code ratio anomalies for indexed source files. Flags under-commented files (ratio far below workspace average) and over-commented files.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      showAll: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("If true, return all files instead of just anomalies"),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(
+        `cari_comment_code_ratio: showAll=${args.showAll} limit=${args.limit}`,
+      );
+      try {
+        const { commentCodeRatio } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = commentCodeRatio(dbPath);
+
+        const items = (args.showAll ? result.files : result.anomalies).slice(
+          0,
+          args.limit ?? 50,
+        );
+
+        if (items.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: args.showAll
+                  ? "No files with comment data found."
+                  : "No comment-to-code ratio anomalies found.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Comment-to-Code Ratio — ${args.showAll ? `${result.totalFiles} files` : `${result.anomalies.length} anomalies`} (avg: ${result.averageRatio.toFixed(3)})`,
+          "",
+          "| File | Comments | Code | Ratio | Status |",
+          "|------|----------|------|-------|--------|",
+          ...items.map(
+            (f) =>
+              `| ${f.filePath} | ${f.commentLines} | ${f.codeLines} | ${f.ratio.toFixed(3)} | ${f.anomaly ?? "ok"} |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_skipped_files ────────────────────────────────────
+  server.tool(
+    "cari_skipped_files",
+    `List source files that were skipped during AX extraction, typically because they exceeded the --max-file-size threshold. These files have no extracted symbols in the index.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {},
+    async () => {
+      log("cari_skipped_files");
+      try {
+        const { skippedFiles } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = skippedFiles(dbPath);
+
+        if (result.totalSkipped === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No files were skipped during AX extraction.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Skipped Files — ${result.totalSkipped} file(s) skipped`,
+          "",
+          "_These files were not indexed. Use `iw index build --max-file-size` to adjust the threshold._",
+          "",
+          "| File | Reason |",
+          "|------|--------|",
+          ...result.skipped.map((f) => `| ${f.filePath} | ${f.reason} |`),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_rules_check ───────────────────────────────────────
+  server.tool(
+    "cari_rules_check",
+    `Check the codebase against semantic architectural rules from .iw/rules.yaml (13.2/13.3).
+
+Detects violations of custom architectural constraints — property access patterns (e.g. entity.source.path), forbidden function calls, symbol naming patterns, and import patterns.
+
+Rules are defined in a .iw/rules.yaml file committed to the workspace. Each rule references an ADR and specifies which patterns are forbidden in which files.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      severity: z
+        .enum(["high", "medium", "low"])
+        .optional()
+        .default("low")
+        .describe("Minimum severity to report (default: low = all violations)"),
+      ruleId: z
+        .string()
+        .optional()
+        .describe("Check only this specific rule ID"),
+      changed: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Only check violations in these changed files (incremental CI mode)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum violations to return"),
+    },
+    async (args) => {
+      log(
+        `cari_rules_check: severity=${args.severity} ruleId=${args.ruleId ?? "all"} changed=${args.changed?.length ?? 0} files`,
+      );
+      try {
+        const { rulesCheck } = await loadIndex();
+        const { load: yamlLoadMcp } = await import("js-yaml");
+        const { readFile } = await import("node:fs/promises");
+        const dbPath = resolveIndexDb();
+
+        const configPath = path.join(process.cwd(), ".iw", "rules.yaml");
+        let rawYaml: string;
+        try {
+          rawYaml = await readFile(configPath, "utf-8");
+        } catch {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No .iw/rules.yaml found at ${configPath}.\n\nCreate this file to define architectural rules. See IntentWeave SEMANTIC-RULES-SPEC.md for the format.`,
+              },
+            ],
+          };
+        }
+
+        const config = yamlLoadMcp(
+          rawYaml,
+        ) as import("@intentweave/index").RulesConfig;
+        if (!config || !Array.isArray(config.rules)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Invalid rules.yaml format — must have a top-level `rules` array.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const result = rulesCheck(dbPath, config, {
+          severity: args.severity as "high" | "medium" | "low",
+          ruleId: args.ruleId,
+          changed: args.changed,
+          limit: args.limit ?? 50,
+        });
+
+        if (result.violations.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No semantic rule violations found. (${result.rulesChecked} rule(s) checked)`,
+              },
+            ],
+          };
+        }
+
+        const severityCounts = Object.entries(result.bySeverity)
+          .filter(([, n]) => n > 0)
+          .map(([sev, n]) => `${sev}: ${n}`)
+          .join(", ");
+
+        const lines = [
+          `## Semantic Rule Violations — ${result.totalViolations} total (${severityCounts})`,
+          "",
+          "| Rule | Severity | File | Line | Detail |",
+          "|------|----------|------|------|--------|",
+          ...result.violations.map(
+            (v) =>
+              `| ${v.ruleId} | ${v.ruleSeverity} | ${v.filePath} | ${v.line ?? "—"} | ${v.detail} |`,
+          ),
+        ];
+
+        if (result.totalViolations > result.violations.length) {
+          lines.push(
+            "",
+            `_Showing ${result.violations.length} of ${result.totalViolations} violations._`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_deprecated_callers ────────────────────────────────
+  server.tool(
+    "cari_deprecated_callers",
+    `Find active callers of @deprecated symbols (14.1).
+
+Cross-references symbols marked @deprecated (in JSDoc) against all function call records to surface files that still use symbols that should be migrated. Use for CI enforcement or migration planning.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      changed: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Only check callers in these changed files (incremental CI mode)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum caller entries to return"),
+    },
+    async (args) => {
+      log(
+        `cari_deprecated_callers: changed=${args.changed?.length ?? 0} files`,
+      );
+      try {
+        const { deprecatedCallers } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = deprecatedCallers(dbPath, {
+          changed: args.changed,
+          limit: args.limit ?? 50,
+        });
+
+        if (result.callers.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No active callers of @deprecated symbols. (${result.deprecatedSymbols} deprecated symbol(s) indexed)`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## @deprecated Callers — ${result.totalCallers} caller(s) of ${result.symbolsWithCallers} deprecated symbol(s)`,
+          "",
+        ];
+
+        for (const sym of result.callers) {
+          const note = sym.deprecatedNote ? ` — _${sym.deprecatedNote}_` : "";
+          lines.push(`### \`${sym.symbolName}\` [deprecated]${note}`);
+          lines.push(`_Defined in: ${sym.symbolFile}:${sym.symbolLine}_`);
+          lines.push("");
+          lines.push("| Caller File | Line | Caller Function |");
+          lines.push("|-------------|------|-----------------|");
+          for (const c of sym.callers) {
+            lines.push(
+              `| ${c.callerFile} | ${c.callerLine ?? "—"} | ${c.callerName ?? "—"} |`,
+            );
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_internal_violations ───────────────────────────────
+  server.tool(
+    "cari_internal_violations",
+    `Detect @internal / _prefix symbols imported across package boundaries (14.2).
+
+Enforces visibility conventions at scale: symbols tagged @internal in JSDoc or named with a leading underscore are flagged when imported by files in different packages.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      checkJsDoc: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Enforce @internal JSDoc tag violations"),
+      checkUnderscore: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Enforce _prefix convention violations"),
+      changed: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Only check violations in these changed files (incremental CI mode)",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum violations to return"),
+    },
+    async (args) => {
+      log(
+        `cari_internal_violations: changed=${args.changed?.length ?? 0} files`,
+      );
+      try {
+        const { internalViolations } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = internalViolations(dbPath, {
+          checkJsDoc: args.checkJsDoc ?? true,
+          checkUnderscore: args.checkUnderscore ?? true,
+          changed: args.changed,
+          limit: args.limit ?? 50,
+        });
+
+        if (result.violations.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No @internal / _prefix boundary violations found.",
+              },
+            ],
+          };
+        }
+
+        const jsdocCount = result.byMarker.jsdoc;
+        const underscoreCount = result.byMarker.underscore;
+        const summary = [
+          jsdocCount > 0 ? `${jsdocCount} @internal` : null,
+          underscoreCount > 0 ? `${underscoreCount} _prefix` : null,
+        ]
+          .filter(Boolean)
+          .join(", ");
+
+        const lines = [
+          `## Internal Violations — ${result.totalViolations} violation(s) [${summary}]`,
+          "",
+          "| Symbol | Marker | Symbol File | Importer File | Packages |",
+          "|--------|--------|-------------|---------------|----------|",
+          ...result.violations.map(
+            (v) =>
+              `| \`${v.symbolName}\` | ${v.marker} | ${v.symbolFile}:${v.symbolLine} | ${v.importerFile} | ${v.symbolPackage} → ${v.importerPackage} |`,
+          ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_type_assertions ──────────────────────────────────
+  server.tool(
+    "cari_type_assertions",
+    `Inventory type assertion patterns: \`as any\`, double casts, and angle-bracket casts in the codebase.
+
+Use this to find type-safety escape hatches and rank them by risk (files with high fan-in are higher risk).
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      kind: z
+        .enum(["as_any", "double_cast", "angle_cast", "as_cast"])
+        .optional()
+        .describe("Filter by assertion kind"),
+      riskSort: z
+        .boolean()
+        .optional()
+        .describe("Sort by file fan-in (highest risk first)"),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Max results (default 100)"),
+    },
+    async (args) => {
+      log(`cari_type_assertions: kind=${args.kind ?? "all"}`);
+      try {
+        const { typeAssertions } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = typeAssertions(dbPath, {
+          kind: args.kind,
+          riskSort: args.riskSort ?? false,
+          limit: args.limit ?? 100,
+        });
+
+        if (result.total === 0) {
+          return {
+            content: [{ type: "text", text: "No type assertions found." }],
+          };
+        }
+
+        const kindSummary = Object.entries(result.byKind)
+          .filter(([, n]) => n > 0)
+          .map(([k, n]) => `${k}: ${n}`)
+          .join("  ");
+
+        const lines = [
+          `## Type Assertions — ${result.total} total  [${kindSummary}]`,
+          result.highRisk.length > 0
+            ? `\n⚠️ High-risk (high fan-in): ${result.highRisk.length}`
+            : "",
+          "",
+          "| File | Line | Kind | Target Type | Context | Fan-in |",
+          "|------|------|------|-------------|---------|--------|",
+          ...result.assertions
+            .slice(0, args.limit ?? 100)
+            .map(
+              (a) =>
+                `| ${a.file} | ${a.line} | \`${a.kind}\` | ${a.targetType ?? ""} | ${a.context ?? ""} | ${a.fanIn ?? 0} |`,
+            ),
+        ];
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_test_intent ──────────────────────────────────────
+  server.tool(
+    "cari_test_intent",
+    `Find stale test descriptions and orphaned test files by checking if test description mentions correspond to code symbols.
+
+Scans all test descriptions (from describe/it/test blocks) and identifies:
+- **Stale tests**: descriptions mention symbols that no longer exist in the codebase
+- **Orphaned files**: test files with zero matches to any code symbol
+
+Useful for finding outdated tests that may need cleanup or updating.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Max results (default 50)"),
+    },
+    async (args) => {
+      log(`cari_test_intent: limit=${args.limit ?? 50}`);
+      try {
+        const { testIntent } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = testIntent(dbPath, {
+          limit: args.limit ?? 50,
+        });
+
+        if (result.staleCount === 0 && result.orphanedFiles.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "✓ No stale test descriptions or orphaned test files found.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Test Intent Analysis — ${result.total} test description(s) analyzed`,
+        ];
+
+        if (result.staleCount > 0) {
+          lines.push(`\n### Stale Test Descriptions (${result.staleCount})\n`);
+          lines.push("| File | Line | Kind | Description | Missing Symbol |");
+          lines.push("|------|------|------|-------------|-----------------|");
+          for (const test of result.staleTests.slice(0, args.limit ?? 50)) {
+            lines.push(
+              `| ${test.file} | ${test.line} | \`${test.kind}\` | "${test.description}" | \`${test.missingSymbol}\` |`,
+            );
+          }
+        }
+
+        if (result.orphanedFiles.length > 0) {
+          lines.push(
+            `\n### Orphaned Test Files (${result.orphanedFiles.length})\n`,
+          );
+          lines.push("| File |");
+          lines.push("|------|");
+          for (const file of result.orphanedFiles) {
+            lines.push(`| ${file} |`);
+          }
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_rules_trend ──────────────────────────────────────
+  server.tool(
+    "cari_rules_trend",
+    `Show ADR conformance trend over time from historical snapshots.
+
+Snapshots are recorded automatically after each \`iw index build\` when .iw/rules.yaml is present.
+Trend is computed as improving / worsening / stable from first to last snapshot in the time window.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      days: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Time window in days (default 30)"),
+      ruleId: z.string().optional().describe("Filter to a specific rule id"),
+    },
+    async (args) => {
+      log(`cari_rules_trend: days=${args.days ?? 30}`);
+      try {
+        const { rulesTrend } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = rulesTrend(dbPath, {
+          days: args.days ?? 30,
+          ruleId: args.ruleId,
+        });
+
+        if (result.rules.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No conformance snapshots in the last ${result.days} days.\nSnapshots are recorded after each \`iw index build\`.`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## ADR Conformance Trend (last ${result.days} days)`,
+          "",
+          "| Rule | ADR | Snapshots | Trend | Latest % | Violations |",
+          "|------|-----|-----------|-------|----------|------------|",
+        ];
+
+        for (const rule of result.rules) {
+          const trendIcon =
+            rule.trend === "improving"
+              ? "↑ improving"
+              : rule.trend === "worsening"
+                ? "↓ worsening"
+                : rule.trend === "stable"
+                  ? "→ stable"
+                  : "? n/a";
+          const last = rule.snapshots[rule.snapshots.length - 1];
+          const pct = last ? last.conformancePct.toFixed(1) + "%" : "-";
+          const viol = last ? String(last.violationCount) : "-";
+          lines.push(
+            `| ${rule.ruleId} | ${rule.adr ?? ""} | ${rule.snapshots.length} | ${trendIcon} | ${pct} | ${viol} |`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_layers_from_decorators ──────────────────────────
+  server.tool(
+    "cari_layers_from_decorators",
+    `Derive architectural layer assignments from decorator metadata (14.4).
+
+Uses built-in presets (nestjs, angular, spring) to map decorator names like \`@Controller\`, \`@Injectable\`, \`@Entity\` to architectural layers.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      preset: z
+        .enum(["nestjs", "angular", "spring"])
+        .optional()
+        .describe("Decorator preset (default: nestjs)"),
+    },
+    async (args) => {
+      log(`cari_layers_from_decorators: preset=${args.preset ?? "nestjs"}`);
+      try {
+        const { layersFromDecorators } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = layersFromDecorators(dbPath, {
+          preset: args.preset ?? "nestjs",
+        });
+
+        if (result.assignments.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No decorated symbols found for preset "${result.preset}". Ensure the index was built with decorator extraction enabled.`,
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Decorator-Derived Layers (preset: ${result.preset})  —  ${result.totalSymbols} symbol(s)`,
+          "",
+        ];
+
+        for (const [layerNum, layerDef] of Object.entries(result.layers)) {
+          lines.push(
+            `### Layer ${layerNum}: ${layerDef.name}  (${layerDef.files.length} file(s))`,
+          );
+          lines.push(
+            `Decorators: ${layerDef.decorators.map((d) => `\`@${d}\``).join(", ")}`,
+          );
+          for (const f of layerDef.files.slice(0, 10)) {
+            lines.push(`- ${f}`);
+          }
+          if (layerDef.files.length > 10) {
+            lines.push(`- … and ${layerDef.files.length - 10} more`);
+          }
+          lines.push("");
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1318,7 +2121,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1362,7 +2165,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1425,7 +2228,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1480,7 +2283,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1544,7 +2347,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1610,7 +2413,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1698,7 +2501,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1749,7 +2552,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1831,7 +2634,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1881,7 +2684,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -1950,7 +2753,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2012,7 +2815,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2065,7 +2868,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2122,7 +2925,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2234,7 +3037,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2327,7 +3130,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2425,7 +3228,7 @@ Requires an OpenAI API key (OPENAI_API_KEY env var or api_key parameter).`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2517,7 +3320,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2676,7 +3479,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2874,7 +3677,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -2987,7 +3790,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3100,7 +3903,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3182,7 +3985,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3387,7 +4190,7 @@ Returns:
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3479,7 +4282,7 @@ No LLM or Neo4j needed — pure SQLite.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3616,7 +4419,7 @@ No Neo4j needed — LLM is used only for the initial diagram scan (cached after 
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3743,7 +4546,7 @@ No LLM or Neo4j needed — pure SQLite.`,
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: any) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
@@ -3813,7 +4616,7 @@ Use to get an at-a-glance health score for a project's living documentation.`,
         ];
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: unknown) {
-        const msg = handleCariError(err as { message?: string });
+        const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },

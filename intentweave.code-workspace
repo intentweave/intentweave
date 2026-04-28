@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "../planpling"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../intentweave.org"
+		},
+		{
+			"path": "../intentweave-.github"
+		}
+	],
+	"settings": {
+		"specstory.cloudSync.enabled": "never"
+	}
+}

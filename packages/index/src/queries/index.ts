@@ -6,8 +6,17 @@ export { connections, connectionsFromDb } from "./connections.js";
 export { check, checkFromDb, formatCheck } from "./check.js";
 export { report, reportFromDb } from "./report.js";
 export type { ReportOptions } from "./report.js";
-export { clones, clonesFromDb } from "./clones.js";
-export { structuralClones, structuralClonesFromDb } from "./clones.js";
+export {
+  clones,
+  clonesFromDb,
+  structuralClones,
+  structuralClonesFromDb,
+} from "./clones.js";
+export type {
+  ClonesOptions,
+  StructuralClonesOptions,
+  CloneLayerAnalysis,
+} from "./clones.js";
 export {
   circularImports,
   circularImportsFromDb,
@@ -17,6 +26,38 @@ export {
 export { hotspotPriority, hotspotPriorityFromDb } from "./hotspotPriority.js";
 export { todos, todosFromDb } from "./todos.js";
 export { moduleCoverage, moduleCoverageFromDb } from "./moduleCoverage.js";
+export {
+  namingViolations,
+  namingViolationsFromDb,
+} from "./namingViolations.js";
+export {
+  commentCodeRatio,
+  commentCodeRatioFromDb,
+} from "./commentCodeRatio.js";
+export { skippedFiles, skippedFilesFromDb } from "./skippedFiles.js";
+export { rulesCheck, rulesCheckFromDb } from "./rulesCheck.js";
+export type { RulesCheckOptions } from "./rulesCheck.js";
+export {
+  deprecatedCallers,
+  deprecatedCallersFromDb,
+} from "./deprecatedCallers.js";
+export type { DeprecatedCallersOptions } from "./deprecatedCallers.js";
+export {
+  internalViolations,
+  internalViolationsFromDb,
+} from "./internalViolations.js";
+export type { InternalViolationsOptions } from "./internalViolations.js";
+export { typeAssertions, typeAssertionsFromDb } from "./typeAssertions.js";
+export type { TypeAssertionsOptions } from "./typeAssertions.js";
+export {
+  layersFromDecorators,
+  layersFromDecoratorsFromDb,
+} from "./layersFromDecorators.js";
+export type { LayersFromDecoratorsOptions } from "./layersFromDecorators.js";
+export { rulesTrend, rulesTrendFromDb } from "./rulesTrend.js";
+export type { RulesTrendOptions } from "./rulesTrend.js";
+export { testIntent, testIntentFromDb } from "./testIntent.js";
+export type { TestIntentOptions } from "./testIntent.js";
 export {
   orphanedSections,
   orphanedSectionsFromDb,

@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/plugin-swift",
-  "version": "0.10.0",
-  "description": "Swift language plugin for IntentWeave — AST extraction via tree-sitter-swift",
+  "version": "0.11.0",
+  "description": "Swift language plugin for IntentWeave \u2014 AST extraction via tree-sitter-swift",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -37,7 +37,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Swift language plugin — tree-sitter Swift AST extraction behind the LanguageCapability interface"
+    "description": "Swift language plugin \u2014 tree-sitter Swift AST extraction behind the LanguageCapability interface"
   },
   "engines": {
     "node": ">=20.0.0"

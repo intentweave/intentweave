@@ -190,6 +190,11 @@ export interface IndexBuildResult {
     files: number;
     imports: number;
     todos: number;
+    rationale: number;
+    calls: number;
+    propertyAccesses: number;
+    typeAssertions: number;
+    testDescriptions: number;
   };
 
   /** Build duration in ms */
@@ -348,6 +353,13 @@ export interface ClonesResult {
       line: number;
       kind: string;
     }>;
+    /** Layer classification for this clone group (present when layerAnalysis option is enabled) */
+    layerAnalysis?: {
+      kind: "architectural" | "dry" | "unknown";
+      layers: number[];
+      uniqueLayers: number[];
+      suggestion: string;
+    };
   }>;
   totalCloneGroups: number;
   totalClonedSymbols: number;
@@ -480,6 +492,13 @@ export interface StructuralClonesResult {
       line: number;
       kind: string;
     }>;
+    /** Layer classification for this clone group (present when layerAnalysis option is enabled) */
+    layerAnalysis?: {
+      kind: "architectural" | "dry" | "unknown";
+      layers: number[];
+      uniqueLayers: number[];
+      suggestion: string;
+    };
   }>;
   totalCloneGroups: number;
   totalClonedSymbols: number;
@@ -1955,4 +1974,305 @@ export interface ArchCheckResult {
     constraintViolations: number;
     conformancePercent: number;
   };
+}
+
+// =============================================================================
+// Query: namingViolations (6.1 — Naming Convention Violations)
+// =============================================================================
+
+/** A single naming convention violation. */
+export interface NamingViolation {
+  /** Symbol name that violates the convention */
+  name: string;
+  /** Symbol kind (function, class, method, etc.) */
+  kind: string;
+  /** File containing the symbol */
+  filePath: string;
+  /** Line number */
+  line: number;
+  /** Expected naming pattern (description) */
+  expected: string;
+  /** Export status */
+  export: string;
+}
+
+/** Result of naming convention analysis. */
+export interface NamingViolationsResult {
+  violations: NamingViolation[];
+  totalViolations: number;
+  byKind: Record<string, number>;
+}
+
+// =============================================================================
+// Query: commentCodeRatio (6.4 — Comment-to-Code Ratio Anomalies)
+// =============================================================================
+
+/** Per-file comment-to-code ratio entry. */
+export interface CommentCodeRatioEntry {
+  /** File path */
+  filePath: string;
+  /** Number of comment lines */
+  commentLines: number;
+  /** Number of code lines (non-blank, non-comment) */
+  codeLines: number;
+  /** Ratio of comment lines to code lines */
+  ratio: number;
+  /** Whether this file is an anomaly (too low or too high) */
+  anomaly: "under-commented" | "over-commented" | null;
+}
+
+/** Result of comment-to-code ratio analysis. */
+export interface CommentCodeRatioResult {
+  files: CommentCodeRatioEntry[];
+  /** Files with anomalous ratios */
+  anomalies: CommentCodeRatioEntry[];
+  /** Workspace average ratio */
+  averageRatio: number;
+  totalFiles: number;
+}
+
+// =============================================================================
+// Query: skippedFiles (6.5 — AX File Skip Warning)
+// =============================================================================
+
+/** A file that was skipped during AX extraction due to size. */
+export interface SkippedFileEntry {
+  /** File path */
+  filePath: string;
+  /** Reason for skipping */
+  reason: string;
+}
+
+/** Result of skipped files query. */
+export interface SkippedFilesResult {
+  skipped: SkippedFileEntry[];
+  totalSkipped: number;
+}
+
+// ─── Semantic Rule Checking Types (13.2) ────────────────────────────────────
+
+/**
+ * One forbidden pattern clause inside a rule definition.
+ */
+export interface RuleForbidden {
+  /**
+   * Type of check:
+   * - `property_access`: matches against `property_accesses.chain`
+   * - `call`: matches against `symbol_calls.callee_name` (regex)
+   * - `symbol_name`: matches against `symbols.name` (regex)
+   * - `import_pattern`: matches against `imports.module_specifier` (glob)
+   */
+  type: "property_access" | "call" | "symbol_name" | "import_pattern";
+
+  /** Glob for property_access chain (e.g. "**.source.path") */
+  chain?: string;
+
+  /** Regex or pipe-separated names for call/symbol_name (e.g. "refToId|idToName") */
+  callee?: string;
+
+  /** Regex/name pattern for symbol_name or import_pattern */
+  pattern?: string;
+
+  /** Glob restricting which files are in scope (e.g. "apps/ui/**") */
+  in?: string;
+
+  /** Glob(s) to exclude from scope */
+  except?: string | string[];
+
+  /**
+   * Only flag when the same file+line also has a property access matching this glob.
+   * Used for context-specific detection (e.g. "flag match() only when .source.path is accessed").
+   */
+  context_access?: string;
+}
+
+/** One rule definition (from rules.yaml). */
+export interface RuleDefinition {
+  id: string;
+  description?: string;
+  adr?: string;
+  severity: "high" | "medium" | "low";
+  forbidden: RuleForbidden[];
+}
+
+/** Parsed .iw/rules.yaml config. */
+export interface RulesConfig {
+  version: number;
+  rules: RuleDefinition[];
+}
+
+/** One violation found by rulesCheck. */
+export interface RulesViolation {
+  ruleId: string;
+  ruleSeverity: "high" | "medium" | "low";
+  ruleDescription?: string;
+  adr?: string;
+  filePath: string;
+  line: number | null;
+  symbol?: string | null;
+  /** Human-readable detail about what was found */
+  detail: string;
+}
+
+/** Result of rulesCheck. */
+export interface RulesCheckResult {
+  violations: RulesViolation[];
+  totalViolations: number;
+  bySeverity: Record<"high" | "medium" | "low", number>;
+  byRule: Record<string, number>;
+  rulesChecked: number;
+}
+
+// ── 14.1 Deprecated Caller Detection ────────────────────────────────────────
+
+export interface DeprecatedCallerEntry {
+  /** Stable symbol ID of the deprecated symbol */
+  symbolId: string;
+  /** Name of the deprecated symbol */
+  symbolName: string;
+  /** File path where the symbol is defined */
+  symbolFile: string;
+  /** Line number of the symbol definition */
+  symbolLine: number;
+  /** @deprecated tag note (if any) */
+  deprecatedNote?: string;
+  /** Callers of this deprecated symbol */
+  callers: Array<{
+    callerFile: string;
+    callerName?: string;
+    callerLine?: number;
+  }>;
+}
+
+export interface DeprecatedCallersResult {
+  /** One entry per deprecated symbol that has at least one active caller */
+  callers: DeprecatedCallerEntry[];
+  /** Total number of individual caller references */
+  totalCallers: number;
+  /** Total number of @deprecated symbols found in the index */
+  deprecatedSymbols: number;
+  /** Number of deprecated symbols that have at least one active caller */
+  symbolsWithCallers: number;
+}
+
+// ── 14.2 Internal Violations ──────────────────────────────────────────────────
+
+export interface InternalViolation {
+  /** Stable symbol ID */
+  symbolId: string;
+  /** Symbol name */
+  symbolName: string;
+  /** File where the symbol is defined */
+  symbolFile: string;
+  /** Line of the symbol definition */
+  symbolLine: number;
+  /** How was it marked internal: JSDoc @internal or _prefix */
+  marker: "jsdoc" | "_prefix";
+  /** File that illegally imports it */
+  importerFile: string;
+  /** Package of the importer */
+  importerPackage: string;
+  /** Package of the symbol */
+  symbolPackage: string;
+}
+
+export interface InternalViolationsResult {
+  violations: InternalViolation[];
+  totalViolations: number;
+  byMarker: { jsdoc: number; underscore: number };
+}
+
+// ── 14.3 Type Assertion Inventory ───────────────────────────────────────────
+
+export interface TypeAssertionEntry {
+  file: string;
+  line: number;
+  kind: "as_any" | "double_cast" | "angle_cast" | "as_cast";
+  context: string | null;
+  targetType: string | null;
+  /** Fan-in of the file (import count) — used as risk signal */
+  fanIn?: number;
+}
+
+export interface TypeAssertionsResult {
+  assertions: TypeAssertionEntry[];
+  total: number;
+  byKind: Record<"as_any" | "double_cast" | "angle_cast" | "as_cast", number>;
+  /** Assertions in high fan-in files (fanIn ≥ risk threshold) */
+  highRisk: TypeAssertionEntry[];
+}
+
+// ── 14.4 Decorator-Derived Layer Assignment ──────────────────────────────────
+
+export interface DecoratorLayerAssignment {
+  filePath: string;
+  layer: number;
+  layerName: string;
+  decorators: string[];
+  symbolName: string;
+}
+
+export interface LayersFromDecoratorsResult {
+  assignments: DecoratorLayerAssignment[];
+  layers: Record<
+    number,
+    { name: string; files: string[]; decorators: string[] }
+  >;
+  totalSymbols: number;
+  preset: string;
+}
+
+// ── 14.5 ADR Conformance Trend ───────────────────────────────────────────────
+
+export interface ConformanceSnapshot {
+  snapshotId: string;
+  timestamp: number;
+  ruleId: string;
+  adr?: string;
+  filesInScope: number;
+  filesClean: number;
+  violationCount: number;
+  conformancePct: number;
+}
+
+export interface RuleTrend {
+  ruleId: string;
+  adr?: string;
+  snapshots: ConformanceSnapshot[];
+  trend: "improving" | "worsening" | "stable" | "insufficient_data";
+}
+
+export interface RulesTrendResult {
+  rules: RuleTrend[];
+  days: number;
+}
+
+// ── 14.6 Test Description ↔ Symbol Alignment ─────────────────────────────────
+
+/** A test description that references a symbol not found in the index. */
+export interface TestDescriptionMatch {
+  /** Test file path */
+  file: string;
+  /** Line number of the test call (1-based) */
+  line: number;
+  /** describe / it / test */
+  kind: "describe" | "it" | "test";
+  /** Full description text */
+  description: string;
+  /** Symbol name that was not found */
+  missingSymbol: string;
+}
+
+export interface TestIntentResult {
+  /** Total test descriptions found */
+  total: number;
+  /** Number of test descriptions with missing symbol references */
+  staleCount: number;
+  /** Test descriptions with missing symbols */
+  staleTests: TestDescriptionMatch[];
+  /** Test files that have multiple descriptions with no matching symbols */
+  orphanedFiles: Array<{
+    file: string;
+    count: number;
+  }>;
 }

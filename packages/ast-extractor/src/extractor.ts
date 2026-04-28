@@ -16,6 +16,9 @@ import type {
   ExtractedSymbol,
   ExtractedImport,
   ExtractedExport,
+  ExtractedCall,
+  ExtractedPropertyAccess,
+  ExtractedTypeAssertion,
   FileExtractionResult,
   ExtractionOptions,
   BatchExtractionResult,
@@ -70,6 +73,15 @@ export class AstExtractor {
       const symbols: ExtractedSymbol[] = [];
       const imports: ExtractedImport[] = [];
       const exports: ExtractedExport[] = [];
+      const calls: ExtractedCall[] = [];
+      const propertyAccesses: ExtractedPropertyAccess[] = [];
+      const typeAssertions: ExtractedTypeAssertion[] = [];
+      const testDescriptions: Array<{
+        file: string;
+        line: number;
+        kind: "describe" | "it" | "test";
+        description: string;
+      }> = [];
       const errors: string[] = [];
 
       // Extract all symbols from the tree
@@ -85,6 +97,22 @@ export class AstExtractor {
         0,
       );
 
+      // Extract call expressions and property access chains
+      this.extractUsages(tree.rootNode, relativePath, calls, propertyAccesses);
+
+      // Extract type assertions (as any, double cast, angle cast)
+      this.extractTypeAssertions(tree.rootNode, relativePath, typeAssertions);
+
+      // Extract test descriptions from describe/it/test calls (14.6)
+      this.extractTestDescriptions(
+        tree.rootNode,
+        relativePath,
+        testDescriptions,
+      );
+
+      // Annotate @deprecated / @internal / _prefix flags on all symbols
+      this.annotateJsDocFlags(symbols, content, tree);
+
       // Check for parse errors
       if (tree.rootNode.hasError) {
         errors.push("Parse errors detected in file");
@@ -96,6 +124,11 @@ export class AstExtractor {
         symbols,
         imports,
         exports,
+        calls,
+        propertyAccesses,
+        typeAssertions,
+        testDescriptions:
+          testDescriptions.length > 0 ? testDescriptions : undefined,
         extractedAt: Date.now(),
         errors: errors.length > 0 ? errors : undefined,
       };
@@ -357,6 +390,7 @@ export class AstExtractor {
     const docSummary = options.includeDocSummary
       ? this.extractDocComment(node, content)
       : undefined;
+    const decoratorList = this.extractDecorators(node);
 
     symbols.push({
       name,
@@ -369,6 +403,7 @@ export class AstExtractor {
       docSummary,
       parameters: options.includeParameters ? params : undefined,
       signature: this.extractSignature(node, content),
+      decorators: decoratorList.length > 0 ? decoratorList : undefined,
     });
   }
 
@@ -393,6 +428,7 @@ export class AstExtractor {
 
     // Parse implements clause
     const implementsList = this.extractImplements(node);
+    const decoratorList = this.extractDecorators(node);
 
     symbols.push({
       name,
@@ -403,6 +439,7 @@ export class AstExtractor {
       docSummary,
       signature: this.extractSignature(node, content) ?? `class ${name}`,
       implements: implementsList.length > 0 ? implementsList : undefined,
+      decorators: decoratorList.length > 0 ? decoratorList : undefined,
     });
 
     // Extract class members
@@ -922,6 +959,241 @@ export class AstExtractor {
   }
 
   /**
+   * Scan the JSDoc block preceding a node for @deprecated and @internal tags.
+   * Returns { deprecated, deprecatedNote, isInternal }.
+   */
+  private extractJsDocTags(
+    node: Parser.SyntaxNode,
+    content: string,
+  ): { deprecated?: boolean; deprecatedNote?: string; isInternal?: boolean } {
+    const startLine = node.startPosition.row;
+    const lines = content.split("\n");
+    let blockStart = -1;
+
+    // Walk backwards to find the opening '/**'
+    for (let i = startLine - 1; i >= Math.max(0, startLine - 8); i--) {
+      const line = lines[i].trim();
+      if (line.startsWith("/**")) {
+        blockStart = i;
+        break;
+      }
+      if (line && !line.startsWith("//") && !line.startsWith("*")) break;
+    }
+    if (blockStart < 0) return {};
+
+    let deprecated: boolean | undefined;
+    let deprecatedNote: string | undefined;
+    let isInternal: boolean | undefined;
+
+    for (let i = blockStart; i < startLine; i++) {
+      const line = lines[i].trim().replace(/^\*\s?/, "");
+      if (line.startsWith("@deprecated")) {
+        deprecated = true;
+        const note = line.slice("@deprecated".length).trim();
+        if (note) deprecatedNote = note;
+      }
+      if (line.startsWith("@internal")) {
+        isInternal = true;
+      }
+    }
+    return { deprecated, deprecatedNote, isInternal };
+  }
+
+  /**
+   * Post-process symbols array: annotate each with @deprecated / @internal / _prefix flags.
+   * Requires the raw source content so we can scan JSDoc blocks.
+   */
+  private annotateJsDocFlags(
+    symbols: ExtractedSymbol[],
+    content: string,
+    tree: Parser.Tree,
+  ): void {
+    // Build a line → node map once using tree-sitter's rootNode children isn't
+    // efficient; instead we re-scan content lines per symbol using extractJsDocTags.
+    // We do this by re-invoking the scanner with a fake node that only needs .startPosition.
+    for (const sym of symbols) {
+      // _prefix convention — any exported symbol starting with '_' is considered internal
+      if (sym.name.startsWith("_")) {
+        sym.isInternal = true;
+      }
+      // We need a node at the symbol's start line to pass to extractJsDocTags.
+      // Use the tree's rootNode.descendantForPosition which is cheap.
+      const row = sym.range.startLine - 1; // 0-based
+      const node = tree.rootNode.descendantForPosition({ row, column: 0 });
+      if (!node) continue;
+      const flags = this.extractJsDocTags(node, content);
+      if (flags.deprecated) sym.deprecated = true;
+      if (flags.deprecatedNote) sym.deprecatedNote = flags.deprecatedNote;
+      if (flags.isInternal) sym.isInternal = true;
+    }
+  }
+
+  /**
+   * Extract decorator names from a class or function node.
+   * Decorators appear as sibling nodes immediately before the class/function in
+   * the parent node. Returns bare names, e.g. ["Controller", "Injectable"].
+   */
+  private extractDecorators(node: Parser.SyntaxNode): string[] {
+    const result: string[] = [];
+    const parent = node.parent;
+    if (!parent) return result;
+
+    for (const child of parent.children) {
+      if (child.id === node.id) break;
+      if (child.type !== "decorator") continue;
+
+      // @Foo        → identifier child
+      // @Foo(args)  → call_expression child; callee is identifier/member_expression
+      let nameNode: Parser.SyntaxNode | null = null;
+      for (const dc of child.children) {
+        if (dc.type === "identifier") {
+          nameNode = dc;
+          break;
+        }
+        if (dc.type === "call_expression") {
+          nameNode = dc.childForFieldName("function") ?? dc.firstNamedChild;
+          break;
+        }
+        if (dc.type === "member_expression") {
+          nameNode = dc.childForFieldName("property") ?? dc.lastNamedChild;
+          break;
+        }
+      }
+      if (nameNode) {
+        // Strip leading @ if present in text
+        const raw = nameNode.text.replace(/^@/, "");
+        if (raw) result.push(raw);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Traverse the full AST to extract type assertions (14.3):
+   *   - as_expression where type is `any`                    → "as_any"
+   *   - as_expression where value is also as_expression      → "double_cast"
+   *   - type_assertion (angle-bracket syntax <Type>expr)     → "angle_cast"
+   *   - any other as_expression                              → "as_cast"
+   */
+  private extractTypeAssertions(
+    root: Parser.SyntaxNode,
+    filePath: string,
+    assertions: ExtractedTypeAssertion[],
+  ): void {
+    const visit = (node: Parser.SyntaxNode): void => {
+      if (node.type === "as_expression") {
+        const valueNode =
+          node.childForFieldName("value") ?? node.firstNamedChild;
+        const typeNode = node.childForFieldName("type") ?? node.lastNamedChild;
+        const targetType = typeNode?.text ?? null;
+        const line = node.startPosition.row + 1;
+        const context = this.findEnclosingSymbol(node);
+
+        let kind: ExtractedTypeAssertion["kind"];
+        if (targetType === "any") {
+          kind = "as_any";
+        } else if (valueNode?.type === "as_expression") {
+          kind = "double_cast";
+        } else {
+          kind = "as_cast";
+        }
+
+        assertions.push({ file: filePath, line, kind, context, targetType });
+      } else if (node.type === "type_assertion") {
+        const typeNode = node.childForFieldName("type") ?? node.firstNamedChild;
+        const line = node.startPosition.row + 1;
+        const context = this.findEnclosingSymbol(node);
+        assertions.push({
+          file: filePath,
+          line,
+          kind: "angle_cast",
+          context,
+          targetType: typeNode?.text ?? null,
+        });
+      }
+
+      for (const child of node.children) {
+        visit(child);
+      }
+    };
+    visit(root);
+  }
+
+  /**
+   * Extract test descriptions from describe(), it(), test() calls (14.6)
+   */
+  private extractTestDescriptions(
+    root: Parser.SyntaxNode,
+    filePath: string,
+    descriptions: Array<{
+      file: string;
+      line: number;
+      kind: "describe" | "it" | "test";
+      description: string;
+    }>,
+  ): void {
+    const visit = (node: Parser.SyntaxNode): void => {
+      if (node.type === "call_expression") {
+        const func = node.childForFieldName("function");
+        if (!func) {
+          for (const child of node.children) {
+            visit(child);
+          }
+          return;
+        }
+
+        // Check if this is describe(), it(), or test()
+        const funcName = func.type === "identifier" ? func.text : null;
+        if (!funcName || !["describe", "it", "test"].includes(funcName)) {
+          for (const child of node.children) {
+            visit(child);
+          }
+          return;
+        }
+
+        // Find the arguments
+        const args = node.childForFieldName("arguments");
+        if (!args) {
+          for (const child of node.children) {
+            visit(child);
+          }
+          return;
+        }
+
+        // Extract the first string argument (the description)
+        for (const child of args.children) {
+          if (child.type === "string") {
+            // Remove quotes from the string
+            const text = child.text;
+            let description = text;
+            if (
+              (text.startsWith('"') && text.endsWith('"')) ||
+              (text.startsWith("'") && text.endsWith("'")) ||
+              (text.startsWith("`") && text.endsWith("`"))
+            ) {
+              description = text.slice(1, -1);
+            }
+
+            const line = node.startPosition.row + 1;
+            descriptions.push({
+              file: filePath,
+              line,
+              kind: funcName as "describe" | "it" | "test",
+              description,
+            });
+            break;
+          }
+        }
+      }
+
+      for (const child of node.children) {
+        visit(child);
+      }
+    };
+    visit(root);
+  }
+
+  /**
    * Extract JSDoc comment from preceding node
    */
   private extractDocComment(
@@ -1047,6 +1319,209 @@ export class AstExtractor {
       endLine: node.endPosition.row + 1,
       endColumn: node.endPosition.column,
     };
+  }
+
+  // ── Usage extraction (calls + property access chains) ───────────────────────
+
+  /**
+   * Traverse the entire AST to extract:
+   * - call_expression nodes → symbol_calls
+   * - member_expression chains of depth ≥ 3 → property_accesses
+   */
+  private extractUsages(
+    root: Parser.SyntaxNode,
+    filePath: string,
+    calls: ExtractedCall[],
+    propertyAccesses: ExtractedPropertyAccess[],
+  ): void {
+    const visit = (node: Parser.SyntaxNode): void => {
+      if (node.type === "call_expression") {
+        this.extractCall(node, filePath, calls);
+      }
+
+      if (node.type === "member_expression") {
+        // Only capture outermost member_expression in a chain (parent != member_expression)
+        // to avoid redundant sub-chains (handled by building all prefixes below)
+        if (node.parent?.type !== "member_expression") {
+          this.extractPropertyAccessChain(node, filePath, propertyAccesses);
+        }
+      }
+
+      for (const child of node.children) {
+        visit(child);
+      }
+    };
+
+    visit(root);
+  }
+
+  /**
+   * Extract a call expression into ExtractedCall.
+   */
+  private extractCall(
+    node: Parser.SyntaxNode,
+    filePath: string,
+    calls: ExtractedCall[],
+  ): void {
+    const calleeNode = node.childForFieldName("function");
+    if (!calleeNode) return;
+
+    const line = node.startPosition.row + 1;
+    const callerName = this.findEnclosingSymbol(node);
+
+    if (calleeNode.type === "identifier") {
+      const name = calleeNode.text;
+      if (!name || name.length === 0) return;
+      calls.push({
+        callerFile: filePath,
+        callerName,
+        callerLine: line,
+        calleeName: name,
+        calleeId: null,
+        isMethod: false,
+      });
+    } else if (calleeNode.type === "member_expression") {
+      const prop = calleeNode.childForFieldName("property");
+      if (!prop) return;
+      const chain = this.buildMemberChain(calleeNode);
+      calls.push({
+        callerFile: filePath,
+        callerName,
+        callerLine: line,
+        calleeName: prop.text,
+        calleeId: chain.includes("?") ? null : chain,
+        isMethod: true,
+      });
+    }
+  }
+
+  /**
+   * Given the outermost member_expression node in a chain, emit all
+   * sub-chains of depth ≥ 3 so that rules like "**.source.path" find them.
+   *
+   * E.g. `a.b.c.d` → emits `a.b.c` (depth 3) and `a.b.c.d` (depth 4).
+   */
+  private extractPropertyAccessChain(
+    outerNode: Parser.SyntaxNode,
+    filePath: string,
+    propertyAccesses: ExtractedPropertyAccess[],
+  ): void {
+    const line = outerNode.startPosition.row + 1;
+    const symbolName = this.findEnclosingSymbol(outerNode);
+
+    // Collect all prefix chains rooted at outerNode
+    const chains = this.collectChainPrefixes(outerNode);
+    for (const chain of chains) {
+      const depth = (chain.match(/\./g) ?? []).length + 1;
+      if (depth < 3) continue;
+      if (depth > 12) continue; // guard against pathological deep chains
+      const root = chain.split(".")[0];
+      if (!root || root === "?") continue;
+      propertyAccesses.push({
+        file: filePath,
+        symbolName,
+        line,
+        chain,
+        root,
+        depth,
+      });
+    }
+  }
+
+  /**
+   * Recursively collect all prefix chains for a member_expression subtree.
+   * Returns chains ordered from shortest to longest.
+   *
+   * For `a.b.c.d` returns ["a.b", "a.b.c", "a.b.c.d"].
+   */
+  private collectChainPrefixes(node: Parser.SyntaxNode): string[] {
+    if (node.type !== "member_expression") {
+      return [
+        node.type === "identifier" || node.type === "this" ? node.text : "?",
+      ];
+    }
+    const obj = node.childForFieldName("object");
+    const prop = node.childForFieldName("property");
+    if (!obj || !prop) return [];
+
+    // Skip computed access (obj[expr])
+    const hasBracket = node.children.some(
+      (c) => c.type === "[" || c.type === "optional_chain",
+    );
+    if (hasBracket && !node.text.includes("?.")) {
+      // Allow optional chaining but skip subscript computed access
+      const objChains = this.collectChainPrefixes(obj);
+      if (objChains.length === 0) return [];
+      const base = objChains[objChains.length - 1];
+      if (base === "?") return [];
+      return objChains;
+    }
+
+    const objChains = this.collectChainPrefixes(obj);
+    if (objChains.length === 0) return [];
+    const base = objChains[objChains.length - 1];
+    if (base === "?") return [];
+
+    // Normalise optional chaining (?.) to regular dot for pattern matching
+    const propText = prop.text;
+    if (!propText) return objChains;
+
+    const full = `${base}.${propText}`;
+    return [...objChains, full];
+  }
+
+  /**
+   * Build the full dotted chain string for a member_expression node.
+   * Returns '?' for unresolvable roots (computed access, literals, etc.).
+   */
+  private buildMemberChain(node: Parser.SyntaxNode): string {
+    if (node.type === "member_expression") {
+      const obj = node.childForFieldName("object");
+      const prop = node.childForFieldName("property");
+      if (!obj || !prop) return "?";
+      const base = this.buildMemberChain(obj);
+      if (base === "?") return "?";
+      return `${base}.${prop.text}`;
+    }
+    if (node.type === "identifier" || node.type === "this") {
+      return node.text;
+    }
+    return "?";
+  }
+
+  /**
+   * Walk up the parent chain to find the nearest enclosing function/method name.
+   * Returns null for module-level code.
+   */
+  private findEnclosingSymbol(node: Parser.SyntaxNode): string | null {
+    let current = node.parent;
+    while (current) {
+      if (
+        current.type === "function_declaration" ||
+        current.type === "method_definition" ||
+        current.type === "generator_function_declaration"
+      ) {
+        return current.childForFieldName("name")?.text ?? null;
+      }
+      if (
+        current.type === "arrow_function" ||
+        current.type === "function_expression" ||
+        current.type === "generator_function"
+      ) {
+        // Check if assigned to a variable: `const foo = () => ...`
+        const parent = current.parent;
+        if (parent?.type === "variable_declarator") {
+          return parent.childForFieldName("name")?.text ?? null;
+        }
+        // Check if it's a method in an object literal: `{ foo: () => ... }`
+        if (parent?.type === "pair") {
+          return parent.childForFieldName("key")?.text ?? null;
+        }
+        return null;
+      }
+      current = current.parent;
+    }
+    return null;
   }
 }
 

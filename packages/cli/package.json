@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/cli",
-  "version": "0.10.0",
-  "description": "Command-line interface for IntentWeave — iw commands + MCP server",
+  "version": "0.11.0",
+  "description": "Command-line interface for IntentWeave \u2014 iw commands + MCP server",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -61,30 +61,32 @@
     "@intentweave/core": "workspace:*",
     "@intentweave/index": "workspace:*",
     "@intentweave/profiles": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "chalk": "^5.3.0",
     "chokidar": "^5.0.0",
     "commander": "^12.1.0",
     "glob": "^11.0.0",
+    "js-yaml": "^4.1.1",
     "minimatch": "^10.0.1",
-    "@modelcontextprotocol/sdk": "^1.27.1",
     "zod": "^3.23.8"
   },
   "optionalDependencies": {
-    "@intentweave/plugin-llm": "workspace:*",
     "@intentweave/plugin-kg": "workspace:*",
     "@intentweave/plugin-kg-lite": "workspace:*",
-    "@intentweave/plugin-swift": "workspace:*",
-    "@intentweave/plugin-python": "workspace:*"
+    "@intentweave/plugin-llm": "workspace:*",
+    "@intentweave/plugin-python": "workspace:*",
+    "@intentweave/plugin-swift": "workspace:*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/js-yaml": "^4.0.9",
     "better-sqlite3": "^11.7.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },
   "intentweave": {
     "tier": "oss",
-    "description": "CLI and MCP server — open-source entry point for users"
+    "description": "CLI and MCP server \u2014 open-source entry point for users"
   },
   "license": "Apache-2.0",
   "repository": {

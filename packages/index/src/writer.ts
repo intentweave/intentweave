@@ -13,6 +13,7 @@ import * as path from "path";
 import * as fs from "fs";
 
 import { initSchema } from "./schema.js";
+import { rulesCheckFromDb } from "./queries/rulesCheck.js";
 import type {
   IndexBuildOptions,
   IndexBuildResult,
@@ -81,6 +82,10 @@ export function buildIndex(
       imports: writeImports(db, ax),
       todos: writeTodos(db, ax),
       rationale: writeRationale(db, ax),
+      calls: writeCalls(db, ax),
+      propertyAccesses: writePropertyAccesses(db, ax),
+      typeAssertions: writeTypeAssertions(db, ax),
+      testDescriptions: writeTestDescriptions(db, ax),
     };
 
     // Populate FTS indexes
@@ -100,7 +105,9 @@ export function buildIndex(
     opts.log?.(
       `  symbols=${counts.symbols} annotations=${counts.annotations} ` +
         `co_occurrences=${counts.coOccurrences} co_changes=${counts.coChanges} ` +
-        `files=${counts.files} imports=${counts.imports} todos=${counts.todos} rationale=${counts.rationale}`,
+        `files=${counts.files} imports=${counts.imports} todos=${counts.todos} rationale=${counts.rationale} ` +
+        `calls=${counts.calls} property_accesses=${counts.propertyAccesses} ` +
+        `type_assertions=${counts.typeAssertions} test_descriptions=${counts.testDescriptions}`,
     );
 
     return { dbPath, counts, durationMs };
@@ -116,8 +123,8 @@ export function buildIndex(
 function writeSymbols(db: Database.Database, ax: AxOutput): number {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO symbols
-      (id, name, kind, container, signature, file_path, line, end_line, export, doc_summary, body_hash, body_lines, structure_hash, implements)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, kind, container, signature, file_path, line, end_line, export, doc_summary, body_hash, body_lines, structure_hash, implements, deprecated, deprecated_note, is_internal, decorators)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let count = 0;
@@ -141,6 +148,10 @@ function writeSymbols(db: Database.Database, ax: AxOutput): number {
           sym.bodyLines ?? null,
           sym.structureHash ?? null,
           sym.implements ? JSON.stringify(sym.implements) : null,
+          sym.deprecated ? 1 : 0,
+          sym.deprecatedNote ?? null,
+          sym.isInternal ? 1 : 0,
+          sym.decorators ? JSON.stringify(sym.decorators) : null,
         );
         count++;
       }
@@ -287,8 +298,8 @@ function writeFiles(
   tcg: TcgPipelineOutput,
 ): number {
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash, doc_group)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash, doc_group, indexed, skip_reason, comment_lines, code_lines)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Build lookup maps from TCG data
@@ -307,6 +318,10 @@ function writeFiles(
   for (const f of ax.files) allPaths.add(f.filePath);
   for (const fp of tcg.tcx.filePaths) allPaths.add(fp);
 
+  // Build lookup map for AX file results
+  const axFileMap = new Map<string, AxFileResult>();
+  for (const f of ax.files) axFileMap.set(f.filePath, f);
+
   let count = 0;
   const paths = [...allPaths];
   for (let i = 0; i < paths.length; i += BATCH_SIZE) {
@@ -315,8 +330,9 @@ function writeFiles(
       for (const fp of batch) {
         const hot = hotspotMap.get(fp);
         const own = ownerMap.get(fp);
-        const axFile = ax.files.find((f) => f.filePath === fp);
+        const axFile = axFileMap.get(fp);
         const isDoc = isDocFile(fp);
+        const indexed = axFile?.skipped ? 0 : 1;
 
         stmt.run(
           fp,
@@ -328,6 +344,10 @@ function writeFiles(
           isDoc ? 1 : 0,
           axFile?.contentHash ?? null,
           isDoc ? classifyDocGroup(fp) : null,
+          indexed,
+          axFile?.skipReason ?? null,
+          axFile?.commentLines ?? 0,
+          axFile?.codeLines ?? 0,
         );
         count++;
       }
@@ -425,6 +445,130 @@ function writeRationale(db: Database.Database, ax: AxOutput): number {
       const tx = db.transaction(() => {
         for (const item of batch) {
           stmt.run(file.filePath, item.line, item.kind, item.text, null);
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// Calls (13.1)
+// =============================================================================
+
+function writeCalls(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO symbol_calls (caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.calls || file.calls.length === 0) continue;
+    for (let i = 0; i < file.calls.length; i += BATCH_SIZE) {
+      const batch = file.calls.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const call of batch) {
+          stmt.run(
+            file.filePath,
+            call.callerName ?? null,
+            call.callerLine,
+            call.calleeName,
+            call.calleeId ?? null,
+            call.isMethod ? 1 : 0,
+          );
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// Property Accesses (13.1)
+// =============================================================================
+
+function writePropertyAccesses(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO property_accesses (file, symbol_name, line, chain, root, depth)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.propertyAccesses || file.propertyAccesses.length === 0) continue;
+    for (let i = 0; i < file.propertyAccesses.length; i += BATCH_SIZE) {
+      const batch = file.propertyAccesses.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const pa of batch) {
+          stmt.run(
+            file.filePath,
+            pa.symbolName ?? null,
+            pa.line,
+            pa.chain,
+            pa.root,
+            pa.depth,
+          );
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// Type Assertions (14.3)
+// =============================================================================
+
+function writeTypeAssertions(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO type_assertions (file, line, kind, context, target_type)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.typeAssertions || file.typeAssertions.length === 0) continue;
+    for (let i = 0; i < file.typeAssertions.length; i += BATCH_SIZE) {
+      const batch = file.typeAssertions.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const ta of batch) {
+          stmt.run(
+            file.filePath,
+            ta.line,
+            ta.kind,
+            ta.context ?? null,
+            ta.targetType ?? null,
+          );
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+function writeTestDescriptions(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO test_descriptions (file, line, kind, description)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.testDescriptions || file.testDescriptions.length === 0) continue;
+    for (let i = 0; i < file.testDescriptions.length; i += BATCH_SIZE) {
+      const batch = file.testDescriptions.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const td of batch) {
+          stmt.run(file.filePath, td.line, td.kind, td.description);
           count++;
         }
       });
@@ -647,4 +791,63 @@ function rebuildFts(db: Database.Database): void {
   // Rebuild the content-synced FTS indexes
   db.exec(`INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')`);
   db.exec(`INSERT INTO annotations_fts(annotations_fts) VALUES('rebuild')`);
+}
+
+// =============================================================================
+// ADR Conformance Snapshot (14.5)
+// =============================================================================
+
+/**
+ * Run rulesCheck for each rule in the config and persist a snapshot to the
+ * conformance_snapshots table. Called automatically after `iw index build`
+ * when .iw/rules.yaml is present.
+ */
+export function snapshotConformance(
+  dbPath: string,
+  config: import("./types.js").RulesConfig,
+  snapshotId: string,
+  timestamp: number,
+): void {
+  const db = new Database(dbPath);
+  try {
+    db.pragma("journal_mode = WAL");
+    const stmt = db.prepare(`
+      INSERT INTO conformance_snapshots
+        (snapshot_id, timestamp, rule_id, adr, files_in_scope, files_clean, violation_count, conformance_pct)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const totalFiles = (
+      db.prepare(`SELECT COUNT(*) AS n FROM files WHERE indexed = 1`).get() as {
+        n: number;
+      }
+    ).n;
+
+    for (const rule of config.rules) {
+      const result = rulesCheckFromDb(
+        db,
+        { version: 1, rules: [rule] },
+        { ruleId: rule.id },
+      );
+      const violationCount = result.totalViolations;
+      // files_clean = total indexed files minus files that have violations for this rule
+      const violatingFiles = new Set(result.violations.map((v) => v.filePath));
+      const filesClean = totalFiles - violatingFiles.size;
+      const conformancePct =
+        totalFiles > 0 ? (filesClean / totalFiles) * 100 : 100;
+
+      stmt.run(
+        snapshotId,
+        timestamp,
+        rule.id,
+        rule.adr ?? null,
+        totalFiles,
+        filesClean,
+        violationCount,
+        conformancePct,
+      );
+    }
+  } finally {
+    db.close();
+  }
 }
