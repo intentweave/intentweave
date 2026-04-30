@@ -187,7 +187,10 @@ export async function runCoxStage(
   const allLocalEdges: LocalEdge[] = [];
   for (const kwxOutput of input.kwxOutputs) {
     const docEdges = computeDocumentEdges(kwxOutput, WINDOW_SIZE);
-    allLocalEdges.push(...docEdges);
+    // Avoid variadic push with very large arrays, which can overflow call stack.
+    for (const edge of docEdges) {
+      allLocalEdges.push(edge);
+    }
   }
 
   logger?.debug(

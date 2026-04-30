@@ -402,24 +402,25 @@ function matchesScope(
  *
  * The glob uses `**` as a wildcard for any number of segments.
  * E.g. `**.source.path` matches `entity.source.path`, `x.y.source.path`, etc.
+ * E.g. `**.$ref` matches `r.ecu.$ref`, `a.$ref`, etc.
  *
  * Implementation: convert the glob to a regex.
  */
 function matchesChainGlob(chain: string, glob: string): boolean {
-  // Convert chain glob to regex:
-  //   **  → .*   (match any prefix, including dots)
-  //   *   → [^.]*  (match one segment, no dots)
-  //   .   → \.   (literal dot)
-  const escaped = glob
-    .replace(/\*\*/g, "\x00") // placeholder for **
-    .replace(/\*/g, "[^.]*") // * = one segment
-    .replace(/\x00/g, ".*") // ** = anything
-    .replace(/\./g, "\\."); // literal dots (after ** handling)
+  // Step 1: escape all regex special characters EXCEPT `*` (which we handle below).
+  // This preserves `$`, `^`, `(`, `)`, `[`, etc. that may appear in property names.
+  const safeGlob = glob.replace(/[.^$+?()\[\]{}|\\]/g, "\\$&");
 
-  // Re-escape the dots in the segment-level replacement
-  // (they were already escaped above before replacing ** markers)
+  // Step 2: convert glob wildcards to regex equivalents.
+  //   **  → .*     (match any number of segments including dots)
+  //   *   → [^.]*  (match one segment, no dots)
+  const pattern = safeGlob
+    .replace(/\*\*/g, "\x00") // placeholder for ** (avoids double-processing)
+    .replace(/\*/g, "[^.]*") // single * = one dot-free segment
+    .replace(/\x00/g, ".*"); // ** = anything including dots
+
   try {
-    const re = new RegExp(`^${escaped}$`);
+    const re = new RegExp(`^${pattern}$`);
     return re.test(chain);
   } catch {
     return false;

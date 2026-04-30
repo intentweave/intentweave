@@ -172,6 +172,13 @@ export interface IndexBuildOptions {
 
   /** Logging callback */
   log?: (msg: string) => void;
+
+  /**
+   * Per-file doc_group overrides for multi-root builds.
+   * Maps absolute file path → group label (e.g. `"intentweave.org"`).
+   * When a file has an entry here it takes precedence over `classifyDocGroup()`.
+   */
+  docGroupOverride?: Map<string, string>;
 }
 
 /**

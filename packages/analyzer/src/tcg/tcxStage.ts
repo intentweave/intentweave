@@ -11,7 +11,11 @@
  * @version 0.1
  */
 
-import type { TcxStageInput, TcxStageOutput } from "@intentweave/core";
+import type {
+  CommitRecord,
+  TcxStageInput,
+  TcxStageOutput,
+} from "@intentweave/core";
 import { TCG_SCHEMAS } from "@intentweave/core";
 import { parseGitLog } from "./gitLogParser.js";
 
@@ -26,13 +30,26 @@ export async function runTcxStage(
   const { workspaceRoot, depth, since, pathFilter, log } = input;
 
   // ── Parse git log ──────────────────────────────────────────────────
-  const commits = await parseGitLog({
-    repoRoot: workspaceRoot,
-    depth,
-    since,
-    pathFilter,
-    log,
-  });
+  let commits: CommitRecord[];
+  try {
+    commits = await parseGitLog({
+      repoRoot: workspaceRoot,
+      depth,
+      since,
+      pathFilter,
+      log,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Not a git repository:")) {
+      log?.(
+        `TCX: skipping git analysis for non-git root ${workspaceRoot}; continuing with empty temporal data`,
+      );
+      commits = [];
+    } else {
+      throw error;
+    }
+  }
 
   // ── Deduplicate authors (by email, keep most recent name) ──────────
   const authorMap = new Map<

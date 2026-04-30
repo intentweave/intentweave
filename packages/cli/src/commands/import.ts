@@ -11,7 +11,7 @@
 import { Command } from "commander";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { glob } from "glob";
+import { glob } from "tinyglobby";
 import { watch, type FSWatcher } from "chokidar";
 import {
   specstoryAdapter,
@@ -200,7 +200,6 @@ async function discoverSourceFiles(
     const matches = await glob(pattern, {
       cwd: directory,
       absolute: true,
-      nodir: true,
     });
     files.push(...matches);
   }

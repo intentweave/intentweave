@@ -159,12 +159,68 @@ import { minimatch } from "minimatch";
 // =============================================================================
 
 /** Options for building a CARI index from file paths. */
+/**
+ * A workspace root entry — pairs a filesystem path with a semantic role.
+ *
+ * The `role` field is open-ended and drives how the pipeline treats the root:
+ * - `"code"` — AST extraction (AX) runs here; symbols are registered in the index.
+ * - `"docs"` — keyword extraction only (KWX); files are tagged as a documentation group.
+ *             Any other non-`"code"` string is treated the same as `"docs"`.
+ *
+ * This is intentionally untyped beyond `string` so that future roles (e.g. `"test"`,
+ * `"generated"`, or LLM-inferred labels) can be added without a breaking change.
+ *
+ * @example
+ * ```typescript
+ * roots: [
+ *   { path: ".",                                      role: "code" },
+ *   { path: "../intentweave.org/src/content",         role: "docs", group: "intentweave.org" },
+ * ]
+ * ```
+ */
+export interface WorkspaceRoot {
+  /** Absolute path, or relative to `process.cwd()`. */
+  path: string;
+  /** Semantic role — drives which pipeline stages run on this root. */
+  role: string;
+  /**
+   * Optional doc_group label stored in the `files` table.
+   * Defaults to the basename of `path` when not specified.
+   */
+  group?: string;
+}
+
 export interface CariConfig {
-  /** Document file paths or directories to analyze */
+  /**
+   * Document file paths or directories to analyze.
+   *
+   * @deprecated Prefer `roots` for multi-root setups. When `roots` is
+   * provided this field is ignored; it is kept for backward compatibility.
+   */
   paths: string[];
 
-  /** Workspace root directory */
+  /**
+   * Workspace root directory — the primary code root for AX extraction.
+   *
+   * @deprecated Prefer `roots` for multi-root setups. When `roots` is
+   * provided this field is still used as the base for output-path resolution
+   * but AX extraction is driven by roots with `role: "code"` instead.
+   */
   workspaceRoot: string;
+
+  /**
+   * Multi-root workspace configuration.
+   *
+   * When provided, `paths` and `workspaceRoot` are superseded for the purposes
+   * of file discovery and AX extraction:
+   * - Roots with `role: "code"` are scanned by AX for symbols.
+   * - All other roles are keyword-extracted only and tagged with their `group`.
+   *
+   * `workspaceRoot` is still used for output-path resolution (`.iw/index.db`).
+   * The first `role: "code"` root in the list is used as the primary workspace
+   * root for relative-path storage and git analysis (TCG stage).
+   */
+  roots?: WorkspaceRoot[];
 
   /** Annotation depth: structured (headings/bold/code-spans) or full (all text + IDF) */
   depth?: "structured" | "full";
@@ -358,25 +414,69 @@ export async function buildFromPaths(
   const {
     paths: inputPaths,
     workspaceRoot,
+    roots,
     depth = "structured",
     exclude = [],
     include,
     session = path.basename(workspaceRoot),
     outputPath,
-    maxFileSize = 65536,
+    maxFileSize = 262144,
     log = () => {},
     onProgress,
   } = config;
 
+  // ── Resolve roots ────────────────────────────────────────────
+  // When `roots` is provided it drives both AX (code roots) and file
+  // discovery (all roots). Otherwise fall back to legacy single-root mode.
+  const resolvedRoots: Array<{ absPath: string; role: string; group: string }> =
+    roots
+      ? roots.map((r) => ({
+          absPath: path.isAbsolute(r.path)
+            ? r.path
+            : path.resolve(workspaceRoot, r.path),
+          role: r.role,
+          group: r.group ?? path.basename(r.path),
+        }))
+      : [];
+
+  // The primary code root for TCG (git) and relative-path storage.
+  // In legacy mode it is `workspaceRoot`; in roots mode it is the first "code" entry.
+  const primaryCodeRoot =
+    resolvedRoots.find((r) => r.role === "code")?.absPath ?? workspaceRoot;
+
   // ── 0. File discovery ────────────────────────────────────────
-  const iwIgnorePatterns = await loadIwIgnore(workspaceRoot);
+  const iwIgnorePatterns = await loadIwIgnore(primaryCodeRoot);
   const excludePatterns = buildExcludeList(exclude, iwIgnorePatterns);
 
   log("Discovering document files...");
-  const docFiles = await discoverFiles(inputPaths, workspaceRoot, {
-    include,
-    exclude: excludePatterns,
-  });
+
+  let docFiles: string[];
+  // Map from absolute file path → doc_group override (for external doc roots)
+  const fileGroupOverride = new Map<string, string>();
+
+  if (resolvedRoots.length > 0) {
+    // Multi-root: discover docs from ALL roots, tag external-doc-root files
+    const allFiles: string[] = [];
+    for (const root of resolvedRoots) {
+      const files = await discoverFiles([root.absPath], primaryCodeRoot, {
+        include,
+        exclude: excludePatterns,
+      });
+      allFiles.push(...files);
+      // Only non-primary roots (or non-code roots) get a group override
+      if (root.role !== "code") {
+        for (const f of files) fileGroupOverride.set(f, root.group);
+      }
+    }
+    docFiles = [...new Set(allFiles)].sort();
+  } else {
+    // Legacy: discover from inputPaths relative to workspaceRoot
+    docFiles = await discoverFiles(inputPaths, workspaceRoot, {
+      include,
+      exclude: excludePatterns,
+    });
+  }
+
   if (docFiles.length === 0) {
     throw new Error("No document files found in the given paths.");
   }
@@ -387,7 +487,53 @@ export async function buildFromPaths(
 
   // ── 1. AX: code symbol extraction ───────────────────────────
   const axStart = performance.now();
-  const axOutput = await analyzer.runAxStage({ workspaceRoot, maxFileSize });
+
+  // Collect AX outputs from all code roots (legacy: single workspaceRoot)
+  const codeRoots =
+    resolvedRoots.length > 0
+      ? resolvedRoots.filter((r) => r.role === "code").map((r) => r.absPath)
+      : [workspaceRoot];
+
+  // Run AX on each code root and merge results; file paths are stored relative
+  // to the primary code root so imports/connections work correctly.
+  const axMerged: Awaited<ReturnType<typeof analyzer.runAxStage>> = {
+    version: "1.0",
+    workspaceRoot: primaryCodeRoot,
+    extractedAt: Date.now(),
+    files: [],
+    totalFiles: 0,
+    totalSymbols: 0,
+    stats: { byKind: {}, exported: 0, internal: 0 },
+  };
+  for (const codeRoot of codeRoots) {
+    const axOut = await analyzer.runAxStage({
+      workspaceRoot: codeRoot,
+      maxFileSize,
+    });
+    // Re-root file paths to be relative to primaryCodeRoot
+    if (codeRoot !== primaryCodeRoot) {
+      for (const f of axOut.files) {
+        f.filePath = path.relative(
+          primaryCodeRoot,
+          path.join(codeRoot, f.filePath),
+        );
+      }
+    }
+    axMerged.files.push(...axOut.files);
+    axMerged.totalFiles += axOut.totalFiles;
+    axMerged.totalSymbols += axOut.totalSymbols;
+    axMerged.stats.exported += axOut.stats.exported;
+    axMerged.stats.internal += axOut.stats.internal;
+    for (const [k, v] of Object.entries(axOut.stats.byKind)) {
+      axMerged.stats.byKind[k] = (axMerged.stats.byKind[k] ?? 0) + v;
+    }
+    if ("durationMs" in axOut) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (axMerged as any).durationMs =
+        ((axMerged as any).durationMs ?? 0) + (axOut as any).durationMs;
+    }
+  }
+  const axOutput = axMerged;
   const axMs = performance.now() - axStart;
 
   const skippedCount = axOutput.files.filter(
@@ -427,7 +573,7 @@ export async function buildFromPaths(
   const logger = new analyzer.NoopLogger();
   const ctx = {
     logger,
-    workspace: { root: workspaceRoot, key: "index", id: "index" },
+    workspace: { root: primaryCodeRoot, key: "index", id: "index" },
     runId: `index-${Date.now()}`,
     store: null as unknown,
     profile: null as unknown,
@@ -437,26 +583,32 @@ export async function buildFromPaths(
   } as unknown;
 
   for (const filePath of docFiles) {
-    const relPath = path.relative(workspaceRoot, filePath);
-    log(`  KWX: ${relPath}`);
+    const relPath = path.relative(primaryCodeRoot, filePath);
+    const docGroup = fileGroupOverride.get(filePath);
+    log(`  KWX: ${relPath}${docGroup ? ` [${docGroup}]` : ""}`);
 
-    const content = await fs.promises.readFile(filePath, "utf-8");
-    const artifactId = toArtifactId(filePath, workspaceRoot);
+    try {
+      const content = await fs.promises.readFile(filePath, "utf-8");
+      const artifactId = toArtifactId(filePath, primaryCodeRoot);
 
-    const inInput: InStageInput = {
-      artifactId,
-      filePath: relPath,
-      content,
-    };
-    const inOutput = await analyzer.runInStage(
-      inInput,
-      ctx as Parameters<typeof analyzer.runInStage>[1],
-    );
-    const kwxOutput = await analyzer.runKwxStage(
-      { inOutput },
-      { depth, dictionary: symbolDictionary },
-    );
-    kwxOutputs.push(kwxOutput);
+      const inInput: InStageInput = {
+        artifactId,
+        filePath: relPath,
+        content,
+      };
+      const inOutput = await analyzer.runInStage(
+        inInput,
+        ctx as Parameters<typeof analyzer.runInStage>[1],
+      );
+      const kwxOutput = await analyzer.runKwxStage(
+        { inOutput },
+        { depth, dictionary: symbolDictionary },
+      );
+      kwxOutputs.push(kwxOutput);
+    } catch (error) {
+      const base = error instanceof Error ? error.message : String(error);
+      throw new Error(`KWX failed for ${relPath}: ${base}`);
+    }
   }
 
   const coxOutput = await analyzer.runCoxStage({ kwxOutputs });
@@ -483,7 +635,7 @@ export async function buildFromPaths(
   // ── 3. TCG: TCX → COC → HOT → OWN → STL ───────────────────
   const tcgStart = performance.now();
   const tcxOutput = await analyzer.runTcxStage({
-    workspaceRoot,
+    workspaceRoot: primaryCodeRoot,
     depth: "full",
     log: (msg: string) => log(`  tcg: ${msg}`),
   });
@@ -493,7 +645,7 @@ export async function buildFromPaths(
   const stlOutput = analyzer.runStlStage({
     tcxOutput,
     kwgEntities: kwxOutputs.flatMap((o) => o.entities).map((e) => e.name),
-    workspaceRoot,
+    workspaceRoot: primaryCodeRoot,
   });
 
   const tcgOutput: TcgPipelineOutput = {
@@ -504,7 +656,7 @@ export async function buildFromPaths(
     stl: stlOutput,
     meta: {
       session,
-      workspaceRoot,
+      workspaceRoot: primaryCodeRoot,
       gitDepth: "full history",
       totalDurationMs: performance.now() - tcgStart,
     },
@@ -543,10 +695,12 @@ export async function buildFromPaths(
   // ── 5. Write SQLite index ───────────────────────────────────
   const buildOpts: IndexBuildOptions = {
     session,
-    workspaceRoot,
+    workspaceRoot: primaryCodeRoot,
     depth,
     outputPath,
     log,
+    docGroupOverride:
+      fileGroupOverride.size > 0 ? fileGroupOverride : undefined,
   };
 
   const result = buildIndex(

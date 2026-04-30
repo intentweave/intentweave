@@ -78,7 +78,7 @@ export function buildIndex(
       annotations: writeAnnotations(db, annotations),
       coOccurrences: writeCoOccurrences(db, cox),
       coChanges: writeCoChanges(db, tcg),
-      files: writeFiles(db, ax, tcg),
+      files: writeFiles(db, ax, tcg, opts.docGroupOverride),
       imports: writeImports(db, ax),
       todos: writeTodos(db, ax),
       rationale: writeRationale(db, ax),
@@ -296,6 +296,7 @@ function writeFiles(
   db: Database.Database,
   ax: AxOutput,
   tcg: TcgPipelineOutput,
+  docGroupOverride?: Map<string, string>,
 ): number {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash, doc_group, indexed, skip_reason, comment_lines, code_lines)
@@ -343,7 +344,7 @@ function writeFiles(
           own ? countBusFactor(own) : null,
           isDoc ? 1 : 0,
           axFile?.contentHash ?? null,
-          isDoc ? classifyDocGroup(fp) : null,
+          isDoc ? (docGroupOverride?.get(fp) ?? classifyDocGroup(fp)) : null,
           indexed,
           axFile?.skipReason ?? null,
           axFile?.commentLines ?? 0,

@@ -110,8 +110,16 @@ const indexBuildSubcommand = new Command("build")
   .option("-o, --output <path>", "Output path for the SQLite database")
   .option(
     "--max-file-size <bytes>",
-    "Skip source files larger than this size in bytes during AX extraction (default: 65536)",
-    "65536",
+    "Skip source files larger than this size in bytes during AX extraction (default: 262144)",
+    "262144",
+  )
+  .option(
+    "--root <path:role[:group]>",
+    "Add a workspace root with a role (e.g. ../docs:docs or ../docs:docs:my-docs). " +
+      "Role 'code' runs AX extraction; any other role (e.g. 'docs') runs keyword extraction only. " +
+      "Can be repeated. When present, overrides the [paths...] argument.",
+    (val: string, prev: string[]) => [...(prev ?? []), val],
+    [] as string[],
   )
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
@@ -120,17 +128,39 @@ const indexBuildSubcommand = new Command("build")
     const session = opts.session ?? path.basename(cwd);
     const verbose = opts.verbose;
 
+    // Parse --root tuples: "path:role" or "path:role:group"
+    const roots: import("@intentweave/index").WorkspaceRoot[] = (
+      (opts.root ?? []) as string[]
+    ).map((raw) => {
+      const parts = raw.split(":");
+      const rootPath = parts[0];
+      const role = parts[1] ?? "docs";
+      const group = parts[2]; // undefined → defaults to basename in facade
+      return group ? { path: rootPath, role, group } : { path: rootPath, role };
+    });
+
     console.log(chalk.blue(`\n  ▸ CARI Index Build — session: ${session}`));
     console.log(
       chalk.blue(
         `  ▸ depth: ${opts.depth} | output: ${opts.output ?? ".iw/index.db"}\n`,
       ),
     );
+    if (roots.length > 0) {
+      for (const r of roots) {
+        console.log(
+          chalk.gray(
+            `  ▸ root: ${r.path} [${r.role}${r.group ? `:${r.group}` : ""}]`,
+          ),
+        );
+      }
+      console.log();
+    }
 
     try {
       const result = await buildFromPaths({
         paths,
         workspaceRoot: cwd,
+        roots: roots.length > 0 ? roots : undefined,
         depth: opts.depth as "structured" | "full",
         exclude: opts.exclude,
         include: opts.include,

@@ -33,7 +33,7 @@ export type {
 
 // Facade: CariIndex class + buildFromPaths orchestration
 export { CariIndex, buildFromPaths } from "./facade.js";
-export type { CariConfig, CariStageProgress } from "./facade.js";
+export type { CariConfig, CariStageProgress, WorkspaceRoot } from "./facade.js";
 
 // Facade: file discovery utilities (also used by CLI)
 export {

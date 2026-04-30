@@ -68,7 +68,7 @@ export class AstExtractor {
 
     try {
       const content = await fs.promises.readFile(absolutePath, "utf-8");
-      const tree = this.parser.parse(content);
+      const tree = this.parseSafe(content);
 
       const symbols: ExtractedSymbol[] = [];
       const imports: ExtractedImport[] = [];
@@ -192,7 +192,7 @@ export class AstExtractor {
     const opts = { ...this.defaultOptions, ...options };
     this.setParserLanguage(language);
 
-    const tree = this.parser.parse(content);
+    const tree = this.parseSafe(content);
     const symbols: ExtractedSymbol[] = [];
     const imports: ExtractedImport[] = [];
     const exports: ExtractedExport[] = [];
@@ -239,6 +239,26 @@ export class AstExtractor {
         this.parser.setLanguage(TypeScript.typescript);
         break;
     }
+  }
+
+  /**
+   * Parse content using tree-sitter, using a callback-based approach for content
+   * longer than 32 767 characters to work around a hard string-size limit in
+   * tree-sitter 0.21.x Node.js bindings ("Invalid argument" for strings > 32767 chars).
+   */
+  private parseSafe(content: string): Parser.Tree {
+    // tree-sitter 0.21.x: parser.parse(string) throws "Invalid argument" for strings
+    // longer than 32 767 chars (2^15 − 1). The callback form, which receives a
+    // character offset and returns a substring chunk, has no such restriction.
+    const MAX_DIRECT = 32_000;
+    if (content.length <= MAX_DIRECT) {
+      return this.parser.parse(content);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.parser as any).parse((startIndex: number): string | null => {
+      if (startIndex >= content.length) return null;
+      return content.slice(startIndex, startIndex + 4096);
+    }) as Parser.Tree;
   }
 
   /**
@@ -687,6 +707,30 @@ export class AstExtractor {
   }
 
   /**
+   * Given a call_expression node (e.g. React.memo(...), forwardRef(...)),
+   * find the first direct argument that is an arrow_function or
+   * function_expression.  Used to promote HOC-wrapped variables to "function".
+   *
+   * Only searches the immediate argument list — one level deep — to avoid
+   * false-positives from deeply nested callbacks.
+   */
+  private findFunctionArgument(
+    callNode: Parser.SyntaxNode,
+  ): Parser.SyntaxNode | null {
+    const args = callNode.childForFieldName("arguments");
+    if (!args) return null;
+    for (const child of args.children) {
+      if (
+        child.type === "arrow_function" ||
+        child.type === "function_expression"
+      ) {
+        return child;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Extract variable declarations
    */
   private extractVariables(
@@ -721,6 +765,19 @@ export class AstExtractor {
           params = options.includeParameters
             ? this.extractParameters(valueNode)
             : undefined;
+        } else if (valueNode.type === "call_expression") {
+          // HOC / wrapper pattern: React.memo(...), React.forwardRef(...),
+          // memo(...), forwardRef(...), connect(...)(...), styled.div`...`, etc.
+          // If any direct argument is an arrow_function or function_expression
+          // the variable is a component/function — promote the kind.
+          const fnArg = this.findFunctionArgument(valueNode);
+          if (fnArg) {
+            kind = "function";
+            isAsync = fnArg.children.some((c) => c.type === "async");
+            params = options.includeParameters
+              ? this.extractParameters(fnArg)
+              : undefined;
+          }
         }
       }
 

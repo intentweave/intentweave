@@ -343,7 +343,7 @@ export interface AxStageOptions {
   /**
    * Maximum file size in bytes before AX extraction is skipped.
    * Files larger than this will be recorded in the index with indexed=false.
-   * Default: 65536 (64 KiB)
+   * Default: 262144 (256 KiB)
    */
   maxFileSize?: number;
 }
@@ -501,7 +501,7 @@ async function discoverFiles(
     "**/*.spec.ts",
   ],
 ): Promise<string[]> {
-  const { glob } = await import("glob");
+  const { glob } = await import("tinyglobby");
 
   const files: string[] = [];
 
@@ -509,7 +509,6 @@ async function discoverFiles(
     const matches = await glob(pattern, {
       cwd: workspaceRoot,
       ignore: exclude,
-      nodir: true,
     });
     files.push(...matches);
   }
@@ -739,7 +738,7 @@ export async function runAxStage(options: AxStageOptions): Promise<AxOutput> {
     includeMembers = true,
     maxDepth = 2,
     extraAdapters,
-    maxFileSize = 65536,
+    maxFileSize = 262144,
   } = options;
 
   // Create language registry with built-in TS/JS adapter

@@ -12,7 +12,7 @@ import * as crypto from "node:crypto";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import chalk from "chalk";
-import { glob } from "glob";
+import { glob } from "tinyglobby";
 import {
   createPipelineContext,
   createFileStore,
@@ -94,7 +94,6 @@ export async function collectFiles(
     } else if (stat?.isDirectory()) {
       const dirFiles = await glob("**/*", {
         cwd: absolutePattern,
-        nodir: true,
         absolute: true,
         ignore: includeIgnored ? [] : DEFAULT_IGNORE,
         dot: false,
@@ -103,7 +102,6 @@ export async function collectFiles(
     } else {
       const matched = await glob(pattern, {
         cwd: basePath,
-        nodir: true,
         absolute: true,
         ignore: includeIgnored ? [] : DEFAULT_IGNORE,
         dot: false,

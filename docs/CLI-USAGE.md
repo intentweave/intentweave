@@ -43,12 +43,32 @@ iw --help
 
 ### Requirements
 
-| Requirement        | Version | Notes                                            |
-| ------------------ | ------- | ------------------------------------------------ |
-| **Node.js**        | ≥ 20    | `node -v`                                        |
-| **Neo4j**          | 5.x     | Only for `query`, `context`, `impact`, `persist` |
-| **OpenAI API key** | —       | Only for `--provider openai` and NL queries      |
-| **Docker**         | —       | Easiest way to run Neo4j locally                 |
+| Requirement        | Version  | Notes                                            |
+| ------------------ | -------- | ------------------------------------------------ |
+| **Node.js**        | ≥ 20 LTS | `node -v` — see note below for CI environments   |
+| **Neo4j**          | 5.x      | Only for `query`, `context`, `impact`, `persist` |
+| **OpenAI API key** | —        | Only for `--provider openai` and NL queries      |
+| **Docker**         | —        | Easiest way to run Neo4j locally                 |
+
+> **CI / Alpine Docker note:** `@intentweave/cli` depends on `better-sqlite3`, a native Node
+> addon. Prebuilt binaries are available for **Node 20 LTS and Node 22 LTS** on both glibc
+> and musl (Alpine) for x64 and arm64. **Node 25+ (current/experimental) has no prebuilt
+> binaries** — installing on those versions requires Python and build tools to compile from
+> source. Use `node:22-alpine` (or `node:22`) as your CI base image to avoid this.
+>
+> ```yaml
+> # .github/workflows/ci.yml — recommended Node version for IntentWeave
+> - uses: actions/setup-node@v4
+>   with:
+>     node-version: "22"
+> ```
+>
+> If you cannot change the Node version, add build dependencies before installing:
+>
+> ```dockerfile
+> RUN apk add --no-cache python3 make g++
+> RUN npm install -g @intentweave/cli
+> ```
 
 ---
 

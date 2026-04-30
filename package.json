@@ -26,7 +26,8 @@
     "format:check": "prettier --check '**/*.{ts,tsx,json,md}'",
     "publish:all": "pnpm build && pnpm -r publish --access public",
     "publish:dry": "pnpm build && pnpm -r publish --access public --dry-run",
-    "version:bump": "./scripts/bump-version.sh"
+    "version:bump": "./scripts/bump-version.sh",
+    "docs:gate:intentweave-org": "node scripts/check-intentweave-org-docs.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.37",
