@@ -72,11 +72,12 @@ function insertImport(
   sourceFile: string,
   moduleSpecifier: string,
   targetFile: string | null = null,
+  line: number | null = null,
 ) {
   db.prepare(
-    `INSERT INTO imports (source_file, module_specifier, target_file, is_relative)
-     VALUES (?, ?, ?, 0)`,
-  ).run(sourceFile, moduleSpecifier, targetFile);
+    `INSERT INTO imports (source_file, module_specifier, target_file, line, is_relative)
+     VALUES (?, ?, ?, ?, 0)`,
+  ).run(sourceFile, moduleSpecifier, targetFile, line);
 }
 
 // ── matchesChainGlob unit tests (via rulesCheckFromDb) ────────────────────────
@@ -301,9 +302,11 @@ describe("rulesCheck — import_pattern type", () => {
 
   beforeAll(() => {
     ({ db, dbPath } = tmpDb());
-    insertImport(db, "src/views/PduView.tsx", "lodash", null);
+    insertImport(db, "src/views/PduView.tsx", "lodash", null, 3);
     insertImport(db, "src/utils/helper.ts", "lodash", null);
-    insertImport(db, "src/views/SignalView.tsx", "@company/api-client", null);
+    insertImport(db, "src/views/SignalView.tsx", "@company/api-client", null, 11);
+    insertImport(db, "src/views/IoView.tsx", "node:fs/promises", null, 22);
+    insertImport(db, "src/views/PathView.tsx", "node:path", null, 7);
   });
 
   afterAll(() => cleanup(db, dbPath));
@@ -324,6 +327,57 @@ describe("rulesCheck — import_pattern type", () => {
     const result = rulesCheckFromDb(db, config);
     expect(result.violations.length).toBe(1);
     expect(result.violations[0].filePath).toBe("src/views/PduView.tsx");
+    expect(result.violations[0].line).toBe(3);
+  });
+
+  it("`**` in import_pattern matches across `/` in module specifiers", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-node-fs-family",
+          description: "test",
+          severity: "high",
+          forbidden: [
+            {
+              type: "import_pattern",
+              pattern: "node:fs**",
+              in: "src/views/**",
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations.map((v) => v.filePath)).toEqual([
+      "src/views/IoView.tsx",
+    ]);
+    expect(result.violations[0].line).toBe(22);
+  });
+
+  it("regex mode for import_pattern works when regex=true", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "regex-node-fs",
+          description: "test",
+          severity: "high",
+          forbidden: [
+            {
+              type: "import_pattern",
+              pattern: "^node:fs/",
+              regex: true,
+              in: "src/views/**",
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations.map((v) => v.filePath)).toEqual([
+      "src/views/IoView.tsx",
+    ]);
   });
 });
 

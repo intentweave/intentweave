@@ -2143,7 +2143,7 @@ const SEVERITY_COLOR: Record<string, (s: string) => string> = {
 
 const indexRulesCheckSubcommand = new Command("rules-check")
   .description(
-    "Check codebase against semantic architectural rules from .iw/rules.yaml (13.2/13.3)",
+    "Check codebase against semantic architectural rules from .iw/rules.yaml (13.2/13.3/13.5)",
   )
   .option("--db <path>", "Path to index.db")
   .option("--config <path>", "Path to rules.yaml", ".iw/rules.yaml")
@@ -2159,6 +2159,18 @@ const indexRulesCheckSubcommand = new Command("rules-check")
   )
   .option("-n, --limit <n>", "Maximum violations to report", "100")
   .option("-f, --format <format>", "Output format: text | json", "text")
+  .option(
+    "--save-baseline <file>",
+    "Save current violation counts as baseline JSON (13.5)",
+  )
+  .option(
+    "--baseline <file>",
+    "Compare against saved baseline; combine with --fail-on-increase for CI gate (13.5)",
+  )
+  .option(
+    "--fail-on-increase",
+    "Exit code 1 if any severity count exceeds baseline (use with --baseline; 13.5)",
+  )
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
     const configPath = path.resolve(opts.config);
@@ -2186,10 +2198,133 @@ const indexRulesCheckSubcommand = new Command("rules-check")
       limit: parseInt(opts.limit, 10),
     });
 
+    // ── --save-baseline (13.5) ──────────────────────────────────────────────
+    if (opts.saveBaseline) {
+      const baselineData = {
+        high: result.bySeverity.high,
+        medium: result.bySeverity.medium,
+        low: result.bySeverity.low,
+        total: result.totalViolations,
+        timestamp: new Date().toISOString(),
+        rulesChecked: result.rulesChecked,
+      };
+      const baselinePath = path.resolve(opts.saveBaseline);
+      await fs.mkdir(path.dirname(baselinePath), { recursive: true });
+      await fs.writeFile(baselinePath, JSON.stringify(baselineData, null, 2) + "\n");
+      console.log(chalk.green(`\n  ✓ Baseline saved → ${baselinePath}`));
+      console.log(
+        chalk.gray(
+          `    high=${baselineData.high} medium=${baselineData.medium} low=${baselineData.low} total=${baselineData.total}\n`,
+        ),
+      );
+      return;
+    }
+
+    // ── --format json (13.8 fix: write synchronously to avoid redirect truncation) ──
     if (opts.format === "json") {
-      console.log(JSON.stringify(result, null, 2));
+      const output = JSON.stringify(result, null, 2) + "\n";
+      process.stdout.write(output);
       if (result.totalViolations > 0) process.exitCode = 1;
       return;
+    }
+
+    // ── --baseline comparison (13.5) ───────────────────────────────────────
+    let baseline: { high: number; medium: number; low: number; total: number; timestamp?: string } | undefined;
+    if (opts.baseline) {
+      try {
+        const raw = await fs.readFile(path.resolve(opts.baseline), "utf-8");
+        baseline = JSON.parse(raw);
+      } catch {
+        console.error(chalk.red(`\n  ✗ Could not read baseline: ${opts.baseline}\n`));
+        process.exitCode = 2;
+        return;
+      }
+    }
+
+    // ── CI report table (shown when baseline is provided) ─────────────────
+    if (baseline) {
+      const cur = result.bySeverity;
+      const bl = baseline;
+      const deltaHigh = cur.high - bl.high;
+      const deltaMed = cur.medium - bl.medium;
+      const deltaLow = cur.low - bl.low;
+      const deltaTotal = result.totalViolations - bl.total;
+
+      const fmtDelta = (n: number) =>
+        n === 0 ? chalk.gray("0") : n > 0 ? chalk.red(`+${n}`) : chalk.green(`${n}`);
+      const pad = (s: string | number, w: number) => String(s).padStart(w);
+
+      console.log();
+      console.log("  ╔══════════════════════════════════════════════════════════╗");
+      console.log("  ║  IntentWeave Semantic Rules — CI Report                 ║");
+      console.log("  ╠══════════════════════════════════════════════════════════╣");
+      console.log(`  ║  Rules checked: ${result.rulesChecked}`);
+      console.log(`  ║  Severity    Current   Baseline    Delta`);
+      console.log(`  ║  ──────────  ────────  ────────  ──────────`);
+      console.log(`  ║  HIGH        ${pad(cur.high, 6)}    ${pad(bl.high, 6)}   ${fmtDelta(deltaHigh)}`);
+      console.log(`  ║  MEDIUM      ${pad(cur.medium, 6)}    ${pad(bl.medium, 6)}   ${fmtDelta(deltaMed)}`);
+      console.log(`  ║  LOW         ${pad(cur.low, 6)}    ${pad(bl.low, 6)}   ${fmtDelta(deltaLow)}`);
+      console.log(`  ║  TOTAL       ${pad(result.totalViolations, 6)}    ${pad(bl.total, 6)}   ${fmtDelta(deltaTotal)}`);
+      if (result.byRule && Object.keys(result.byRule).length > 0) {
+        console.log("  ║");
+        console.log("  ║  Per-rule breakdown:");
+        for (const [ruleId, count] of Object.entries(result.byRule).sort()) {
+          console.log(`  ║    ${ruleId}: ${count}`);
+        }
+      }
+      console.log("  ╚══════════════════════════════════════════════════════════╝");
+      console.log();
+
+      if (opts.failOnIncrease) {
+        const sevThreshold = opts.severity as "high" | "medium" | "low";
+        const checkSeverities: Array<"high" | "medium" | "low"> =
+          sevThreshold === "high"
+            ? ["high"]
+            : sevThreshold === "medium"
+              ? ["high", "medium"]
+              : ["high", "medium", "low"];
+
+        const violations = checkSeverities.filter(
+          (s) => result.bySeverity[s] > (baseline as any)[s],
+        );
+        if (violations.length > 0) {
+          for (const sev of violations) {
+            const delta = result.bySeverity[sev] - (baseline as any)[sev];
+            console.log(
+              chalk.red(
+                `  ❌ GATE FAILED — ${sev.toUpperCase()} violations increased: ${(baseline as any)[sev]} → ${result.bySeverity[sev]} (+${delta})`,
+              ),
+            );
+          }
+          // Print the new violations for context
+          const newViolations = result.violations.filter((v) =>
+            checkSeverities.includes(v.ruleSeverity),
+          );
+          if (newViolations.length > 0) {
+            console.log();
+            for (const v of newViolations.slice(0, 20)) {
+              const loc = v.line != null ? `:${v.line}` : "";
+              const colorFn = SEVERITY_COLOR[v.ruleSeverity] ?? chalk.white;
+              console.log(
+                `  ${colorFn(`[${v.ruleId}]`)} ${chalk.cyan(v.filePath + loc)}`,
+              );
+              console.log(`    ${chalk.white(v.detail)}`);
+            }
+          }
+          console.log();
+          process.exitCode = 1;
+          return;
+        }
+        const scopeLabel = sevThreshold !== "low" ? ` ${sevThreshold.toUpperCase()}-severity` : "";
+        console.log(
+          chalk.green(
+            `  ✅ GATE PASSED — no new${scopeLabel} violations (current: ${result.bySeverity[sevThreshold === "low" ? "high" : sevThreshold]}, baseline: ${(baseline as any)[sevThreshold === "low" ? "high" : sevThreshold]})`,
+          ),
+        );
+        console.log();
+        return;
+      }
+      // baseline shown but no fail-on-increase — fall through to violation list
     }
 
     if (result.violations.length === 0) {

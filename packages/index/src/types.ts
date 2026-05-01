@@ -2080,6 +2080,9 @@ export interface RuleForbidden {
   /** Regex/name pattern for symbol_name or import_pattern */
   pattern?: string;
 
+  /** When true, treat `pattern` as a regex source (or /.../) for import_pattern */
+  regex?: boolean;
+
   /** Glob restricting which files are in scope (e.g. "apps/ui/**") */
   in?: string;
 

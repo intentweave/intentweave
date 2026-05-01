@@ -139,6 +139,9 @@ export interface AxImport {
   /** Module specifier (e.g., './utils', 'lodash') */
   moduleSpecifier: string;
 
+  /** Source line of the import statement (1-based) */
+  line?: number;
+
   /** Resolved target file path (relative to workspace; undefined for package imports) */
   resolvedPath?: string;
 
@@ -440,6 +443,7 @@ function extractImports(
 
   return result.imports.map((imp) => ({
     moduleSpecifier: imp.moduleSpecifier,
+    line: imp.range.startLine,
     resolvedPath: imp.isRelative
       ? resolveImportPath(relativePath, imp.moduleSpecifier, workspaceRoot)
       : undefined,

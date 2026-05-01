@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS imports (
   source_file TEXT NOT NULL,
   target_file TEXT,
   module_specifier TEXT NOT NULL,
+  line INTEGER,
   is_relative BOOLEAN NOT NULL,
   imported_names TEXT
 );
@@ -302,8 +303,17 @@ export function initSchema(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
 
+  // Backward-compatible migration: older indexes may not have imports.line.
+  const importsCols = db
+    .prepare(`PRAGMA table_info(imports)`)
+    .all() as Array<{ name: string }>;
+  const hasImportLine = importsCols.some((c) => c.name === "line");
+  if (!hasImportLine) {
+    db.exec(`ALTER TABLE imports ADD COLUMN line INTEGER`);
+  }
+
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '10')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '11')`,
   ).run();
 }

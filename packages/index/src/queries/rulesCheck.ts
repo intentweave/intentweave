@@ -321,14 +321,19 @@ function checkImportPattern(
 ): RulesViolation[] {
   if (!forbidden.pattern) return [];
 
+  const hasImportLine = hasTableColumn(db, "imports", "line");
+
   const rows = db
     .prepare(
-      `SELECT source_file, module_specifier, target_file FROM imports ORDER BY source_file`,
+      hasImportLine
+        ? `SELECT source_file, module_specifier, target_file, line FROM imports ORDER BY source_file`
+        : `SELECT source_file, module_specifier, target_file FROM imports ORDER BY source_file`,
     )
     .all() as Array<{
     source_file: string;
     module_specifier: string;
     target_file: string | null;
+    line?: number | null;
   }>;
 
   const violations: RulesViolation[] = [];
@@ -336,9 +341,11 @@ function checkImportPattern(
   for (const row of rows) {
     if (!matchesScope(row.source_file, forbidden, changed)) continue;
 
-    const specifierMatch = minimatch(row.module_specifier, forbidden.pattern, {
-      matchBase: true,
-    });
+    const specifierMatch = matchesImportPattern(
+      row.module_specifier,
+      forbidden.pattern,
+      forbidden.regex,
+    );
     const targetMatch = row.target_file
       ? minimatch(row.target_file, forbidden.pattern)
       : false;
@@ -351,12 +358,58 @@ function checkImportPattern(
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.source_file,
-      line: null,
+      line: row.line ?? null,
       detail: `import of \`${row.module_specifier}\` matches forbidden pattern \`${forbidden.pattern}\``,
     });
   }
 
   return violations;
+}
+
+function hasTableColumn(
+  db: Database.Database,
+  table: string,
+  column: string,
+): boolean {
+  const cols = db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all() as Array<{ name: string }>;
+  return cols.some((c) => c.name === column);
+}
+
+function matchesImportPattern(
+  value: string,
+  pattern: string,
+  isRegex = false,
+): boolean {
+  if (isRegex) {
+    try {
+      // Accept either plain regex source or /.../ form.
+      const src =
+        pattern.length >= 2 && pattern.startsWith("/") && pattern.endsWith("/")
+          ? pattern.slice(1, -1)
+          : pattern;
+      return new RegExp(src).test(value);
+    } catch {
+      return false;
+    }
+  }
+
+  // 13.6: module specifier matching is prefix-aware when pattern ends with `**`.
+  if (pattern.endsWith("**")) {
+    const prefix = pattern.slice(0, -2);
+    if (!/[?*\[\]]/.test(prefix) && value.startsWith(prefix)) {
+      return true;
+    }
+  }
+
+  // 13.6: for module specifiers, `**` should cross `/` separators.
+  const crossSlashPattern = pattern.replaceAll("**", "{*,**/*}");
+
+  return minimatch(value, crossSlashPattern, {
+    matchBase: true,
+    noglobstar: false,
+  });
 }
 
 // ── Scope helpers ─────────────────────────────────────────────────────────────

@@ -373,10 +373,20 @@ function countBusFactor(own: OwnershipRecord): number {
 // =============================================================================
 
 function writeImports(db: Database.Database, ax: AxOutput): number {
-  const stmt = db.prepare(`
-    INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
-    VALUES (?, ?, ?, ?, ?)
-  `);
+  const importCols = db
+    .prepare(`PRAGMA table_info(imports)`)
+    .all() as Array<{ name: string }>;
+  const hasLine = importCols.some((c) => c.name === "line");
+
+  const stmt = hasLine
+    ? db.prepare(`
+        INSERT INTO imports (source_file, target_file, module_specifier, line, is_relative, imported_names)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `)
+    : db.prepare(`
+        INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
+        VALUES (?, ?, ?, ?, ?)
+      `);
 
   let count = 0;
   for (const file of ax.files) {
@@ -385,13 +395,24 @@ function writeImports(db: Database.Database, ax: AxOutput): number {
       const batch = file.imports.slice(i, i + BATCH_SIZE);
       const tx = db.transaction(() => {
         for (const imp of batch) {
-          stmt.run(
-            file.filePath,
-            imp.resolvedPath ?? null,
-            imp.moduleSpecifier,
-            imp.isRelative ? 1 : 0,
-            JSON.stringify(imp.importedNames),
-          );
+          if (hasLine) {
+            stmt.run(
+              file.filePath,
+              imp.resolvedPath ?? null,
+              imp.moduleSpecifier,
+              imp.line ?? null,
+              imp.isRelative ? 1 : 0,
+              JSON.stringify(imp.importedNames),
+            );
+          } else {
+            stmt.run(
+              file.filePath,
+              imp.resolvedPath ?? null,
+              imp.moduleSpecifier,
+              imp.isRelative ? 1 : 0,
+              JSON.stringify(imp.importedNames),
+            );
+          }
           count++;
         }
       });

@@ -1521,6 +1521,337 @@ committed, all CI enforcement is $0 — no further LLM calls.
 
 Depends on: 13.2 (rule format), KG LLM pipeline (exists).
 
+### 13.5 `--baseline` Flag — Regression Gating _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 evaluation:** The `iw-ci-check.sh` wrapper script
+> manually compares `iw index rules-check --format json` output against a
+> `.iw/baseline.json` file using shell + jq. This eliminates the need for the wrapper
+> — the CLI itself gates on regression.
+
+**Problem:** CI teams must maintain a shell wrapper (`iw-ci-check.sh`) that reads a
+baseline JSON, runs `rules-check`, parses both JSONs, and fails if any severity count
+increases. This is boilerplate that every adopter re-implements.
+
+**Solution:** Built-in baseline support directly in `iw index rules-check`:
+
+```bash
+# Save current state as baseline
+iw index rules-check --save-baseline .iw/baseline.json
+
+# Gate: fail if any severity count exceeds baseline
+iw index rules-check --baseline .iw/baseline.json --fail-on-increase
+
+# Gate: fail if HIGH count exceeds baseline (most common CI use case)
+iw index rules-check --baseline .iw/baseline.json --fail-on-increase --severity high
+```
+
+Output when gate passes:
+```
+╔══════════════════════════════════════════════════╗
+║  IntentWeave Semantic Rules — CI Report          ║
+╠══════════════════════════════════════════════════╣
+║  Severity  Current  Baseline  Delta              ║
+║  HIGH         11       11        0               ║
+║  MEDIUM        29       29        0               ║
+║  LOW           26       26        0               ║
+║  TOTAL         66       66        0               ║
+╚══════════════════════════════════════════════════╝
+✅ GATE PASSED — no new HIGH-severity violations (current: 11, baseline: 11)
+```
+
+Output when gate fails:
+```
+❌ GATE FAILED — HIGH violations increased: 11 → 14 (+3)
+  New violations:
+    [adr003-no-source-path-in-services] src/auth.ts:204  (HIGH)
+    ...
+exit code: 1
+```
+
+The baseline file is a simple JSON:
+```json
+{ "high": 11, "medium": 29, "low": 26, "total": 66, "timestamp": "2026-04-30T19:56:30Z" }
+```
+
+This eliminates the `iw-ci-check.sh` wrapper entirely. The `--save-baseline` command
+is run once on the main branch after accepting current violations; subsequent CI runs
+compare against it.
+
+CLI: `iw index rules-check --baseline <file>`, `--save-baseline <file>`, `--fail-on-increase`.
+
+Depends on: 13.2 (rules-check), 13.3 (CI mode).
+
+### 13.6 `import_pattern` Glob Fix — `**` Across `/` in Module Specifiers _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 bug #1:** `node:fs**` did not match `node:fs/promises`
+> — the `**` wildcard does not expand across `/` in import module specifiers. This is
+> surprising behavior: teams expect `node:fs**` to be a prefix-match covering all `node:fs`
+> sub-paths.
+
+**Problem:** In file-system globs, `**` matches path separators. But `import_pattern`
+rules match against module specifier strings, not file paths. The `/` in `node:fs/promises`
+is a specifier separator (not a directory separator), yet teams expect `**` to match it.
+
+**Solution:** In `rulesCheck`, when evaluating `import_pattern` rules, treat module
+specifier patterns as **prefix-aware**: `**` matches any characters including `/`, and
+a trailing `**` acts as a prefix match. Optionally support a `regex: true` flag:
+
+```yaml
+# All these should match `node:fs/promises`:
+- type: import_pattern
+  pattern: 'node:fs**'       # prefix match (fixed)
+  pattern: 'node:fs*'        # single-star prefix (disambiguated)
+  pattern: '/^node:fs/'      # regex alternative
+  regex: true
+```
+
+The single-star `*` continues to not match `/` (standard glob), so `node:*` matches
+`node:path` but not `node:fs/promises`. Only `**` (or explicit regex) crosses `/`.
+
+Depends on: 13.2 (rulesCheck, `import_pattern` matching logic).
+
+### 13.7 Import Violations Line Numbers _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 bug #2:** All `import_pattern` violations report
+> `"line": null`. Other violation types (call, property_access, symbol_name) report
+> correct line numbers.
+
+**Problem:** The `imports` table stores `(from_file, to_module, kind)` but not the
+source line number of the import statement. This means `import_pattern` violations
+can only report the file name, not the exact line — making them harder to locate and
+fix in large files with many imports.
+
+**Solution:** Add a `line` column to the `imports` table during AX extraction:
+
+```sql
+ALTER TABLE imports ADD COLUMN line INTEGER;
+```
+
+The tree-sitter import traversal already visits `import_statement` nodes, which have
+exact source positions. Capture `node.startPosition.row + 1` and store it. The
+`rulesCheck` query then joins on this line to surface exact violation locations:
+
+```
+[adr003-no-direct-io-in-adapters] packages/@arccraft/adapters/src/arcschema/ArcSchemaAdapter.ts:3
+  import of `node:fs/promises` matches forbidden pattern `node:fs/promises`
+```
+
+Depends on: 13.1 (AX traversal infrastructure), `imports` table (exists).
+
+### 13.8 `rules-check --format json` Redirect Fix _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 bug #3:** `iw index rules-check --format json > file.json`
+> produces exit code 1 with an empty file. Must pipe to a consumer instead.
+
+**Problem:** When stdout is redirected to a file (`> file.json`), the JSON formatter
+either detects a non-TTY and behaves differently, or the process exits before the write
+buffer is flushed.
+
+**Solution:** Ensure the `--format json` path:
+
+1. Writes to stdout synchronously (or awaits the flush before exit)
+2. Does not depend on TTY detection for output routing
+3. Exits with code 0 on success even when stdout is redirected
+
+Test case: `iw index rules-check --format json > /tmp/out.json && jq . /tmp/out.json`
+should produce valid JSON and exit 0.
+
+Depends on: 13.2 (rules-check output path).
+
+### 13.9 `symbol_name` Rule — `scope` Modifier _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 limitation #1:** `entityByFqn` in EventView.tsx is a
+> local `const` binding inside a function body — not a top-level declaration. The
+> `symbol_name` rule is currently invisible to such local variables.
+
+**Problem:** CARI's AX extractor only indexes top-level declarations (functions, classes,
+exported symbols). Local `const` bindings inside function bodies are not indexed. Teams
+want rules like "no variable named `entityByFqn` in view components" but `symbol_name`
+only sees exported/top-level symbols.
+
+**Solution:** Two-phase approach:
+
+**Phase 1 (short-term):** Add `scope` modifier to `symbol_name` rules — document the
+current limitation clearly:
+
+```yaml
+- type: symbol_name
+  pattern: 'entityByFqn|entityById'
+  scope: exported   # default — only top-level exported declarations
+  scope: top-level  # top-level declarations (exported or not)
+  scope: any        # includes local const/let/var (requires Phase 2)
+```
+
+**Phase 2 (medium-term):** Extend AX to extract local variable declarations within
+function bodies as a new symbol kind (`local_var`), stored with `exported: false` and
+`scope: local`. This enables `scope: any` rules to fire on `const entityByFqn = ...`.
+
+The AX tree-sitter traversal already visits all AST nodes inside function bodies for
+`symbol_calls` and `property_accesses` (13.1) — local variable declaration capture
+is a natural extension.
+
+CLI/MCP: no new commands — extends `rulesCheck` rule evaluation.
+
+Depends on: 13.1 (AX traversal), 13.2 (rules.yaml evaluation).
+
+### 13.10 `type: variable_assignment` Rule Type _(CARI, M)_
+
+> **Derived from ARC-372 v0.11.1 improvement idea #3:** Detect when view components build
+> lookup maps from entity arrays — the actual ADR-003 violation pattern that `symbol_name`
+> can't catch.
+
+**Problem:** The real violation in EventView.tsx is not the name `entityByFqn` — it's the
+pattern of building a lookup map from a domain entity array directly in a view component.
+Neither `symbol_name` (which sees declarations) nor `property_access` / `call` (which see
+usage) can detect this constructor pattern:
+
+```typescript
+const entityByFqn = new Map(entities.map(e => [e.fqn, e]));
+//                  ^^^^^^^ RHS pattern — value constructed from domain data in a UI component
+```
+
+**Solution:** New rule type `variable_assignment` that checks the right-hand side of
+variable assignment expressions:
+
+```yaml
+- id: adr003-no-entity-map-in-views
+  adr: ADR-003
+  severity: medium
+  forbidden:
+    - type: variable_assignment
+      value_pattern: 'new Map|reduce\(|Object\.fromEntries'
+      in: 'apps/**/views/**'
+      except: []
+```
+
+The `value_pattern` is matched against the text of the RHS expression (normalized).
+This requires storing assignment RHS expressions during AX traversal — new `assignments`
+table analogous to `symbol_calls`:
+
+```sql
+CREATE TABLE variable_assignments (
+  file          TEXT,
+  line          INTEGER,
+  symbol_name   TEXT,    -- the variable name (lhs)
+  value_text    TEXT,    -- first 120 chars of rhs expression text
+  context       TEXT     -- enclosing function name
+);
+```
+
+Depends on: 13.1 (AX traversal infrastructure), 13.2 (rule evaluation).
+
+### 13.11 `type: cypher` Rule Type — CypherLite-Backed Rules _(CARI, M)_
+
+> **Motivation:** The four existing CARI rule types (`property_access`, `call`, `symbol_name`,
+> `import_pattern`) each query a single flat SQLite table. They cannot express
+> _relationship traversal_ — multi-hop import paths, reachability between layers,
+> co-occurrence clusters, or cross-entity constraints. CypherLite (11.3a ✅) already
+> translates a Cypher subset to SQL against the same `index.db`. A `type: cypher` rule
+> type exposes that power directly in `.iw/rules.yaml` — **no Neo4j required**.
+
+**Key insight:** CypherLite queries the CARI SQLite tables (`symbols`, `imports`,
+`co_occurrences`, `property_accesses`, `symbol_calls`, `annotations`, etc.) — the
+_same_ tables that all other rule types query. A Cypher rule is just a richer query
+against what's already there.
+
+**Convention:** The rule's Cypher query must `RETURN` three columns:
+
+| Column   | Type            | Description                          |
+| -------- | --------------- | ------------------------------------ |
+| `file`   | `TEXT`          | Path of the violating file           |
+| `line`   | `INTEGER\|null` | Line number (null if not applicable) |
+| `detail` | `TEXT`          | Human-readable violation description |
+
+Any row returned = one violation.
+
+**Example rules:**
+
+```yaml
+version: 1
+rules:
+  # 1. No component in the ui layer may reach the data layer in one hop
+  - id: no-direct-ui-to-data
+    description: "UI files must not import data-layer files directly"
+    adr: ADR-005
+    severity: high
+    forbidden:
+      - type: cypher
+        query: |
+          MATCH (a:File {layer: 'ui'})-[:IMPORTS]->(b:File {layer: 'data'})
+          RETURN a.path AS file, null AS line,
+                 'Direct ui→data import: ' + a.path + ' → ' + b.path AS detail
+
+  # 2. No symbol with fan-in > 50 may have zero doc annotations
+  - id: no-undocumented-hubs
+    description: "High-fanin symbols must have at least one doc annotation"
+    severity: medium
+    forbidden:
+      - type: cypher
+        query: |
+          MATCH (s:Symbol)
+          WHERE s.fan_in > 50
+          AND NOT (s)-[:ANNOTATED_BY]->(:DocSpan)
+          RETURN s.file AS file, s.line AS line,
+                 s.name + ' has fan_in=' + toString(s.fan_in) + ' but no doc coverage' AS detail
+
+  # 3. Packages must not form circular import cycles of length ≤ 3
+  - id: no-short-import-cycles
+    description: "Circular imports within 3 hops are forbidden"
+    severity: high
+    forbidden:
+      - type: cypher
+        query: |
+          MATCH path=(a:File)-[:IMPORTS*2..3]->(a)
+          RETURN a.path AS file, null AS line,
+                 'Circular import cycle: ' + a.path AS detail
+```
+
+**CypherLite extensions needed** (minimal, all expressible in the existing SQL schema):
+
+| New capability | CypherLite addition required |
+| --- | --- |
+| `(a:File)-[:IMPORTS]->(b)` | Map `imports` table as `IMPORTS` relationship |
+| `(s:Symbol)` with `.fan_in` | Add computed `fan_in` as virtual property via subquery |
+| `(s)-[:ANNOTATED_BY]->(:DocSpan)` | Map `annotations` table as `ANNOTATED_BY` relationship |
+| `*2..3` (bounded hops) | Already supported (recursive CTEs) |
+| `{layer: 'ui'}` property filter | Read from `files.doc_group` or inferred layer assignment |
+
+**No new tables needed.** The CypherLite schema mapping simply adds aliases that point
+at the existing CARI tables:
+
+```
+:File            → files table  (path = file path, layer = inferred layer)
+:Symbol          → symbols table
+:Annotation      → annotations table
+[:IMPORTS]       → imports table (source_file → target_file)
+[:ANNOTATED_BY]  → annotations table (symbol_id → doc_path)
+[:CO_OCCURS]     → co_occurrences table
+[:CO_CHANGES]    → co_changes table
+```
+
+**Implementation:**
+
+1. Extend CypherLite schema mapping with CARI table aliases (above)
+2. Add `type: cypher` branch to `checkForbidden()` in `rulesCheck.ts`
+3. Execute the query via `cypherLite.query(db, rule.query, {})` and map rows to `RulesViolation[]`
+4. Validate the `RETURN file, line, detail` contract at rule-load time (clear error if missing)
+5. Add `--dry-run-query <rule-id>` to `rules-check` for testing queries interactively
+
+**Why $0 and no Neo4j:**
+CypherLite (11.3a) already exists and already targets SQLite. A `type: cypher` rule
+runs entirely against `.iw/index.db` — the same file used by all other CARI commands.
+The KG plugin (Neo4j) is not involved. This is a pure CARI feature.
+
+```bash
+iw index rules-check                          # cypher rules run alongside all other types
+iw index rules-check --rule-id no-direct-ui-to-data   # run a single cypher rule
+iw index rules-check --dry-run-query no-undocumented-hubs  # see raw query results
+```
+
+CLI: extends `iw index rules-check`. MCP: `cari_rules_check` (no change needed — just new rule type).
+
+Depends on: 11.3a (CypherLite engine ✅), 13.2 (rules-check framework), `rulesCheck.ts` `checkForbidden()`.
+
 ---
 
 ## 14. Intent from Code Annotations
@@ -1780,6 +2111,401 @@ Depends on: AX test call extraction (partial — 6.2 does file mapping), `symbol
 
 ---
 
+## 15. Rule Definition Ergonomics
+
+> These features improve the authoring experience for `.iw/rules.yaml` — reducing false
+> positives, enabling more precise targeting, and closing the rule-definition feedback
+> loop. All are derived from practical experience authoring 16 rules against a
+> 1,297-file monorepo (ARC-372 v0.11.1 evaluation).
+
+### 15.1 `context_import` Modifier for `call` Rules _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 improvement idea #4:** `split()` calls appear everywhere
+> in the codebase. The rule `adr003-no-fqn-split-in-views` fires on URL-parsing and
+> display-formatting split calls too, producing false positives that reduce signal quality.
+
+**Problem:** Without context, call rules match every invocation of the callee. A rule
+for `split()` in view files fires on all string splits — FQN splits, URL parsing,
+display text formatting — and teams must maintain long `except` file lists.
+
+**Solution:** A `context_import` modifier that restricts a call/property_access rule to
+files that also import from a specified pattern. Only files where the import context
+matches are considered in-scope:
+
+```yaml
+- id: adr003-no-fqn-split-in-views
+  forbidden:
+    - type: call
+      callee: 'split'
+      in: 'apps/**/views/**'
+      context_import: '@arccraft/engine/src/transformers/**'
+      # Only fires in view files that import from the transformer layer
+```
+
+Implementation: in `rulesCheck`, before evaluating a `call` or `property_access` rule
+with `context_import`, filter the candidate file set to only those with a matching
+import in the `imports` table.
+
+Depends on: 13.2 (rules.yaml evaluation), `imports` table (exists).
+
+### 15.2 `except_symbol` Exclusion for Rules _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 improvement idea #5:** The only exclusion mechanism is
+> `except` on file paths. Teams need to exclude specific _functions_ that contain
+> legitimate occurrences of a pattern.
+
+**Problem:** `adr003-no-fqn-split-in-views` fires on `parseSearchQuery()` (URL parsing)
+and `formatBreadcrumb()` (display text) inside view files. These are legitimate `split()`
+calls. The only current workaround is listing the entire file in `except:` — but then the
+file is fully excluded and actual FQN-split violations in it are missed.
+
+**Solution:** `except_symbol` allows excluding specific enclosing function/method names
+from a rule:
+
+```yaml
+- id: adr003-no-fqn-split-in-views
+  forbidden:
+    - type: call
+      callee: 'split'
+      in: 'apps/**/views/**'
+      except_symbol:
+        - 'parseSearchQuery'   # URL parsing — not an FQN split
+        - 'formatBreadcrumb'   # Display text — not an FQN split
+```
+
+In `rulesCheck`, the `context` column in `symbol_calls` (the enclosing function name)
+is matched against `except_symbol`. Violations where `context` is in the except list
+are suppressed.
+
+Depends on: 13.1 (`symbol_calls.context` column), 13.2 (rule evaluation).
+
+### 15.3 `type: property_chain_length` Rule _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 improvement idea #6:** Detect components reaching into
+> deeply nested domain data that should be flattened at transformer time.
+
+**Problem:** `entity.properties.boardnet.ecuRef` (depth 4) in a view component indicates
+the component is traversing raw nested data instead of consuming a flattened DTO. No
+existing rule type can match "property chain of depth ≥ N starting from entity".
+
+**Solution:** New rule type `property_chain_length`:
+
+```yaml
+- id: adr003-no-deep-entity-access-in-views
+  adr: ADR-003
+  severity: medium
+  forbidden:
+    - type: property_chain_length
+      min_depth: 4
+      root: 'entity'
+      in: 'apps/**/components/**'
+```
+
+The `property_accesses` table already stores the full chain text and root. This rule
+filters on `root = 'entity'` and `length(split('.', chain)) >= min_depth`.
+
+Depends on: 13.1 (`property_accesses` table), 13.2 (rule evaluation).
+
+### 15.4 `count_mode` per Rule _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 improvement idea #8:** A single file with two
+> `node:fs` imports counts as 2 violations. For import rules, per-file counting is
+> more useful: the fix is a single refactoring task per file, not per import line.
+
+**Problem:** `adr003-no-direct-io-in-adapters` fires once per matching import per file.
+A file importing both `node:path` and `node:fs/promises` shows 2 violations, but from
+the team's perspective it is one task: "refactor this file to use an IO abstraction."
+The inflated count skews severity totals and makes the violation list harder to triage.
+
+**Solution:** Optional `count_mode` field per rule:
+
+```yaml
+- id: adr003-no-direct-io-in-adapters
+  severity: high
+  count_mode: per_file    # default: per_occurrence
+  forbidden:
+    - type: import_pattern
+      pattern: 'node:fs**'
+      in: 'packages/@arccraft/adapters/**'
+```
+
+With `count_mode: per_file`, the rule emits at most one violation per file (the first
+matching occurrence), and the severity totals reflect file counts rather than import
+counts. `per_occurrence` remains the default for all other rule types.
+
+Depends on: 13.2 (rules.yaml evaluation, violation output).
+
+### 15.5 `autofix` Hints in Rule Definitions _(CARI, S)_
+
+> **Derived from ARC-372 v0.11.1 improvement idea #9:** Violations in text output show
+> the pattern match but no remediation guidance. Teams must consult the ADR separately.
+
+**Problem:** When `iw index rules-check` fires a violation, the output shows what was
+matched and where — but not what to do about it. Reviewers seeing CI failures must
+look up the referenced ADR to understand the fix.
+
+**Solution:** Optional `autofix` block in rule definitions, rendered in text output:
+
+```yaml
+- id: adr003-no-source-path-in-services
+  autofix:
+    hint: 'Replace `entity.source.path` with `entity.properties.filePath`'
+    reference: 'packages/@arccraft/engine/src/transformers/path-normalizer.ts'
+```
+
+In `--format text` output, each violation appends:
+```
+  → Fix: Replace `entity.source.path` with `entity.properties.filePath`
+    See: packages/@arccraft/engine/src/transformers/path-normalizer.ts
+```
+
+In `--format json` output, the `autofix` block is included in each violation object
+so tools (IDEs, PR comments) can surface it programmatically.
+
+Depends on: 13.2 (rules.yaml schema, violation output format).
+
+---
+
+## 16. Data-Flow Tracking _(Future Vision)_
+
+> **Derived from ARC-372 v0.11.1 limitation #3:** If `entity.source.path` is assigned
+> to a local variable (`const p = entity.source.path`) and then used later (`p.split('/')`),
+> only the assignment line is detected — not downstream usage. All current rules operate
+> on **static** property chains and call sites, not taint analysis.
+
+**Problem:** Static analysis misses violations that flow through intermediate variables:
+
+```typescript
+// In a view component — rule fires here (assignment)
+const sourcePath = entity.source.path;
+
+// But NOT here — p is a string variable, not a property chain
+const parts = sourcePath.split('/');   // ADR-003 violation — undetected
+```
+
+This is the fundamental limitation of pattern-based static analysis without data-flow.
+Taint analysis requires building a def-use chain across the function body.
+
+### 16.1 Intra-Function Def-Use Chains _(AX, L)_
+
+Extend AX to build **intra-function def-use chains** for local variables within function
+bodies. When a `property_access` or `call` rule fires on an assignment target, propagate
+the taint to all downstream reads of that variable within the same function.
+
+```sql
+CREATE TABLE def_use_chains (
+  file          TEXT,
+  function      TEXT,
+  def_line      INTEGER,   -- line where variable is defined
+  var_name      TEXT,
+  use_line      INTEGER,   -- line where variable is used
+  use_context   TEXT       -- how it's used (call arg, property access, return, etc.)
+);
+```
+
+This table enables the `taint_propagation` rule modifier:
+
+```yaml
+- id: adr003-no-source-path-in-views
+  forbidden:
+    - type: property_access
+      chain: '**.source.path'
+      taint_propagation: true   # also fire on downstream uses of the assigned variable
+      in: 'apps/**/views/**'
+```
+
+**Scope limitation:** Intra-function only (no inter-procedural analysis). Covers the
+most common case (local variable assigned from forbidden pattern, used in same function)
+without the complexity of full inter-procedural taint analysis.
+
+**Effort:** L (large) — requires non-trivial AX extension, def-use extraction for all
+JS/TS assignment patterns, and a new query path in `rulesCheck`.
+
+Depends on: 13.1 (AX traversal), 13.2 (rule evaluation), 13.9 (local var extraction).
+
+---
+
+## 17. Prescriptive Architecture Visualization
+
+> **The "should-be" counterpart to `iw index export --html`.**
+>
+> The existing HTML report (10.1) shows the *actual* architecture — what the import graph
+> looks like today. This section covers the *prescriptive* view: what the architecture is
+> supposed to look like, derived from `layers.yaml` and `rules.yaml`, with the current
+> violation state overlaid. The two views together form a complete conformance picture:
+> _"this is the target, this is where you are, these are the gaps."_
+
+### 17.1 Prescriptive Architecture Diagram _(CARI, M)_
+
+Generate a `should-be` architecture diagram from the combination of:
+- **`layers.yaml`** — declared or inferred layer assignments (5.1a/b, 14.4)
+- **`rules.yaml`** — forbidden patterns (13.2) + explicit `allowed:` entries (17.2)
+- **live violation data** — from `rulesCheck()` overlaid as current deltas
+
+The result: a diagram where layers are nodes, edges represent permitted flows (green),
+forbidden flows (red/dashed), and edge labels show current violation counts. Clicking
+an edge reveals the specific rules that govern it and the files currently in violation.
+
+**Layout model:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Layer: interface  (18 files)                                │
+│  @Controller, @Get, @Post                                   │
+└──────────────┬──────────────────────────────────────────────┘
+               │ ALLOWED: 142 imports
+               │ FORBIDDEN: no-direct-ui-to-data (0 violations ✓)
+               ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Layer: service  (64 files)                                  │
+│  @Injectable, @Service                                      │
+└──────────────┬──────────────────────────────────────────────┘
+               │ ALLOWED: 89 imports
+               ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Layer: data  (23 files)                                     │
+│  @Repository, @Entity                                       │
+└─────────────────────────────────────────────────────────────┘
+  ↑ FORBIDDEN: no-direct-ui-to-data  ← 3 violations ✗
+     [apps/ui/DataView.tsx → packages/db/adapter.ts]
+```
+
+**Two output modes:**
+
+1. **Interactive HTML** — extends the existing `architecture.html` (10.1) with a
+   prescriptive mode toggle. In prescriptive mode: layer bands are shown as declared
+   (not inferred), allowed edges are drawn as solid green, forbidden edges as dashed red
+   (regardless of whether violations exist), and actual violations are highlighted nodes
+   + edge counts. The actual/prescriptive toggle lets teams switch between "what is" and
+   "what should be" in the same view.
+
+2. **Mermaid flowchart** — embeddable in GitHub READMEs, Confluence, Notion, any doc
+   system that renders Mermaid. One layer per node, annotated edges, violation counts.
+   Regenerate on every `iw index build` to keep it current. Drop into
+   `docs/architecture.md` as a living diagram.
+
+```mermaid
+flowchart TD
+  interface["Layer: interface\n18 files"]
+  service["Layer: service\n64 files"]
+  data["Layer: data\n23 files"]
+
+  interface -->|"✓ allowed\n142 imports"| service
+  service -->|"✓ allowed\n89 imports"| data
+  interface -. "✗ forbidden (3 violations)\nno-direct-ui-to-data" .-> data
+```
+
+```bash
+iw index export --prescriptive              # interactive HTML (prescriptive mode)
+iw index export --prescriptive --mermaid    # Mermaid flowchart to stdout
+iw index export --prescriptive --mermaid -o docs/architecture.md   # inject into doc
+```
+
+Depends on: 5.1a/b (layers), 13.2 (rules-check), 17.2 (allowed: entries), 10.1 (HTML infra).
+
+### 17.2 `allowed:` Entries in `rules.yaml` — Explicit Positive Permissions _(CARI, S)_
+
+Rules currently only define what's *forbidden*. To generate a complete prescriptive
+diagram, you also need to declare what's *allowed* — so the diagram can distinguish
+between "permitted but not yet verified" and "explicitly sanctioned by the team."
+
+**New optional `allowed:` block per rule or at the top level:**
+
+```yaml
+version: 1
+
+# Optional: explicit positive permissions (for prescriptive visualization)
+allowed:
+  - from_layer: interface
+    to_layer: service
+    description: "Controllers may call service-layer code"
+  - from_layer: service
+    to_layer: data
+    description: "Services may access repositories directly"
+
+rules:
+  - id: no-direct-ui-to-data
+    severity: high
+    forbidden:
+      - type: import_pattern
+        pattern: 'packages/db/**'
+        in: 'apps/ui/**'
+```
+
+When `allowed:` is omitted, the prescriptive diagram derives permitted edges as
+_"within-layer and one-step-down in the declared layer order"_ — a sensible default
+for clean layered architectures. Teams can override this to express non-hierarchical
+allowed flows (e.g., a `shared` layer that all layers may import from).
+
+`allowed:` entries also feed into `cari_layers_check` — it can verify that the actual
+import graph contains the expected flows (not just the absence of forbidden ones).
+
+Depends on: 13.2 (rules.yaml format), 5.1b (layer check infrastructure).
+
+### 17.3 LLM-Assisted Prescriptive Spec Synthesis _(KG, M)_
+
+Extend `iw index rules-extract` (13.4) to synthesize not just `forbidden:` rules but
+also `allowed:` entries and layer annotations from ADR prose:
+
+```bash
+iw index rules-extract docs/ADR-003.md docs/ADR-005.md \
+  --provider openai \
+  --output .iw/rules.yaml \
+  --with-allowed        # also synthesize allowed: entries
+  --with-layer-hints    # also emit layer assignment hints
+```
+
+The LLM reads the ADR and extracts:
+- Explicit prohibitions → `forbidden:` rules (existing 13.4 behaviour)
+- Explicit permissions → `allowed:` entries (new)
+- Layer assignment signals ("the adapter layer", "UI components", "data access") → layer
+  hints that pre-populate `.iw/layers.yaml`
+
+**Edge annotation** (LLM-generated): For each allowed/forbidden edge in the prescriptive
+diagram, optionally generate a one-sentence rationale sourced from the ADR:
+
+```
+interface → service:  "Controllers are the only entry point; service logic must not
+                       be reachable directly from the browser (ADR-005 §3.2)"
+interface ↛ data:      "Bypassing the service layer leaks transaction boundaries;
+                        all DB access must go through @Repository (ADR-005 §4.1)"
+```
+
+```bash
+iw index export --prescriptive --explain --provider openai
+# Adds one-sentence ADR-sourced rationale to each edge in the HTML / Mermaid output
+```
+
+Depends on: 13.4 (rules-extract LLM pipeline ✅), 17.2 (allowed: format), 11.5 (LLM capability ✅).
+
+### 17.4 Rules Visualization in `iw index rules-check` Output _(CARI, S)_
+
+When running `rules-check` in text mode, render a compact ASCII conformance diagram
+inline — showing which layer pairs have violations and which are clean:
+
+```
+  Architecture Conformance (rules.yaml):
+
+  interface ──✓──▶ service ──✓──▶ data
+      │                               ↑
+      └───────✗ 3 violations ─────────┘
+                no-direct-ui-to-data [HIGH]
+
+  Layer conformance: 2/3 flows clean (1 rule violated)
+```
+
+This gives CI logs an at-a-glance picture without requiring the full HTML export.
+Only shown when `layers.yaml` (or decorator-derived layers) is available.
+
+```bash
+iw index rules-check                # includes ASCII conformance diagram if layers exist
+iw index rules-check --no-diagram   # suppress the diagram
+```
+
+Depends on: 13.2 (rules-check), 5.1a/b (layers).
+
+---
+
 ## Priority Matrix
 
 | #    | Feature                           | Tier | Size   | Value  | Dependencies          | Status  |
@@ -1855,6 +2581,57 @@ Depends on: AX test call extraction (partial — 6.2 does file mapping), `symbol
 | 5.9  | Cross-layer clone analysis        | CARI | S      | Medium | 2.1, 2.2, 5.1a        | ✅ Done |
 | 5.10 | arch-check UX + format docs       | CARI | S      | Medium | arch-check (exists)   | ✅ Done |
 | 4.5  | Co-change shared-utility signal   | CARI | S      | Medium | co_changes, 2.2, 5.1a |         |
+| 13.5 | --baseline regression gating      | CARI | S      | High   | 13.2, 13.3            |         |
+| 13.6 | import_pattern `**` across `/`    | CARI | S      | High   | 13.2                  | ✅ Done |
+| 13.7 | Import violations line numbers    | AX   | S      | Medium | 13.1, imports table   | ✅ Done |
+| 13.8 | rules-check JSON redirect fix     | CARI | S      | High   | 13.2                  |         |
+| 13.9 | symbol_name scope modifier        | CARI | S      | Medium | 13.2, AX              |         |
+| 13.10| type: variable_assignment         | CARI | M      | Medium | 13.1, 13.2            |         |
+| 13.11| type: cypher rule type (CypherLite)| CARI | M      | High   | 11.3a, 13.2           |         |
+| 17.1 | Prescriptive architecture diagram | CARI | M      | High   | 5.1a/b, 13.2, 17.2    |         |
+| 17.2 | allowed: entries in rules.yaml    | CARI | S      | High   | 13.2                  |         |
+| 17.3 | LLM prescriptive spec synthesis   | KG   | M      | Medium | 13.4, 17.2, 11.5      |         |
+| 17.4 | ASCII conformance diagram in CLI  | CARI | S      | Medium | 13.2, 5.1a/b          |         |
+| 15.1 | context_import modifier           | CARI | S      | Medium | 13.2, imports         |         |
+| 15.2 | except_symbol exclusion           | CARI | S      | Medium | 13.1, 13.2            |         |
+| 15.3 | property_chain_length rule type   | CARI | S      | Medium | 13.1, 13.2            |         |
+| 15.4 | count_mode per_file               | CARI | S      | Medium | 13.2                  |         |
+| 15.5 | autofix hints in rules            | CARI | S      | Low    | 13.2                  |         |
+
+### Sprint: _"Rule Intelligence"_
+
+> Architecture analysis + rule checking as the core product loop.
+> Fixes unblock existing adopters immediately; new types unlock new constraint classes;
+> prescriptive visualization makes the whole system legible to non-CLI users.
+
+**Bug fixes (ship first — unblock existing adopters):**
+
+| #    | Feature                           | Tier | Size | Value | Dependencies    | Status |
+| ---- | --------------------------------- | ---- | ---- | ----- | --------------- | ------ |
+| 13.5 | --baseline regression gating      | CARI | S    | High  | 13.2, 13.3      | ✅ Done |
+| 13.8 | rules-check JSON redirect fix     | CARI | S    | High  | 13.2            | ✅ Done |
+| 13.6 | import_pattern `**` across `/`    | CARI | S    | High  | 13.2            | ✅ Done |
+| 13.7 | Import violations line numbers    | AX   | S    | High  | 13.1, imports   | ✅ Done |
+
+**New rule types (expand what rules can express):**
+
+| #    | Feature                           | Tier | Size | Value  | Dependencies    | Status |
+| ---- | --------------------------------- | ---- | ---- | ------ | --------------- | ------ |
+| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        |        |
+| 15.1 | context_import modifier           | CARI | S    | Medium | 13.2, imports   |        |
+| 15.2 | except_symbol exclusion           | CARI | S    | Medium | 13.1, 13.2      |        |
+| 13.10| type: variable_assignment         | CARI | M    | Medium | 13.1, 13.2      |        |
+| 13.11| type: cypher rule type            | CARI | M    | High   | 11.3a, 13.2     |        |
+
+**Prescriptive visualization (makes rules legible):**
+
+| #    | Feature                           | Tier | Size | Value  | Dependencies        | Status |
+| ---- | --------------------------------- | ---- | ---- | ------ | ------------------- | ------ |
+| 17.2 | allowed: entries in rules.yaml    | CARI | S    | High   | 13.2                |        |
+| 17.4 | ASCII conformance diagram in CLI  | CARI | S    | Medium | 13.2, 5.1a/b        |        |
+| 17.1 | Prescriptive architecture diagram | CARI | M    | High   | 5.1a/b, 13.2, 17.2  |        |
+| 17.3 | LLM prescriptive spec synthesis   | KG   | M    | Medium | 13.4, 17.2, 11.5    |        |
+| 16.1 | Intra-function def-use chains     | AX   | L      | Medium | 13.1, 13.2, 13.9      |         |
 
 ### Sprint: _"Ensure the intent in the code"_
 
@@ -1887,3 +2664,17 @@ Depends on: AX test call extraction (partial — 6.2 does file mapping), `symbol
 | 14.5 | ADR conformance trend          | CARI    | M    | High   | 13.2, git (TCG)   | ✅ Done |
 | 14.4 | Decorator-derived layer assign | AX+CARI | M    | High   | AX, 5.1a          | ✅ Done |
 | 13.4 | rules-extract from ADR (LLM)   | KG      | M    | Medium | 13.2, KG pipeline | ✅ Done |
+
+**CI gating & rule ergonomics (next sprint):**
+
+| #    | Feature                           | Tier | Size | Value  | Dependencies    | Status |
+| ---- | --------------------------------- | ---- | ---- | ------ | --------------- | ------ |
+| 13.5 | --baseline regression gating      | CARI | S    | High   | 13.2, 13.3      |        |
+| 13.6 | import_pattern `**` across `/`    | CARI | S    | High   | 13.2            | ✅ Done |
+| 13.7 | Import violations line numbers    | AX   | S    | Medium | 13.1            | ✅ Done |
+| 13.8 | rules-check JSON redirect fix     | CARI | S    | High   | 13.2            |        |
+| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        |        |
+| 15.1 | context_import modifier           | CARI | S    | Medium | 13.2, imports   |        |
+| 15.2 | except_symbol exclusion           | CARI | S    | Medium | 13.1, 13.2      |        |
+| 15.4 | count_mode per_file               | CARI | S    | Medium | 13.2            |        |
+| 15.5 | autofix hints in rules            | CARI | S    | Low    | 13.2            |        |
