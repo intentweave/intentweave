@@ -455,3 +455,107 @@ describe("rulesCheck — incremental --changed filtering", () => {
     expect(result.violations[0].filePath).toBe("src/views/EcuView.tsx");
   });
 });
+
+// ── symbol_name scope modifier (13.9) ─────────────────────────────────────────
+
+describe("rulesCheck — symbol_name scope modifier (13.9)", () => {
+  let db: Database.Database;
+  let dbPath: string;
+
+  function insertSymbol(
+    d: Database.Database,
+    name: string,
+    filePath: string,
+    exportVal: "exported" | "internal",
+    container: string | null = null,
+    line = 10,
+  ) {
+    const id = `${filePath}::${name}`;
+    d.prepare(
+      `INSERT OR IGNORE INTO symbols (id, name, kind, file_path, line, export, container)
+       VALUES (?, ?, 'function', ?, ?, ?, ?)`,
+    ).run(id, name, filePath, line, exportVal, container);
+  }
+
+  beforeAll(() => {
+    ({ db, dbPath } = tmpDb());
+    // exported top-level
+    insertSymbol(db, "badName", "src/views/A.tsx", "exported", null, 5);
+    // internal top-level (not exported)
+    insertSymbol(db, "badName", "src/views/B.tsx", "internal", null, 10);
+    // internal nested (has container) — should only show up for scope:any phase-2
+    insertSymbol(db, "badName", "src/views/C.tsx", "internal", "outerFn", 15);
+    // a symbol with a different name — should never appear
+    insertSymbol(db, "goodName", "src/views/D.tsx", "exported", null, 20);
+  });
+
+  afterAll(() => cleanup(db, dbPath));
+
+  it("scope:exported (default) only matches exported symbols", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "r-exported",
+          severity: "high",
+          forbidden: [{ type: "symbol_name", pattern: "badName", scope: "exported" }],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const files = result.violations.map((v) => v.filePath);
+    expect(files).toContain("src/views/A.tsx");
+    expect(files).not.toContain("src/views/B.tsx"); // internal
+    expect(files).not.toContain("src/views/C.tsx"); // nested
+  });
+
+  it("default scope (no scope field) behaves like scope:exported", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "r-default",
+          severity: "high",
+          forbidden: [{ type: "symbol_name", pattern: "badName" }],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const files = result.violations.map((v) => v.filePath);
+    expect(files).toContain("src/views/A.tsx");
+    expect(files).not.toContain("src/views/B.tsx");
+  });
+
+  it("scope:top-level matches exported + internal top-level but not nested", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "r-toplevel",
+          severity: "high",
+          forbidden: [{ type: "symbol_name", pattern: "badName", scope: "top-level" }],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const files = result.violations.map((v) => v.filePath);
+    expect(files).toContain("src/views/A.tsx"); // exported top-level
+    expect(files).toContain("src/views/B.tsx"); // internal top-level
+    expect(files).not.toContain("src/views/C.tsx"); // nested — Phase 2 only
+  });
+
+  it("scope:any (Phase 1) behaves like top-level — nested locals not yet indexed", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "r-any",
+          severity: "high",
+          forbidden: [{ type: "symbol_name", pattern: "badName", scope: "any" }],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const files = result.violations.map((v) => v.filePath);
+    expect(files).toContain("src/views/A.tsx");
+    expect(files).toContain("src/views/B.tsx");
+    // C.tsx has container='outerFn' so it's excluded in Phase 1
+    expect(files).not.toContain("src/views/C.tsx");
+  });
+});

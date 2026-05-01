@@ -2581,11 +2581,11 @@ Depends on: 13.2 (rules-check), 5.1a/b (layers).
 | 5.9  | Cross-layer clone analysis        | CARI | S      | Medium | 2.1, 2.2, 5.1a        | ✅ Done |
 | 5.10 | arch-check UX + format docs       | CARI | S      | Medium | arch-check (exists)   | ✅ Done |
 | 4.5  | Co-change shared-utility signal   | CARI | S      | Medium | co_changes, 2.2, 5.1a |         |
-| 13.5 | --baseline regression gating      | CARI | S      | High   | 13.2, 13.3            |         |
+| 13.5 | --baseline regression gating      | CARI | S      | High   | 13.2, 13.3            | ✅ Done |
 | 13.6 | import_pattern `**` across `/`    | CARI | S      | High   | 13.2                  | ✅ Done |
 | 13.7 | Import violations line numbers    | AX   | S      | Medium | 13.1, imports table   | ✅ Done |
-| 13.8 | rules-check JSON redirect fix     | CARI | S      | High   | 13.2                  |         |
-| 13.9 | symbol_name scope modifier        | CARI | S      | Medium | 13.2, AX              |         |
+| 13.8 | rules-check JSON redirect fix     | CARI | S      | High   | 13.2                  | ✅ Done |
+| 13.9 | symbol_name scope modifier        | CARI | S      | Medium | 13.2, AX              | ✅ Done |
 | 13.10| type: variable_assignment         | CARI | M      | Medium | 13.1, 13.2            |         |
 | 13.11| type: cypher rule type (CypherLite)| CARI | M      | High   | 11.3a, 13.2           |         |
 | 17.1 | Prescriptive architecture diagram | CARI | M      | High   | 5.1a/b, 13.2, 17.2    |         |
@@ -2617,13 +2617,7 @@ Depends on: 13.2 (rules-check), 5.1a/b (layers).
 
 | #    | Feature                           | Tier | Size | Value  | Dependencies    | Status |
 | ---- | --------------------------------- | ---- | ---- | ------ | --------------- | ------ |
-| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        |        |
-| 15.1 | context_import modifier           | CARI | S    | Medium | 13.2, imports   |        |
-| 15.2 | except_symbol exclusion           | CARI | S    | Medium | 13.1, 13.2      |        |
-| 13.10| type: variable_assignment         | CARI | M    | Medium | 13.1, 13.2      |        |
-| 13.11| type: cypher rule type            | CARI | M    | High   | 11.3a, 13.2     |        |
-
-**Prescriptive visualization (makes rules legible):**
+| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        | ✅ Done | (makes rules legible):**
 
 | #    | Feature                           | Tier | Size | Value  | Dependencies        | Status |
 | ---- | --------------------------------- | ---- | ---- | ------ | ------------------- | ------ |
@@ -2672,8 +2666,8 @@ Depends on: 13.2 (rules-check), 5.1a/b (layers).
 | 13.5 | --baseline regression gating      | CARI | S    | High   | 13.2, 13.3      |        |
 | 13.6 | import_pattern `**` across `/`    | CARI | S    | High   | 13.2            | ✅ Done |
 | 13.7 | Import violations line numbers    | AX   | S    | Medium | 13.1            | ✅ Done |
-| 13.8 | rules-check JSON redirect fix     | CARI | S    | High   | 13.2            |        |
-| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        |        |
+| 13.8 | rules-check JSON redirect fix     | CARI | S    | High   | 13.2            | ✅ Done |
+| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        | ✅ Done |
 | 15.1 | context_import modifier           | CARI | S    | Medium | 13.2, imports   |        |
 | 15.2 | except_symbol exclusion           | CARI | S    | Medium | 13.1, 13.2      |        |
 | 15.4 | count_mode per_file               | CARI | S    | Medium | 13.2            |        |

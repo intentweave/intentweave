@@ -2083,6 +2083,14 @@ export interface RuleForbidden {
   /** When true, treat `pattern` as a regex source (or /.../) for import_pattern */
   regex?: boolean;
 
+  /**
+   * Scope modifier for symbol_name rules (13.9):
+   * - `exported` (default): only exported top-level declarations
+   * - `top-level`: exported + non-exported top-level declarations (no container)
+   * - `any`: same as `top-level` in Phase 1 (local vars require Phase 2 AX extension)
+   */
+  scope?: "exported" | "top-level" | "any";
+
   /** Glob restricting which files are in scope (e.g. "apps/ui/**") */
   in?: string;
 

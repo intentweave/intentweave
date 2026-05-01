@@ -277,17 +277,29 @@ function checkSymbolName(
   if (!forbidden.pattern) return [];
 
   const nameRegex = new RegExp(`^(${forbidden.pattern})$`);
+  // scope: "exported" (default) → only exported symbols
+  //        "top-level" / "any" → exported + internal top-level (no container)
+  // Phase 1: "any" behaves like "top-level" (local vars require Phase 2 AX extension)
+  const scope = forbidden.scope ?? "exported";
+
+  let sql = `SELECT name, kind, file_path, line, export, container FROM symbols`;
+  if (scope === "exported") {
+    sql += ` WHERE export = 'exported'`;
+  } else {
+    // top-level or any: include exported + internal but exclude nested symbols (those with a container)
+    sql += ` WHERE (container IS NULL OR container = '')`;
+  }
+  sql += ` ORDER BY file_path, line`;
 
   const rows = db
-    .prepare(
-      `SELECT name, kind, file_path, line, export FROM symbols ORDER BY file_path, line`,
-    )
+    .prepare(sql)
     .all() as Array<{
     name: string;
     kind: string;
     file_path: string;
     line: number;
     export: string;
+    container: string | null;
   }>;
 
   const violations: RulesViolation[] = [];
