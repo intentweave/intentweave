@@ -2171,6 +2171,10 @@ const indexRulesCheckSubcommand = new Command("rules-check")
     "--fail-on-increase",
     "Exit code 1 if any severity count exceeds baseline (use with --baseline; 13.5)",
   )
+  .option(
+    "--dry-run-query <rule-id>",
+    "Execute a specific cypher rule and print resulting violations (13.11)",
+  )
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
     const configPath = path.resolve(opts.config);
@@ -2190,6 +2194,29 @@ const indexRulesCheckSubcommand = new Command("rules-check")
           .map((s: string) => s.trim())
           .filter(Boolean)
       : undefined;
+
+    // ── --dry-run-query (13.11) ─────────────────────────────────────────────
+    if (opts.dryRunQuery) {
+      const ruleId = opts.dryRunQuery as string;
+      const hasCypherRule = config.rules.some(
+        (r) => r.id === ruleId && r.forbidden.some((f) => f.type === "cypher"),
+      );
+      if (!hasCypherRule) {
+        console.error(chalk.red(`\n  ✗ No cypher rule found with id: ${ruleId}\n`));
+        process.exitCode = 1;
+        return;
+      }
+
+      const dryRun = rulesCheck(dbPath, config, {
+        severity: "low",
+        ruleId,
+        changed,
+        limit: parseInt(opts.limit, 10),
+      });
+
+      process.stdout.write(JSON.stringify(dryRun, null, 2) + "\n");
+      return;
+    }
 
     const result = rulesCheck(dbPath, config, {
       severity: opts.severity as "high" | "medium" | "low",

@@ -27,6 +27,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@intentweave/cypher-lite": "workspace:*",
     "@viz-js/viz": "^3.25.0",
     "better-sqlite3": "^11.7.0",
     "minimatch": "^10.0.1"

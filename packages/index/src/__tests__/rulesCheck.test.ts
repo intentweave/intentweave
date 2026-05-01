@@ -559,3 +559,240 @@ describe("rulesCheck — symbol_name scope modifier (13.9)", () => {
     expect(files).not.toContain("src/views/C.tsx");
   });
 });
+
+// ── 13.10: variable_assignment ───────────────────────────────────────────────
+
+describe("checkVariableAssignment (13.10)", () => {
+  let db: Database.Database;
+  let dbPath: string;
+
+  beforeAll(() => {
+    ({ db, dbPath } = tmpDb());
+    const ins = db.prepare(
+      `INSERT INTO variable_assignments (file, line, symbol_name, value_text, context) VALUES (?, ?, ?, ?, ?)`,
+    );
+    ins.run("src/config.ts", 10, "cache", "new Map()", null);
+    ins.run("src/config.ts", 20, "items", '["a","b"]', null);
+    ins.run("src/other.ts", 5, "cache", "new Map()", null);
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.unlinkSync(dbPath);
+  });
+
+  it("flags variables whose RHS matches value_pattern", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-new-map",
+          severity: "high",
+          forbidden: [{ type: "variable_assignment", value_pattern: "^new Map" }],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(2);
+    expect(result.violations.every((v) => v.detail.includes("new Map"))).toBe(true);
+  });
+
+  it("returns no violations when pattern does not match", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-set",
+          severity: "low",
+          forbidden: [{ type: "variable_assignment", value_pattern: "^new Set" }],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it("respects in: scope filter", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-new-map-config",
+          severity: "high",
+          forbidden: [
+            { type: "variable_assignment", value_pattern: "new Map", in: ["src/config.ts"] },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const files = result.violations.map((v) => v.filePath);
+    expect(files).toContain("src/config.ts");
+    expect(files).not.toContain("src/other.ts");
+  });
+
+  it("returns no violations when value_pattern is absent", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-pattern",
+          severity: "low",
+          forbidden: [{ type: "variable_assignment" } as never],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(0);
+  });
+});
+
+// ── 13.11: cypher (Phase 2 CypherLite over CARI) ────────────────────────────
+
+describe("checkCypherRule (13.11)", () => {
+  let db: Database.Database;
+  let dbPath: string;
+
+  beforeAll(() => {
+    ({ db, dbPath } = tmpDb());
+    db.prepare(
+      `INSERT INTO files (path, doc_group, is_doc, indexed) VALUES (?, ?, 0, 1)`,
+    ).run("src/ui/view.tsx", "ui");
+    db.prepare(
+      `INSERT INTO files (path, doc_group, is_doc, indexed) VALUES (?, ?, 0, 1)`,
+    ).run("src/data/store.ts", "data");
+
+    db.prepare(
+      `INSERT INTO imports (source_file, target_file, module_specifier, line, is_relative)
+       VALUES (?, ?, ?, ?, 1)`,
+    ).run("src/ui/view.tsx", "src/data/store.ts", "../data/store", 12);
+
+    db.prepare(
+      `INSERT INTO symbols (id, name, kind, file_path, line, export)
+       VALUES (?, ?, 'function', ?, ?, 'exported')`,
+    ).run("sym:AuthService", "AuthService", "src/domain/auth.ts", 40);
+
+    db.prepare(
+      `INSERT INTO symbol_calls (caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
+       VALUES (?, ?, ?, ?, ?, 0)`,
+    ).run("src/app/main.ts", "boot", 9, "AuthService", "sym:AuthService");
+
+    db.prepare(
+      `INSERT INTO symbols (id, name, kind, file_path, line, export)
+       VALUES (?, ?, 'function', ?, ?, 'exported')`,
+    ).run("sym:DocumentedService", "DocumentedService", "src/domain/documented.ts", 55);
+
+    db.prepare(
+      `INSERT INTO symbol_calls (caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
+       VALUES (?, ?, ?, ?, ?, 0)`,
+    ).run("src/app/main.ts", "boot", 10, "DocumentedService", "sym:DocumentedService");
+
+    db.prepare(
+      `INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("docs/architecture.md", 20, "Documented service coverage", "sym:DocumentedService", 0.95, "identifier");
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.unlinkSync(dbPath);
+  });
+
+  it("returns violations for MATCH traversal over CARI import graph", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-ui-to-data",
+          severity: "high",
+          forbidden: [
+            {
+              type: "cypher",
+              query: `
+                MATCH (a:File {layer: 'ui'})-[:IMPORTS]->(b:File {layer: 'data'})
+                RETURN a.path AS file, null AS line,
+                       'Direct ui→data import: ' + a.path + ' -> ' + b.path AS detail
+              `,
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].filePath).toBe("src/ui/view.tsx");
+    expect(result.violations[0].detail).toContain("Direct ui→data import");
+  });
+
+  it("supports fan_in + NOT EXISTS relationship checks", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-undocumented-hub",
+          severity: "medium",
+          forbidden: [
+            {
+              type: "cypher",
+              query: `
+                MATCH (s:Symbol)
+                WHERE s.fan_in > 0
+                  AND NOT EXISTS { MATCH (s)-[:ANNOTATED_BY]->(:DocSpan) }
+                RETURN s.file AS file, s.line AS line,
+                       s.name + ' has fan_in>0 but no doc annotation' AS detail
+              `,
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].filePath).toBe("src/domain/auth.ts");
+    expect(result.violations[0].line).toBe(40);
+    expect(result.violations[0].detail).toContain("AuthService");
+    expect(result.violations.some((v) => v.detail.includes("DocumentedService"))).toBe(false);
+  });
+
+  it("returns no violations when query field is absent", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-query",
+          severity: "low",
+          forbidden: [{ type: "cypher" } as never],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it("keeps raw SQL compatibility as fallback", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "sql-fallback",
+          severity: "low",
+          forbidden: [
+            {
+              type: "cypher",
+              query: "SELECT path AS file, NULL AS line, 'sql-ok' AS detail FROM files WHERE path = 'src/ui/view.tsx'",
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].detail).toBe("sql-ok");
+  });
+
+  it("returns no violations on invalid cypher", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "bad-cypher",
+          severity: "low",
+          forbidden: [{ type: "cypher", query: "MATCH (a:File RETURN a.path AS file" }],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations).toHaveLength(0);
+  });
+});

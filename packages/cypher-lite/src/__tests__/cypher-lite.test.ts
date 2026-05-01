@@ -403,6 +403,18 @@ describe("CypherLiteTranspiler", () => {
     const [result] = transpile(ast, { types: ["A", "B", "C"] });
     expect(result.params).toEqual(expect.arrayContaining(["A", "B", "C"]));
   });
+
+  it("transpiles correlated NOT EXISTS relationship subquery reliably", () => {
+    const ast = parse(
+      "MATCH (s:Symbol) WHERE NOT EXISTS { MATCH (s)-[:ANNOTATED_BY]->(:DocSpan) } RETURN s.file",
+    );
+    const [result] = transpile(ast);
+    expect(result.sql).toContain("NOT (EXISTS (");
+    expect(result.sql).toContain("FROM kg_relationships");
+    expect(result.sql).toContain("_t1.from_id = _t0.id");
+    expect(result.sql).not.toContain("EXISTS (SELECT 1 FROM kg_entities _t0");
+    expect(result.params).toContain("ANNOTATED_BY");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

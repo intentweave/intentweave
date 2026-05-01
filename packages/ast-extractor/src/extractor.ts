@@ -19,6 +19,7 @@ import type {
   ExtractedCall,
   ExtractedPropertyAccess,
   ExtractedTypeAssertion,
+  ExtractedVariableAssignment,
   FileExtractionResult,
   ExtractionOptions,
   BatchExtractionResult,
@@ -76,6 +77,7 @@ export class AstExtractor {
       const calls: ExtractedCall[] = [];
       const propertyAccesses: ExtractedPropertyAccess[] = [];
       const typeAssertions: ExtractedTypeAssertion[] = [];
+      const variableAssignments: ExtractedVariableAssignment[] = [];
       const testDescriptions: Array<{
         file: string;
         line: number;
@@ -110,6 +112,13 @@ export class AstExtractor {
         testDescriptions,
       );
 
+      // Extract variable assignments with RHS text (13.10)
+      this.extractVariableAssignmentsFromTree(
+        tree.rootNode,
+        relativePath,
+        variableAssignments,
+      );
+
       // Annotate @deprecated / @internal / _prefix flags on all symbols
       this.annotateJsDocFlags(symbols, content, tree);
 
@@ -129,6 +138,8 @@ export class AstExtractor {
         typeAssertions,
         testDescriptions:
           testDescriptions.length > 0 ? testDescriptions : undefined,
+        variableAssignments:
+          variableAssignments.length > 0 ? variableAssignments : undefined,
         extractedAt: Date.now(),
         errors: errors.length > 0 ? errors : undefined,
       };
@@ -1243,6 +1254,43 @@ export class AstExtractor {
         }
       }
 
+      for (const child of node.children) {
+        visit(child);
+      }
+    };
+    visit(root);
+  }
+
+  /**
+   * Extract variable assignments with RHS text for pattern-based rule checking (13.10).
+   * Traverses the full AST and captures all variable_declarator nodes that have a value.
+   */
+  private extractVariableAssignmentsFromTree(
+    root: Parser.SyntaxNode,
+    filePath: string,
+    assignments: ExtractedVariableAssignment[],
+  ): void {
+    const visit = (node: Parser.SyntaxNode): void => {
+      if (node.type === "variable_declarator") {
+        const nameNode = node.childForFieldName("name");
+        const valueNode = node.childForFieldName("value");
+        if (nameNode && valueNode) {
+          // Normalise whitespace and truncate to 120 chars
+          const valueText = valueNode.text
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 120);
+          const line = node.startPosition.row + 1;
+          const context = this.findEnclosingSymbol(node);
+          assignments.push({
+            file: filePath,
+            line,
+            symbolName: nameNode.text,
+            valueText,
+            context,
+          });
+        }
+      }
       for (const child of node.children) {
         visit(child);
       }

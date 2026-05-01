@@ -223,6 +223,17 @@ export interface AxTestDescription {
 }
 
 /**
+ * A variable assignment extracted from a file body (13.10).
+ * Mirrors ExtractedVariableAssignment from @intentweave/ast-extractor.
+ */
+export interface AxVariableAssignment {
+  line: number;
+  symbolName: string;
+  valueText: string;
+  context: string | null;
+}
+
+/**
  * Per-file extraction result
  */
 export interface AxFileResult {
@@ -265,6 +276,9 @@ export interface AxFileResult {
 
   /** Test descriptions from describe/it/test calls (14.6) */
   testDescriptions?: AxTestDescription[];
+
+  /** Variable assignments with RHS text (13.10) */
+  variableAssignments?: AxVariableAssignment[];
 
   /** Extraction timestamp */
   extractedAt: number;
@@ -646,6 +660,15 @@ async function processFile(
     description: t.description,
   }));
 
+  const variableAssignments: AxVariableAssignment[] = (
+    result.variableAssignments ?? []
+  ).map((v) => ({
+    line: v.line,
+    symbolName: v.symbolName,
+    valueText: v.valueText,
+    context: v.context,
+  }));
+
   return {
     filePath: relativePath,
     contentHash,
@@ -658,6 +681,7 @@ async function processFile(
     propertyAccesses,
     typeAssertions,
     testDescriptions,
+    variableAssignments,
     commentLines,
     codeLines,
     extractedAt: Date.now(),

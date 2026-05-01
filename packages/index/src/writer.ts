@@ -86,6 +86,7 @@ export function buildIndex(
       propertyAccesses: writePropertyAccesses(db, ax),
       typeAssertions: writeTypeAssertions(db, ax),
       testDescriptions: writeTestDescriptions(db, ax),
+      variableAssignments: writeVariableAssignments(db, ax),
     };
 
     // Populate FTS indexes
@@ -107,7 +108,8 @@ export function buildIndex(
         `co_occurrences=${counts.coOccurrences} co_changes=${counts.coChanges} ` +
         `files=${counts.files} imports=${counts.imports} todos=${counts.todos} rationale=${counts.rationale} ` +
         `calls=${counts.calls} property_accesses=${counts.propertyAccesses} ` +
-        `type_assertions=${counts.typeAssertions} test_descriptions=${counts.testDescriptions}`,
+        `type_assertions=${counts.typeAssertions} test_descriptions=${counts.testDescriptions} ` +
+        `variable_assignments=${counts.variableAssignments}`,
     );
 
     return { dbPath, counts, durationMs };
@@ -591,6 +593,39 @@ function writeTestDescriptions(db: Database.Database, ax: AxOutput): number {
       const tx = db.transaction(() => {
         for (const td of batch) {
           stmt.run(file.filePath, td.line, td.kind, td.description);
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// Variable Assignments (13.10)
+// =============================================================================
+
+function writeVariableAssignments(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO variable_assignments (file, line, symbol_name, value_text, context)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.variableAssignments || file.variableAssignments.length === 0) continue;
+    for (let i = 0; i < file.variableAssignments.length; i += BATCH_SIZE) {
+      const batch = file.variableAssignments.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const va of batch) {
+          stmt.run(
+            file.filePath,
+            va.line,
+            va.symbolName,
+            va.valueText,
+            va.context ?? null,
+          );
           count++;
         }
       });

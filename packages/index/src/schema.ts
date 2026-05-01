@@ -170,6 +170,17 @@ CREATE TABLE IF NOT EXISTS test_descriptions (
   description TEXT NOT NULL
 );
 
+-- Variable assignments with RHS text (13.10)
+
+CREATE TABLE IF NOT EXISTS variable_assignments (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  file        TEXT NOT NULL,
+  line        INTEGER NOT NULL,
+  symbol_name TEXT NOT NULL,
+  value_text  TEXT NOT NULL,
+  context     TEXT
+);
+
 -- Indexes for retrieval
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
@@ -203,6 +214,8 @@ CREATE INDEX IF NOT EXISTS idx_conformance_snapshots_rule ON conformance_snapsho
 CREATE INDEX IF NOT EXISTS idx_conformance_snapshots_snapshot ON conformance_snapshots(snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_test_descriptions_file ON test_descriptions(file);
 CREATE INDEX IF NOT EXISTS idx_test_descriptions_kind ON test_descriptions(kind);
+CREATE INDEX IF NOT EXISTS idx_var_assign_file ON variable_assignments(file);
+CREATE INDEX IF NOT EXISTS idx_var_assign_symbol ON variable_assignments(symbol_name);
 
 -- Full-text search
 
@@ -314,6 +327,6 @@ export function initSchema(db: Database.Database): void {
 
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '11')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '12')`,
   ).run();
 }

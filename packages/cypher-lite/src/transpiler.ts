@@ -76,6 +76,8 @@ interface TranspileContext {
   whereParts: string[];
   /** Parameters for WHERE / SELECT / ORDER / LIMIT (emitted after JOIN params) */
   params: unknown[];
+  /** Parameters originating in SELECT expressions (must be emitted before JOIN/WHERE params). */
+  selectParams: unknown[];
   /** CTE definitions (for variable-length paths) */
   ctes: string[];
   /** Parameters for CTE definitions */
@@ -216,7 +218,12 @@ export class CypherLiteTranspiler {
     const distinct = returnClause?.distinct ?? withClause?.distinct ?? false;
 
     const selectParts = items.map((item) => {
+      const before = ctx.params.length;
       const expr = this.exprToSql(item.expression, ctx);
+      if (ctx.params.length > before) {
+        const appended = ctx.params.splice(before);
+        ctx.selectParams.push(...appended);
+      }
       if (item.alias) {
         return `${expr} AS ${this.quoteId(item.alias)}`;
       }
@@ -919,16 +926,30 @@ export class CypherLiteTranspiler {
     for (const [key, val] of ctx.nodeBindings) {
       subCtx.nodeBindings.set(key, val);
     }
+    // Keep alias generation monotonic across outer + subquery scopes
+    // to avoid alias collisions (e.g. reusing _t0 for different tables).
+    subCtx.aliasCounter = ctx.aliasCounter;
 
     // Process the pattern
     const pattern = expr.pattern;
-    for (const element of pattern.elements) {
+    let anchoredFromOuter = false;
+    for (let i = 0; i < pattern.elements.length; i++) {
+      const element = pattern.elements[i];
       if (element.type === "NodePattern") {
+        if (
+          element.variable &&
+          subCtx.nodeBindings.has(element.variable) &&
+          subCtx.fromParts.length === 0
+        ) {
+          // Correlated variable: do not add it to FROM inside the subquery,
+          // otherwise the alias is shadowed and correlation is lost.
+          anchoredFromOuter = true;
+          continue;
+        }
         this.processNodePattern(element, subCtx, subCtx.fromParts.length === 0);
       } else if (element.type === "RelationshipPattern") {
-        const idx = pattern.elements.indexOf(element);
-        const prevNode = pattern.elements[idx - 1] as NodePattern | undefined;
-        const nextNode = pattern.elements[idx + 1] as NodePattern | undefined;
+        const prevNode = pattern.elements[i - 1] as NodePattern | undefined;
+        const nextNode = pattern.elements[i + 1] as NodePattern | undefined;
         if (prevNode?.variable) {
           this.processRelPattern(
             element,
@@ -941,12 +962,40 @@ export class CypherLiteTranspiler {
       }
     }
 
+    // If a correlated pattern only references previously bound variables,
+    // ensure the subquery still has a valid FROM anchor.
+    if (!anchoredFromOuter && subCtx.fromParts.length === 0) {
+      const firstNode = pattern.elements.find(
+        (e): e is NodePattern => e.type === "NodePattern",
+      );
+      if (firstNode?.variable) {
+        const binding = subCtx.nodeBindings.get(firstNode.variable);
+        if (binding) {
+          subCtx.fromParts.push(`kg_entities ${binding.tableAlias}`);
+        }
+      }
+    }
+
     let subSql = "SELECT 1";
     if (subCtx.fromParts.length > 0) {
       subSql += " FROM " + subCtx.fromParts.join(", ");
-    }
-    if (subCtx.joinParts.length > 0) {
-      subSql += " " + subCtx.joinParts.join(" ");
+      if (subCtx.joinParts.length > 0) {
+        subSql += " " + subCtx.joinParts.join(" ");
+      }
+    } else if (subCtx.joinParts.length > 0) {
+      const [firstJoin, ...remainingJoins] = subCtx.joinParts;
+      // A correlated EXISTS may start from a relationship join and reference
+      // only outer-bound node aliases. Promote the first JOIN into FROM.
+      const promoted = firstJoin.match(/^(?:LEFT\s+)?JOIN\s+(.+?)\s+ON\s+(.+)$/i);
+      if (promoted) {
+        subSql += " FROM " + promoted[1];
+        subCtx.whereParts.unshift(promoted[2]);
+      } else {
+        subSql += " FROM " + firstJoin.replace(/^LEFT\s+JOIN\s+|^JOIN\s+/i, "");
+      }
+      if (remainingJoins.length > 0) {
+        subSql += " " + remainingJoins.join(" ");
+      }
     }
     if (subCtx.whereParts.length > 0) {
       subSql += " WHERE " + subCtx.whereParts.join(" AND ");
@@ -958,6 +1007,9 @@ export class CypherLiteTranspiler {
       ...subCtx.joinParams,
       ...subCtx.params,
     );
+
+    // Keep alias allocation monotonic after inlined EXISTS generation.
+    ctx.aliasCounter = subCtx.aliasCounter;
 
     return `EXISTS (${subSql})`;
   }
@@ -982,15 +1034,21 @@ export class CypherLiteTranspiler {
       joinParams: [],
       whereParts: [],
       params: [],
+      selectParams: [],
       ctes: [],
       cteParams: [],
       aliasCounter: 0,
     };
   }
 
-  /** Combine all params in SQL emission order: CTEs → JOINs → WHERE/SELECT. */
+  /** Combine all params in SQL emission order: CTEs → SELECT → JOINs → WHERE. */
   private allParams(ctx: TranspileContext): unknown[] {
-    return [...ctx.cteParams, ...ctx.joinParams, ...ctx.params];
+    return [
+      ...ctx.cteParams,
+      ...ctx.selectParams,
+      ...ctx.joinParams,
+      ...ctx.params,
+    ];
   }
 
   private nextAlias(ctx: TranspileContext): string {

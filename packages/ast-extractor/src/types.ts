@@ -216,6 +216,23 @@ export interface ExtractedTestDescription {
   description: string;
 }
 
+/**
+ * A variable assignment extracted from a file body (13.10).
+ * Captures the RHS text of variable declarations for pattern-based rule checking.
+ */
+export interface ExtractedVariableAssignment {
+  /** File containing the assignment */
+  file: string;
+  /** Line of the variable declaration (1-based) */
+  line: number;
+  /** Variable name (LHS) */
+  symbolName: string;
+  /** First 120 characters of the RHS expression text (normalised whitespace) */
+  valueText: string;
+  /** Enclosing function / class name; null for module-level code */
+  context: string | null;
+}
+
 export interface FileExtractionResult {
   /** File path (relative to workspace) */
   filePath: string;
@@ -243,6 +260,9 @@ export interface FileExtractionResult {
 
   /** Test descriptions from describe/it/test calls (14.6) */
   testDescriptions?: ExtractedTestDescription[];
+
+  /** Variable assignments with RHS text (13.10) */
+  variableAssignments?: ExtractedVariableAssignment[];
 
   /** Extraction timestamp */
   extractedAt: number;

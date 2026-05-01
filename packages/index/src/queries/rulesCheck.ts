@@ -18,6 +18,10 @@
 
 import type Database from "better-sqlite3";
 import { minimatch } from "minimatch";
+import {
+  parse as parseCypher,
+  transpile as transpileCypher,
+} from "../../../cypher-lite/dist/index.js";
 import type {
   RulesConfig,
   RuleDefinition,
@@ -146,6 +150,10 @@ function checkForbidden(
       return checkSymbolName(db, rule, forbidden, changed);
     case "import_pattern":
       return checkImportPattern(db, rule, forbidden, changed);
+    case "variable_assignment":
+      return checkVariableAssignment(db, rule, forbidden, changed);
+    case "cypher":
+      return checkCypherRule(db, rule, forbidden, changed);
     default:
       return [];
   }
@@ -378,6 +386,205 @@ function checkImportPattern(
   return violations;
 }
 
+// ── variable_assignment ───────────────────────────────────────────────────────
+
+function checkVariableAssignment(
+  db: Database.Database,
+  rule: RuleDefinition,
+  forbidden: RuleForbidden,
+  changed?: string[],
+): RulesViolation[] {
+  if (!forbidden.value_pattern) return [];
+
+  const tableExists = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='variable_assignments'`,
+    )
+    .get();
+  if (!tableExists) return [];
+
+  let valueRegex: RegExp;
+  try {
+    valueRegex = new RegExp(forbidden.value_pattern);
+  } catch {
+    return [];
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT file, line, symbol_name, value_text, context FROM variable_assignments ORDER BY file, line`,
+    )
+    .all() as Array<{
+    file: string;
+    line: number;
+    symbol_name: string;
+    value_text: string;
+    context: string | null;
+  }>;
+
+  const violations: RulesViolation[] = [];
+
+  for (const row of rows) {
+    if (!matchesScope(row.file, forbidden, changed)) continue;
+    if (!valueRegex.test(row.value_text)) continue;
+
+    violations.push({
+      ruleId: rule.id,
+      ruleSeverity: rule.severity,
+      ruleDescription: rule.description,
+      adr: rule.adr,
+      filePath: row.file,
+      line: row.line,
+      detail: `variable \`${row.symbol_name}\` assigned value matching \`${forbidden.value_pattern}\`: ${row.value_text.slice(0, 80)}`,
+    });
+  }
+
+  return violations;
+}
+
+// ── cypher (Phase 2: CypherLite + CARI graph projection) ─────────────────────
+
+function checkCypherRule(
+  db: Database.Database,
+  rule: RuleDefinition,
+  forbidden: RuleForbidden,
+  changed?: string[],
+): RulesViolation[] {
+  if (!forbidden.query) return [];
+
+  const query = forbidden.query.trim();
+  if (!query) return [];
+
+  const rows: Record<string, unknown>[] = [];
+
+  try {
+    if (looksLikeSql(query)) {
+      rows.push(...(db.prepare(query).all() as Record<string, unknown>[]));
+    } else {
+      const transpiled = transpileCypher(parseCypher(query));
+      for (const q of transpiled) {
+        if (q.kind !== "read") continue;
+        const sql = injectCariGraphCtes(q.sql);
+        rows.push(...(db.prepare(sql).all(...q.params) as Record<string, unknown>[]));
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  const violations: RulesViolation[] = [];
+
+  for (const row of rows) {
+    if (typeof row.file !== "string") continue;
+    if (!matchesScope(row.file, forbidden, changed)) continue;
+    violations.push({
+      ruleId: rule.id,
+      ruleSeverity: rule.severity,
+      ruleDescription: rule.description,
+      adr: rule.adr,
+      filePath: row.file,
+      line: typeof row.line === "number" ? row.line : null,
+      detail: typeof row.detail === "string" ? row.detail : (rule.description ?? rule.id),
+    });
+  }
+
+  return violations;
+}
+
+function looksLikeSql(query: string): boolean {
+  return /^\s*(select|with|pragma|explain)\b/i.test(query);
+}
+
+function injectCariGraphCtes(sql: string): string {
+  const entitiesCte = `
+kg_entities AS (
+  SELECT
+    'file:' || path AS id,
+    'FILE' AS type,
+    path AS name,
+    path,
+    path AS file,
+    NULL AS line,
+    COALESCE(doc_group, '') AS layer,
+    NULL AS fan_in
+  FROM files
+  UNION ALL
+  SELECT
+    'symbol:' || id AS id,
+    'SYMBOL' AS type,
+    name,
+    file_path AS path,
+    file_path AS file,
+    line,
+    NULL AS layer,
+    (
+      SELECT COUNT(*)
+      FROM symbol_calls sc
+      WHERE sc.callee_id = symbols.id
+         OR (sc.callee_id IS NULL AND sc.callee_name = symbols.name)
+    ) AS fan_in
+  FROM symbols
+  UNION ALL
+  SELECT
+    'doc:' || id AS id,
+    'DOCSPAN' AS type,
+    text AS name,
+    doc_path AS path,
+    doc_path AS file,
+    line,
+    NULL AS layer,
+    NULL AS fan_in
+  FROM annotations
+)`.trim();
+
+  const relsCte = `
+kg_relationships AS (
+  SELECT
+    'imp:' || id AS id,
+    'file:' || source_file AS from_id,
+    'file:' || target_file AS to_id,
+    'IMPORTS' AS predicate
+  FROM imports
+  WHERE target_file IS NOT NULL
+  UNION ALL
+  SELECT
+    'ann:' || id AS id,
+    'symbol:' || symbol_id AS from_id,
+    'doc:' || id AS to_id,
+    'ANNOTATED_BY' AS predicate
+  FROM annotations
+  WHERE symbol_id IS NOT NULL
+  UNION ALL
+  SELECT
+    'cooc:' || entity_a || '|' || entity_b || '|' || source AS id,
+    CASE
+      WHEN EXISTS (SELECT 1 FROM files f WHERE f.path = co.entity_a) THEN 'file:' || co.entity_a
+      WHEN EXISTS (SELECT 1 FROM symbols s WHERE s.id = co.entity_a) THEN 'symbol:' || co.entity_a
+      ELSE 'term:' || co.entity_a
+    END AS from_id,
+    CASE
+      WHEN EXISTS (SELECT 1 FROM files f WHERE f.path = co.entity_b) THEN 'file:' || co.entity_b
+      WHEN EXISTS (SELECT 1 FROM symbols s WHERE s.id = co.entity_b) THEN 'symbol:' || co.entity_b
+      ELSE 'term:' || co.entity_b
+    END AS to_id,
+    'CO_OCCURS' AS predicate
+  FROM co_occurrences co
+  UNION ALL
+  SELECT
+    'coc:' || file_a || '|' || file_b AS id,
+    'file:' || file_a AS from_id,
+    'file:' || file_b AS to_id,
+    'CO_CHANGES' AS predicate
+  FROM co_changes
+)`.trim();
+
+  if (/^\s*WITH\b/i.test(sql)) {
+    return sql.replace(/^\s*WITH\s+/i, `WITH ${entitiesCte}, ${relsCte}, `);
+  }
+
+  return `WITH ${entitiesCte}, ${relsCte} ${sql}`;
+}
+
 function hasTableColumn(
   db: Database.Database,
   table: string,
@@ -448,7 +655,8 @@ function matchesScope(
 
   // `in` scope filter
   if (forbidden.in) {
-    if (!minimatch(filePath, forbidden.in)) return false;
+    const includes = Array.isArray(forbidden.in) ? forbidden.in : [forbidden.in];
+    if (!includes.some((pat) => minimatch(filePath, pat))) return false;
   }
 
   // `except` exclusions

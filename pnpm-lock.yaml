@@ -235,6 +235,9 @@ importers:
 
   packages/index:
     dependencies:
+      '@intentweave/cypher-lite':
+        specifier: workspace:*
+        version: link:../cypher-lite
       '@viz-js/viz':
         specifier: ^3.25.0
         version: 3.25.0

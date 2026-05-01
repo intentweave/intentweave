@@ -2068,8 +2068,10 @@ export interface RuleForbidden {
    * - `call`: matches against `symbol_calls.callee_name` (regex)
    * - `symbol_name`: matches against `symbols.name` (regex)
    * - `import_pattern`: matches against `imports.module_specifier` (glob)
+   * - `variable_assignment`: matches assignment RHS text in `variable_assignments.value_text` (regex)
+   * - `cypher`: CypherLite query over CARI graph projection (or raw SQL fallback)
    */
-  type: "property_access" | "call" | "symbol_name" | "import_pattern";
+  type: "property_access" | "call" | "symbol_name" | "import_pattern" | "variable_assignment" | "cypher";
 
   /** Glob for property_access chain (e.g. "**.source.path") */
   chain?: string;
@@ -2090,6 +2092,35 @@ export interface RuleForbidden {
    * - `any`: same as `top-level` in Phase 1 (local vars require Phase 2 AX extension)
    */
   scope?: "exported" | "top-level" | "any";
+
+  /**
+   * RHS value pattern for variable_assignment rules (13.10).
+   * Matched as a regex against the first 120 chars of the assignment RHS.
+   */
+  value_pattern?: string;
+
+  /**
+   * Query for cypher rules (13.11).
+   * Preferred: CypherLite syntax over the CARI graph projection.
+   * Also supported: raw SQL fallback for advanced/debug use.
+   *
+   * Query output must include three columns:
+   * - `file TEXT`
+   * - `line INTEGER|null`
+   * - `detail TEXT`
+   *
+   * Any row returned = one violation.
+   *
+   * Example (CypherLite):
+   * ```cypher
+   * MATCH (s:Symbol)
+   * WHERE s.fan_in > 0
+   *   AND NOT EXISTS { MATCH (s)-[:ANNOTATED_BY]->(:DocSpan) }
+   * RETURN s.file AS file, s.line AS line,
+   *        s.name + ' has fan_in>0 but no doc annotation' AS detail
+   * ```
+   */
+  query?: string;
 
   /** Glob restricting which files are in scope (e.g. "apps/ui/**") */
   in?: string;

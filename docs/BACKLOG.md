@@ -1694,7 +1694,7 @@ CLI/MCP: no new commands — extends `rulesCheck` rule evaluation.
 
 Depends on: 13.1 (AX traversal), 13.2 (rules.yaml evaluation).
 
-### 13.10 `type: variable_assignment` Rule Type _(CARI, M)_
+### 13.10 `type: variable_assignment` Rule Type _(CARI, M)_ ✅ Done
 
 > **Derived from ARC-372 v0.11.1 improvement idea #3:** Detect when view components build
 > lookup maps from entity arrays — the actual ADR-003 violation pattern that `symbol_name`
@@ -1740,7 +1740,7 @@ CREATE TABLE variable_assignments (
 
 Depends on: 13.1 (AX traversal infrastructure), 13.2 (rule evaluation).
 
-### 13.11 `type: cypher` Rule Type — CypherLite-Backed Rules _(CARI, M)_
+### 13.11 `type: cypher` Rule Type — CypherLite-Backed Rules _(CARI, M)_ ✅ Done
 
 > **Motivation:** The four existing CARI rule types (`property_access`, `call`, `symbol_name`,
 > `import_pattern`) each query a single flat SQLite table. They cannot express
@@ -2586,8 +2586,8 @@ Depends on: 13.2 (rules-check), 5.1a/b (layers).
 | 13.7 | Import violations line numbers    | AX   | S      | Medium | 13.1, imports table   | ✅ Done |
 | 13.8 | rules-check JSON redirect fix     | CARI | S      | High   | 13.2                  | ✅ Done |
 | 13.9 | symbol_name scope modifier        | CARI | S      | Medium | 13.2, AX              | ✅ Done |
-| 13.10| type: variable_assignment         | CARI | M      | Medium | 13.1, 13.2            |         |
-| 13.11| type: cypher rule type (CypherLite)| CARI | M      | High   | 11.3a, 13.2           |         |
+| 13.10| type: variable_assignment         | CARI | M      | Medium | 13.1, 13.2            | ✅ Done |
+| 13.11| type: cypher rule type (CypherLite)| CARI | M      | High   | 11.3a, 13.2           | ✅ Done |
 | 17.1 | Prescriptive architecture diagram | CARI | M      | High   | 5.1a/b, 13.2, 17.2    |         |
 | 17.2 | allowed: entries in rules.yaml    | CARI | S      | High   | 13.2                  |         |
 | 17.3 | LLM prescriptive spec synthesis   | KG   | M      | Medium | 13.4, 17.2, 11.5      |         |
