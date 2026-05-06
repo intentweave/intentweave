@@ -25,36 +25,37 @@ All three work on the **import graph** — they answer the question _"which modu
 
 ### 1.1 What they cannot detect
 
-Consider this real-world violation from ADR:
+Consider this example violation:
 
 ```typescript
-// apps/data-explorer/src/components/explorer/views/DataView.tsx, L669
-function extractEESystem(sourcePath: string): string {
-  const match = sourcePath.match(/DataCatalogue_([^_/]+)/);
+// apps/ui/src/components/views/ItemView.tsx, L42
+function parseCategory(resourcePath: string): string {
+  const match = resourcePath.match(/Catalog_([^_/]+)/);
   return match ? match[1] : "Unknown";
 }
 
 // Usage:
-const eeSystem = extractEESystem(entity.source.path); // ← THE VIOLATION
+const category = parseCategory(item.resource.path); // ← THE VIOLATION
 ```
 
-The import graph is **clean**: `DataView.tsx` imports `entity` from the correct API layer. Nothing
+The import graph is **clean**: `ItemView.tsx` imports `item` from the correct API layer. Nothing
 is imported that shouldn't be. The violation is _behavioral_: the view component accesses a
-raw internal field (`source.path`) and applies domain parsing logic that belongs in the
-resolver/transformer layer. ADR-003 §2.1 explicitly forbids this class of coupling.
+raw internal field (`resource.path`) and applies domain parsing logic that belongs in the
+resolver/transformer layer. An ADR constraint explicitly forbids this class of coupling.
 
-A second example from the same codebase:
+A second example:
 
 ```typescript
 // DetailView.tsx, L51
-const refToId = (ref: string) => ref.replace(/^#\//, "").replace(/\//g, ".");
+const normalizeRef = (ref: string) =>
+  ref.replace(/^#\//, "").replace(/\//g, ".");
 const entityById = useMemo(
   () => new Map(allEntities.map((e) => [e.id, e])),
   [allEntities],
 );
 ```
 
-`refToId` is a re-implementation of logic that already exists in the server-side resolver.
+`normalizeRef` is a re-implementation of logic that already exists in the server-side resolver.
 The import is legal. The problem is that this parsing and map-building logic exists in the UI
 at all. No import-graph tool can see this.
 
@@ -66,10 +67,10 @@ Import-graph violations (current):
                         (wrong direction / wrong boundary)
 
 Semantic usage violations (new):
-  File A  ──accesses──► entity.source.path   ← property access chain
-  File A  ──calls─────► refToId()           ← function invocation
-  File A  ──defines───► entityById Map       ← forbidden symbol pattern
-  File A  ──contains──► /DataCatalogue_/   ← regex literal on domain data
+  File A  ──accesses──► item.resource.path    ← property access chain
+  File A  ──calls─────► normalizeRef()        ← function invocation
+  File A  ──defines───► itemsById Map         ← forbidden symbol pattern
+  File A  ──contains──► /Catalog_/            ← regex literal on domain data
 ```
 
 These are **AST-level facts about what code does inside a file**, not graph-level facts about
@@ -126,18 +127,18 @@ CREATE TABLE symbol_calls (
   caller_name   TEXT,             -- name of the enclosing function/class, NULL for module-level
   caller_line   INTEGER,          -- line of the call expression
   callee_name   TEXT NOT NULL,    -- name of the called function (unqualified)
-  callee_id     TEXT,             -- fully-qualified callee if resolvable (e.g. "resolver.refToId")
+  callee_id     TEXT,             -- fully-qualified callee if resolvable (e.g. "resolver.normalizeRef")
   is_method     INTEGER DEFAULT 0 -- 1 if callee_name is a method call (obj.method())
 );
 ```
 
-**Example data for `DetailView.tsx`:**
+**Example data:**
 
-| caller_file    | caller_name   | caller_line | callee_name | is_method |
-| -------------- | ------------- | ----------- | ----------- | --------- |
-| DetailView.tsx | DetailView    | 51          | refToId     | 0         |
-| DetailView.tsx | DetailView    | 55          | idToName    | 0         |
-| DataView.tsx   | extractSystem | 669         | match       | 1         |
+| caller_file    | caller_name   | caller_line | callee_name    | is_method |
+| -------------- | ------------- | ----------- | -------------- | --------- |
+| ItemView.tsx   | parseCategory | 43          | match          | 1         |
+| DetailView.tsx | DetailView    | 51          | normalizeRef   | 0         |
+| DetailView.tsx | DetailView    | 55          | buildEntityMap | 0         |
 
 ### 3.2 `property_accesses`
 
@@ -149,19 +150,19 @@ CREATE TABLE property_accesses (
   file        TEXT NOT NULL,    -- file containing the access
   symbol_name TEXT,             -- enclosing function/class name
   line        INTEGER,
-  chain       TEXT NOT NULL,    -- e.g. "entity.source.path", "entity._resolved.nameMap"
-  root        TEXT NOT NULL,    -- first identifier: "entity"
-  depth       INTEGER           -- number of property segments: "entity.source.path" → 3
+  chain       TEXT NOT NULL,    -- e.g. "user.profile.name", "order.status.code"
+  root        TEXT NOT NULL,    -- first identifier: "user"
+  depth       INTEGER           -- number of property segments: "user.profile.name" → 3
 );
 ```
 
 **Example data:**
 
-| file          | symbol_name    | line | chain              | root   |
-| ------------- | -------------- | ---- | ------------------ | ------ |
-| DataView.tsx  | extractSystem  | 670  | entity.source.path | entity |
-| DataView.tsx  | renderCommRows | 892  | entity.$ref        | entity |
-| EventView.tsx | useParamRows   | 495  | param.$ref         | param  |
+| file           | symbol_name   | line | chain               | root  |
+| -------------- | ------------- | ---- | ------------------- | ----- |
+| ItemView.tsx   | parseCategory | 43   | item.resource.path  | item  |
+| ItemView.tsx   | renderDetails | 92   | item.raw.metadata   | item  |
+| DetailView.tsx | useParamRows  | 95   | param.internal.type | param |
 
 ### 3.3 Index build
 
@@ -185,70 +186,70 @@ tree-sitter provides the AST node types needed:
 version: 1
 
 rules:
-  - id: no-source-path-parsing-in-ui
-    description: "UI view components must not access entity.source.path for data extraction"
-    adr: ADR-003
+  - id: no-internal-field-access-in-ui
+    description: "UI view components must not access internal resource fields directly"
+    adr: ADR-001
     severity: high # high | medium | low
     forbidden:
       - type: property_access
-        chain: "**.source.path" # glob-style property chain matcher
-        in: "apps/data-explorer/**" # file scope (glob)
+        chain: "**.resource.path" # glob-style property chain matcher
+        in: "apps/ui/**" # file scope (glob)
 
-  - id: no-ref-resolution-in-ui
-    description: "UI components must not resolve $ref strings — belongs in the resolver layer"
-    adr: ADR-003
+  - id: no-domain-helpers-in-ui
+    description: "UI components must not implement domain-parsing helpers — belongs in the service layer"
+    adr: ADR-001
     severity: medium
     forbidden:
       - type: call
-        callee: "refToId|idToName|refId|lastSegment|idPackage" # regex or | list
-        in: "apps/data-explorer/src/components/**"
+        callee: "normalizeRef|buildPath|parseId|lastSegment" # regex or | list
+        in: "apps/ui/src/components/**"
       - type: property_access
-        chain: "**.$ref"
-        in: "apps/data-explorer/src/components/**"
-        except: "apps/data-explorer/src/components/resolver/**" # allowed in resolver only
+        chain: "**.internal.type"
+        in: "apps/ui/src/components/**"
+        except: "apps/ui/src/components/resolver/**" # allowed in resolver only
 
-  - id: no-entitybyid-in-views
-    description: "entityById maps must not be built in view components"
-    adr: ADR-003
+  - id: no-lookup-maps-in-views
+    description: "Lookup maps must not be built in view components"
+    adr: ADR-001
     severity: medium
     forbidden:
       - type: symbol_name
         pattern: "entityById" # variable/constant name pattern
-        in: "apps/data-explorer/src/components/explorer/views/**"
+        in: "apps/ui/src/components/views/**"
 
-  - id: no-regex-on-source-metadata
-    description: "Regex parsing of source path directory names belongs in adapters"
-    adr: ADR-003
+  - id: no-regex-on-internal-fields
+    description: "Regex parsing of internal field values belongs in adapters"
+    adr: ADR-001
     severity: high
     forbidden:
       - type: call
         callee: "match|exec" # regex methods
-        in: "apps/data-explorer/**"
-        context_access: "**.source.path" # only flag when used on .source.path access
+        in: "apps/ui/**"
+        context_access: "**.resource.path" # only flag when used on .resource.path access
 
   # Visualization-intent rule — no CI enforcement, pure SVG architecture diagram input
-  - id: adr003-provider-adapter-transformer-flow
-    description: "Intended ADR-003 pipeline flow (visualization-only)"
-    adr: ADR-003
+  - id: intended-data-flow
+    description: "Intended pipeline flow (visualization-only)"
+    adr: ADR-001
     severity: low
     expresses:
       elements:
         - name: SourceProvider
           kind: component
-          layer: "packages/@arccraft/providers"
+          layer: "packages/providers"
         - name: AdapterParser
           kind: component
-          layer: "packages/@arccraft"
-        - name: PipelineWorkerPlugin
+          layer: "packages/adapters"
+        - name: PipelineWorker
           kind: component
-          layer: "packages/@arccraft/pipeline-workers"
+          layer: "packages/workers"
       flows:
         - from: SourceProvider
           to: AdapterParser
           policy: allowed
           kind: data
         - from: AdapterParser
-          to: PipelineWorkerPlugin
+          to: PipelineWorker
           policy: allowed
           kind: control
     forbidden: []
@@ -290,31 +291,31 @@ and never produce CI violations. Their sole purpose is to encode **intended arch
 data/control flows as a prescriptive SVG architecture diagram.
 
 ```yaml
-- id: adr003-provider-adapter-transformer-flow
+- id: intended-data-flow
   description: >
-    Intended ADR-003 pipeline: Providers → Adapters/Parsers → Transformer pipeline.
-    Visualization-only — encodes expected data/control flow across current engine
-    implementation and a future pluggable async worker stage.
-  adr: ADR-003
+    Intended pipeline: Providers → Adapters/Parsers → Worker pipeline.
+    Visualization-only — encodes expected data/control flow for the
+    current engine implementation.
+  adr: ADR-001
   severity: low
   expresses:
     elements:
       - name: SourceProvider
         kind: component # component | interface | service | store
-        layer: "packages/@arccraft/providers"
+        layer: "packages/providers"
       - name: AdapterParser
         kind: component
-        layer: "packages/@arccraft"
-      - name: PipelineWorkerPlugin
+        layer: "packages/adapters"
+      - name: PipelineWorker
         kind: component
-        layer: "packages/@arccraft/pipeline-workers"
+        layer: "packages/workers"
     flows:
       - from: SourceProvider
         to: AdapterParser
         policy: allowed # allowed | forbidden
         kind: data # data | control
       - from: AdapterParser
-        to: PipelineWorkerPlugin
+        to: PipelineWorker
         policy: allowed
         kind: control
   forbidden: [] # explicit empty list — no CI enforcement
@@ -371,24 +372,21 @@ iw index rules-check --severity high          # only report high-severity violat
 **Output (text):**
 
 ```
-⚠ 9 semantic rule violations
+⚠ 4 semantic rule violations
 
-  Rule: no-source-path-parsing-in-ui (ADR-003) [HIGH]
-  ─────────────────────────────────────────────────────
-  DataView.tsx:670    entity.source.path accessed in extractEESystem()
-                     → Move to DataSchemaAdapter or SourceMetadataTransformer
+  Rule: no-internal-field-access-in-ui (ADR-001) [HIGH]
+  ───────────────────────────────────────────────────────
+  ItemView.tsx:42     item.resource.path accessed in parseCategory()
+                     → Move to ResourceAdapter or CategoryTransformer
 
-  Rule: no-ref-resolution-in-ui (ADR-003) [MEDIUM]
-  ─────────────────────────────────────────────────
-  DetailView.tsx:51  refToId() called in DetailView component
-  DetailView.tsx:55  idToName() called in DetailView component
-  EventView.tsx:495  param.$ref accessed in useParamRows()
+  Rule: no-domain-helpers-in-ui (ADR-001) [MEDIUM]
+  ──────────────────────────────────────────────────
+  DetailView.tsx:51  normalizeRef() called in DetailView component
+  DetailView.tsx:55  buildEntityMap() called in DetailView component
 
-  Rule: no-entitybyid-in-views (ADR-003) [MEDIUM]
-  ─────────────────────────────────────────────────
-  DataView.tsx:340    entityById defined in DataView component
-  DetailView.tsx:62  entityById defined in DetailView component
-  EventView.tsx:210  entityById defined in EventView component
+  Rule: no-lookup-maps-in-views (ADR-001) [MEDIUM]
+  ──────────────────────────────────────────────────
+  ItemView.tsx:340    entityById defined in ItemView component
 ```
 
 **Exit code:** 0 (no violations), 1 (violations found), 2 (config error).
@@ -415,7 +413,7 @@ all CI enforcement is $0 — no LLM calls.
 Same as `iw index check --changed` but for semantic rules:
 
 ```bash
-iw index rules-check --changed src/components/PduView.tsx
+iw index rules-check --changed src/components/ItemView.tsx
 ```
 
 Reports only violations in files that were modified. Used in PR pipelines to give
@@ -440,7 +438,7 @@ fast targeted feedback without checking the entire codebase.
 ```
 
 Copilot usage: _"Are there any ADR-003 violations in the explorer views?"_
-→ `cari_rules_check` with `{ ruleId: "no-source-path-parsing-in-ui" }`
+→ `cari_rules_check` with `{ ruleId: "no-internal-field-access-in-ui" }`
 
 ---
 
@@ -452,7 +450,7 @@ The feature has three independently shippable stages:
 
 **Scope:** Implement `rulesCheck` for `import_pattern` type rules only. These use the existing
 `imports` table. No AX changes. Catches a subset of violations where the wrong dependency
-_is_ visible in the import graph (e.g., a UI file importing `resolved-entity-worker.ts` directly
+_is_ visible in the import graph (e.g., a UI file importing `data-service-worker.ts` directly
 instead of via the API route).
 
 Also delivered in Stage 1: the `expresses` block parser and prescriptive SVG export pipeline
@@ -474,8 +472,8 @@ at export time; no SQLite query is issued for `forbidden: []` rules.
 
 **Unlocks detection of:**
 
-- `extractSystem(entity.source.path)` → both `call` and `property_access` rules
-- `refToId()`, `idToName()`, `entityById` → `call` rules
+- `parseCategory(item.resource.path)` → both `call` and `property_access` rules
+- `normalizeRef()`, `buildEntityMap()`, `entityById` → `call` rules
 
 **Status:** Complete. Full pipeline is live and validated:
 
@@ -501,63 +499,25 @@ their rule set without writing YAML by hand.
 
 ---
 
-## 8. Mapping to the ADR Example
+## 8. Rule Coverage by Violation Type
 
-Applying this to the ADR codebase, the following `.iw/rules.yaml` would be auto-generated
-from ADR-003 (Stage 3) or hand-written in ~30 minutes (Stage 2):
+For each class of violation that semantic rules can detect, the following table maps the
+violation pattern to the rule type that catches it and the implementation stage required:
 
-```yaml
-version: 1
-rules:
-  - id: no-source-path-parsing-in-ui
-    description: "ADR-003 §2.1: UI must consume pre-resolved properties, not parse source paths"
-    adr: ADR-003
-    severity: high
-    forbidden:
-      - type: property_access
-        chain: "**.source.path"
-        in: "apps/data-explorer/src/components/**"
-
-  - id: no-ref-resolution-in-ui
-    description: "ADR-003 §2.1: $ref resolution belongs in resolved-entity-worker, not views"
-    adr: ADR-003
-    severity: medium
-    forbidden:
-      - type: call
-        callee: "refToId|idToName|refId|lastSegment|idPackage"
-        in: "apps/data-explorer/src/components/**"
-      - type: property_access
-        chain: "**.$ref"
-        in: "apps/data-explorer/src/components/**"
-        except: "apps/data-explorer/src/components/resolver/**"
-
-  - id: no-entitybyid-in-views
-    description: "ADR-003 §2.1: entityById maps are rebuilt server-side; do not re-build in UI"
-    adr: ADR-003
-    severity: medium
-    forbidden:
-      - type: symbol_name
-        pattern: "entityById"
-        in: "apps/data-explorer/src/components/explorer/views/**"
-```
-
-**With this config, `iw index rules-check` would have caught:**
-
-| ADR Violation                                | Rule that catches it                        | Stage needed |
-| -------------------------------------------- | ------------------------------------------- | ------------ |
-| `extractSystem(entity.source.path)`          | `no-source-path-parsing-in-ui`              | Stage 2      |
-| `refToId()` in DetailView                    | `no-ref-resolution-in-ui` (call)            | Stage 2      |
-| `param.$ref` in EventView                    | `no-ref-resolution-in-ui` (property_access) | Stage 2      |
-| `entityById` in PduView/SignalView/EventView | `no-entitybyid-in-views`                    | Stage 2      |
-| `source.path.split('/')` in docsLoader       | `no-source-path-parsing-in-ui`              | Stage 2      |
-
-**All 9 violations from the ADR audit table are detectable with Stage 2.**
+| Violation pattern                             | Rule type         | Stage needed |
+| --------------------------------------------- | ----------------- | ------------ |
+| View accesses internal field (e.g. `x.raw.y`) | `property_access` | Stage 2      |
+| View calls domain helper (e.g. `parseId()`)   | `call`            | Stage 2      |
+| View accesses `**.$ref` or similar ref field  | `property_access` | Stage 2      |
+| View declares lookup map (e.g. `entityById`)  | `symbol_name`     | Stage 2      |
+| View applies regex to internal data           | `call` + context  | Stage 2      |
+| File imports wrong package internal           | `import_pattern`  | Stage 1      |
 
 ---
 
 ## 9. CI Gate Example
 
-Once implemented, the PR pipeline for the data-platform project would add:
+Once implemented, a PR pipeline would add:
 
 ```yaml
 # .github/workflows/ci.yml
@@ -566,17 +526,17 @@ Once implemented, the PR pipeline for the data-platform project would add:
   # Exits non-zero if any high-severity ADR violation is introduced
 ```
 
-A developer adding a new call to `entity.source.path` in a view component would see:
+A developer introducing a new access to an internal field in a view component would see:
 
 ```
-✗ Architecture violation: no-source-path-parsing-in-ui (ADR-003, HIGH)
-  NewView.tsx:42  entity.source.path accessed in renderConfig()
+✗ Architecture violation: no-internal-field-access-in-ui (ADR-001, HIGH)
+  NewView.tsx:42  item.resource.path accessed in renderConfig()
 
-  This pattern violates ADR-003 §2.1.
-  The EESystem/configuration data must come from the resolved-entity-worker
-  as a property (entity.properties.eeSystem), not parsed from the source path.
+  This pattern violates ADR-001.
+  The category data must come from the service layer as a resolved property,
+  not parsed from the raw resource path.
 
-  See: docs/ADR-003-SOURCE-PROVIDERS-CONTENT-PARSERS.md
+  See: docs/ADR-001.md
 ```
 
 The violation is caught in the PR — before review, before merge, before regression.
@@ -585,14 +545,14 @@ The violation is caught in the PR — before review, before merge, before regres
 
 ## 10. Relationship to Existing Features
 
-| Existing feature               | Relationship                                                                                                                                             |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layers-check`                 | Orthogonal. Catches wrong import direction. Semantic rules catch wrong usage inside files.                                                               |
-| `boundary-violations`          | Orthogonal. Catches cross-package internal imports. Semantic rules catch data misuse.                                                                    |
-| `arch-check`                   | Complementary. `arch-check` validates declared component flows. Rules validate coding patterns within components.                                        |
-| `clones` / `structural-clones` | Partially overlapping. Clones finds duplicated helpers (`refToFqn` appears in 4 files). Rules enforces that _none_ of them should exist in the UI layer. |
-| `cari_check` (drift)           | Complementary. Drift check catches stale documentation. Rules check catches stale architecture patterns.                                                 |
-| KG `rules-extract`             | New Layer 2 addition. LLM populates `.iw/rules.yaml` from ADR text. $0 after initial extraction.                                                         |
+| Existing feature               | Relationship                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `layers-check`                 | Orthogonal. Catches wrong import direction. Semantic rules catch wrong usage inside files.                                                                         |
+| `boundary-violations`          | Orthogonal. Catches cross-package internal imports. Semantic rules catch data misuse.                                                                              |
+| `arch-check`                   | Complementary. `arch-check` validates declared component flows. Rules validate coding patterns within components.                                                  |
+| `clones` / `structural-clones` | Partially overlapping. Clones finds duplicated helpers (e.g. the same `normalizeRef` in 4 files). Rules enforces that _none_ of them should exist in the UI layer. |
+| `cari_check` (drift)           | Complementary. Drift check catches stale documentation. Rules check catches stale architecture patterns.                                                           |
+| KG `rules-extract`             | New Layer 2 addition. LLM populates `.iw/rules.yaml` from ADR text. $0 after initial extraction.                                                                   |
 
 ---
 
