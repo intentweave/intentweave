@@ -178,11 +178,11 @@ describe("Entity Bridge — schema", () => {
     expect(columns).toEqual(["id", "name", "type", "aliases", "metadata"]);
   });
 
-  it("schema version is 5", () => {
+  it("schema version is current", () => {
     const row = db
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as { value: string };
-    expect(row.value).toBe("10");
+    expect(row.value).toBe("13");
   });
 });
 

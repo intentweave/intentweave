@@ -20,6 +20,7 @@ import type {
   ExtractedPropertyAccess,
   ExtractedTypeAssertion,
   ExtractedVariableAssignment,
+  ExtractedDefUseChain,
   FileExtractionResult,
   ExtractionOptions,
   BatchExtractionResult,
@@ -78,6 +79,7 @@ export class AstExtractor {
       const propertyAccesses: ExtractedPropertyAccess[] = [];
       const typeAssertions: ExtractedTypeAssertion[] = [];
       const variableAssignments: ExtractedVariableAssignment[] = [];
+      const defUseChains: ExtractedDefUseChain[] = [];
       const testDescriptions: Array<{
         file: string;
         line: number;
@@ -119,6 +121,13 @@ export class AstExtractor {
         variableAssignments,
       );
 
+      // Extract intra-function def-use chains (16.1)
+      this.extractDefUseChainsFromTree(
+        tree.rootNode,
+        relativePath,
+        defUseChains,
+      );
+
       // Annotate @deprecated / @internal / _prefix flags on all symbols
       this.annotateJsDocFlags(symbols, content, tree);
 
@@ -140,6 +149,7 @@ export class AstExtractor {
           testDescriptions.length > 0 ? testDescriptions : undefined,
         variableAssignments:
           variableAssignments.length > 0 ? variableAssignments : undefined,
+        defUseChains: defUseChains.length > 0 ? defUseChains : undefined,
         extractedAt: Date.now(),
         errors: errors.length > 0 ? errors : undefined,
       };
@@ -1296,6 +1306,196 @@ export class AstExtractor {
       }
     };
     visit(root);
+  }
+
+  /**
+   * Extract intra-function local def-use chains (16.1).
+   *
+   * Scope: within a single function/method body only. Nested function bodies are
+   * treated as separate scopes and are not included in the parent's chains.
+   */
+  private extractDefUseChainsFromTree(
+    root: Parser.SyntaxNode,
+    filePath: string,
+    chains: ExtractedDefUseChain[],
+  ): void {
+    const visit = (node: Parser.SyntaxNode): void => {
+      if (this.isFunctionLikeNode(node)) {
+        this.extractFunctionDefUse(node, filePath, chains);
+      }
+      for (const child of node.children) {
+        visit(child);
+      }
+    };
+    visit(root);
+  }
+
+  private extractFunctionDefUse(
+    fnNode: Parser.SyntaxNode,
+    filePath: string,
+    chains: ExtractedDefUseChain[],
+  ): void {
+    const body = fnNode.childForFieldName("body");
+    if (!body) return;
+
+    const functionName = this.getFunctionName(fnNode);
+    const defs: Array<{ varName: string; defLine: number }> = [];
+
+    // Collect local definitions in this function scope (exclude nested functions).
+    this.walkFunctionScope(body, (node) => {
+      if (node.type === "variable_declarator") {
+        const nameNode = node.childForFieldName("name");
+        const valueNode = node.childForFieldName("value");
+        if (nameNode?.type === "identifier" && valueNode) {
+          defs.push({
+            varName: nameNode.text,
+            defLine: node.startPosition.row + 1,
+          });
+        }
+      }
+
+      if (node.type === "assignment_expression") {
+        const left = node.childForFieldName("left");
+        const right = node.childForFieldName("right");
+        if (left?.type === "identifier" && right) {
+          defs.push({
+            varName: left.text,
+            defLine: node.startPosition.row + 1,
+          });
+        }
+      }
+    });
+
+    if (defs.length === 0) return;
+
+    const reads: Array<{ name: string; line: number; context: string }> = [];
+    this.walkFunctionScope(body, (node) => {
+      if (!this.isIdentifierRead(node)) return;
+      reads.push({
+        name: node.text,
+        line: node.startPosition.row + 1,
+        context: this.classifyIdentifierUseContext(node),
+      });
+    });
+
+    if (reads.length === 0) return;
+
+    const seen = new Set<string>();
+    for (const def of defs) {
+      for (const read of reads) {
+        if (read.name !== def.varName) continue;
+        if (read.line <= def.defLine) continue;
+
+        const key = `${functionName ?? ""}|${def.varName}|${def.defLine}|${read.line}|${read.context}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        chains.push({
+          file: filePath,
+          functionName,
+          defLine: def.defLine,
+          varName: def.varName,
+          useLine: read.line,
+          useContext: read.context,
+        });
+      }
+    }
+  }
+
+  private walkFunctionScope(
+    root: Parser.SyntaxNode,
+    visitor: (node: Parser.SyntaxNode) => void,
+  ): void {
+    const walk = (node: Parser.SyntaxNode, isRoot = false): void => {
+      if (!isRoot && this.isFunctionLikeNode(node)) {
+        return;
+      }
+      visitor(node);
+      for (const child of node.children) {
+        walk(child);
+      }
+    };
+    walk(root, true);
+  }
+
+  private isFunctionLikeNode(node: Parser.SyntaxNode): boolean {
+    return (
+      node.type === "function_declaration" ||
+      node.type === "method_definition" ||
+      node.type === "generator_function_declaration" ||
+      node.type === "arrow_function" ||
+      node.type === "function_expression" ||
+      node.type === "generator_function"
+    );
+  }
+
+  private getFunctionName(node: Parser.SyntaxNode): string | null {
+    if (
+      node.type === "function_declaration" ||
+      node.type === "method_definition" ||
+      node.type === "generator_function_declaration"
+    ) {
+      return node.childForFieldName("name")?.text ?? null;
+    }
+
+    const parent = node.parent;
+    if (parent?.type === "variable_declarator") {
+      return parent.childForFieldName("name")?.text ?? null;
+    }
+    if (parent?.type === "pair") {
+      return parent.childForFieldName("key")?.text ?? null;
+    }
+    return null;
+  }
+
+  private isIdentifierRead(node: Parser.SyntaxNode): boolean {
+    if (node.type !== "identifier") return false;
+    const parent = node.parent;
+    if (!parent) return true;
+
+    // Exclude declaration/assignment targets and property keys.
+    if (parent.childForFieldName("name") === node) return false;
+    if (parent.childForFieldName("left") === node) return false;
+    if (parent.childForFieldName("property") === node) return false;
+    if (parent.childForFieldName("key") === node) return false;
+
+    if (
+      parent.type === "shorthand_property_identifier_pattern" ||
+      parent.type === "import_specifier" ||
+      parent.type === "namespace_import" ||
+      parent.type === "type_identifier"
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private classifyIdentifierUseContext(node: Parser.SyntaxNode): string {
+    const parent = node.parent;
+    if (!parent) return "read";
+
+    if (parent.type === "return_statement") return "return";
+    if (
+      parent.type === "arguments" &&
+      parent.parent?.type === "call_expression"
+    ) {
+      return "call_arg";
+    }
+    if (
+      parent.type === "member_expression" &&
+      parent.childForFieldName("object") === node
+    ) {
+      return "property_access";
+    }
+    if (
+      parent.type === "assignment_expression" &&
+      parent.childForFieldName("right") === node
+    ) {
+      return "assignment_rhs";
+    }
+
+    return "read";
   }
 
   /**

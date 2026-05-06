@@ -27,18 +27,87 @@ import {
   OpenAILLMProvider,
 } from "@intentweave/analyzer/llm";
 import type { LLMProvider } from "@intentweave/core";
-import type { RulesConfig, RuleDefinition } from "@intentweave/index";
+import type {
+  RulesConfig,
+  RuleDefinition,
+  RulesAllowedEntry,
+} from "@intentweave/index";
 
-// ── Prompt ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an architectural rules extractor for software projects.
+/** A layer hint extracted from ADR prose (17.3 --with-layer-hints). */
+interface LayerHint {
+  name: string;
+  description: string;
+  patterns: string[];
+}
+
+/**
+ * Full extraction result — superset of RulesConfig.
+ * `layer_hints` is stripped before writing rules.yaml; written to a
+ * separate `--layers-output` file instead.
+ */
+interface ExtractedConfig extends RulesConfig {
+  layer_hints?: LayerHint[];
+}
+
+// ── Prompt builder ────────────────────────────────────────────────────────────
+
+function buildSystemPrompt(
+  withAllowed: boolean,
+  withLayerHints: boolean,
+): string {
+  const allowedSchemaSection = withAllowed
+    ? `
+  "allowed": [           // NEW: explicit permission flows (§17.2)
+    {
+      "from_layer": "inferred-layer-name",  // source layer (kebab/slash-case, match ADR terminology)
+      "to_layer": "inferred-layer-name",    // destination layer
+      "description": "Verbatim or paraphrased permission from the ADR"
+    }
+  ],`
+    : "";
+
+  const layerHintsSchemaSection = withLayerHints
+    ? `
+  "layer_hints": [       // NEW: detected architectural tiers (§17.3)
+    {
+      "name": "inferred-layer-name",       // short slug, e.g. "apps/ui" or "packages/data"
+      "description": "What this layer represents",
+      "patterns": ["src/some/glob/**"]      // reasonable path-glob inferences
+    }
+  ]`
+    : "";
+
+  const allowedGuidance = withAllowed
+    ? `
+Allowed-entry guidance (--with-allowed):
+- Extract explicit positive permissions: flows the ADR says ARE permitted between layers.
+- Use the same layer names as in the forbidden rules for consistency.
+- If the ADR says "X must only communicate with Y via Z", emit one allowed entry for each sanctioned path.
+- If no explicit permissions are stated, emit an empty allowed array: "allowed": [].
+`
+    : "";
+
+  const layerHintsGuidance = withLayerHints
+    ? `
+Layer-hint guidance (--with-layer-hints):
+- Identify every named architectural tier, layer, or component group mentioned in the ADR.
+- For each, infer a reasonable file-path glob (e.g. "apps/ui/**" for the UI layer).
+- Use slash-separated paths that reflect a typical monorepo structure.
+- Emit only layers that are clearly named; do not invent unnamed groupings.
+- If no layers are identifiable, emit an empty array: "layer_hints": [].
+`
+    : "";
+
+  return `You are an architectural rules extractor for software projects.
 Given one or more ADR (Architecture Decision Record) markdown documents, identify all
 technical/architectural constraints they express and translate each into a structured
 rule definition that can be enforced by a static analysis tool.
 
 Output ONLY a single JSON object — no explanation, no markdown fences. The schema is:
 
-{
+{${allowedSchemaSection}
   "version": 1,
   "rules": [
     {
@@ -57,7 +126,7 @@ Output ONLY a single JSON object — no explanation, no markdown fences. The sch
         }
       ]
     }
-  ]
+  ]${layerHintsSchemaSection}
 }
 
 Rule type guidance:
@@ -70,13 +139,14 @@ Severity guidelines:
 - "high"  : Core architectural boundary; violating it would cause errors or security issues
 - "medium": Technical debt or cross-layer inconsistency
 - "low"   : Convention or style guideline
-
+${allowedGuidance}${layerHintsGuidance}
 Rules to follow:
 1. Only emit rules for constraints that are clearly and explicitly stated in the ADR.
 2. Do not invent constraints that are not written down.
 3. Each forbidden entry should target the smallest possible scope (use "in:" when the ADR specifies a layer).
 4. Infer reasonable file-scope globs from the ADR context (e.g. "apps/ui/**" for UI-specific rules).
 5. If no machine-enforceable constraints are found, output: {"version": 1, "rules": []}.`;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -114,7 +184,7 @@ function extractJson(text: string): string {
   return text.trim();
 }
 
-function isValidRulesConfig(obj: unknown): obj is RulesConfig {
+function isValidRulesConfig(obj: unknown): obj is ExtractedConfig {
   return (
     typeof obj === "object" &&
     obj !== null &&
@@ -140,6 +210,18 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
   .option(
     "--append",
     "Append newly extracted rules to an existing output file, skipping duplicate IDs",
+  )
+  .option(
+    "--with-allowed",
+    "Also synthesize explicit allowed: permission entries from ADR prose (§17.3)",
+  )
+  .option(
+    "--with-layer-hints",
+    "Also extract architectural layer hints and write to --layers-output (§17.3)",
+  )
+  .option(
+    "--layers-output <path>",
+    "Output path for layer hints YAML when --with-layer-hints is set (default: .iw/layers.hints.yaml)",
   )
   .option("-v, --verbose", "Show prompt/response details")
   .action(async (files: string[], opts) => {
@@ -169,9 +251,18 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
       .map((c) => `=== ${c.name} ===\n\n${c.text}`)
       .join("\n\n---\n\n");
 
+    const systemPrompt = buildSystemPrompt(
+      Boolean(opts.withAllowed),
+      Boolean(opts.withLayerHints),
+    );
+
     if (opts.verbose) {
-      console.log(chalk.dim("  [prompt] system length:"), SYSTEM_PROMPT.length);
+      console.log(chalk.dim("  [prompt] system length:"), systemPrompt.length);
       console.log(chalk.dim("  [prompt] user length:"), userMessage.length);
+      if (opts.withAllowed)
+        console.log(chalk.dim("  [mode] --with-allowed enabled"));
+      if (opts.withLayerHints)
+        console.log(chalk.dim("  [mode] --with-layer-hints enabled"));
     }
 
     // ── Create and validate LLM provider ───────────────────────────
@@ -194,10 +285,10 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
     let responseText: string;
     try {
       const response = await provider.complete({
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: [{ role: "user", content: userMessage }],
         temperature: 0.1,
-        maxTokens: 2048,
+        maxTokens: 4096,
       });
       responseText = response.content;
     } catch (err: unknown) {
@@ -216,7 +307,7 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
     }
 
     // ── Parse and validate JSON response ───────────────────────────
-    let extracted: RulesConfig;
+    let extracted: ExtractedConfig;
     try {
       const json = extractJson(responseText);
       const parsed: unknown = JSON.parse(json);
@@ -246,7 +337,7 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
         const { load: yamlLoad } = await import("js-yaml");
         const existing = yamlLoad(
           fs.readFileSync(outPath, "utf-8"),
-        ) as RulesConfig;
+        ) as ExtractedConfig;
         if (existing?.rules && Array.isArray(existing.rules)) {
           const existingIds = new Set(
             existing.rules.map((r: RuleDefinition) => r.id),
@@ -254,17 +345,70 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
           const newRules = extracted.rules.filter(
             (r) => !existingIds.has(r.id),
           );
-          extracted = { version: 1, rules: [...existing.rules, ...newRules] };
+          // Merge allowed: entries, deduplicating by from_layer+to_layer pair
+          const existingAllowed: RulesAllowedEntry[] =
+            existing.allowed && Array.isArray(existing.allowed)
+              ? existing.allowed
+              : [];
+          const existingAllowedKeys = new Set(
+            existingAllowed.map(
+              (a: RulesAllowedEntry) => `${a.from_layer}→${a.to_layer}`,
+            ),
+          );
+          const newAllowed = (extracted.allowed ?? []).filter(
+            (a) => !existingAllowedKeys.has(`${a.from_layer}→${a.to_layer}`),
+          );
+          extracted = {
+            version: 1,
+            ...(existingAllowed.length + newAllowed.length > 0
+              ? { allowed: [...existingAllowed, ...newAllowed] }
+              : {}),
+            rules: [...existing.rules, ...newRules],
+          };
           if (opts.verbose) {
             console.log(
-              chalk.dim(`  Merged: ${newRules.length} new rule(s) appended.`),
+              chalk.dim(
+                `  Merged: ${newRules.length} new rule(s), ${newAllowed.length} new allowed entry(s) appended.`,
+              ),
             );
           }
         }
       }
     }
 
-    // ── Serialize to YAML ───────────────────────────────────────────
+    // ── Write layer hints to separate file (if requested) ──────────
+    const layerHints: LayerHint[] = extracted.layer_hints ?? [];
+    if (opts.withLayerHints) {
+      const layersOutPath = path.resolve(
+        opts.layersOutput ?? ".iw/layers.hints.yaml",
+      );
+      const layersHeader = [
+        "# IntentWeave layer hints — extracted from ADR prose (§17.3)",
+        `# Generated by: iw index rules-extract --with-layer-hints (${new Date().toISOString().slice(0, 10)})`,
+        "# Copy to .iw/layers.yaml and refine glob patterns before use.",
+        "#   iw index layers-check   — validate imports against these layers",
+        "#   iw index export --prescriptive  — visualize the layer topology",
+        "#",
+        "",
+      ].join("\n");
+      const layersBody = yamlDump(
+        { layers: layerHints },
+        { lineWidth: 120, quotingType: '"', noRefs: true },
+      );
+      fs.mkdirSync(path.dirname(layersOutPath), { recursive: true });
+      fs.writeFileSync(layersOutPath, layersHeader + layersBody, "utf-8");
+      console.log(
+        chalk.green(
+          `  ✓ ${layerHints.length} layer hint(s) written to ${layersOutPath}`,
+        ),
+      );
+    }
+
+    // ── Serialize rules (+ allowed) to YAML ────────────────────────
+    // Strip layer_hints — those go to a separate file
+    const { layer_hints: _layerHintsStripped, ...rulesOutput } = extracted;
+    void _layerHintsStripped;
+
     const header = [
       "# IntentWeave semantic architectural rules",
       `# Generated by: iw index rules-extract (${new Date().toISOString().slice(0, 10)})`,
@@ -273,7 +417,7 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
       "",
     ].join("\n");
 
-    const yamlBody = yamlDump(extracted, {
+    const yamlBody = yamlDump(rulesOutput, {
       lineWidth: 120,
       quotingType: '"',
       noRefs: true,
@@ -282,15 +426,18 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
     const yamlOutput = header + yamlBody;
 
     // ── Write output ────────────────────────────────────────────────
+    const allowedCount = rulesOutput.allowed?.length ?? 0;
     if (opts.output) {
       const outPath = path.resolve(opts.output);
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
       fs.writeFileSync(outPath, yamlOutput, "utf-8");
-      console.log(
-        chalk.green(
-          `  ✓ ${extracted.rules.length} rule(s) written to ${outPath}\n`,
-        ),
-      );
+      const summary = [
+        `${extracted.rules.length} rule(s)`,
+        allowedCount > 0 ? `${allowedCount} allowed entry(s)` : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      console.log(chalk.green(`  ✓ ${summary} written to ${outPath}\n`));
     } else {
       console.log(yamlOutput);
     }

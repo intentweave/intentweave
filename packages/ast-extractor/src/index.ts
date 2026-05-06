@@ -30,6 +30,7 @@ export type {
   ExtractedPropertyAccess,
   ExtractedTypeAssertion,
   ExtractedTestDescription,
+  ExtractedDefUseChain,
   FileExtractionResult,
   ExtractionOptions,
   BatchExtractionResult,

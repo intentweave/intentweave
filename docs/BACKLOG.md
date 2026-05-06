@@ -1521,7 +1521,7 @@ committed, all CI enforcement is $0 — no further LLM calls.
 
 Depends on: 13.2 (rule format), KG LLM pipeline (exists).
 
-### 13.5 `--baseline` Flag — Regression Gating _(CARI, S)_
+### 13.5 `--baseline` Flag — Regression Gating _(CARI, S)_ ✅ Done
 
 > **Derived from ARC-372 v0.11.1 evaluation:** The `iw-ci-check.sh` wrapper script
 > manually compares `iw index rules-check --format json` output against a
@@ -1546,6 +1546,7 @@ iw index rules-check --baseline .iw/baseline.json --fail-on-increase --severity 
 ```
 
 Output when gate passes:
+
 ```
 ╔══════════════════════════════════════════════════╗
 ║  IntentWeave Semantic Rules — CI Report          ║
@@ -1560,6 +1561,7 @@ Output when gate passes:
 ```
 
 Output when gate fails:
+
 ```
 ❌ GATE FAILED — HIGH violations increased: 11 → 14 (+3)
   New violations:
@@ -1569,8 +1571,15 @@ exit code: 1
 ```
 
 The baseline file is a simple JSON:
+
 ```json
-{ "high": 11, "medium": 29, "low": 26, "total": 66, "timestamp": "2026-04-30T19:56:30Z" }
+{
+  "high": 11,
+  "medium": 29,
+  "low": 26,
+  "total": 66,
+  "timestamp": "2026-04-30T19:56:30Z"
+}
 ```
 
 This eliminates the `iw-ci-check.sh` wrapper entirely. The `--save-baseline` command
@@ -1581,7 +1590,7 @@ CLI: `iw index rules-check --baseline <file>`, `--save-baseline <file>`, `--fail
 
 Depends on: 13.2 (rules-check), 13.3 (CI mode).
 
-### 13.6 `import_pattern` Glob Fix — `**` Across `/` in Module Specifiers _(CARI, S)_
+### 13.6 `import_pattern` Glob Fix — `**` Across `/` in Module Specifiers _(CARI, S)_ ✅ Done
 
 > **Derived from ARC-372 v0.11.1 bug #1:** `node:fs**` did not match `node:fs/promises`
 > — the `**` wildcard does not expand across `/` in import module specifiers. This is
@@ -1610,7 +1619,7 @@ The single-star `*` continues to not match `/` (standard glob), so `node:*` matc
 
 Depends on: 13.2 (rulesCheck, `import_pattern` matching logic).
 
-### 13.7 Import Violations Line Numbers _(CARI, S)_
+### 13.7 Import Violations Line Numbers _(CARI, S)_ ✅ Done
 
 > **Derived from ARC-372 v0.11.1 bug #2:** All `import_pattern` violations report
 > `"line": null`. Other violation types (call, property_access, symbol_name) report
@@ -1638,7 +1647,7 @@ exact source positions. Capture `node.startPosition.row + 1` and store it. The
 
 Depends on: 13.1 (AX traversal infrastructure), `imports` table (exists).
 
-### 13.8 `rules-check --format json` Redirect Fix _(CARI, S)_
+### 13.8 `rules-check --format json` Redirect Fix _(CARI, S)_ ✅ Done
 
 > **Derived from ARC-372 v0.11.1 bug #3:** `iw index rules-check --format json > file.json`
 > produces exit code 1 with an empty file. Must pipe to a consumer instead.
@@ -1658,7 +1667,7 @@ should produce valid JSON and exit 0.
 
 Depends on: 13.2 (rules-check output path).
 
-### 13.9 `symbol_name` Rule — `scope` Modifier _(CARI, S)_
+### 13.9 `symbol_name` Rule — `scope` Modifier _(CARI, S)_ ✅ Done
 
 > **Derived from ARC-372 v0.11.1 limitation #1:** `entityByFqn` in EventView.tsx is a
 > local `const` binding inside a function body — not a top-level declaration. The
@@ -1706,7 +1715,7 @@ Neither `symbol_name` (which sees declarations) nor `property_access` / `call` (
 usage) can detect this constructor pattern:
 
 ```typescript
-const entityByFqn = new Map(entities.map(e => [e.fqn, e]));
+const entityByFqn = new Map(entities.map((e) => [e.fqn, e]));
 //                  ^^^^^^^ RHS pattern — value constructed from domain data in a UI component
 ```
 
@@ -1720,7 +1729,7 @@ variable assignment expressions:
   forbidden:
     - type: variable_assignment
       value_pattern: 'new Map|reduce\(|Object\.fromEntries'
-      in: 'apps/**/views/**'
+      in: "apps/**/views/**"
       except: []
 ```
 
@@ -1808,13 +1817,13 @@ rules:
 
 **CypherLite extensions needed** (minimal, all expressible in the existing SQL schema):
 
-| New capability | CypherLite addition required |
-| --- | --- |
-| `(a:File)-[:IMPORTS]->(b)` | Map `imports` table as `IMPORTS` relationship |
-| `(s:Symbol)` with `.fan_in` | Add computed `fan_in` as virtual property via subquery |
-| `(s)-[:ANNOTATED_BY]->(:DocSpan)` | Map `annotations` table as `ANNOTATED_BY` relationship |
-| `*2..3` (bounded hops) | Already supported (recursive CTEs) |
-| `{layer: 'ui'}` property filter | Read from `files.doc_group` or inferred layer assignment |
+| New capability                    | CypherLite addition required                             |
+| --------------------------------- | -------------------------------------------------------- |
+| `(a:File)-[:IMPORTS]->(b)`        | Map `imports` table as `IMPORTS` relationship            |
+| `(s:Symbol)` with `.fan_in`       | Add computed `fan_in` as virtual property via subquery   |
+| `(s)-[:ANNOTATED_BY]->(:DocSpan)` | Map `annotations` table as `ANNOTATED_BY` relationship   |
+| `*2..3` (bounded hops)            | Already supported (recursive CTEs)                       |
+| `{layer: 'ui'}` property filter   | Read from `files.doc_group` or inferred layer assignment |
 
 **No new tables needed.** The CypherLite schema mapping simply adds aliases that point
 at the existing CARI tables:
@@ -2136,9 +2145,9 @@ matches are considered in-scope:
 - id: adr003-no-fqn-split-in-views
   forbidden:
     - type: call
-      callee: 'split'
-      in: 'apps/**/views/**'
-      context_import: '@arccraft/engine/src/transformers/**'
+      callee: "split"
+      in: "apps/**/views/**"
+      context_import: "@arccraft/engine/src/transformers/**"
       # Only fires in view files that import from the transformer layer
 ```
 
@@ -2166,11 +2175,11 @@ from a rule:
 - id: adr003-no-fqn-split-in-views
   forbidden:
     - type: call
-      callee: 'split'
-      in: 'apps/**/views/**'
+      callee: "split"
+      in: "apps/**/views/**"
       except_symbol:
-        - 'parseSearchQuery'   # URL parsing — not an FQN split
-        - 'formatBreadcrumb'   # Display text — not an FQN split
+        - "parseSearchQuery" # URL parsing — not an FQN split
+        - "formatBreadcrumb" # Display text — not an FQN split
 ```
 
 In `rulesCheck`, the `context` column in `symbol_calls` (the enclosing function name)
@@ -2197,8 +2206,8 @@ existing rule type can match "property chain of depth ≥ N starting from entity
   forbidden:
     - type: property_chain_length
       min_depth: 4
-      root: 'entity'
-      in: 'apps/**/components/**'
+      root: "entity"
+      in: "apps/**/components/**"
 ```
 
 The `property_accesses` table already stores the full chain text and root. This rule
@@ -2222,11 +2231,11 @@ The inflated count skews severity totals and makes the violation list harder to 
 ```yaml
 - id: adr003-no-direct-io-in-adapters
   severity: high
-  count_mode: per_file    # default: per_occurrence
+  count_mode: per_file # default: per_occurrence
   forbidden:
     - type: import_pattern
-      pattern: 'node:fs**'
-      in: 'packages/@arccraft/adapters/**'
+      pattern: "node:fs**"
+      in: "packages/@arccraft/adapters/**"
 ```
 
 With `count_mode: per_file`, the rule emits at most one violation per file (the first
@@ -2249,11 +2258,12 @@ look up the referenced ADR to understand the fix.
 ```yaml
 - id: adr003-no-source-path-in-services
   autofix:
-    hint: 'Replace `entity.source.path` with `entity.properties.filePath`'
-    reference: 'packages/@arccraft/engine/src/transformers/path-normalizer.ts'
+    hint: "Replace `entity.source.path` with `entity.properties.filePath`"
+    reference: "packages/@arccraft/engine/src/transformers/path-normalizer.ts"
 ```
 
 In `--format text` output, each violation appends:
+
 ```
   → Fix: Replace `entity.source.path` with `entity.properties.filePath`
     See: packages/@arccraft/engine/src/transformers/path-normalizer.ts
@@ -2280,13 +2290,13 @@ Depends on: 13.2 (rules.yaml schema, violation output format).
 const sourcePath = entity.source.path;
 
 // But NOT here — p is a string variable, not a property chain
-const parts = sourcePath.split('/');   // ADR-003 violation — undetected
+const parts = sourcePath.split("/"); // ADR-003 violation — undetected
 ```
 
 This is the fundamental limitation of pattern-based static analysis without data-flow.
 Taint analysis requires building a def-use chain across the function body.
 
-### 16.1 Intra-Function Def-Use Chains _(AX, L)_
+### 16.1 Intra-Function Def-Use Chains _(AX, L)_ ✅ Done
 
 Extend AX to build **intra-function def-use chains** for local variables within function
 bodies. When a `property_access` or `call` rule fires on an assignment target, propagate
@@ -2309,9 +2319,9 @@ This table enables the `taint_propagation` rule modifier:
 - id: adr003-no-source-path-in-views
   forbidden:
     - type: property_access
-      chain: '**.source.path'
-      taint_propagation: true   # also fire on downstream uses of the assigned variable
-      in: 'apps/**/views/**'
+      chain: "**.source.path"
+      taint_propagation: true # also fire on downstream uses of the assigned variable
+      in: "apps/**/views/**"
 ```
 
 **Scope limitation:** Intra-function only (no inter-procedural analysis). Covers the
@@ -2329,8 +2339,8 @@ Depends on: 13.1 (AX traversal), 13.2 (rule evaluation), 13.9 (local var extract
 
 > **The "should-be" counterpart to `iw index export --html`.**
 >
-> The existing HTML report (10.1) shows the *actual* architecture — what the import graph
-> looks like today. This section covers the *prescriptive* view: what the architecture is
+> The existing HTML report (10.1) shows the _actual_ architecture — what the import graph
+> looks like today. This section covers the _prescriptive_ view: what the architecture is
 > supposed to look like, derived from `layers.yaml` and `rules.yaml`, with the current
 > violation state overlaid. The two views together form a complete conformance picture:
 > _"this is the target, this is where you are, these are the gaps."_
@@ -2338,13 +2348,25 @@ Depends on: 13.1 (AX traversal), 13.2 (rule evaluation), 13.9 (local var extract
 ### 17.1 Prescriptive Architecture Diagram _(CARI, M)_
 
 Generate a `should-be` architecture diagram from the combination of:
+
 - **`layers.yaml`** — declared or inferred layer assignments (5.1a/b, 14.4)
 - **`rules.yaml`** — forbidden patterns (13.2) + explicit `allowed:` entries (17.2)
 - **live violation data** — from `rulesCheck()` overlaid as current deltas
 
-The result: a diagram where layers are nodes, edges represent permitted flows (green),
+The result: a diagram where layers are containers, edges represent permitted flows (green),
 forbidden flows (red/dashed), and edge labels show current violation counts. Clicking
 an edge reveals the specific rules that govern it and the files currently in violation.
+
+**Implementation direction (first iteration):**
+
+- Start with **SVG rendering** (not Canvas, no external graph/flow lib).
+- Deterministic **top-down layout**: consumers and entrypoints at the top, foundations at
+  the bottom.
+- Visualize every declared element: layers, declared components within layers, and
+  rule-derived flows/hops.
+- Add an optional **rule-elements overlay** mode: render entities expressed by rules
+  (components/classes/methods) inside their assigned layer container.
+- Overlay live violations from `rulesCheck` directly on edges and participating components.
 
 **Layout model:**
 
@@ -2361,7 +2383,7 @@ an edge reveals the specific rules that govern it and the files currently in vio
 │  @Injectable, @Service                                      │
 └──────────────┬──────────────────────────────────────────────┘
                │ ALLOWED: 89 imports
-               ↓
+
 ┌─────────────────────────────────────────────────────────────┐
 │ Layer: data  (23 files)                                     │
 │  @Repository, @Entity                                       │
@@ -2370,18 +2392,23 @@ an edge reveals the specific rules that govern it and the files currently in vio
      [apps/ui/DataView.tsx → packages/db/adapter.ts]
 ```
 
-**Two output modes:**
+**Two output modes (phased):**
 
-1. **Interactive HTML** — extends the existing `architecture.html` (10.1) with a
-   prescriptive mode toggle. In prescriptive mode: layer bands are shown as declared
-   (not inferred), allowed edges are drawn as solid green, forbidden edges as dashed red
-   (regardless of whether violations exist), and actual violations are highlighted nodes
-   + edge counts. The actual/prescriptive toggle lets teams switch between "what is" and
-   "what should be" in the same view.
+1. **Interactive SVG (first)** — extends the existing `architecture.html` (10.1) with a
+   prescriptive mode that renders an SVG scene. In prescriptive mode: layer bands are
+   shown as declared (not inferred), allowed edges are drawn as solid green, forbidden
+   edges as dashed red (regardless of whether violations exist), and actual violations are
+   highlighted nodes + edge counts. The actual/prescriptive toggle lets teams switch
+   between "what is" and "what should be" in the same view.
 
-2. **Mermaid flowchart** — embeddable in GitHub READMEs, Confluence, Notion, any doc
-   system that renders Mermaid. One layer per node, annotated edges, violation counts.
-   Regenerate on every `iw index build` to keep it current. Drop into
+   SVG sub-modes:
+   - **Layer-only** (default): only layer containers + flow edges.
+   - **Layer + rule-elements**: includes rule-expressed elements inside layers.
+   - **Layer + rule-elements + violations**: adds current violation badges/highlights.
+
+2. **Mermaid flowchart (later)** — embeddable in GitHub READMEs, Confluence, Notion,
+   any doc system that renders Mermaid. One layer per node, annotated edges, violation
+   counts. Regenerate on every `iw index build` to keep it current. Drop into
    `docs/architecture.md` as a living diagram.
 
 ```mermaid
@@ -2397,16 +2424,108 @@ flowchart TD
 
 ```bash
 iw index export --prescriptive              # interactive HTML (prescriptive mode)
+iw index export --prescriptive --show-rule-elements   # include rule-expressed elements in layers
 iw index export --prescriptive --mermaid    # Mermaid flowchart to stdout
 iw index export --prescriptive --mermaid -o docs/architecture.md   # inject into doc
 ```
 
 Depends on: 5.1a/b (layers), 13.2 (rules-check), 17.2 (allowed: entries), 10.1 (HTML infra).
 
+#### 17.1a Layer Geometry for SVG Layout _(CARI, S)_
+
+To support same-level layers and spanning layers in the SVG layout, extend
+`.iw/layers.yaml` with optional geometry metadata. This belongs to **layers.yaml** (layout
+and grouping), not `rules.yaml` (constraints and policies).
+
+```yaml
+layers:
+  - name: interface
+    patterns: ["apps/ui/**"]
+    row: 0
+    column: 0
+
+  - name: api
+    patterns: ["apps/server/**"]
+    row: 0
+    column: 1
+
+  - name: service
+    patterns: ["packages/service/**"]
+    row: 1
+    column: 0
+    col_span: 2
+
+  - name: shared
+    patterns: ["packages/shared/**"]
+    row: 0
+    row_span: 3
+    side: right
+```
+
+Semantics:
+
+- `row`: vertical ordering (smaller row value renders higher/upstream).
+- `column`: horizontal placement within the same row.
+- `col_span` / `row_span`: layer spans multiple grid cells.
+- `side`: optional lane hint (`left` | `right`) for cross-cutting layers.
+
+Backwards compatibility:
+
+- If geometry fields are omitted, fallback is current ordered layer list from top to bottom.
+- Existing `layers-check` logic continues to use layer order semantics; geometry is visual-only
+  in the first step.
+
+#### 17.1b Optional Rule-Expressed Elements in Layer Containers _(CARI, S)_
+
+Some architectural elements are expressed in rules (forbidden/allowed constraints) rather
+than in `layers.yaml`. Add an optional render mode that projects those elements into the
+SVG layer containers.
+
+**Goal:** If a component/class/method is named in the rule config, it can be rendered
+inside its layer (optional), so the prescriptive view shows not only layer-to-layer flows,
+but also which concrete elements each rule talks about.
+
+Minimal extension in `.iw/rules.yaml`:
+
+```yaml
+version: 1
+rules:
+  - id: no-direct-ui-to-data
+    severity: high
+    expresses:
+      elements:
+        - name: DataView
+          kind: component
+          layer: interface
+        - name: AdapterRepository
+          kind: class
+          layer: data
+      flows:
+        - from: DataView
+          to: AdapterRepository
+          kind: data
+          policy: forbidden
+    forbidden:
+      - type: import_pattern
+        pattern: "packages/db/**"
+        in: "apps/ui/**"
+```
+
+Renderer behavior:
+
+- `--show-rule-elements` off: ignore `expresses` for drawing.
+- `--show-rule-elements` on: place `expresses.elements` into their layer container.
+- If `layer` is missing on an element, resolve by symbol/file match from the index; if not
+  resolvable, render in an "unassigned" side lane.
+- Rule-derived flows (`expresses.flows`) are drawn as control/data/hop edges with policy
+  style (allowed/forbidden) and optional violation counts.
+
+Depends on: 17.1 (SVG mode), 13.2 (rules parser), 5.1a/b (layer assignment data).
+
 ### 17.2 `allowed:` Entries in `rules.yaml` — Explicit Positive Permissions _(CARI, S)_
 
-Rules currently only define what's *forbidden*. To generate a complete prescriptive
-diagram, you also need to declare what's *allowed* — so the diagram can distinguish
+Rules currently only define what's _forbidden_. To generate a complete prescriptive
+diagram, you also need to declare what's _allowed_ — so the diagram can distinguish
 between "permitted but not yet verified" and "explicitly sanctioned by the team."
 
 **New optional `allowed:` block per rule or at the top level:**
@@ -2428,8 +2547,8 @@ rules:
     severity: high
     forbidden:
       - type: import_pattern
-        pattern: 'packages/db/**'
-        in: 'apps/ui/**'
+        pattern: "packages/db/**"
+        in: "apps/ui/**"
 ```
 
 When `allowed:` is omitted, the prescriptive diagram derives permitted edges as
@@ -2440,9 +2559,49 @@ allowed flows (e.g., a `shared` layer that all layers may import from).
 `allowed:` entries also feed into `cari_layers_check` — it can verify that the actual
 import graph contains the expected flows (not just the absence of forbidden ones).
 
+In SVG mode, `allowed:` can also be rendered as explicit policy edges. With
+`--show-rule-elements`, these edges may terminate at element nodes (if declared via
+`expresses.elements`) instead of only at layer containers.
+
 Depends on: 13.2 (rules.yaml format), 5.1b (layer check infrastructure).
 
-### 17.3 LLM-Assisted Prescriptive Spec Synthesis _(KG, M)_
+#### 17.2a Example Data + Fixtures for `allowed:` _(CARI, S)_ ✅ Done
+
+Add canonical example inputs and expected outputs so 17.2 is testable and reproducible:
+
+- `.iw/rules.allowed.example.yaml` with:
+  - top-level `allowed:` entries
+  - per-rule `allowed:` entries
+  - mixed layer-level and element-level (`from_element` / `to_element`) allowed flows
+- `.iw/layers.allowed.example.yaml` with 4-6 layers including one non-hierarchical shared layer
+- golden export fixture for `iw index export --prescriptive` proving:
+  - allowed edges render when explicitly declared
+  - fallback allowed derivation is used only when `allowed:` is absent
+  - with `--show-rule-elements`, allowed edges terminate on rule elements when available
+
+Example (minimal):
+
+```yaml
+version: 1
+allowed:
+  - from_layer: apps/ui
+    to_layer: apps/api
+    description: "UI may call API boundary"
+  - from_layer: apps/api
+    to_layer: packages/core
+    description: "API may use core domain services"
+rules:
+  - id: no-ui-to-db
+    severity: high
+    forbidden:
+      - type: import_pattern
+        pattern: "packages/db/**"
+        in: "apps/ui/**"
+```
+
+Depends on: 17.2, 17.1.
+
+### 17.3 LLM-Assisted Prescriptive Spec Synthesis _(KG, M)_ ✅ Done
 
 Extend `iw index rules-extract` (13.4) to synthesize not just `forbidden:` rules but
 also `allowed:` entries and layer annotations from ADR prose:
@@ -2456,6 +2615,7 @@ iw index rules-extract docs/ADR-003.md docs/ADR-005.md \
 ```
 
 The LLM reads the ADR and extracts:
+
 - Explicit prohibitions → `forbidden:` rules (existing 13.4 behaviour)
 - Explicit permissions → `allowed:` entries (new)
 - Layer assignment signals ("the adapter layer", "UI components", "data access") → layer
@@ -2508,95 +2668,98 @@ Depends on: 13.2 (rules-check), 5.1a/b (layers).
 
 ## Priority Matrix
 
-| #    | Feature                           | Tier | Size   | Value  | Dependencies          | Status  |
-| ---- | --------------------------------- | ---- | ------ | ------ | --------------------- | ------- |
-| 2.1  | Exact clone detection             | CARI | S      | High   | AX body_hash          | ✅      |
-| 1.1  | Doc-group classification          | CARI | S      | High   | None                  | ✅      |
-| 3.1  | Circular import detection         | CARI | S      | High   | AX imports (exists)   | ✅      |
-| 3.2  | Unused export detection           | CARI | S      | High   | AX imports (exists)   | ✅      |
-| 4.3  | Hotspot → doc priority            | CARI | S      | High   | TCG data (exists)     | ✅      |
-| 6.3  | TODO/FIXME inventory              | CARI | S      | High   | None                  | ✅      |
-| 1.4  | Coverage by module                | CARI | S      | Medium | None                  | ✅      |
-| 1.3  | Orphaned doc sections             | CARI | S      | Medium | None                  | ✅      |
-| 1.7  | Doc completeness scoring          | CARI | S      | Medium | None                  | ✅      |
-| 2.2  | Structural clones                 | CARI | M      | High   | 2.1                   | ✅      |
-| 1.2  | Cross-group drift                 | CARI | M      | High   | 1.1                   | ✅      |
-| 6.2  | Test coverage mapping             | CARI | M      | High   | AX imports (exists)   | ✅      |
-| 3.3  | Dependency depth                  | CARI | S      | Medium | AX imports (exists)   | ✅ Done |
-| 4.4  | Bus factor per module             | CARI | M      | Medium | TCG data (exists)     |         |
-| 3.4  | Package boundary violations       | CARI | M      | Medium | 5.1 concept           | ✅ Done |
-| 5.3  | Dead feature detection            | CARI | M      | Medium | 3.2, 1.3              | ✅ Done |
-| 4.1  | Ownership drift                   | CARI | S      | Medium | TCG data (exists)     |         |
-| 4.2  | Change coupling anomalies         | CARI | S      | Medium | TCG data (exists)     |         |
-| 1.5  | Terminology inconsistency         | CARI | M      | Medium | None                  | ✅ Done |
-| 5.1a | Layer inference                   | CARI | M      | High   | 9.1, 3.3              | ✅ Done |
-| 5.1b | Layer check                       | CARI | S      | High   | 5.1a                  | ✅ Done |
-| 5.1c | Layer naming suggestions          | KG   | S      | Low    | 5.1a                  | ✅      |
-| 5.5  | Hierarchical sub-layering         | CARI | M      | High   | 5.1a, 3.4             |         |
-| 5.6  | As-is vs. as-should comparison    | CARI | M      | High   | 5.1a, 5.1b            | ✅ Done |
-| 5.7  | Vertical slice detection          | CARI | M      | High   | 5.1a, 9.1             | ✅ Done |
-| 5.8  | Architecture diagram validation   | CARI | L      | High   | imports (exists)      | ✅      |
-| 6.1  | Naming convention checks          | CARI | S      | Low    | None                  | ✅ Done |
-| 6.4  | Comment-to-code ratio             | CARI | S      | Low    | None                  | ✅ Done |
-| 5.4  | API surface changelog             | CARI | M      | Medium | Git history           | ✅ Done |
-| 5.2  | Interface conformance             | AX   | M      | Medium | None                  | ✅ Done |
-| 2.4  | Clone lineage tracking            | CARI | M      | Low    | 2.1                   |         |
-| 1.6  | Decision lifecycle                | KG   | M      | Medium | Neo4j pipeline        |         |
-| 2.3  | Semantic clone detection          | KG   | L      | Medium | LLM embeddings        |         |
-| 7.1  | Python AST extractor              | AX   | M      | High   | tree-sitter-python    | ✅ Done |
-| 7.2  | Language-agnostic AX dispatch     | AX   | M      | High   | 7.1                   | ✅ Done |
-| 7.3  | Go / Rust / Java extractors       | AX   | M each | Medium | 7.2                   |         |
-| 8.0  | CariIndex facade + orchestration  | CARI | M      | High   | None (refactor)       | ✅ Done |
-| 8.0a | Entity bridge                     | CARI | M      | High   | 8.0                   | ✅ Done |
-| 8.1  | Programmatic CARI API docs        | Docs | S      | High   | 8.0                   | ✅ Done |
-| 8.2  | Docusaurus/Starlight plugin       | INT  | M      | High   | 8.0                   |         |
-| 8.3  | Sphinx / MkDocs integration       | INT  | M      | Medium | 8.0                   |         |
-| 8.4  | CI artifact validation action     | INT  | M      | High   | `iw index check`      | ✅ Done |
-| 8.5  | REST API for doc systems          | INT  | S      | Medium | server-core (exists)  | ✅ Done |
-| 8.6  | Webhook-triggered re-index        | INT  | M      | Medium | 8.5                   |         |
-| 9.1  | Community detection               | CARI | M      | High   | co_occ + imports      | ✅ Done |
-| 9.2  | God-node / hub analysis           | CARI | S      | High   | None                  | ✅ Done |
-| 9.3  | Surprising connection ranking     | CARI | M      | High   | 9.1                   | ✅ Done |
-| 9.4  | Rationale extraction              | AX   | S      | Medium | TODO infra (exists)   | ✅ Done |
-| 10.1 | Standalone HTML architecture rpt  | CARI | M      | High   | 5.1a, 9.1, 3.3        | ✅ Done |
-| 10.2 | Watch mode                        | CARI | M      | Medium | incremental (exists)  | ✅ Done |
-| 10.3 | Git hooks integration             | CARI | S      | Medium | 10.2                  | ✅ Done |
-| 10.4 | Obsidian vault export             | CARI | M      | Low    | 9.1                   |         |
-| 11.1 | Plugin interface & registry       | CARI | M      | High   | None                  | ✅      |
-| 11.2 | Capability provider system        | CARI | M      | High   | 11.1                  | ✅      |
-| 11.3 | KG plugin extraction (CypherLite) | KG   | L      | High   | 11.1, 11.2            | ✅      |
-| 11.4 | Plugin CLI commands               | CARI | S      | High   | 11.1                  | ✅      |
-| 11.5 | Lightweight LLM plugin            | INT  | S      | Medium | 11.2                  | ✅      |
-| 11.6 | Language parser as plugins        | AX   | M      | Medium | 11.1, 7.2             | ✅      |
-| 11.7 | CLI Neo4j migration               | KG   | L      | High   | 11.2, 11.3            | ✅      |
-| 11.8 | Selective semantic enrichment     | KG   | L      | High   | 11.3a, 11.5, 8.0a     | ✅      |
-| 12.1 | Spec-to-code verification         | KG   | L      | High   | plugin-kg, 8.0a       | ✅      |
-| 12.2 | Constraint consistency check      | KG   | M      | High   | plugin-kg             | ✅      |
-| 12.3 | Living documentation score        | KG   | M      | Medium | 12.1, 12.2            | ✅      |
-| 13.1 | symbol_calls + property_accesses  | AX   | M      | High   | AX traversal (exists) | ✅ Done |
-| 13.2 | rulesCheck query + rules.yaml     | CARI | M      | High   | 13.1                  | ✅ Done |
-| 13.3 | Incremental rules CI mode         | CARI | S      | High   | 13.2                  | ✅ Done |
-| 13.4 | rules-extract from ADR (LLM)      | KG   | M      | Medium | 13.2, KG pipeline     | ✅ Done |
-| 6.5  | AX file skip warning + threshold  | AX   | S      | High   | AX (exists)           | ✅ Done |
-| 5.9  | Cross-layer clone analysis        | CARI | S      | Medium | 2.1, 2.2, 5.1a        | ✅ Done |
-| 5.10 | arch-check UX + format docs       | CARI | S      | Medium | arch-check (exists)   | ✅ Done |
-| 4.5  | Co-change shared-utility signal   | CARI | S      | Medium | co_changes, 2.2, 5.1a |         |
-| 13.5 | --baseline regression gating      | CARI | S      | High   | 13.2, 13.3            | ✅ Done |
-| 13.6 | import_pattern `**` across `/`    | CARI | S      | High   | 13.2                  | ✅ Done |
-| 13.7 | Import violations line numbers    | AX   | S      | Medium | 13.1, imports table   | ✅ Done |
-| 13.8 | rules-check JSON redirect fix     | CARI | S      | High   | 13.2                  | ✅ Done |
-| 13.9 | symbol_name scope modifier        | CARI | S      | Medium | 13.2, AX              | ✅ Done |
-| 13.10| type: variable_assignment         | CARI | M      | Medium | 13.1, 13.2            | ✅ Done |
-| 13.11| type: cypher rule type (CypherLite)| CARI | M      | High   | 11.3a, 13.2           | ✅ Done |
-| 17.1 | Prescriptive architecture diagram | CARI | M      | High   | 5.1a/b, 13.2, 17.2    |         |
-| 17.2 | allowed: entries in rules.yaml    | CARI | S      | High   | 13.2                  |         |
-| 17.3 | LLM prescriptive spec synthesis   | KG   | M      | Medium | 13.4, 17.2, 11.5      |         |
-| 17.4 | ASCII conformance diagram in CLI  | CARI | S      | Medium | 13.2, 5.1a/b          |         |
-| 15.1 | context_import modifier           | CARI | S      | Medium | 13.2, imports         |         |
-| 15.2 | except_symbol exclusion           | CARI | S      | Medium | 13.1, 13.2            |         |
-| 15.3 | property_chain_length rule type   | CARI | S      | Medium | 13.1, 13.2            |         |
-| 15.4 | count_mode per_file               | CARI | S      | Medium | 13.2                  |         |
-| 15.5 | autofix hints in rules            | CARI | S      | Low    | 13.2                  |         |
+| #     | Feature                             | Tier | Size   | Value  | Dependencies          | Status  |
+| ----- | ----------------------------------- | ---- | ------ | ------ | --------------------- | ------- |
+| 2.1   | Exact clone detection               | CARI | S      | High   | AX body_hash          | ✅      |
+| 1.1   | Doc-group classification            | CARI | S      | High   | None                  | ✅      |
+| 3.1   | Circular import detection           | CARI | S      | High   | AX imports (exists)   | ✅      |
+| 3.2   | Unused export detection             | CARI | S      | High   | AX imports (exists)   | ✅      |
+| 4.3   | Hotspot → doc priority              | CARI | S      | High   | TCG data (exists)     | ✅      |
+| 6.3   | TODO/FIXME inventory                | CARI | S      | High   | None                  | ✅      |
+| 1.4   | Coverage by module                  | CARI | S      | Medium | None                  | ✅      |
+| 1.3   | Orphaned doc sections               | CARI | S      | Medium | None                  | ✅      |
+| 1.7   | Doc completeness scoring            | CARI | S      | Medium | None                  | ✅      |
+| 2.2   | Structural clones                   | CARI | M      | High   | 2.1                   | ✅      |
+| 1.2   | Cross-group drift                   | CARI | M      | High   | 1.1                   | ✅      |
+| 6.2   | Test coverage mapping               | CARI | M      | High   | AX imports (exists)   | ✅      |
+| 3.3   | Dependency depth                    | CARI | S      | Medium | AX imports (exists)   | ✅ Done |
+| 4.4   | Bus factor per module               | CARI | M      | Medium | TCG data (exists)     |         |
+| 3.4   | Package boundary violations         | CARI | M      | Medium | 5.1 concept           | ✅ Done |
+| 5.3   | Dead feature detection              | CARI | M      | Medium | 3.2, 1.3              | ✅ Done |
+| 4.1   | Ownership drift                     | CARI | S      | Medium | TCG data (exists)     |         |
+| 4.2   | Change coupling anomalies           | CARI | S      | Medium | TCG data (exists)     |         |
+| 1.5   | Terminology inconsistency           | CARI | M      | Medium | None                  | ✅ Done |
+| 5.1a  | Layer inference                     | CARI | M      | High   | 9.1, 3.3              | ✅ Done |
+| 5.1b  | Layer check                         | CARI | S      | High   | 5.1a                  | ✅ Done |
+| 5.1c  | Layer naming suggestions            | KG   | S      | Low    | 5.1a                  | ✅      |
+| 5.5   | Hierarchical sub-layering           | CARI | M      | High   | 5.1a, 3.4             |         |
+| 5.6   | As-is vs. as-should comparison      | CARI | M      | High   | 5.1a, 5.1b            | ✅ Done |
+| 5.7   | Vertical slice detection            | CARI | M      | High   | 5.1a, 9.1             | ✅ Done |
+| 5.8   | Architecture diagram validation     | CARI | L      | High   | imports (exists)      | ✅      |
+| 6.1   | Naming convention checks            | CARI | S      | Low    | None                  | ✅ Done |
+| 6.4   | Comment-to-code ratio               | CARI | S      | Low    | None                  | ✅ Done |
+| 5.4   | API surface changelog               | CARI | M      | Medium | Git history           | ✅ Done |
+| 5.2   | Interface conformance               | AX   | M      | Medium | None                  | ✅ Done |
+| 2.4   | Clone lineage tracking              | CARI | M      | Low    | 2.1                   |         |
+| 1.6   | Decision lifecycle                  | KG   | M      | Medium | Neo4j pipeline        |         |
+| 2.3   | Semantic clone detection            | KG   | L      | Medium | LLM embeddings        |         |
+| 7.1   | Python AST extractor                | AX   | M      | High   | tree-sitter-python    | ✅ Done |
+| 7.2   | Language-agnostic AX dispatch       | AX   | M      | High   | 7.1                   | ✅ Done |
+| 7.3   | Go / Rust / Java extractors         | AX   | M each | Medium | 7.2                   |         |
+| 8.0   | CariIndex facade + orchestration    | CARI | M      | High   | None (refactor)       | ✅ Done |
+| 8.0a  | Entity bridge                       | CARI | M      | High   | 8.0                   | ✅ Done |
+| 8.1   | Programmatic CARI API docs          | Docs | S      | High   | 8.0                   | ✅ Done |
+| 8.2   | Docusaurus/Starlight plugin         | INT  | M      | High   | 8.0                   |         |
+| 8.3   | Sphinx / MkDocs integration         | INT  | M      | Medium | 8.0                   |         |
+| 8.4   | CI artifact validation action       | INT  | M      | High   | `iw index check`      | ✅ Done |
+| 8.5   | REST API for doc systems            | INT  | S      | Medium | server-core (exists)  | ✅ Done |
+| 8.6   | Webhook-triggered re-index          | INT  | M      | Medium | 8.5                   |         |
+| 9.1   | Community detection                 | CARI | M      | High   | co_occ + imports      | ✅ Done |
+| 9.2   | God-node / hub analysis             | CARI | S      | High   | None                  | ✅ Done |
+| 9.3   | Surprising connection ranking       | CARI | M      | High   | 9.1                   | ✅ Done |
+| 9.4   | Rationale extraction                | AX   | S      | Medium | TODO infra (exists)   | ✅ Done |
+| 10.1  | Standalone HTML architecture rpt    | CARI | M      | High   | 5.1a, 9.1, 3.3        | ✅ Done |
+| 10.2  | Watch mode                          | CARI | M      | Medium | incremental (exists)  | ✅ Done |
+| 10.3  | Git hooks integration               | CARI | S      | Medium | 10.2                  | ✅ Done |
+| 10.4  | Obsidian vault export               | CARI | M      | Low    | 9.1                   |         |
+| 11.1  | Plugin interface & registry         | CARI | M      | High   | None                  | ✅      |
+| 11.2  | Capability provider system          | CARI | M      | High   | 11.1                  | ✅      |
+| 11.3  | KG plugin extraction (CypherLite)   | KG   | L      | High   | 11.1, 11.2            | ✅      |
+| 11.4  | Plugin CLI commands                 | CARI | S      | High   | 11.1                  | ✅      |
+| 11.5  | Lightweight LLM plugin              | INT  | S      | Medium | 11.2                  | ✅      |
+| 11.6  | Language parser as plugins          | AX   | M      | Medium | 11.1, 7.2             | ✅      |
+| 11.7  | CLI Neo4j migration                 | KG   | L      | High   | 11.2, 11.3            | ✅      |
+| 11.8  | Selective semantic enrichment       | KG   | L      | High   | 11.3a, 11.5, 8.0a     | ✅      |
+| 12.1  | Spec-to-code verification           | KG   | L      | High   | plugin-kg, 8.0a       | ✅      |
+| 12.2  | Constraint consistency check        | KG   | M      | High   | plugin-kg             | ✅      |
+| 12.3  | Living documentation score          | KG   | M      | Medium | 12.1, 12.2            | ✅      |
+| 13.1  | symbol_calls + property_accesses    | AX   | M      | High   | AX traversal (exists) | ✅ Done |
+| 13.2  | rulesCheck query + rules.yaml       | CARI | M      | High   | 13.1                  | ✅ Done |
+| 13.3  | Incremental rules CI mode           | CARI | S      | High   | 13.2                  | ✅ Done |
+| 13.4  | rules-extract from ADR (LLM)        | KG   | M      | Medium | 13.2, KG pipeline     | ✅ Done |
+| 6.5   | AX file skip warning + threshold    | AX   | S      | High   | AX (exists)           | ✅ Done |
+| 5.9   | Cross-layer clone analysis          | CARI | S      | Medium | 2.1, 2.2, 5.1a        | ✅ Done |
+| 5.10  | arch-check UX + format docs         | CARI | S      | Medium | arch-check (exists)   | ✅ Done |
+| 4.5   | Co-change shared-utility signal     | CARI | S      | Medium | co_changes, 2.2, 5.1a |         |
+| 13.5  | --baseline regression gating        | CARI | S      | High   | 13.2, 13.3            | ✅ Done |
+| 13.6  | import_pattern `**` across `/`      | CARI | S      | High   | 13.2                  | ✅ Done |
+| 13.7  | Import violations line numbers      | AX   | S      | Medium | 13.1, imports table   | ✅ Done |
+| 13.8  | rules-check JSON redirect fix       | CARI | S      | High   | 13.2                  | ✅ Done |
+| 13.9  | symbol_name scope modifier          | CARI | S      | Medium | 13.2, AX              | ✅ Done |
+| 13.10 | type: variable_assignment           | CARI | M      | Medium | 13.1, 13.2            | ✅ Done |
+| 13.11 | type: cypher rule type (CypherLite) | CARI | M      | High   | 11.3a, 13.2           | ✅ Done |
+| 17.1  | Prescriptive architecture diagram   | CARI | M      | High   | 5.1a/b, 13.2, 17.2    | ✅ Done |
+| 17.1a | Layer geometry for SVG layout       | CARI | S      | High   | 17.1, 5.1a/b          | ✅ Done |
+| 17.1b | Rule-expressed element overlay      | CARI | S      | High   | 17.1, 13.2, 5.1a/b    | ✅ Done |
+| 17.2  | allowed: entries in rules.yaml      | CARI | S      | High   | 13.2                  | ✅ Done |
+| 17.2a | allowed example data + fixtures     | CARI | S      | High   | 17.2, 17.1            | ✅ Done |
+| 17.3  | LLM prescriptive spec synthesis     | KG   | M      | Medium | 13.4, 17.2, 11.5      | ✅ Done |
+| 17.4  | ASCII conformance diagram in CLI    | CARI | S      | Medium | 13.2, 5.1a/b          | ✅ Done |
+| 15.1  | context_import modifier             | CARI | S      | Medium | 13.2, imports         | ✅ Done |
+| 15.2  | except_symbol exclusion             | CARI | S      | Medium | 13.1, 13.2            |         |
+| 15.3  | property_chain_length rule type     | CARI | S      | Medium | 13.1, 13.2            | ✅ Done |
+| 15.4  | count_mode per_file                 | CARI | S      | Medium | 13.2                  |         |
+| 15.5  | autofix hints in rules              | CARI | S      | Low    | 13.2                  |         |
 
 ### Sprint: _"Rule Intelligence"_
 
@@ -2606,26 +2769,31 @@ Depends on: 13.2 (rules-check), 5.1a/b (layers).
 
 **Bug fixes (ship first — unblock existing adopters):**
 
-| #    | Feature                           | Tier | Size | Value | Dependencies    | Status |
-| ---- | --------------------------------- | ---- | ---- | ----- | --------------- | ------ |
-| 13.5 | --baseline regression gating      | CARI | S    | High  | 13.2, 13.3      | ✅ Done |
-| 13.8 | rules-check JSON redirect fix     | CARI | S    | High  | 13.2            | ✅ Done |
-| 13.6 | import_pattern `**` across `/`    | CARI | S    | High  | 13.2            | ✅ Done |
-| 13.7 | Import violations line numbers    | AX   | S    | High  | 13.1, imports   | ✅ Done |
+| #    | Feature                        | Tier | Size | Value | Dependencies  | Status  |
+| ---- | ------------------------------ | ---- | ---- | ----- | ------------- | ------- |
+| 13.5 | --baseline regression gating   | CARI | S    | High  | 13.2, 13.3    | ✅ Done |
+| 13.8 | rules-check JSON redirect fix  | CARI | S    | High  | 13.2          | ✅ Done |
+| 13.6 | import_pattern `**` across `/` | CARI | S    | High  | 13.2          | ✅ Done |
+| 13.7 | Import violations line numbers | AX   | S    | High  | 13.1, imports | ✅ Done |
 
 **New rule types (expand what rules can express):**
 
-| #    | Feature                           | Tier | Size | Value  | Dependencies    | Status |
-| ---- | --------------------------------- | ---- | ---- | ------ | --------------- | ------ |
-| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        | ✅ Done | (makes rules legible):**
+| #    | Feature                    | Tier | Size | Value  | Dependencies | Status  |
+| ---- | -------------------------- | ---- | ---- | ------ | ------------ | ------- |
+| 13.9 | symbol_name scope modifier | CARI | S    | Medium | 13.2, AX     | ✅ Done |
 
-| #    | Feature                           | Tier | Size | Value  | Dependencies        | Status |
-| ---- | --------------------------------- | ---- | ---- | ------ | ------------------- | ------ |
-| 17.2 | allowed: entries in rules.yaml    | CARI | S    | High   | 13.2                |        |
-| 17.4 | ASCII conformance diagram in CLI  | CARI | S    | Medium | 13.2, 5.1a/b        |        |
-| 17.1 | Prescriptive architecture diagram | CARI | M    | High   | 5.1a/b, 13.2, 17.2  |        |
-| 17.3 | LLM prescriptive spec synthesis   | KG   | M    | Medium | 13.4, 17.2, 11.5    |        |
-| 16.1 | Intra-function def-use chains     | AX   | L      | Medium | 13.1, 13.2, 13.9      |         |
+**Visualization (makes rules legible):**
+
+| #     | Feature                           | Tier | Size | Value  | Dependencies       | Status  |
+| ----- | --------------------------------- | ---- | ---- | ------ | ------------------ | ------- |
+| 17.1a | Layer geometry for SVG layout     | CARI | S    | High   | 17.1, 5.1a/b       | ✅ Done |
+| 17.1b | Rule-expressed element overlay    | CARI | S    | High   | 17.1, 13.2, 5.1a/b | ✅ Done |
+| 17.2  | allowed: entries in rules.yaml    | CARI | S    | High   | 13.2               | ✅ Done |
+| 17.2a | allowed example data + fixtures   | CARI | S    | High   | 17.2, 17.1         | ✅ Done |
+| 17.4  | ASCII conformance diagram in CLI  | CARI | S    | Medium | 13.2, 5.1a/b       | ✅ Done |
+| 17.1  | Prescriptive architecture diagram | CARI | M    | High   | 5.1a/b, 13.2, 17.2 | ✅ Done |
+| 17.3  | LLM prescriptive spec synthesis   | KG   | M    | Medium | 13.4, 17.2, 11.5   | ✅ Done |
+| 16.1  | Intra-function def-use chains     | AX   | L    | Medium | 13.1, 13.2, 13.9   | ✅ Done |
 
 ### Sprint: _"Ensure the intent in the code"_
 
@@ -2661,14 +2829,220 @@ Depends on: 13.2 (rules-check), 5.1a/b (layers).
 
 **CI gating & rule ergonomics (next sprint):**
 
-| #    | Feature                           | Tier | Size | Value  | Dependencies    | Status |
-| ---- | --------------------------------- | ---- | ---- | ------ | --------------- | ------ |
-| 13.5 | --baseline regression gating      | CARI | S    | High   | 13.2, 13.3      |        |
-| 13.6 | import_pattern `**` across `/`    | CARI | S    | High   | 13.2            | ✅ Done |
-| 13.7 | Import violations line numbers    | AX   | S    | Medium | 13.1            | ✅ Done |
-| 13.8 | rules-check JSON redirect fix     | CARI | S    | High   | 13.2            | ✅ Done |
-| 13.9 | symbol_name scope modifier        | CARI | S    | Medium | 13.2, AX        | ✅ Done |
-| 15.1 | context_import modifier           | CARI | S    | Medium | 13.2, imports   |        |
-| 15.2 | except_symbol exclusion           | CARI | S    | Medium | 13.1, 13.2      |        |
-| 15.4 | count_mode per_file               | CARI | S    | Medium | 13.2            |        |
-| 15.5 | autofix hints in rules            | CARI | S    | Low    | 13.2            |        |
+| #    | Feature                        | Tier | Size | Value  | Dependencies  | Status  |
+| ---- | ------------------------------ | ---- | ---- | ------ | ------------- | ------- |
+| 13.5 | --baseline regression gating   | CARI | S    | High   | 13.2, 13.3    | ✅ Done |
+| 13.6 | import_pattern `**` across `/` | CARI | S    | High   | 13.2          | ✅ Done |
+| 13.7 | Import violations line numbers | AX   | S    | Medium | 13.1          | ✅ Done |
+| 13.8 | rules-check JSON redirect fix  | CARI | S    | High   | 13.2          | ✅ Done |
+| 13.9 | symbol_name scope modifier     | CARI | S    | Medium | 13.2, AX      | ✅ Done |
+| 15.1 | context_import modifier        | CARI | S    | Medium | 13.2, imports | ✅ Done |
+| 15.2 | except_symbol exclusion        | CARI | S    | Medium | 13.1, 13.2    | ✅ Done |
+| 15.4 | count_mode per_file            | CARI | S    | Medium | 13.2          | ✅ Done |
+| 15.5 | autofix hints in rules         | CARI | S    | Low    | 13.2          | ✅ Done |
+
+---
+
+## 18. Architecture Book
+
+> **ADR-018 — Interactive Architecture Book with CARI Index Overlay**
+>
+> Status: 📋 Proposed  
+> Tier: CARI + KG  
+> Replaces/extends: §17 Prescriptive Architecture Visualization (17.1–17.4)
+
+### Context
+
+The §17 prescriptive diagram tries to answer three fundamentally different questions in
+one SVG view:
+
+1. **What are the layers?** — architectural topology
+2. **What does each ADR mandate?** — intent, flows, forbidden patterns
+3. **What is violated today?** — measured reality vs. intent
+
+Cramming all three into a single pannable SVG produces unavoidable visual overload: glob
+patterns appear as chips, flow arrows cross each other, and a new engineer cannot read
+ADR intent without already knowing the domain.
+
+The §17 work also stopped short of the most powerful insight: overlaying _live CARI index
+data_ (churn, hubs, community membership, violation counts) onto the _architectural intent
+graph_ expressed in `rules.yaml`. That overlay is where IntentWeave's unique value lies —
+it turns static ADR diagrams into living conformance dashboards.
+
+### Decision
+
+Introduce a new export mode — the **Architecture Book** — as a self-contained HTML file
+(single file, no server, zero runtime dependencies except inlined Cytoscape.js + dagre
+layout plugin).
+
+The book separates concerns into navigable chapters:
+
+```
+┌─ Sidebar ──────┐  ┌─ Content ────────────────────────────────────────────────┐
+│                │  │                                                           │
+│  Overview      │  │  ▶ Chapter title                                         │
+│  ─────────     │  │  ────────────────────────────────────────────────────    │
+│  ADR-003  ●3   │  │  [Cytoscape graph: intent nodes + actual import overlay] │
+│  ADR-006       │  │  [Rule text panel]   [Violation list]                    │
+│  ADR-013       │  │  [Cross-references to related ADRs / layers]             │
+│  ─────────     │  │                                                           │
+│  Violations    │  └───────────────────────────────────────────────────────────┘
+│  Coverage      │
+└────────────────┘
+```
+
+**Why Cytoscape.js instead of d3-dag or raw SVG:**
+
+d3-dag (Sugiyama layout) gives better layered-graph aesthetics and is ~90 KB vs
+Cytoscape's ~400 KB. However, the Architecture Book's defining feature is the CARI
+overlay: dynamically adding/removing index data (churn signals, hub scores, community
+colours, actual import edges) onto the ADR intent graph. This requires a full interactive
+graph model — nodes and edges as live objects with data properties — not a one-shot layout
+engine. Cytoscape provides:
+
+- `dagre` layout plugin for correct Sugiyama ranking (same quality as d3-dag)
+- Dynamic `cy.add()` / `cy.remove()` for overlay toggle without redraw
+- Node/edge style mapping from data properties (churn → size, violations → border color)
+- Built-in selection, filtering, and neighbourhood highlighting for future exploration
+
+Raw SVG served §17 well for the layer-band diagram (fixed grid layout, no dynamic
+topology). It is retained for the **Overview chapter** only. All per-ADR flow chapters use
+Cytoscape.
+
+### Chapters
+
+#### 18.0 Overview Chapter
+
+Renders the existing §17 layer-band SVG (unchanged). Adds:
+
+- Violation badge per layer (red count pill) linked to the Violations chapter
+- ADR coverage indicator per layer (which ADRs govern it)
+- "As-is" toggle: overlays actual import edges from the `imports` table on the
+  layer-band diagram (same left/right gutter routing as §17)
+
+#### 18.1 Per-ADR Flow Chapter _(one per rule with `expresses` block)_
+
+Each rule that has an `expresses.elements` + `expresses.flows` block gets its own chapter.
+The chapter contains:
+
+**Intent graph (Cytoscape, dagre LR layout):**
+
+- Nodes = `expresses.elements[]` (sky-blue, numbered by `flowSeq`)
+- Edges = `expresses.flows[]` (green = allowed, red dashed = forbidden, labelled by `kind`)
+- Layer membership shown as node subtitle text (smaller font below name)
+
+**CARI overlay toggles (checkboxes, off by default):**
+
+| Toggle         | Data source                               | Visual mapping                                     |
+| -------------- | ----------------------------------------- | -------------------------------------------------- |
+| Churn heatmap  | `hotspotPriority()`                       | Node background: white→orange→red                  |
+| Hub score      | `hubs()`                                  | Node border thickness (0–4px)                      |
+| Community      | `communities()`                           | Node background color (palette)                    |
+| Actual imports | `imports` table (filtered to these nodes) | Grey dashed edges, lower z-order than intent edges |
+| Violations     | `rulesCheck()` byRule                     | Node badge (red count), edge turns solid red       |
+
+**Rule panel (below graph):**
+
+- Rule ID, severity badge, ADR reference
+- Full `description` text
+- Current violation count + link to Violations chapter
+- YAML snippet of the `forbidden:` block (collapsed by default, expandable)
+
+#### 18.2 Violations Chapter
+
+Table of all current violations, grouped by rule → sorted by severity then count:
+
+- Rule ID / ADR / severity badge
+- Violation count
+- Top-5 offending file pairs (from→to with line numbers)
+- Link back to the owning ADR chapter
+
+#### 18.3 Coverage Chapter
+
+Per-layer documentation and rule coverage:
+
+- Table: layer name | files | rules governing it | doc coverage % | hotspot files
+- Driven by `moduleCoverage()` + `hotspotPriority()` + layer membership
+
+### CLI
+
+```bash
+# New export mode (replaces --prescriptive for the book view)
+iw index export --book                          # architecture book HTML
+iw index export --book -o docs/architecture.html
+
+# Existing --prescriptive is kept unchanged (layer-band overview, fast)
+iw index export --prescriptive                  # unchanged
+```
+
+### Implementation Plan
+
+The book is a new file `packages/index/src/export/architectureBook.ts`, reusing:
+
+- `PrescriptiveReportData` type (same data shape as §17)
+- `buildPrescriptiveReportData()` from `indexBuild.ts`, extended to also inject:
+  - `hotspotPriority()` results keyed by element name
+  - `hubs()` results keyed by element name
+  - `communities()` results keyed by element name
+  - actual import edges between flow element file paths
+
+Cytoscape.js + dagre layout plugin are inlined as minified JS strings (one-time copy from
+npm build output, no network dependency at runtime).
+
+**Phases:**
+
+| #     | Deliverable                                         | Depends on             |
+| ----- | --------------------------------------------------- | ---------------------- |
+| 18.0  | Overview chapter (layer SVG, violation badges)      | §17 (done)             |
+| 18.1a | Per-ADR chapter: Cytoscape graph, intent edges only | 18.0, `expresses` data |
+| 18.1b | Per-ADR chapter: CARI overlay toggles               | 18.1a, CARI queries    |
+| 18.2  | Violations chapter                                  | 18.1a, rulesCheck      |
+| 18.3  | Coverage chapter                                    | 18.2, moduleCoverage   |
+| 18.4  | `--book` CLI flag + output wiring                   | 18.1b                  |
+
+### Consequences
+
+**Positive:**
+
+- A new engineer can open `architecture.html` and read ADR intent + current conformance
+  state without CLI access
+- The CARI overlay makes drift visible at a glance: a red-bordered, orange node in an ADR
+  flow means "this component is both high-churn and currently violating its rule"
+- The book stays a single self-contained file — shareable, CI-artifactable, diff-friendly
+
+**Negative:**
+
+- File size increases (~400 KB for Cytoscape inline) vs the current ~80 KB prescriptive SVG
+- Cytoscape's `dagre` layout requires the `cytoscape-dagre` plugin — two inlined scripts
+  instead of one
+- The Overview chapter (§17 SVG) and the per-ADR chapters (Cytoscape) use different
+  rendering stacks — future contributors need to understand both
+
+**Mitigations:**
+
+- Use `--prescriptive` for lightweight layer overview (retained unchanged)
+- Use `--book` only when the full interactive book is needed
+- Compress the inlined Cytoscape bundle with gzip in the CLI (transparent to the user)
+
+### Dependencies
+
+| Feature                         | Section | Status  |
+| ------------------------------- | ------- | ------- |
+| Layer geometry (`layers.yaml`)  | 17.1a   | ✅ Done |
+| Rule-expressed elements         | 17.1b   | ✅ Done |
+| `expresses.flows` in rules.yaml | §17     | ✅ Done |
+| `hotspotPriority()`             | 4.3     | ✅ Done |
+| `hubs()`                        | 9.2     | ✅ Done |
+| `communities()`                 | 9.1     | ✅ Done |
+| `rulesCheck()`                  | 13.2    | ✅ Done |
+
+### Priority Matrix Entries
+
+| #     | Feature                         | Tier | Size | Value  | Dependencies        | Status |
+| ----- | ------------------------------- | ---- | ---- | ------ | ------------------- | ------ |
+| 18.0  | Overview chapter (SVG + badges) | CARI | S    | High   | §17 (done)          |        |
+| 18.1a | Per-ADR Cytoscape intent graph  | CARI | M    | High   | 18.0, expresses     |        |
+| 18.1b | CARI overlay toggles            | CARI | M    | High   | 18.1a, CARI queries |        |
+| 18.2  | Violations chapter              | CARI | S    | High   | 18.1a, 13.2         |        |
+| 18.3  | Coverage chapter                | CARI | S    | Medium | 18.2, 1.4, 4.3      |        |
+| 18.4  | `--book` CLI flag + wiring      | CARI | S    | High   | 18.1b               |        |

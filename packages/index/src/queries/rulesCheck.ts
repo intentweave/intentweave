@@ -132,6 +132,16 @@ function checkRule(
     violations.push(...found);
   }
 
+  // 15.4 count_mode: per_file — keep only the first violation per file
+  if (rule.count_mode === "per_file") {
+    const seen = new Set<string>();
+    return violations.filter((v) => {
+      if (seen.has(v.filePath)) return false;
+      seen.add(v.filePath);
+      return true;
+    });
+  }
+
   return violations;
 }
 
@@ -154,6 +164,8 @@ function checkForbidden(
       return checkVariableAssignment(db, rule, forbidden, changed);
     case "cypher":
       return checkCypherRule(db, rule, forbidden, changed);
+    case "property_chain_length":
+      return checkPropertyChainLength(db, rule, forbidden, changed);
     default:
       return [];
   }
@@ -189,6 +201,11 @@ function checkPropertyAccess(
   }>;
 
   const violations: RulesViolation[] = [];
+  const taintEvents: Array<{
+    file: string;
+    line: number;
+    functionName: string | null;
+  }> = [];
 
   for (const row of rows) {
     if (!matchesScope(row.file, forbidden, changed)) continue;
@@ -205,6 +222,20 @@ function checkPropertyAccess(
       if (!hasContext) continue;
     }
 
+    // 15.1 context_import: only flag files that import a matching module
+    if (forbidden.context_import) {
+      if (!fileHasMatchingImport(db, row.file, forbidden.context_import))
+        continue;
+    }
+
+    // 15.2 except_symbol: skip violations inside excluded enclosing functions
+    if (forbidden.except_symbol) {
+      const excluded = Array.isArray(forbidden.except_symbol)
+        ? forbidden.except_symbol
+        : [forbidden.except_symbol];
+      if (row.symbol_name && excluded.includes(row.symbol_name)) continue;
+    }
+
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
@@ -213,8 +244,29 @@ function checkPropertyAccess(
       filePath: row.file,
       line: row.line,
       symbol: row.symbol_name,
-      detail: `property access \`${row.chain}\` matches forbidden pattern \`${forbidden.chain}\`${row.symbol_name ? ` in ${row.symbol_name}()` : ""}`,
+      detail: `property access \`${row.chain}\` matches forbidden pattern \`${forbidden.chain}\`${
+        row.symbol_name ? ` in ${row.symbol_name}()` : ""
+      }`,
+      autofix: rule.autofix,
     });
+
+    if (forbidden.taint_propagation) {
+      taintEvents.push({
+        file: row.file,
+        line: row.line,
+        functionName: row.symbol_name,
+      });
+    }
+  }
+
+  if (forbidden.taint_propagation && taintEvents.length > 0) {
+    const propagated = buildTaintPropagationViolations(
+      db,
+      rule,
+      forbidden,
+      taintEvents,
+    );
+    violations.push(...propagated);
   }
 
   return violations;
@@ -253,10 +305,29 @@ function checkCall(
   }>;
 
   const violations: RulesViolation[] = [];
+  const taintEvents: Array<{
+    file: string;
+    line: number;
+    functionName: string | null;
+  }> = [];
 
   for (const row of rows) {
     if (!matchesScope(row.caller_file, forbidden, changed)) continue;
     if (!calleeRegex.test(row.callee_name)) continue;
+
+    // 15.1 context_import: only flag files that import a matching module
+    if (forbidden.context_import) {
+      if (!fileHasMatchingImport(db, row.caller_file, forbidden.context_import))
+        continue;
+    }
+
+    // 15.2 except_symbol: skip violations inside excluded enclosing functions
+    if (forbidden.except_symbol) {
+      const excluded = Array.isArray(forbidden.except_symbol)
+        ? forbidden.except_symbol
+        : [forbidden.except_symbol];
+      if (row.caller_name && excluded.includes(row.caller_name)) continue;
+    }
 
     const qualifier = row.is_method ? "method" : "function";
     violations.push({
@@ -267,11 +338,109 @@ function checkCall(
       filePath: row.caller_file,
       line: row.caller_line,
       symbol: row.caller_name,
-      detail: `${qualifier} \`${row.callee_name}()\` called — matches forbidden pattern \`${forbidden.callee}\`${row.caller_name ? ` in ${row.caller_name}()` : ""}`,
+      detail: `${qualifier} \`${row.callee_name}()\` called — matches forbidden pattern \`${forbidden.callee}\`${
+        row.caller_name ? ` in ${row.caller_name}()` : ""
+      }`,
+      autofix: rule.autofix,
     });
+
+    if (forbidden.taint_propagation) {
+      taintEvents.push({
+        file: row.caller_file,
+        line: row.caller_line,
+        functionName: row.caller_name,
+      });
+    }
+  }
+
+  if (forbidden.taint_propagation && taintEvents.length > 0) {
+    const propagated = buildTaintPropagationViolations(
+      db,
+      rule,
+      forbidden,
+      taintEvents,
+    );
+    violations.push(...propagated);
   }
 
   return violations;
+}
+
+function buildTaintPropagationViolations(
+  db: Database.Database,
+  rule: RuleDefinition,
+  forbidden: RuleForbidden,
+  events: Array<{ file: string; line: number; functionName: string | null }>,
+): RulesViolation[] {
+  const hasAssignments = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='variable_assignments'`,
+    )
+    .get();
+  const hasDefUse = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='def_use_chains'`,
+    )
+    .get();
+  if (!hasAssignments || !hasDefUse) return [];
+
+  const findAssignedVars = db.prepare(
+    `
+    SELECT symbol_name
+    FROM variable_assignments
+    WHERE file = ? AND line = ? AND ((context IS NULL AND ? IS NULL) OR context = ?)
+  `,
+  );
+
+  const findUses = db.prepare(
+    `
+    SELECT use_line, use_context
+    FROM def_use_chains
+    WHERE file = ? AND def_line = ? AND var_name = ?
+    ORDER BY use_line
+  `,
+  );
+
+  const propagated: RulesViolation[] = [];
+  const seen = new Set<string>();
+
+  for (const evt of events) {
+    const assignments = findAssignedVars.all(
+      evt.file,
+      evt.line,
+      evt.functionName,
+      evt.functionName,
+    ) as Array<{ symbol_name: string }>;
+
+    for (const a of assignments) {
+      const uses = findUses.all(evt.file, evt.line, a.symbol_name) as Array<{
+        use_line: number;
+        use_context: string;
+      }>;
+
+      for (const use of uses) {
+        const key = `${rule.id}|${evt.file}|${evt.line}|${a.symbol_name}|${use.use_line}|${use.use_context}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        propagated.push({
+          ruleId: rule.id,
+          ruleSeverity: rule.severity,
+          ruleDescription: rule.description,
+          adr: rule.adr,
+          filePath: evt.file,
+          line: use.use_line,
+          symbol: evt.functionName,
+          detail:
+            `taint propagation: variable \`${a.symbol_name}\` assigned from forbidden ${forbidden.type} at line ${evt.line} ` +
+            `is used at line ${use.use_line} (${use.use_context})`,
+          autofix: rule.autofix,
+        });
+      }
+    }
+  }
+
+  return propagated;
 }
 
 // ── symbol_name ───────────────────────────────────────────────────────────────
@@ -299,9 +468,7 @@ function checkSymbolName(
   }
   sql += ` ORDER BY file_path, line`;
 
-  const rows = db
-    .prepare(sql)
-    .all() as Array<{
+  const rows = db.prepare(sql).all() as Array<{
     name: string;
     kind: string;
     file_path: string;
@@ -325,6 +492,7 @@ function checkSymbolName(
       line: row.line,
       symbol: row.name,
       detail: `${row.kind} \`${row.name}\` declared — name matches forbidden pattern \`${forbidden.pattern}\``,
+      autofix: rule.autofix,
     });
   }
 
@@ -380,6 +548,7 @@ function checkImportPattern(
       filePath: row.source_file,
       line: row.line ?? null,
       detail: `import of \`${row.module_specifier}\` matches forbidden pattern \`${forbidden.pattern}\``,
+      autofix: rule.autofix,
     });
   }
 
@@ -436,6 +605,7 @@ function checkVariableAssignment(
       filePath: row.file,
       line: row.line,
       detail: `variable \`${row.symbol_name}\` assigned value matching \`${forbidden.value_pattern}\`: ${row.value_text.slice(0, 80)}`,
+      autofix: rule.autofix,
     });
   }
 
@@ -465,7 +635,9 @@ function checkCypherRule(
       for (const q of transpiled) {
         if (q.kind !== "read") continue;
         const sql = injectCariGraphCtes(q.sql);
-        rows.push(...(db.prepare(sql).all(...q.params) as Record<string, unknown>[]));
+        rows.push(
+          ...(db.prepare(sql).all(...q.params) as Record<string, unknown>[]),
+        );
       }
     }
   } catch {
@@ -484,7 +656,11 @@ function checkCypherRule(
       adr: rule.adr,
       filePath: row.file,
       line: typeof row.line === "number" ? row.line : null,
-      detail: typeof row.detail === "string" ? row.detail : (rule.description ?? rule.id),
+      detail:
+        typeof row.detail === "string"
+          ? row.detail
+          : (rule.description ?? rule.id),
+      autofix: rule.autofix,
     });
   }
 
@@ -590,11 +766,101 @@ function hasTableColumn(
   table: string,
   column: string,
 ): boolean {
-  const cols = db
-    .prepare(`PRAGMA table_info(${table})`)
-    .all() as Array<{ name: string }>;
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+    name: string;
+  }>;
   return cols.some((c) => c.name === column);
 }
+
+// ── property_chain_length (15.3) ─────────────────────────────────────────────
+
+function checkPropertyChainLength(
+  db: Database.Database,
+  rule: RuleDefinition,
+  forbidden: RuleForbidden,
+  changed?: string[],
+): RulesViolation[] {
+  const minDepth = forbidden.min_depth ?? 1;
+
+  const tableExists = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='property_accesses'`,
+    )
+    .get();
+  if (!tableExists) return [];
+
+  let sql = `SELECT file, symbol_name, line, chain, root, depth FROM property_accesses WHERE depth >= ?`;
+  const params: unknown[] = [minDepth];
+
+  if (forbidden.root) {
+    sql += ` AND root = ?`;
+    params.push(forbidden.root);
+  }
+
+  sql += ` ORDER BY file, line`;
+
+  const rows = db.prepare(sql).all(...params) as Array<{
+    file: string;
+    symbol_name: string | null;
+    line: number;
+    chain: string;
+    root: string;
+    depth: number;
+  }>;
+
+  const violations: RulesViolation[] = [];
+
+  for (const row of rows) {
+    if (!matchesScope(row.file, forbidden, changed)) continue;
+
+    // 15.1 context_import
+    if (forbidden.context_import) {
+      if (!fileHasMatchingImport(db, row.file, forbidden.context_import))
+        continue;
+    }
+
+    // 15.2 except_symbol
+    if (forbidden.except_symbol) {
+      const excluded = Array.isArray(forbidden.except_symbol)
+        ? forbidden.except_symbol
+        : [forbidden.except_symbol];
+      if (row.symbol_name && excluded.includes(row.symbol_name)) continue;
+    }
+
+    const rootDesc = forbidden.root ? ` rooted at \`${forbidden.root}\`` : "";
+    violations.push({
+      ruleId: rule.id,
+      ruleSeverity: rule.severity,
+      ruleDescription: rule.description,
+      adr: rule.adr,
+      filePath: row.file,
+      line: row.line,
+      symbol: row.symbol_name,
+      detail: `property chain \`${row.chain}\` (depth ${row.depth})${rootDesc} exceeds min_depth=${minDepth}${
+        row.symbol_name ? ` in ${row.symbol_name}()` : ""
+      }`,
+      autofix: rule.autofix,
+    });
+  }
+
+  return violations;
+}
+
+// ── context_import helper (15.1) ──────────────────────────────────────────────
+
+/** Returns true if `file` has at least one import whose module_specifier matches `pattern` (glob). */
+function fileHasMatchingImport(
+  db: Database.Database,
+  file: string,
+  pattern: string,
+): boolean {
+  const rows = db
+    .prepare(`SELECT module_specifier FROM imports WHERE source_file = ?`)
+    .all(file) as Array<{ module_specifier: string }>;
+  return rows.some((r) => matchesImportPattern(r.module_specifier, pattern));
+}
+
+// ── matchesImportPattern ──────────────────────────────────────────────────────
 
 function matchesImportPattern(
   value: string,
@@ -655,7 +921,9 @@ function matchesScope(
 
   // `in` scope filter
   if (forbidden.in) {
-    const includes = Array.isArray(forbidden.in) ? forbidden.in : [forbidden.in];
+    const includes = Array.isArray(forbidden.in)
+      ? forbidden.in
+      : [forbidden.in];
     if (!includes.some((pat) => minimatch(filePath, pat))) return false;
   }
 

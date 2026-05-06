@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture Book</title>
+<style>
+
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: #f3f6fb;
+  color: #1f2937;
+  height: 100vh;
+  overflow: hidden;
+}
+#app {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  height: 100vh;
+}
+/* ── Sidebar ── */
+#sidebar {
+  background: linear-gradient(180deg, #1e2533 0%, #232c3d 100%);
+  color: #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #1a2030;
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 12px 12px;
+  border-bottom: 1px solid #2d3748;
+}
+.sidebar-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1.2;
+}
+.sidebar-meta {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+}
+#nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.nav-section {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #475569;
+  padding: 10px 12px 4px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 0.1s, color 0.1s;
+  user-select: none;
+  position: relative;
+}
+.nav-item:hover { background: #2d3748; color: #e2e8f0; }
+.nav-item.active { background: #1e3a5f; color: #93c5fd; font-weight: 600; }
+.nav-item .nav-icon {
+  width: 16px; height: 16px; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; flex-shrink: 0;
+}
+.nav-item .nav-badge {
+  margin-left: auto;
+  background: #991b1b;
+  color: #fecaca;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  min-width: 18px;
+  text-align: center;
+}
+.nav-item .nav-badge.zero { background: #1e3a2a; color: #86efac; }
+/* ── Main content ── */
+#content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chapter {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.chapter.active { display: flex; }
+.chapter-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+  flex-shrink: 0;
+}
+.chapter-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chapter-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+}
+.chapter-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+/* ── Badges ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.badge.high   { background: #fee2e2; color: #991b1b; }
+.badge.medium { background: #fef3c7; color: #92400e; }
+.badge.low    { background: #e5e7eb; color: #374151; }
+.badge.info   { background: #dbeafe; color: #1e40af; }
+.badge.ok     { background: #dcfce7; color: #166534; }
+/* ── Layer cards (overview) ── */
+.layer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.layer-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  position: relative;
+}
+.layer-card .lc-index {
+  position: absolute;
+  top: 8px; right: 10px;
+  font-size: 10px; color: #9ca3af;
+}
+.layer-card .lc-name {
+  font-size: 13px; font-weight: 700; margin: 0 0 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding-right: 20px;
+}
+.layer-card .lc-meta {
+  font-size: 11px; color: #6b7280; margin: 0 0 8px;
+}
+.layer-card .lc-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.layer-card .lc-rules {
+  margin-top: 8px;
+  font-size: 10px; color: #6b7280;
+}
+.layer-card .lc-rules span {
+  display: inline-block;
+  background: #f3f4f6; border: 1px solid #e5e7eb;
+  border-radius: 4px; padding: 1px 6px; margin: 2px 2px 0 0;
+}
+/* ── ADR chapter layout ── */
+.adr-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  grid-template-rows: 1fr auto;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+.adr-graph-wrap {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  min-height: 300px;
+}
+.adr-graph-wrap .cy-container {
+  width: 100%; height: 100%;
+}
+.adr-graph-empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; color: #9ca3af; font-size: 13px;
+  font-style: italic; padding: 24px;
+  text-align: center;
+}
+.adr-side {
+  display: flex; flex-direction: column; gap: 12px; overflow-y: auto;
+}
+.adr-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.adr-panel h3 { margin: 0 0 8px; font-size: 12px; color: #374151; text-transform: uppercase; letter-spacing: 0.04em; }
+.adr-desc { font-size: 12px; color: #374151; line-height: 1.55; }
+.adr-meta-row { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+.adr-meta-row b { color: #374151; }
+.adr-violations-list { list-style: none; margin: 0; padding: 0; }
+.adr-violations-list li {
+  font-size: 11px; padding: 5px 0;
+  border-bottom: 1px solid #f3f4f6;
+  line-height: 1.4;
+}
+.adr-violations-list li:last-child { border-bottom: none; }
+.adr-violations-list .viol-file { font-family: ui-monospace, monospace; color: #1e40af; font-size: 10px; }
+.adr-violations-list .viol-detail { color: #6b7280; font-size: 10px; }
+.adr-violations-list .viol-more { color: #9ca3af; font-style: italic; font-size: 10px; }
+.adr-violations-bottom {
+  grid-column: 1 / -1;
+}
+/* ── CARI overlay controls ── */
+.overlay-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.overlay-controls label {
+  display: flex; align-items: center; gap: 5px; cursor: pointer;
+  user-select: none;
+}
+.overlay-controls .oc-sep { color: #d1d5db; }
+/* ── Violations chapter ── */
+.violations-table-wrap { overflow-x: auto; }
+.violations-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.violations-table th {
+  text-align: left; padding: 8px 10px;
+  background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+  font-size: 11px; font-weight: 700; color: #374151;
+  white-space: nowrap;
+}
+.violations-table td {
+  padding: 7px 10px; border-bottom: 1px solid #f3f4f6;
+  vertical-align: top;
+}
+.violations-table tr:hover td { background: #f8fafc; }
+.violations-table .td-file {
+  font-family: ui-monospace, monospace; font-size: 10px; color: #1e40af;
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.violations-table .td-detail { color: #6b7280; font-size: 11px; }
+.viol-section { margin-bottom: 24px; }
+.viol-section h3 {
+  font-size: 13px; font-weight: 700; margin: 0 0 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+/* ── Stats bar (overview) ── */
+.stats-bar {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.stat-card {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 10px 14px; min-width: 100px;
+}
+.stat-card .sc-val { font-size: 22px; font-weight: 800; color: #1f2937; line-height: 1; }
+.stat-card .sc-lbl { font-size: 10px; color: #6b7280; margin-top: 3px; }
+/* ── Cy graph legend ── */
+.cy-legend {
+  position: absolute; bottom: 10px; left: 10px;
+  background: rgba(255,255,255,0.92); border: 1px solid #e2e8f0;
+  border-radius: 6px; padding: 7px 10px; font-size: 10px; line-height: 1.8;
+  pointer-events: none;
+}
+.cy-legend .leg-item { display: flex; align-items: center; gap: 5px; }
+.cy-legend .leg-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+/* ── Coverage chapter ── */
+.coverage-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.coverage-table th {
+  text-align: left; padding: 8px 10px;
+  background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+  font-size: 11px; font-weight: 700; color: #374151;
+  white-space: nowrap;
+}
+.coverage-table td {
+  padding: 7px 10px; border-bottom: 1px solid #f3f4f6;
+  vertical-align: top;
+}
+.coverage-table tr:hover td { background: #f8fafc; }
+.cov-bar-wrap {
+  width: 100px; height: 8px; background: #e5e7eb;
+  border-radius: 4px; overflow: hidden; display: inline-block;
+}
+.cov-bar { height: 100%; border-radius: 4px; }
+.hotspot-pill {
+  display: inline-block; font-family: ui-monospace,monospace;
+  font-size: 9px; background: #fff7ed; border: 1px solid #fed7aa;
+  border-radius: 3px; padding: 1px 5px; margin: 1px 2px 0 0;
+  color: #9a3412; max-width: 200px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+/* ── YAML snippet (18.1) ── */
+.yaml-snippet {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 6px 0 0;
+  overflow-x: auto;
+  color: #374151;
+  white-space: pre;
+  line-height: 1.5;
+}
+.yaml-snippet .yk { color: #1d4ed8; } /* key */
+.yaml-snippet .yv { color: #166534; } /* value */
+.yaml-snippet .yc { color: #9ca3af; } /* comment */
+/* ── Back-link button (18.2) ── */
+.btn-goto {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin-left: 8px;
+  vertical-align: middle;
+  line-height: 1.6;
+}
+.btn-goto:hover { background: #dbeafe; }
+
+</style>
+<!-- Cytoscape.js + dagre layout — TODO: inline for fully offline export (18.4) -->
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" style="flex-shrink:0">
+        <rect x="1" y="1" width="9" height="9" rx="2" fill="#3b82f6" opacity="0.9"/>
+        <rect x="12" y="1" width="9" height="9" rx="2" fill="#10b981" opacity="0.8"/>
+        <rect x="1" y="12" width="9" height="9" rx="2" fill="#f59e0b" opacity="0.8"/>
+        <rect x="12" y="12" width="9" height="9" rx="2" fill="#6366f1" opacity="0.8"/>
+      </svg>
+      <div>
+        <div class="sidebar-title">Architecture Book</div>
+        <div class="sidebar-meta" id="sidebar-meta"></div>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+  </aside>
+  <main id="content"></main>
+</div>
+<script>
+const DATA = {"meta":{"generated":"2026-05-04T21:01:14.435Z","totalFiles":0,"totalRuleViolations":0,"totalLayerViolations":0},"layers":[{"index":0,"name":"node","fileCount":0,"ruleViolationCount":0,"elements":[],"policies":[],"row":5},{"index":1,"name":"packages/@arccraft/providers","fileCount":0,"ruleViolationCount":0,"elements":[{"name":"packages/@arccraft/adapters/src/**","kind":"component","layerName":"packages/@arccraft/providers","ruleId":"adr003-no-direct-io-in-adapters"},{"name":"SourceProvider","kind":"component","layerName":"packages/@arccraft/providers","ruleId":"adr003-provider-adapter-transformer-flow","flowSeq":0},{"name":"packages/@arccraft/engine/src/**","kind":"component","layerName":"packages/@arccraft/providers","ruleId":"general-no-console-in-production"},{"name":"console.log|console.warn|console.error|console.info|console.debug","kind":"symbol","layerName":"packages/@arccraft/providers","ruleId":"general-no-console-in-production"}],"policies":[{"ruleId":"general-no-console-in-production","kind":"call","count":0,"description":"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\n","adr":"structured-logging","severity":"medium"}],"row":4},{"index":2,"name":"packages/@arccraft","fileCount":0,"ruleViolationCount":0,"elements":[{"name":"packages/@arccraft/adapters/src/**","kind":"component","layerName":"packages/@arccraft","ruleId":"adr003-no-direct-io-in-adapters"},{"name":"AdapterParser","kind":"component","layerName":"packages/@arccraft","ruleId":"adr003-provider-adapter-transformer-flow","flowSeq":1},{"name":"PipelineScheduler","kind":"component","layerName":"packages/@arccraft","ruleId":"adr003-provider-adapter-transformer-flow","flowSeq":2},{"name":"packages/@arccraft/engine/src/**","kind":"component","layerName":"packages/@arccraft","ruleId":"general-no-console-in-production"},{"name":"console.log|console.warn|console.error|console.info|console.debug","kind":"symbol","layerName":"packages/@arccraft","ruleId":"general-no-console-in-production"}],"policies":[{"ruleId":"general-no-console-in-production","kind":"call","count":0,"description":"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\n","adr":"structured-logging","severity":"medium"}],"row":3,"column":0},{"index":3,"name":"packages/@arccraft/pipeline-workers","fileCount":0,"ruleViolationCount":0,"elements":[{"name":"apps/**","kind":"component","layerName":"packages/@arccraft/pipeline-workers","ruleId":"adr003-no-extracteesystem"},{"name":"extractEESystem","kind":"symbol","layerName":"packages/@arccraft/pipeline-workers","ruleId":"adr003-no-extracteesystem"},{"name":"PipelineWorkerPlugin","kind":"component","layerName":"packages/@arccraft/pipeline-workers","ruleId":"adr003-provider-adapter-transformer-flow","flowSeq":3},{"name":"TransformerStage","kind":"component","layerName":"packages/@arccraft/pipeline-workers","ruleId":"adr003-provider-adapter-transformer-flow","flowSeq":4},{"name":"apps/arcdata-api/src/workers/**","kind":"component","layerName":"packages/@arccraft/pipeline-workers","ruleId":"adr006-no-extracteesystem-in-resolver"},{"name":"extractEESystem|extractEESystemFromPath","kind":"symbol","layerName":"packages/@arccraft/pipeline-workers","ruleId":"adr006-no-extracteesystem-in-resolver"},{"name":"apps/arcdata-api/src/**","kind":"component","layerName":"packages/@arccraft/pipeline-workers","ruleId":"general-no-console-in-production"},{"name":"console.log|console.warn|console.error|console.info|console.debug","kind":"symbol","layerName":"packages/@arccraft/pipeline-workers","ruleId":"general-no-console-in-production"}],"policies":[{"ruleId":"adr003-no-extracteesystem","kind":"call","count":0,"description":"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr003-no-extracteesystem","kind":"symbol_name","count":0,"description":"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr006-no-extracteesystem-in-resolver","kind":"call","count":0,"description":"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\n","adr":"ADR-006","severity":"medium"},{"ruleId":"adr006-no-extracteesystem-in-resolver","kind":"symbol_name","count":0,"description":"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\n","adr":"ADR-006","severity":"medium"},{"ruleId":"general-no-console-in-production","kind":"call","count":0,"description":"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\n","adr":"structured-logging","severity":"medium"}],"row":3,"column":1},{"index":4,"name":"packages/@arcviz","fileCount":0,"ruleViolationCount":0,"elements":[{"name":"packages/@arcviz/react/src/diagram/GraphViewDispatch*","kind":"component","layerName":"packages/@arcviz","ruleId":"adr013-no-mermaid-import-in-graph-dispatch"},{"name":"**/MermaidDiagram*","kind":"symbol","layerName":"packages/@arcviz","ruleId":"adr013-no-mermaid-import-in-graph-dispatch"},{"name":"**/mermaid*","kind":"symbol","layerName":"packages/@arcviz","ruleId":"adr013-no-mermaid-import-in-graph-dispatch"},{"name":"packages/@arcviz/react/src/codeblock/**","kind":"component","layerName":"packages/@arcviz","ruleId":"adr013-no-mermaid-render-in-codeblock"},{"name":"mermaid.render|mermaidAPI.render","kind":"symbol","layerName":"packages/@arcviz","ruleId":"adr013-no-mermaid-render-in-codeblock"},{"name":"packages/@arcviz/react/src/diagram/**","kind":"component","layerName":"packages/@arcviz","ruleId":"adr013-no-mermaid-render-in-codeblock"}],"policies":[{"ruleId":"adr013-no-mermaid-import-in-graph-dispatch","kind":"import_pattern","count":0,"description":"GraphViewDispatch must never import MermaidDiagram — graph-type diagrams are rendered exclusively by ReactFlow+ELK (ADR-013 §2.1).\n","adr":"ADR-013","severity":"high"},{"ruleId":"adr013-no-mermaid-render-in-codeblock","kind":"call","count":0,"description":"The CodeBlock registry must not call mermaid.render() — Mermaid is an input format, not a renderer. Diagram content is parsed into Entity+ Relation arrays and rendered by paradigm-specific components (ADR-013 §2.1).\n","adr":"ADR-013","severity":"medium"}],"row":2,"column":0},{"index":5,"name":"apps/arcdata-api","fileCount":0,"ruleViolationCount":0,"elements":[{"name":"apps/**","kind":"component","layerName":"apps/arcdata-api","ruleId":"adr003-no-extracteesystem"},{"name":"extractEESystem","kind":"symbol","layerName":"apps/arcdata-api","ruleId":"adr003-no-extracteesystem"},{"name":"apps/arcdata-api/src/workers/**","kind":"component","layerName":"apps/arcdata-api","ruleId":"adr006-no-extracteesystem-in-resolver"},{"name":"extractEESystem|extractEESystemFromPath","kind":"symbol","layerName":"apps/arcdata-api","ruleId":"adr006-no-extracteesystem-in-resolver"},{"name":"apps/arcdata-api/src/**","kind":"component","layerName":"apps/arcdata-api","ruleId":"general-no-console-in-production"},{"name":"console.log|console.warn|console.error|console.info|console.debug","kind":"symbol","layerName":"apps/arcdata-api","ruleId":"general-no-console-in-production"}],"policies":[{"ruleId":"adr003-no-extracteesystem","kind":"call","count":0,"description":"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr003-no-extracteesystem","kind":"symbol_name","count":0,"description":"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr006-no-extracteesystem-in-resolver","kind":"call","count":0,"description":"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\n","adr":"ADR-006","severity":"medium"},{"ruleId":"adr006-no-extracteesystem-in-resolver","kind":"symbol_name","count":0,"description":"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\n","adr":"ADR-006","severity":"medium"},{"ruleId":"general-no-console-in-production","kind":"call","count":0,"description":"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\n","adr":"structured-logging","severity":"medium"}],"row":2,"column":1},{"index":6,"name":"apps/arcdocs-explorer","fileCount":0,"ruleViolationCount":0,"elements":[{"name":"apps/arcdocs-explorer/src/components/**","kind":"component","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-source-path-in-ui"},{"name":"**.source.path","kind":"symbol","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-source-path-in-ui"},{"name":"apps/arcdocs-explorer/src/services/**","kind":"component","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-source-path-in-services"},{"name":"apps/**","kind":"component","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-extracteesystem"},{"name":"extractEESystem","kind":"symbol","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-extracteesystem"},{"name":"apps/arcdocs-explorer/src/components/explorer/views/**","kind":"component","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-regex-on-source-path"},{"name":"match|exec","kind":"symbol","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-regex-on-source-path"},{"name":"refToFqn|fqnToName|refFqn|fqnPackage|lastSegment","kind":"symbol","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-ref-resolution-in-views"},{"name":"**.$ref","kind":"symbol","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-ref-property-in-views"},{"name":"entityByFqn|entityById","kind":"symbol","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-entitybyfqn-in-views"},{"name":"split","kind":"symbol","layerName":"apps/arcdocs-explorer","ruleId":"adr003-no-fqn-split-in-views"},{"name":"apps/arcdocs-explorer/**","kind":"component","layerName":"apps/arcdocs-explorer","ruleId":"adr006-no-direct-resolver-import"}],"policies":[{"ruleId":"adr003-no-source-path-in-ui","kind":"property_access","count":0,"description":"UI components must not access entity.source.path — source metadata belongs in the adapter/transformer layer (ADR-003 §2.1). Use entity.properties or _resolved data instead.\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr003-no-source-path-in-services","kind":"property_access","count":0,"description":"Server-side services (docsLoader, engine.server) must not parse entity.source.path for display/business logic. Path metadata should be extracted at adapter/transformer time (ADR-003 §2.1).\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr003-no-extracteesystem","kind":"call","count":0,"description":"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr003-no-extracteesystem","kind":"symbol_name","count":0,"description":"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr003-no-regex-on-source-path","kind":"call","count":0,"description":"Regex parsing of source.path directory names belongs in adapters/ transformers. Calling match()/exec() with source.path context is a semantic violation (ADR-003 §2.1).\n","adr":"ADR-003","severity":"high"},{"ruleId":"adr003-no-ref-resolution-in-views","kind":"call","count":0,"description":"$ref FQN resolution helpers (refToFqn, fqnToName, refFqn, fqnPackage, lastSegment) belong in the resolver/transformer layer, not in UI view components (ADR-003 §2.1).\n","adr":"ADR-003","severity":"medium"},{"ruleId":"adr003-no-ref-resolution-in-views","kind":"symbol_name","count":0,"description":"$ref FQN resolution helpers (refToFqn, fqnToName, refFqn, fqnPackage, lastSegment) belong in the resolver/transformer layer, not in UI view components (ADR-003 §2.1).\n","adr":"ADR-003","severity":"medium"},{"ruleId":"adr003-no-ref-property-in-views","kind":"property_access","count":0,"description":"Views must not access entity.$ref or relation.$ref directly — $ref resolution is handled at Stage ③ (ReferenceResolution). After loading, all references should be proper Relation objects.\n","adr":"ADR-003","severity":"medium"},{"ruleId":"adr003-no-entitybyfqn-in-views","kind":"symbol_name","count":0,"description":"Building entityByFqn/entityById lookup maps in view components duplicates resolver logic and forces O(n) iteration per render. Use _resolved.nameMap or server-side FQN index (ADR-003 §2.1).\n","adr":"ADR-003","severity":"medium"},{"ruleId":"adr003-no-fqn-split-in-views","kind":"call","count":0,"description":"Manual FQN string splitting (fqn.split('.'), id.split('::')) in views duplicates logic that should live in the resolver. Use entity.name or properties.resolvedName set at transformer time.\n","adr":"ADR-003","severity":"low"}],"row":1}],"edges":[{"fromLayerIndex":1,"toLayerIndex":0,"type":"allowed","label":"allowed (derived)"},{"fromLayerIndex":2,"toLayerIndex":1,"type":"allowed","label":"allowed (derived)"},{"fromLayerIndex":3,"toLayerIndex":2,"type":"allowed","label":"allowed (derived)"},{"fromLayerIndex":4,"toLayerIndex":3,"type":"allowed","label":"allowed (derived)"},{"fromLayerIndex":5,"toLayerIndex":4,"type":"allowed","label":"allowed (derived)"},{"fromLayerIndex":6,"toLayerIndex":5,"type":"allowed","label":"allowed (derived)"},{"fromLayerIndex":2,"toLayerIndex":0,"type":"forbidden","flowKind":"hop","ruleId":"adr003-no-direct-io-in-adapters","description":"Adapters must use SourceProvider (listFiles/readFile) for I/O, never import fs or path directly. This ensures adapters work with any provider (filesystem, git, HTTP, S3) — ADR-003 §2.1, ADR-010 §1.5.\n","adr":"ADR-003","severity":"high","count":0,"label":"import_pattern (adr003-no-direct-io-in-adapters, 0)","fromElementName":"packages/@arccraft/adapters/src/**","toElementName":"node:fs*"},{"fromLayerIndex":6,"toLayerIndex":5,"type":"forbidden","flowKind":"hop","ruleId":"adr006-no-direct-resolver-import","description":"UI/services must not import directly from resolved-entity-worker or pipeline internals. Use the API route or ViewRegistry (ADR-006 §16).\n","adr":"ADR-006","severity":"high","count":0,"label":"import_pattern (adr006-no-direct-resolver-import, 0)","fromElementName":"apps/arcdocs-explorer/**","toElementName":"**/workers/resolved-entity-worker*"},{"fromLayerIndex":1,"toLayerIndex":2,"type":"allowed","flowKind":"data","ruleId":"adr003-provider-adapter-transformer-flow","fromElementName":"SourceProvider","toElementName":"AdapterParser","label":"data flow (adr003-provider-adapter-transformer-flow)"},{"fromLayerIndex":2,"toLayerIndex":2,"type":"allowed","flowKind":"control","ruleId":"adr003-provider-adapter-transformer-flow","fromElementName":"AdapterParser","toElementName":"PipelineScheduler","label":"control flow (adr003-provider-adapter-transformer-flow)"},{"fromLayerIndex":2,"toLayerIndex":3,"type":"allowed","flowKind":"control","ruleId":"adr003-provider-adapter-transformer-flow","fromElementName":"PipelineScheduler","toElementName":"PipelineWorkerPlugin","label":"control flow (adr003-provider-adapter-transformer-flow)"},{"fromLayerIndex":3,"toLayerIndex":3,"type":"allowed","flowKind":"data","ruleId":"adr003-provider-adapter-transformer-flow","fromElementName":"PipelineWorkerPlugin","toElementName":"TransformerStage","label":"data flow (adr003-provider-adapter-transformer-flow)"}],"rules":[],"violations":[],"cariOverlay":{"hotspot":{},"hubs":{},"communities":{},"actualImports":[]},"layerCoverage":[{"layerIndex":0,"layerName":"node","fileCount":0,"coveragePercent":0,"rulesGoverning":[],"hotspotFiles":[]},{"layerIndex":1,"layerName":"packages/@arccraft/providers","fileCount":0,"coveragePercent":0,"rulesGoverning":["adr003-provider-adapter-transformer-flow"],"hotspotFiles":[]},{"layerIndex":2,"layerName":"packages/@arccraft","fileCount":0,"coveragePercent":0,"rulesGoverning":["adr003-provider-adapter-transformer-flow"],"hotspotFiles":[]},{"layerIndex":3,"layerName":"packages/@arccraft/pipeline-workers","fileCount":0,"coveragePercent":0,"rulesGoverning":["adr003-provider-adapter-transformer-flow"],"hotspotFiles":[]},{"layerIndex":4,"layerName":"packages/@arcviz","fileCount":0,"coveragePercent":0,"rulesGoverning":[],"hotspotFiles":[]},{"layerIndex":5,"layerName":"apps/arcdata-api","fileCount":0,"coveragePercent":0,"rulesGoverning":[],"hotspotFiles":[]},{"layerIndex":6,"layerName":"apps/arcdocs-explorer","fileCount":0,"coveragePercent":0,"rulesGoverning":[],"hotspotFiles":[]}],"options":{"showRuleElements":true}};
+const PRESCRIPTIVE_HTML = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Prescriptive Architecture Report<\/title>\n<style>\n\n* { box-sizing: border-box; }\nbody {\n  margin: 0;\n  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Helvetica, Arial, sans-serif;\n  background: #f7f9fc;\n  color: #1f2937;\n}\nheader {\n  border-bottom: 1px solid #d8dee9;\n  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);\n  padding: 14px 18px;\n  display: flex;\n  align-items: flex-end;\n  justify-content: space-between;\n  gap: 16px;\n}\n.title-wrap h1 {\n  margin: 0;\n  font-size: 18px;\n}\n.subtitle {\n  margin: 4px 0 0;\n  color: #5b6576;\n  font-size: 12px;\n}\n.stats {\n  display: flex;\n  gap: 12px;\n  font-size: 12px;\n  color: #4b5563;\n  flex-wrap: wrap;\n}\nmain {\n  display: grid;\n  grid-template-columns: 1fr 320px;\n  height: calc(100vh - 74px);\n}\n#viz {\n  width: 100%;\n  height: 100%;\n  background: radial-gradient(circle at 8% 8%, #ffffff 0%, #f4f8ff 55%, #eef3fb 100%);\n}\n#rules {\n  border-left: 1px solid #d8dee9;\n  padding: 14px;\n  background: #f9fbff;\n  overflow-y: auto;\n}\n#rules h2 {\n  margin: 0 0 10px;\n  font-size: 14px;\n}\n.rule-item {\n  border: 1px solid #dbe3ef;\n  border-radius: 8px;\n  background: #fff;\n  padding: 8px 10px;\n  margin-bottom: 8px;\n}\n.rule-id {\n  font-weight: 600;\n  font-size: 12px;\n  margin-bottom: 2px;\n}\n.rule-meta {\n  font-size: 11px;\n  color: #5b6576;\n}\n.rule-desc {\n  font-size: 10px;\n  color: #6b7280;\n  margin-top: 3px;\n  line-height: 1.4;\n  display: -webkit-box;\n  -webkit-line-clamp: 3;\n  -webkit-box-orient: vertical;\n  overflow: hidden;\n}\n.badge {\n  display: inline-block;\n  padding: 2px 6px;\n  border-radius: 999px;\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: 0.02em;\n}\n.badge.high { background: #fee2e2; color: #991b1b; }\n.badge.medium { background: #fef3c7; color: #92400e; }\n.badge.low { background: #e5e7eb; color: #374151; }\n.layer-title {\n  font-size: 13px;\n  font-weight: 700;\n  fill: #111827;\n}\n.layer-meta {\n  font-size: 11px;\n  fill: #4b5563;\n}\n.edge-label {\n  font-size: 10px;\n  fill: #334155;\n}\n.edge-label.rule-flow {\n  fill: #1f2937;\n  font-weight: 600;\n}\n.element-chip {\n  font-size: 10px;\n  fill: #334155;\n}\n\n<\/style>\n<\/head>\n<body>\n<header>\n  <div class=\"title-wrap\">\n    <h1>Prescriptive Architecture Report<\/h1>\n    <p class=\"subtitle\">Should-be view (SVG, top-down layers)<\/p>\n  <\/div>\n  <div class=\"stats\" id=\"stats\"><\/div>\n<\/header>\n<main>\n  <svg id=\"viz\" role=\"img\" aria-label=\"Prescriptive architecture visualization\"><\/svg>\n  <aside id=\"rules\">\n    <h2>Rules<\/h2>\n    <div id=\"rules-list\"><\/div>\n  <\/aside>\n<\/main>\n<script>\nconst DATA = {\"meta\":{\"generated\":\"2026-05-04T21:01:14.435Z\",\"totalFiles\":0,\"totalRuleViolations\":0,\"totalLayerViolations\":0},\"layers\":[{\"index\":0,\"name\":\"node\",\"fileCount\":0,\"ruleViolationCount\":0,\"elements\":[],\"policies\":[],\"row\":5},{\"index\":1,\"name\":\"packages/@arccraft/providers\",\"fileCount\":0,\"ruleViolationCount\":0,\"elements\":[{\"name\":\"packages/@arccraft/adapters/src/**\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/providers\",\"ruleId\":\"adr003-no-direct-io-in-adapters\"},{\"name\":\"SourceProvider\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/providers\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"flowSeq\":0},{\"name\":\"packages/@arccraft/engine/src/**\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/providers\",\"ruleId\":\"general-no-console-in-production\"},{\"name\":\"console.log|console.warn|console.error|console.info|console.debug\",\"kind\":\"symbol\",\"layerName\":\"packages/@arccraft/providers\",\"ruleId\":\"general-no-console-in-production\"}],\"policies\":[{\"ruleId\":\"general-no-console-in-production\",\"kind\":\"call\",\"count\":0,\"description\":\"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\\n\",\"adr\":\"structured-logging\",\"severity\":\"medium\"}],\"row\":4},{\"index\":2,\"name\":\"packages/@arccraft\",\"fileCount\":0,\"ruleViolationCount\":0,\"elements\":[{\"name\":\"packages/@arccraft/adapters/src/**\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft\",\"ruleId\":\"adr003-no-direct-io-in-adapters\"},{\"name\":\"AdapterParser\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"flowSeq\":1},{\"name\":\"PipelineScheduler\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"flowSeq\":2},{\"name\":\"packages/@arccraft/engine/src/**\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft\",\"ruleId\":\"general-no-console-in-production\"},{\"name\":\"console.log|console.warn|console.error|console.info|console.debug\",\"kind\":\"symbol\",\"layerName\":\"packages/@arccraft\",\"ruleId\":\"general-no-console-in-production\"}],\"policies\":[{\"ruleId\":\"general-no-console-in-production\",\"kind\":\"call\",\"count\":0,\"description\":\"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\\n\",\"adr\":\"structured-logging\",\"severity\":\"medium\"}],\"row\":3,\"column\":0},{\"index\":3,\"name\":\"packages/@arccraft/pipeline-workers\",\"fileCount\":0,\"ruleViolationCount\":0,\"elements\":[{\"name\":\"apps/**\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"adr003-no-extracteesystem\"},{\"name\":\"extractEESystem\",\"kind\":\"symbol\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"adr003-no-extracteesystem\"},{\"name\":\"PipelineWorkerPlugin\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"flowSeq\":3},{\"name\":\"TransformerStage\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"flowSeq\":4},{\"name\":\"apps/arcdata-api/src/workers/**\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"adr006-no-extracteesystem-in-resolver\"},{\"name\":\"extractEESystem|extractEESystemFromPath\",\"kind\":\"symbol\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"adr006-no-extracteesystem-in-resolver\"},{\"name\":\"apps/arcdata-api/src/**\",\"kind\":\"component\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"general-no-console-in-production\"},{\"name\":\"console.log|console.warn|console.error|console.info|console.debug\",\"kind\":\"symbol\",\"layerName\":\"packages/@arccraft/pipeline-workers\",\"ruleId\":\"general-no-console-in-production\"}],\"policies\":[{\"ruleId\":\"adr003-no-extracteesystem\",\"kind\":\"call\",\"count\":0,\"description\":\"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr003-no-extracteesystem\",\"kind\":\"symbol_name\",\"count\":0,\"description\":\"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr006-no-extracteesystem-in-resolver\",\"kind\":\"call\",\"count\":0,\"description\":\"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\\n\",\"adr\":\"ADR-006\",\"severity\":\"medium\"},{\"ruleId\":\"adr006-no-extracteesystem-in-resolver\",\"kind\":\"symbol_name\",\"count\":0,\"description\":\"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\\n\",\"adr\":\"ADR-006\",\"severity\":\"medium\"},{\"ruleId\":\"general-no-console-in-production\",\"kind\":\"call\",\"count\":0,\"description\":\"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\\n\",\"adr\":\"structured-logging\",\"severity\":\"medium\"}],\"row\":3,\"column\":1},{\"index\":4,\"name\":\"packages/@arcviz\",\"fileCount\":0,\"ruleViolationCount\":0,\"elements\":[{\"name\":\"packages/@arcviz/react/src/diagram/GraphViewDispatch*\",\"kind\":\"component\",\"layerName\":\"packages/@arcviz\",\"ruleId\":\"adr013-no-mermaid-import-in-graph-dispatch\"},{\"name\":\"**/MermaidDiagram*\",\"kind\":\"symbol\",\"layerName\":\"packages/@arcviz\",\"ruleId\":\"adr013-no-mermaid-import-in-graph-dispatch\"},{\"name\":\"**/mermaid*\",\"kind\":\"symbol\",\"layerName\":\"packages/@arcviz\",\"ruleId\":\"adr013-no-mermaid-import-in-graph-dispatch\"},{\"name\":\"packages/@arcviz/react/src/codeblock/**\",\"kind\":\"component\",\"layerName\":\"packages/@arcviz\",\"ruleId\":\"adr013-no-mermaid-render-in-codeblock\"},{\"name\":\"mermaid.render|mermaidAPI.render\",\"kind\":\"symbol\",\"layerName\":\"packages/@arcviz\",\"ruleId\":\"adr013-no-mermaid-render-in-codeblock\"},{\"name\":\"packages/@arcviz/react/src/diagram/**\",\"kind\":\"component\",\"layerName\":\"packages/@arcviz\",\"ruleId\":\"adr013-no-mermaid-render-in-codeblock\"}],\"policies\":[{\"ruleId\":\"adr013-no-mermaid-import-in-graph-dispatch\",\"kind\":\"import_pattern\",\"count\":0,\"description\":\"GraphViewDispatch must never import MermaidDiagram — graph-type diagrams are rendered exclusively by ReactFlow+ELK (ADR-013 §2.1).\\n\",\"adr\":\"ADR-013\",\"severity\":\"high\"},{\"ruleId\":\"adr013-no-mermaid-render-in-codeblock\",\"kind\":\"call\",\"count\":0,\"description\":\"The CodeBlock registry must not call mermaid.render() — Mermaid is an input format, not a renderer. Diagram content is parsed into Entity+ Relation arrays and rendered by paradigm-specific components (ADR-013 §2.1).\\n\",\"adr\":\"ADR-013\",\"severity\":\"medium\"}],\"row\":2,\"column\":0},{\"index\":5,\"name\":\"apps/arcdata-api\",\"fileCount\":0,\"ruleViolationCount\":0,\"elements\":[{\"name\":\"apps/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdata-api\",\"ruleId\":\"adr003-no-extracteesystem\"},{\"name\":\"extractEESystem\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdata-api\",\"ruleId\":\"adr003-no-extracteesystem\"},{\"name\":\"apps/arcdata-api/src/workers/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdata-api\",\"ruleId\":\"adr006-no-extracteesystem-in-resolver\"},{\"name\":\"extractEESystem|extractEESystemFromPath\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdata-api\",\"ruleId\":\"adr006-no-extracteesystem-in-resolver\"},{\"name\":\"apps/arcdata-api/src/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdata-api\",\"ruleId\":\"general-no-console-in-production\"},{\"name\":\"console.log|console.warn|console.error|console.info|console.debug\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdata-api\",\"ruleId\":\"general-no-console-in-production\"}],\"policies\":[{\"ruleId\":\"adr003-no-extracteesystem\",\"kind\":\"call\",\"count\":0,\"description\":\"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr003-no-extracteesystem\",\"kind\":\"symbol_name\",\"count\":0,\"description\":\"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr006-no-extracteesystem-in-resolver\",\"kind\":\"call\",\"count\":0,\"description\":\"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\\n\",\"adr\":\"ADR-006\",\"severity\":\"medium\"},{\"ruleId\":\"adr006-no-extracteesystem-in-resolver\",\"kind\":\"symbol_name\",\"count\":0,\"description\":\"The resolved-entity-worker should not contain extractEESystem() — EESystem extraction belongs in BoardnetEnrichmentTransformer at load time (ADR-006 §2.2, Stage ②), not at query time.\\n\",\"adr\":\"ADR-006\",\"severity\":\"medium\"},{\"ruleId\":\"general-no-console-in-production\",\"kind\":\"call\",\"count\":0,\"description\":\"Production code must use createLogger() from @arccraft/engine for structured logging. console.log/warn/error bypass log levels, context, and output formatting.\\n\",\"adr\":\"structured-logging\",\"severity\":\"medium\"}],\"row\":2,\"column\":1},{\"index\":6,\"name\":\"apps/arcdocs-explorer\",\"fileCount\":0,\"ruleViolationCount\":0,\"elements\":[{\"name\":\"apps/arcdocs-explorer/src/components/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-source-path-in-ui\"},{\"name\":\"**.source.path\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-source-path-in-ui\"},{\"name\":\"apps/arcdocs-explorer/src/services/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-source-path-in-services\"},{\"name\":\"apps/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-extracteesystem\"},{\"name\":\"extractEESystem\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-extracteesystem\"},{\"name\":\"apps/arcdocs-explorer/src/components/explorer/views/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-regex-on-source-path\"},{\"name\":\"match|exec\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-regex-on-source-path\"},{\"name\":\"refToFqn|fqnToName|refFqn|fqnPackage|lastSegment\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-ref-resolution-in-views\"},{\"name\":\"**.$ref\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-ref-property-in-views\"},{\"name\":\"entityByFqn|entityById\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-entitybyfqn-in-views\"},{\"name\":\"split\",\"kind\":\"symbol\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr003-no-fqn-split-in-views\"},{\"name\":\"apps/arcdocs-explorer/**\",\"kind\":\"component\",\"layerName\":\"apps/arcdocs-explorer\",\"ruleId\":\"adr006-no-direct-resolver-import\"}],\"policies\":[{\"ruleId\":\"adr003-no-source-path-in-ui\",\"kind\":\"property_access\",\"count\":0,\"description\":\"UI components must not access entity.source.path — source metadata belongs in the adapter/transformer layer (ADR-003 §2.1). Use entity.properties or _resolved data instead.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr003-no-source-path-in-services\",\"kind\":\"property_access\",\"count\":0,\"description\":\"Server-side services (docsLoader, engine.server) must not parse entity.source.path for display/business logic. Path metadata should be extracted at adapter/transformer time (ADR-003 §2.1).\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr003-no-extracteesystem\",\"kind\":\"call\",\"count\":0,\"description\":\"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr003-no-extracteesystem\",\"kind\":\"symbol_name\",\"count\":0,\"description\":\"extractEESystem() regex-parses EESystem from directory paths — this violates ADR-003's layering. EESystem must come from entity.properties set by BoardnetEnrichmentTransformer at load time.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr003-no-regex-on-source-path\",\"kind\":\"call\",\"count\":0,\"description\":\"Regex parsing of source.path directory names belongs in adapters/ transformers. Calling match()/exec() with source.path context is a semantic violation (ADR-003 §2.1).\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\"},{\"ruleId\":\"adr003-no-ref-resolution-in-views\",\"kind\":\"call\",\"count\":0,\"description\":\"$ref FQN resolution helpers (refToFqn, fqnToName, refFqn, fqnPackage, lastSegment) belong in the resolver/transformer layer, not in UI view components (ADR-003 §2.1).\\n\",\"adr\":\"ADR-003\",\"severity\":\"medium\"},{\"ruleId\":\"adr003-no-ref-resolution-in-views\",\"kind\":\"symbol_name\",\"count\":0,\"description\":\"$ref FQN resolution helpers (refToFqn, fqnToName, refFqn, fqnPackage, lastSegment) belong in the resolver/transformer layer, not in UI view components (ADR-003 §2.1).\\n\",\"adr\":\"ADR-003\",\"severity\":\"medium\"},{\"ruleId\":\"adr003-no-ref-property-in-views\",\"kind\":\"property_access\",\"count\":0,\"description\":\"Views must not access entity.$ref or relation.$ref directly — $ref resolution is handled at Stage ③ (ReferenceResolution). After loading, all references should be proper Relation objects.\\n\",\"adr\":\"ADR-003\",\"severity\":\"medium\"},{\"ruleId\":\"adr003-no-entitybyfqn-in-views\",\"kind\":\"symbol_name\",\"count\":0,\"description\":\"Building entityByFqn/entityById lookup maps in view components duplicates resolver logic and forces O(n) iteration per render. Use _resolved.nameMap or server-side FQN index (ADR-003 §2.1).\\n\",\"adr\":\"ADR-003\",\"severity\":\"medium\"},{\"ruleId\":\"adr003-no-fqn-split-in-views\",\"kind\":\"call\",\"count\":0,\"description\":\"Manual FQN string splitting (fqn.split('.'), id.split('::')) in views duplicates logic that should live in the resolver. Use entity.name or properties.resolvedName set at transformer time.\\n\",\"adr\":\"ADR-003\",\"severity\":\"low\"}],\"row\":1}],\"edges\":[{\"fromLayerIndex\":1,\"toLayerIndex\":0,\"type\":\"allowed\",\"label\":\"allowed (derived)\"},{\"fromLayerIndex\":2,\"toLayerIndex\":1,\"type\":\"allowed\",\"label\":\"allowed (derived)\"},{\"fromLayerIndex\":3,\"toLayerIndex\":2,\"type\":\"allowed\",\"label\":\"allowed (derived)\"},{\"fromLayerIndex\":4,\"toLayerIndex\":3,\"type\":\"allowed\",\"label\":\"allowed (derived)\"},{\"fromLayerIndex\":5,\"toLayerIndex\":4,\"type\":\"allowed\",\"label\":\"allowed (derived)\"},{\"fromLayerIndex\":6,\"toLayerIndex\":5,\"type\":\"allowed\",\"label\":\"allowed (derived)\"},{\"fromLayerIndex\":2,\"toLayerIndex\":0,\"type\":\"forbidden\",\"flowKind\":\"hop\",\"ruleId\":\"adr003-no-direct-io-in-adapters\",\"description\":\"Adapters must use SourceProvider (listFiles/readFile) for I/O, never import fs or path directly. This ensures adapters work with any provider (filesystem, git, HTTP, S3) — ADR-003 §2.1, ADR-010 §1.5.\\n\",\"adr\":\"ADR-003\",\"severity\":\"high\",\"count\":0,\"label\":\"import_pattern (adr003-no-direct-io-in-adapters, 0)\",\"fromElementName\":\"packages/@arccraft/adapters/src/**\",\"toElementName\":\"node:fs*\"},{\"fromLayerIndex\":6,\"toLayerIndex\":5,\"type\":\"forbidden\",\"flowKind\":\"hop\",\"ruleId\":\"adr006-no-direct-resolver-import\",\"description\":\"UI/services must not import directly from resolved-entity-worker or pipeline internals. Use the API route or ViewRegistry (ADR-006 §16).\\n\",\"adr\":\"ADR-006\",\"severity\":\"high\",\"count\":0,\"label\":\"import_pattern (adr006-no-direct-resolver-import, 0)\",\"fromElementName\":\"apps/arcdocs-explorer/**\",\"toElementName\":\"**/workers/resolved-entity-worker*\"},{\"fromLayerIndex\":1,\"toLayerIndex\":2,\"type\":\"allowed\",\"flowKind\":\"data\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"fromElementName\":\"SourceProvider\",\"toElementName\":\"AdapterParser\",\"label\":\"data flow (adr003-provider-adapter-transformer-flow)\"},{\"fromLayerIndex\":2,\"toLayerIndex\":2,\"type\":\"allowed\",\"flowKind\":\"control\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"fromElementName\":\"AdapterParser\",\"toElementName\":\"PipelineScheduler\",\"label\":\"control flow (adr003-provider-adapter-transformer-flow)\"},{\"fromLayerIndex\":2,\"toLayerIndex\":3,\"type\":\"allowed\",\"flowKind\":\"control\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"fromElementName\":\"PipelineScheduler\",\"toElementName\":\"PipelineWorkerPlugin\",\"label\":\"control flow (adr003-provider-adapter-transformer-flow)\"},{\"fromLayerIndex\":3,\"toLayerIndex\":3,\"type\":\"allowed\",\"flowKind\":\"data\",\"ruleId\":\"adr003-provider-adapter-transformer-flow\",\"fromElementName\":\"PipelineWorkerPlugin\",\"toElementName\":\"TransformerStage\",\"label\":\"data flow (adr003-provider-adapter-transformer-flow)\"}],\"rules\":[],\"violations\":[],\"cariOverlay\":{\"hotspot\":{},\"hubs\":{},\"communities\":{},\"actualImports\":[]},\"layerCoverage\":[{\"layerIndex\":0,\"layerName\":\"node\",\"fileCount\":0,\"coveragePercent\":0,\"rulesGoverning\":[],\"hotspotFiles\":[]},{\"layerIndex\":1,\"layerName\":\"packages/@arccraft/providers\",\"fileCount\":0,\"coveragePercent\":0,\"rulesGoverning\":[\"adr003-provider-adapter-transformer-flow\"],\"hotspotFiles\":[]},{\"layerIndex\":2,\"layerName\":\"packages/@arccraft\",\"fileCount\":0,\"coveragePercent\":0,\"rulesGoverning\":[\"adr003-provider-adapter-transformer-flow\"],\"hotspotFiles\":[]},{\"layerIndex\":3,\"layerName\":\"packages/@arccraft/pipeline-workers\",\"fileCount\":0,\"coveragePercent\":0,\"rulesGoverning\":[\"adr003-provider-adapter-transformer-flow\"],\"hotspotFiles\":[]},{\"layerIndex\":4,\"layerName\":\"packages/@arcviz\",\"fileCount\":0,\"coveragePercent\":0,\"rulesGoverning\":[],\"hotspotFiles\":[]},{\"layerIndex\":5,\"layerName\":\"apps/arcdata-api\",\"fileCount\":0,\"coveragePercent\":0,\"rulesGoverning\":[],\"hotspotFiles\":[]},{\"layerIndex\":6,\"layerName\":\"apps/arcdocs-explorer\",\"fileCount\":0,\"coveragePercent\":0,\"rulesGoverning\":[],\"hotspotFiles\":[]}],\"options\":{\"showRuleElements\":true}};\nfunction clientScript() {\n    const data = DATA;\n    const svg = document.getElementById(\"viz\");\n    const rulesList = document.getElementById(\"rules-list\");\n    const stats = document.getElementById(\"stats\");\n    // ── Tooltip (chip hover) ──────────────────────────────────────────────────\n    const tooltip = document.createElement(\"div\");\n    tooltip.id = \"iw-tooltip\";\n    tooltip.style.cssText =\n        \"position:fixed;pointer-events:none;z-index:9999;display:none;\" +\n            \"background:#1e2533;color:#e2e8f0;border-radius:8px;padding:8px 12px;\" +\n            \"font-size:11px;max-width:340px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,0.35);\" +\n            \"border:1px solid #334155;white-space:pre-wrap;\";\n    document.body.appendChild(tooltip);\n    function showTooltip(ev, html) {\n        tooltip.innerHTML = html;\n        tooltip.style.display = \"block\";\n        positionTooltip(ev);\n    }\n    function positionTooltip(ev) {\n        const x = ev.clientX + 14, y = ev.clientY + 14;\n        const vw = globalThis.window?.innerWidth ?? 1920;\n        const vh = globalThis.window?.innerHeight ?? 1080;\n        tooltip.style.left = (x + tooltip.offsetWidth > vw ? vw - tooltip.offsetWidth - 8 : x) + \"px\";\n        tooltip.style.top = (y + tooltip.offsetHeight > vh ? y - tooltip.offsetHeight - 20 : y) + \"px\";\n    }\n    function hideTooltip() { tooltip.style.display = \"none\"; }\n    // ── Edge info panel (E) — fixed card, populated on edge hover ────────────\n    const edgePanel = document.createElement(\"div\");\n    edgePanel.id = \"iw-edge-panel\";\n    edgePanel.style.cssText =\n        \"position:fixed;bottom:16px;left:16px;z-index:9998;width:290px;\" +\n            \"background:#fff;border:1px solid #d1d5db;border-radius:10px;\" +\n            \"padding:10px 14px;font-size:11px;line-height:1.5;\" +\n            \"box-shadow:0 4px 20px rgba(0,0,0,0.10);pointer-events:none;opacity:0.7;\" +\n            \"transition:opacity 0.12s;\";\n    edgePanel.innerHTML = \"<span style='color:#9ca3af;font-style:italic'>Hover an edge\\u2026<\/span>\";\n    document.body.appendChild(edgePanel);\n    function showEdgePanel(edge) {\n        const isAllow = edge.type === \"allowed\";\n        const bg = isAllow ? \"#dcfce7\" : \"#fee2e2\", fg = isAllow ? \"#166534\" : \"#991b1b\";\n        let h = \"<div style='font-weight:700;font-size:12px;margin-bottom:3px'>\" + (edge.ruleId ?? \"Edge\") +\n            \" &nbsp;<span style='display:inline-block;padding:1px 7px;border-radius:9px;font-size:9px;\" +\n            \"font-weight:700;background:\" + bg + \";color:\" + fg + \"'>\" + edge.type.toUpperCase() + \"<\/span><\/div>\";\n        if (edge.severity)\n            h += \"<div style='color:#6b7280;font-size:10px'>Severity: <b>\" + edge.severity.toUpperCase() + \"<\/b><\/div>\";\n        if (edge.adr)\n            h += \"<div style='color:#6b7280;font-size:10px'>ADR: \" + edge.adr + \"<\/div>\";\n        h += \"<div style='margin-top:4px;color:#374151'>\" + edge.label + \"<\/div>\";\n        if (edge.count != null)\n            h += \"<div style='color:#6b7280;font-size:10px'>Violations: <b>\" + edge.count + \"<\/b><\/div>\";\n        if (edge.fromElementName)\n            h += \"<div style='color:#92400e;font-size:10px'>\\u21b3 Scope: \" + edge.fromElementName + \"<\/div>\";\n        if (edge.toElementName)\n            h += \"<div style='color:#991b1b;font-size:10px'>\\u21b3 Target: \" + edge.toElementName + \"<\/div>\";\n        if (edge.description)\n            h += \"<div style='margin-top:6px;color:#4b5563;border-top:1px solid #e5e7eb;\" +\n                \"padding-top:5px;font-size:10px'>\" + edge.description.trim() + \"<\/div>\";\n        edgePanel.innerHTML = h;\n        edgePanel.style.opacity = \"1\";\n    }\n    function clearEdgePanel() {\n        edgePanel.innerHTML = \"<span style='color:#9ca3af;font-style:italic'>Hover an edge\\u2026<\/span>\";\n        edgePanel.style.opacity = \"0.7\";\n        edgePanel.style.width = \"290px\";\n        edgePanel.style.maxWidth = \"\";\n    }\n    // ── Rule-element edge toggle ─────────────────────────────────────────────\n    let showAllRuleElementEdges = false;\n    let refreshRuleElementOverlay = null;\n    const edgeToggle = document.createElement(\"label\");\n    edgeToggle.style.cssText =\n        \"position:fixed;bottom:122px;left:16px;z-index:9998;display:flex;align-items:center;gap:8px;\" +\n            \"background:#fff;border:1px solid #d1d5db;border-radius:10px;padding:8px 10px;\" +\n            \"font-size:11px;color:#374151;box-shadow:0 4px 20px rgba(0,0,0,0.10);\";\n    edgeToggle.innerHTML =\n        \"<input id='iw-rule-edge-toggle' type='checkbox' style='margin:0'/>\" +\n            \"<span>Show all rule-element edges<\/span>\";\n    document.body.appendChild(edgeToggle);\n    const edgeToggleInput = edgeToggle.querySelector(\"#iw-rule-edge-toggle\");\n    if (edgeToggleInput) {\n        edgeToggleInput.addEventListener(\"change\", () => {\n            showAllRuleElementEdges = Boolean(edgeToggleInput.checked);\n            refreshRuleElementOverlay?.();\n        });\n    }\n    // ── Pan/zoom ──────────────────────────────────────────────────────────────\n    let vpX = 0, vpY = 0, vpScale = 1;\n    let panActive = false, panStartX = 0, panStartY = 0;\n    let panGroup = null;\n    function applyTransform() {\n        if (panGroup)\n            panGroup.setAttribute(\"transform\", \"translate(\" + vpX + \",\" + vpY + \") scale(\" + vpScale + \")\");\n    }\n    svg.addEventListener(\"wheel\", (ev) => {\n        ev.preventDefault();\n        const delta = ev.deltaY < 0 ? 1.1 : 0.909;\n        const rect = svg.getBoundingClientRect();\n        const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;\n        vpX = mx - (mx - vpX) * delta;\n        vpY = my - (my - vpY) * delta;\n        vpScale = Math.min(4, Math.max(0.15, vpScale * delta));\n        applyTransform();\n    }, { passive: false });\n    svg.addEventListener(\"mousedown\", (ev) => {\n        if (ev.button !== 0)\n            return;\n        panActive = true;\n        panStartX = ev.clientX - vpX;\n        panStartY = ev.clientY - vpY;\n        svg.style.cursor = \"grabbing\";\n        hideTooltip();\n    });\n    document.addEventListener(\"mousemove\", (ev) => {\n        if (!panActive)\n            return;\n        vpX = ev.clientX - panStartX;\n        vpY = ev.clientY - panStartY;\n        applyTransform();\n    });\n    document.addEventListener(\"mouseup\", () => { panActive = false; svg.style.cursor = \"\"; });\n    // ── Collapse state (D) — survives build() calls ───────────────────────────\n    const collapsedSections = new Map();\n    // ── Glob-pattern guard ─────────────────────────────────────────────────────\n    // File-scope selectors (e.g. \"packages/@arccraft/adapters/src/**\") are rule\n    // implementation details, not named architectural concepts. Filter them out\n    // of all chip-render paths so only human-readable names remain visible.\n    function isGlobPattern(name) {\n        return name.includes(\"*\") || name.includes(\"/\");\n    }\n    const forbiddenFromByLayer = new Map();\n    const forbiddenToByLayer = new Map();\n    data.edges.forEach((edge) => {\n        if (edge.type !== \"forbidden\" || edge.fromLayerIndex === edge.toLayerIndex)\n            return;\n        const edgeKind = (edge.label ?? \"\").split(\" \")[0] || \"import_pattern\";\n        if (edge.fromElementName && !isGlobPattern(edge.fromElementName)) {\n            const arr = forbiddenFromByLayer.get(edge.fromLayerIndex) ?? [];\n            if (!arr.some((a) => a.name === edge.fromElementName))\n                arr.push({ name: edge.fromElementName, kind: edgeKind });\n            forbiddenFromByLayer.set(edge.fromLayerIndex, arr);\n        }\n        if (edge.toElementName && !isGlobPattern(edge.toElementName)) {\n            const arr = forbiddenToByLayer.get(edge.toLayerIndex) ?? [];\n            if (!arr.some((a) => a.name === edge.toElementName))\n                arr.push({ name: edge.toElementName, kind: edgeKind });\n            forbiddenToByLayer.set(edge.toLayerIndex, arr);\n        }\n    });\n    // ── SVG element factory ───────────────────────────────────────────────────\n    function mk(tag, attrs = {}) {\n        const el = document.createElementNS(\"http://www.w3.org/2000/svg\", tag);\n        for (const [k, v] of Object.entries(attrs))\n            el.setAttribute(k, String(v));\n        return el;\n    }\n    // ── Fixed visual constants ────────────────────────────────────────────────\n    const BAND_PALETTE = [\n        { bg: \"#eff6ff\", slab: \"#dbeafe\", border: \"#93c5fd\", text: \"#1e40af\" },\n        { bg: \"#f0fdf4\", slab: \"#dcfce7\", border: \"#86efac\", text: \"#166534\" },\n        { bg: \"#fff7ed\", slab: \"#fed7aa\", border: \"#fdba74\", text: \"#9a3412\" },\n        { bg: \"#fdf4ff\", slab: \"#f3e8ff\", border: \"#d8b4fe\", text: \"#6b21a8\" },\n        { bg: \"#fef2f2\", slab: \"#fecaca\", border: \"#fca5a5\", text: \"#991b1b\" },\n        { bg: \"#ecfdf5\", slab: \"#a7f3d0\", border: \"#6ee7b7\", text: \"#065f46\" },\n        { bg: \"#fffbeb\", slab: \"#fde68a\", border: \"#fcd34d\", text: \"#92400e\" },\n    ];\n    const LABEL_W = 124;\n    const CHIP_H = 26;\n    const CHIP_GAP = 6;\n    const CHIP_PADX = 10;\n    const SEC_H = 18;\n    const rowGap = 28;\n    const colGap = 24;\n    const GCW = 300;\n    const LANE_W = 16;\n    const fallbackTopDown = [...data.layers].sort((a, b) => b.index - a.index);\n    const fallbackRowByLI = new Map();\n    fallbackTopDown.forEach((l, i) => fallbackRowByLI.set(l.index, i));\n    const hasGeometry = data.layers.some((l) => typeof l.row === \"number\" || typeof l.column === \"number\" ||\n        typeof l.colSpan === \"number\" || typeof l.rowSpan === \"number\" ||\n        l.side === \"left\" || l.side === \"right\");\n    // ── Content height (respects D collapse state) ────────────────────────────\n    function contentHeightFor(layer, bw) {\n        const pItems = Array.isArray(layer.policies) ? layer.policies : [];\n        const toA = (forbiddenToByLayer.get(layer.index) ?? []);\n        const fromA = (forbiddenFromByLayer.get(layer.index) ?? []);\n        const cw = bw - LABEL_W - CHIP_PADX * 2;\n        const pr = Math.max(1, Math.floor((cw + CHIP_GAP) / (160 + CHIP_GAP)));\n        const polC = collapsedSections.get(String(layer.index) + \":policies\") ?? false;\n        const ancC = collapsedSections.get(String(layer.index) + \":anchors\") ?? false;\n        let h = 14;\n        if (pItems.length > 0) {\n            h += SEC_H + 4;\n            if (!polC)\n                h += Math.ceil(Math.min(pItems.length, 9) / pr) * (CHIP_H + 4) + 4;\n        }\n        if (toA.length > 0 || fromA.length > 0) {\n            h += SEC_H + 4;\n            if (!ancC) {\n                if (toA.length > 0)\n                    h += Math.ceil(Math.min(toA.length, 4) / pr) * (CHIP_H + 4);\n                if (fromA.length > 0)\n                    h += Math.ceil(Math.min(fromA.length, 2) / pr) * (CHIP_H + 4) + 4;\n            }\n        }\n        if (data.options?.showRuleElements && Array.isArray(layer.elements) && layer.elements.length > 0) {\n            const namedEls = layer.elements.filter((e) => !isGlobPattern(String(e.name)));\n            if (namedEls.length > 0) {\n                // One row per unique ruleId group + section header\n                const uniqueRules = new Set(namedEls.map((e) => String(e.ruleId ?? \"\")));\n                h += SEC_H + 4 + uniqueRules.size * (CHIP_H + 10) + 4;\n            }\n        }\n        return Math.max(56, h);\n    }\n    // Classify edge as same-row (horizontal gap) vs cross-row (gutter) using\n    // layer.row metadata so we can pre-count gutter edges before layout.\n    function isSameRow(edge) {\n        const fl = data.layers.find((l) => l.index === edge.fromLayerIndex);\n        const tl = data.layers.find((l) => l.index === edge.toLayerIndex);\n        if (!fl || !tl)\n            return false;\n        const fr = typeof fl.row === \"number\" ? fl.row : (fallbackRowByLI.get(fl.index) ?? 0);\n        const tr = typeof tl.row === \"number\" ? tl.row : (fallbackRowByLI.get(tl.index) ?? 0);\n        return fr === tr;\n    }\n    // ── Main build function (re-runs on section toggle) ───────────────────────\n    function build() {\n        const preferredWidth = Math.max(1200, svg.clientWidth || 1200);\n        let placements = [];\n        if (hasGeometry) {\n            const raw = data.layers.map((layer) => ({\n                layer,\n                row: typeof layer.row === \"number\" ? layer.row : (fallbackRowByLI.get(layer.index) ?? 0),\n                column: typeof layer.column === \"number\" ? layer.column : 0,\n                colSpan: Math.max(1, layer.colSpan ?? 1),\n                rowSpan: Math.max(1, layer.rowSpan ?? 1),\n                side: layer.side,\n            }));\n            const regular = raw.filter((p) => p.side !== \"left\" && p.side !== \"right\");\n            const minRC = regular.length > 0 ? Math.min(...regular.map((p) => p.column)) : Math.min(...raw.map((p) => p.column));\n            const maxRC = regular.length > 0 ? Math.max(...regular.map((p) => p.column + p.colSpan - 1)) : Math.max(...raw.map((p) => p.column + p.colSpan - 1));\n            const totalCols = maxRC - minRC + 1;\n            placements = raw.map((p) => {\n                if (p.side === \"left\")\n                    return { ...p, column: minRC - 1 };\n                if (p.side === \"right\")\n                    return { ...p, column: maxRC + 1 };\n                if (typeof p.layer.column !== \"number\" && p.colSpan === 1 && totalCols > 1) {\n                    const rm = raw.filter((q) => q !== p && q.side !== \"left\" && q.side !== \"right\" && q.row === p.row);\n                    if (rm.length === 0)\n                        return { ...p, colSpan: totalCols };\n                }\n                return p;\n            });\n            const minCol = Math.min(...placements.map((p) => p.column));\n            const minRow = Math.min(...placements.map((p) => p.row));\n            placements = placements.map((p) => ({ ...p, row: p.row - minRow, column: p.column - minCol }));\n        }\n        else {\n            placements = fallbackTopDown.map((layer, idx) => ({ layer, row: idx, column: 0, colSpan: 1, rowSpan: 1 }));\n        }\n        // Pre-count cross-row edges to size gutters\n        const nAllowedCross = data.edges.filter((e) => e.type === \"allowed\" && !isSameRow(e)).length;\n        const nForbiddenCross = data.edges.filter((e) => e.type === \"forbidden\" && !isSameRow(e)).length;\n        // Left gutter holds allowed edges; right gutter holds forbidden edges\n        const lGutter = Math.max(nAllowedCross, 1) * LANE_W + 24;\n        const bandBaseLeft = Math.max(100, lGutter);\n        // Band widths\n        const placementBandW = new Map();\n        placements.forEach((p) => {\n            placementBandW.set(p.layer.index, hasGeometry\n                ? p.colSpan * GCW + Math.max(0, p.colSpan - 1) * colGap\n                : Math.min(940, preferredWidth - bandBaseLeft - 60));\n        });\n        // Band heights (dynamic, respects collapse)\n        const layerBandH = new Map();\n        placements.forEach((p) => {\n            layerBandH.set(p.layer.index, contentHeightFor(p.layer, placementBandW.get(p.layer.index) ?? GCW));\n        });\n        // Per-row max heights\n        const rowHMap = new Map();\n        placements.forEach((p) => {\n            const lh = layerBandH.get(p.layer.index) ?? 56;\n            for (let r = p.row; r < p.row + p.rowSpan; r++)\n                rowHMap.set(r, Math.max(rowHMap.get(r) ?? 0, p.rowSpan === 1 ? lh : 56));\n        });\n        // Row Y positions\n        const rowYs = new Map();\n        let yc = 30;\n        const nRows = rowHMap.size > 0 ? Math.max(...rowHMap.keys()) + 1 : 1;\n        for (let r = 0; r < nRows; r++) {\n            rowYs.set(r, yc);\n            yc += (rowHMap.get(r) ?? 56) + rowGap;\n        }\n        const totalHeight = yc - rowGap + 40;\n        // Eager layer positions (needed for port stagger before band rendering)\n        const layerPositions = new Map();\n        placements.forEach((p) => {\n            const bw = placementBandW.get(p.layer.index) ?? GCW;\n            const lx = hasGeometry ? bandBaseLeft + p.column * (GCW + colGap)\n                : Math.floor((preferredWidth - bw) / 2);\n            const ly = rowYs.get(p.row) ?? yc;\n            let bh = 0;\n            for (let r = p.row; r < p.row + p.rowSpan; r++)\n                bh += rowHMap.get(r) ?? 56;\n            bh += Math.max(0, p.rowSpan - 1) * rowGap;\n            layerPositions.set(p.layer.index, { x: lx, y: ly, w: bw, h: bh });\n        });\n        // ── Port stagger (C) ─────────────────────────────────────────────────────\n        // Sort cross-row edges for deterministic lane/slot order (by source row then target row)\n        function sortCross(arr) {\n            return arr.slice().sort((a, b) => {\n                const sa = layerPositions.get(a.fromLayerIndex), sb = layerPositions.get(b.fromLayerIndex);\n                if (!sa || !sb || sa.y !== sb.y)\n                    return (sa?.y ?? 0) - (sb?.y ?? 0);\n                return (layerPositions.get(a.toLayerIndex)?.y ?? 0) - (layerPositions.get(b.toLayerIndex)?.y ?? 0);\n            });\n        }\n        const sortedAllowed = sortCross(data.edges.filter((e) => e.type === \"allowed\" && !isSameRow(e)));\n        const sortedForbidden = sortCross(data.edges.filter((e) => e.type === \"forbidden\" && !isSameRow(e)));\n        // Per-layer outgoing/incoming slot lists for port Y stagger\n        const outA = new Map(), incA = new Map();\n        const outF = new Map(), incF = new Map();\n        sortedAllowed.forEach((e, i) => {\n            const o = outA.get(e.fromLayerIndex) ?? [];\n            o.push(i);\n            outA.set(e.fromLayerIndex, o);\n            const t = incA.get(e.toLayerIndex) ?? [];\n            t.push(i);\n            incA.set(e.toLayerIndex, t);\n        });\n        sortedForbidden.forEach((e, i) => {\n            const o = outF.get(e.fromLayerIndex) ?? [];\n            o.push(i);\n            outF.set(e.fromLayerIndex, o);\n            const t = incF.get(e.toLayerIndex) ?? [];\n            t.push(i);\n            incF.set(e.toLayerIndex, t);\n        });\n        const PORT_ZONE = 0.18;\n        function portY(layerIdx, laneIdx, isOut, isForbidden) {\n            const pos = layerPositions.get(layerIdx);\n            if (!pos)\n                return 0;\n            const map = isForbidden ? (isOut ? outF : incF) : (isOut ? outA : incA);\n            const arr = map.get(layerIdx) ?? [];\n            const i = arr.indexOf(laneIdx), n = arr.length;\n            const zoneTop = pos.y + pos.h * PORT_ZONE, zoneH = pos.h * (1 - 2 * PORT_ZONE);\n            return n <= 1 ? pos.y + pos.h / 2 : zoneTop + (i / (n - 1)) * zoneH;\n        }\n        // Gutter X positions\n        const maxBandRight = Math.max(...[...layerPositions.values()].map((v) => v.x + v.w), 0);\n        const LGUTTER_X0 = 4;\n        const RGUTTER_X0 = maxBandRight + 12;\n        const svgWidth = Math.max(preferredWidth, RGUTTER_X0 + Math.max(nForbiddenCross, 1) * LANE_W + 40);\n        // ── SVG setup ──────────────────────────────────────────────────────────\n        svg.setAttribute(\"viewBox\", \"0 0 \" + svgWidth + \" \" + totalHeight);\n        svg.setAttribute(\"style\", \"cursor:grab;\");\n        svg.innerHTML = \"\";\n        panGroup = document.createElementNS(\"http://www.w3.org/2000/svg\", \"g\");\n        panGroup.setAttribute(\"id\", \"pan-group\");\n        svg.appendChild(panGroup);\n        const defs = mk(\"defs\");\n        const mA = mk(\"marker\", { id: \"arrow-allowed\", viewBox: \"0 0 10 10\", refX: \"8\", refY: \"5\", markerWidth: \"7\", markerHeight: \"7\", orient: \"auto-start-reverse\" });\n        mA.appendChild(mk(\"path\", { d: \"M 0 0 L 10 5 L 0 10 z\", fill: \"#1f8f4e\" }));\n        const mF = mk(\"marker\", { id: \"arrow-forbidden\", viewBox: \"0 0 10 10\", refX: \"8\", refY: \"5\", markerWidth: \"7\", markerHeight: \"7\", orient: \"auto-start-reverse\" });\n        mF.appendChild(mk(\"path\", { d: \"M 0 0 L 10 5 L 0 10 z\", fill: \"#c53030\" }));\n        defs.appendChild(mA);\n        defs.appendChild(mF);\n        panGroup.appendChild(defs);\n        // Faint gutter rail lines\n        sortedAllowed.forEach((_, i) => {\n            const lx = LGUTTER_X0 + (sortedAllowed.length - 1 - i) * LANE_W + LANE_W / 2;\n            panGroup.appendChild(mk(\"line\", { x1: lx, y1: 20, x2: lx, y2: totalHeight - 20, stroke: \"#1f8f4e\", \"stroke-width\": \"0.5\", opacity: \"0.12\", \"stroke-dasharray\": \"3 5\" }));\n        });\n        sortedForbidden.forEach((_, i) => {\n            const lx = RGUTTER_X0 + i * LANE_W + LANE_W / 2;\n            panGroup.appendChild(mk(\"line\", { x1: lx, y1: 20, x2: lx, y2: totalHeight - 20, stroke: \"#c53030\", \"stroke-width\": \"0.5\", opacity: \"0.12\", \"stroke-dasharray\": \"3 5\" }));\n        });\n        // Build element-edge index for hover-revealed explicit element connections.\n        // Keys are \"<layerIndex>::<elementName>\".\n        const elementEdgePairs = data.edges\n            .filter((e) => !!e.fromElementName && !!e.toElementName)\n            .map((e) => ({\n            edge: e,\n            fromKey: String(e.fromLayerIndex) + \"::\" + String(e.fromElementName),\n            toKey: String(e.toLayerIndex) + \"::\" + String(e.toElementName),\n        }));\n        // Additional rule-based connectivity: elements that share a ruleId are related.\n        const keyRuleIds = new Map();\n        const ruleMemberKeys = new Map();\n        const ruleTypeById = new Map();\n        data.layers.forEach((layer) => {\n            (layer.elements ?? []).forEach((el) => {\n                if (!el?.name || !el.ruleId)\n                    return;\n                const key = String(layer.index) + \"::\" + String(el.name);\n                const rs = keyRuleIds.get(key) ?? new Set();\n                rs.add(String(el.ruleId));\n                keyRuleIds.set(key, rs);\n                const ms = ruleMemberKeys.get(String(el.ruleId)) ?? new Set();\n                ms.add(key);\n                ruleMemberKeys.set(String(el.ruleId), ms);\n            });\n        });\n        data.edges.forEach((e) => {\n            if (!e.ruleId)\n                return;\n            const rid = String(e.ruleId);\n            const prev = ruleTypeById.get(rid);\n            if (!prev) {\n                ruleTypeById.set(rid, e.type);\n            }\n            else if (prev !== e.type) {\n                // Prefer forbidden style if mixed.\n                ruleTypeById.set(rid, \"forbidden\");\n            }\n        });\n        // Build a map of ruleId → all elements (cross-layer) for the flow panel.\n        const rulesWithFlows = new Set();\n        const flowElementsByRule = new Map();\n        data.layers.forEach((layer) => {\n            (layer.elements ?? []).forEach((el) => {\n                if (!el?.ruleId || isGlobPattern(String(el.name)))\n                    return;\n                const rid = String(el.ruleId);\n                rulesWithFlows.add(rid);\n                const arr = flowElementsByRule.get(rid) ?? [];\n                arr.push({ name: String(el.name), kind: String(el.kind), layerName: layer.name, flowSeq: el.flowSeq ?? 999, layerIndex: layer.index });\n                flowElementsByRule.set(rid, arr);\n            });\n        });\n        // ── Flow Panel renderer ───────────────────────────────────────────────────\n        function showFlowPanel(ruleId) {\n            const allEls = (flowElementsByRule.get(ruleId) ?? []).slice().sort((a, b) => a.flowSeq - b.flowSeq);\n            if (allEls.length === 0)\n                return;\n            const flowEdges = data.edges.filter((e) => e.ruleId === ruleId && e.fromElementName && e.toElementName &&\n                !isGlobPattern(String(e.fromElementName)) && !isGlobPattern(String(e.toElementName)));\n            const n = allEls.length;\n            // Layout: horizontal if ≤6, else vertical\n            const horizontal = n <= 6;\n            const NODE_W = 110, NODE_H = 32, ARROW = 30, PAD = 12;\n            const svgW = horizontal ? n * NODE_W + (n - 1) * ARROW + PAD * 2 : NODE_W + PAD * 2;\n            const svgH = horizontal ? NODE_H + 30 : n * NODE_H + (n - 1) * ARROW + PAD * 2;\n            let s = `<defs><marker id='fp-a' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='5' markerHeight='5' orient='auto-start-reverse'>`;\n            s += `<path d='M 0 0 L 10 5 L 0 10 z' fill='#0284c7'/><\/marker>`;\n            s += `<marker id='fp-af' viewBox='0 0 10 10' refX='8' refY='5' markerWidth='5' markerHeight='5' orient='auto-start-reverse'>`;\n            s += `<path d='M 0 0 L 10 5 L 0 10 z' fill='#dc2626'/><\/marker><\/defs>`;\n            allEls.forEach((el, i) => {\n                const nx = horizontal ? PAD + i * (NODE_W + ARROW) : PAD;\n                const ny = horizontal ? 0 : PAD + i * (NODE_H + ARROW);\n                const shortLayer = el.layerName.replace(/^(packages|apps)\\//, \"\");\n                s += `<rect x='${nx}' y='${ny}' width='${NODE_W}' height='${NODE_H}' rx='6' fill='#f0f9ff' stroke='#7dd3fc' stroke-width='1.5'/>`;\n                if (el.flowSeq < 999) {\n                    s += `<circle cx='${nx + 13}' cy='${ny + NODE_H / 2}' r='8' fill='#0284c7'/>`;\n                    s += `<text x='${nx + 13}' y='${ny + NODE_H / 2 + 4}' text-anchor='middle' font-size='8' font-weight='700' fill='#fff'>${el.flowSeq + 1}<\/text>`;\n                }\n                const lx = nx + (el.flowSeq < 999 ? 27 : 8);\n                const maxCh = Math.floor((NODE_W - (el.flowSeq < 999 ? 34 : 12)) / 6);\n                const dn = el.name.length > maxCh ? el.name.slice(0, maxCh - 1) + \"\\u2026\" : el.name;\n                s += `<text x='${lx}' y='${ny + NODE_H / 2 + 4}' font-size='8.5' font-weight='600' fill='#0c4a6e'>${dn}<\/text>`;\n                const layMaxCh = Math.floor(NODE_W / 6);\n                const dl = shortLayer.length > layMaxCh ? shortLayer.slice(0, layMaxCh - 1) + \"\\u2026\" : shortLayer;\n                if (horizontal) {\n                    s += `<text x='${nx + NODE_W / 2}' y='${ny + NODE_H + 12}' text-anchor='middle' font-size='7' fill='#64748b'>${dl}<\/text>`;\n                }\n                else {\n                    s += `<text x='${nx + NODE_W + 4}' y='${ny + NODE_H / 2 + 3}' font-size='7' fill='#64748b'>${dl}<\/text>`;\n                }\n                if (i < allEls.length - 1) {\n                    const edge = flowEdges.find((e) => e.fromElementName === el.name && e.toElementName === allEls[i + 1].name);\n                    const ec = edge?.type === \"forbidden\" ? \"#dc2626\" : \"#0284c7\";\n                    const da = edge?.flowKind === \"data\" ? \"2 3\" : edge?.type === \"forbidden\" ? \"4 3\" : \"0\";\n                    const mk2 = edge?.type === \"forbidden\" ? \"url(#fp-af)\" : \"url(#fp-a)\";\n                    const fk = edge?.flowKind ?? \"\";\n                    if (horizontal) {\n                        const ax = nx + NODE_W + 2, ay = NODE_H / 2;\n                        s += `<line x1='${ax}' y1='${ay}' x2='${ax + ARROW - 4}' y2='${ay}' stroke='${ec}' stroke-width='1.6' stroke-dasharray='${da}' marker-end='${mk2}'/>`;\n                        if (fk)\n                            s += `<text x='${ax + ARROW / 2}' y='${ay - 4}' text-anchor='middle' font-size='6.5' fill='${ec}'>${fk}<\/text>`;\n                    }\n                    else {\n                        const ax = NODE_W / 2 + PAD, ay = ny + NODE_H + 2;\n                        s += `<line x1='${ax}' y1='${ay}' x2='${ax}' y2='${ay + ARROW - 4}' stroke='${ec}' stroke-width='1.6' stroke-dasharray='${da}' marker-end='${mk2}'/>`;\n                        if (fk)\n                            s += `<text x='${ax + 5}' y='${ay + ARROW / 2}' font-size='6.5' fill='${ec}'>${fk}<\/text>`;\n                    }\n                }\n            });\n            const panelW = Math.min(Math.max(svgW + 28, 290), 680);\n            const svgEl = `<svg xmlns='http://www.w3.org/2000/svg' width='${svgW}' height='${svgH}' viewBox='0 0 ${svgW} ${svgH}' style='display:block;overflow:visible'>${s}<\/svg>`;\n            edgePanel.innerHTML = `<div style='font-weight:700;font-size:11px;margin-bottom:6px;color:#0c4a6e;display:flex;justify-content:space-between;align-items:center'>` +\n                `<span>&#9654; Flow: <span style='font-family:monospace'>${ruleId}<\/span><\/span>` +\n                `<span style='cursor:pointer;color:#94a3b8;font-size:14px' onclick=\"this.closest('#iw-edge-panel').dispatchEvent(new Event('iw-close'))\">\\u00d7<\/span><\/div>` +\n                `<div style='overflow-x:auto'>${svgEl}<\/div>`;\n            edgePanel.style.opacity = \"1\";\n            edgePanel.style.width = panelW + \"px\";\n            edgePanel.style.pointerEvents = \"auto\";\n            edgePanel.addEventListener(\"iw-close\", () => { clearEdgePanel(); edgePanel.style.pointerEvents = \"none\"; }, { once: true });\n        }\n        const elementHoverOverlay = mk(\"g\", { \"pointer-events\": \"none\" });\n        function clearElementHoverOverlay() {\n            while (elementHoverOverlay.firstChild)\n                elementHoverOverlay.removeChild(elementHoverOverlay.firstChild);\n        }\n        function smartEdgePath(a, b, tension = 80) {\n            const dx = b.cx - a.cx;\n            const dy = b.cy - a.cy;\n            const absDx = Math.abs(dx);\n            const absDy = Math.abs(dy);\n            // Prefer horizontal routing unless clearly more vertical\n            const horizontal = absDx >= absDy * 0.5;\n            let p1x, p1y, p2x, p2y;\n            let c1x, c1y, c2x, c2y;\n            if (horizontal) {\n                if (dx >= 0) {\n                    // A exits right, B enters left\n                    p1x = a.x + a.w;\n                    p1y = a.cy;\n                    p2x = b.x;\n                    p2y = b.cy;\n                    const t = Math.max(tension, absDx * 0.35);\n                    c1x = p1x + t;\n                    c1y = p1y;\n                    c2x = p2x - t;\n                    c2y = p2y;\n                }\n                else {\n                    // A exits left, B enters right\n                    p1x = a.x;\n                    p1y = a.cy;\n                    p2x = b.x + b.w;\n                    p2y = b.cy;\n                    const t = Math.max(tension, absDx * 0.35);\n                    c1x = p1x - t;\n                    c1y = p1y;\n                    c2x = p2x + t;\n                    c2y = p2y;\n                }\n            }\n            else {\n                if (dy >= 0) {\n                    // A exits bottom, B enters top\n                    p1x = a.cx;\n                    p1y = a.y + a.h;\n                    p2x = b.cx;\n                    p2y = b.y;\n                    const t = Math.max(tension, absDy * 0.35);\n                    c1x = p1x;\n                    c1y = p1y + t;\n                    c2x = p2x;\n                    c2y = p2y - t;\n                }\n                else {\n                    // A exits top, B enters bottom\n                    p1x = a.cx;\n                    p1y = a.y;\n                    p2x = b.cx;\n                    p2y = b.y + b.h;\n                    const t = Math.max(tension, absDy * 0.35);\n                    c1x = p1x;\n                    c1y = p1y - t;\n                    c2x = p2x;\n                    c2y = p2y + t;\n                }\n            }\n            return `M ${p1x} ${p1y} C ${c1x} ${c1y} ${c2x} ${c2y} ${p2x} ${p2y}`;\n        }\n        function drawExplicitElementEdge(p, drawn) {\n            const a = elementPositions.get(p.fromKey);\n            const b = elementPositions.get(p.toKey);\n            if (!a || !b)\n                return;\n            const dk = p.fromKey + \"->\" + p.toKey + \"::\" + (p.edge.ruleId ?? p.edge.type);\n            if (drawn.has(dk))\n                return;\n            drawn.add(dk);\n            const isAllowed = p.edge.type === \"allowed\";\n            const ec = isAllowed ? \"#15803d\" : \"#b91c1c\";\n            const da = isAllowed ? \"0\" : \"6 4\";\n            const d = smartEdgePath(a, b);\n            // Invisible wide hit area for the label\n            const kind = p.edge.flowKind ?? (isAllowed ? \"data\" : \"forbidden\");\n            const midT = 0.5;\n            // Approximate midpoint of bezier for label placement (De Casteljau t=0.5 approx)\n            const parts = d.replace(\"M \", \"\").replace(\" C \", \",\").split(\",\").map(Number);\n            const lx = parts.length >= 8 ? (parts[0] * 0.125 + parts[2] * 0.375 + parts[4] * 0.375 + parts[6] * 0.125) : (a.cx + b.cx) / 2;\n            const ly = parts.length >= 9 ? (parts[1] * 0.125 + parts[3] * 0.375 + parts[5] * 0.375 + parts[7] * 0.125) : (a.cy + b.cy) / 2;\n            elementHoverOverlay.appendChild(mk(\"path\", {\n                d,\n                fill: \"none\",\n                stroke: ec,\n                \"stroke-width\": \"2.2\",\n                \"stroke-dasharray\": da,\n                \"marker-end\": isAllowed ? \"url(#arrow-allowed)\" : \"url(#arrow-forbidden)\",\n                opacity: \"0.95\",\n            }));\n            // Pill label at bezier midpoint\n            const labelW = 66, labelH = 14;\n            const labelBg = mk(\"rect\", { x: lx - labelW / 2, y: ly - labelH / 2, width: labelW, height: labelH, rx: 7, fill: isAllowed ? \"#dcfce7\" : \"#fee2e2\", stroke: ec, \"stroke-width\": \"0.8\", opacity: \"0.92\" });\n            const labelTxt = mk(\"text\", { x: lx, y: ly + 4, \"text-anchor\": \"middle\", \"font-size\": \"8\", fill: ec, \"font-weight\": \"600\" });\n            labelTxt.textContent = kind + \" flow\";\n            elementHoverOverlay.appendChild(labelBg);\n            elementHoverOverlay.appendChild(labelTxt);\n        }\n        function drawRuleMemberEdge(keyA, keyB, ruleId, drawn) {\n            const a = elementPositions.get(keyA);\n            const b = elementPositions.get(keyB);\n            if (!a || !b)\n                return;\n            const pairKey = keyA < keyB ? keyA + \"::\" + keyB + \"::\" + ruleId : keyB + \"::\" + keyA + \"::\" + ruleId;\n            if (drawn.has(pairKey))\n                return;\n            drawn.add(pairKey);\n            const t = ruleTypeById.get(ruleId) ?? \"forbidden\";\n            const isAllowed = t === \"allowed\";\n            const ec = isAllowed ? \"#15803d\" : \"#b91c1c\";\n            const da = isAllowed ? \"4 3\" : \"6 4\";\n            const d = smartEdgePath(a, b, 60);\n            elementHoverOverlay.appendChild(mk(\"path\", {\n                d,\n                fill: \"none\",\n                stroke: ec,\n                \"stroke-width\": \"1.6\",\n                \"stroke-dasharray\": da,\n                opacity: \"0.65\",\n            }));\n        }\n        function showElementHoverOverlay(key) {\n            clearElementHoverOverlay();\n            const drawn = new Set();\n            elementEdgePairs\n                .filter((p) => p.fromKey === key || p.toKey === key)\n                .forEach((p) => drawExplicitElementEdge(p, drawn));\n            // Connect to other elements that participate in the same rule.\n            const hoveredRules = keyRuleIds.get(key);\n            if (!hoveredRules || hoveredRules.size === 0)\n                return;\n            hoveredRules.forEach((ruleId) => {\n                const members = ruleMemberKeys.get(ruleId);\n                if (!members)\n                    return;\n                members.forEach((otherKey) => {\n                    if (otherKey === key)\n                        return;\n                    drawRuleMemberEdge(key, otherKey, ruleId, drawn);\n                });\n            });\n        }\n        function showAllElementEdgesOverlay() {\n            clearElementHoverOverlay();\n            const drawn = new Set();\n            elementEdgePairs.forEach((p) => drawExplicitElementEdge(p, drawn));\n            ruleMemberKeys.forEach((members, ruleId) => {\n                const arr = [...members];\n                for (let i = 0; i < arr.length; i++) {\n                    for (let j = i + 1; j < arr.length; j++) {\n                        drawRuleMemberEdge(arr[i], arr[j], ruleId, drawn);\n                    }\n                }\n            });\n        }\n        let lastHoveredElementKey = null;\n        refreshRuleElementOverlay = () => {\n            if (showAllRuleElementEdges) {\n                showAllElementEdgesOverlay();\n            }\n            else if (lastHoveredElementKey) {\n                showElementHoverOverlay(lastHoveredElementKey);\n            }\n            else {\n                clearElementHoverOverlay();\n            }\n        };\n        refreshRuleElementOverlay();\n        // ── Render bands ────────────────────────────────────────────────────────\n        const elementPositions = new Map();\n        placements.forEach((p) => {\n            const layer = p.layer;\n            const pos = layerPositions.get(layer.index);\n            const { x, y, w: boxWidth, h } = pos;\n            const col = BAND_PALETTE[layer.index % BAND_PALETTE.length];\n            const bw = placementBandW.get(layer.index) ?? GCW;\n            const cw = bw - LABEL_W - CHIP_PADX * 2;\n            const perRow = Math.max(1, Math.floor((cw + CHIP_GAP) / (160 + CHIP_GAP)));\n            const cw1 = Math.floor((cw - CHIP_GAP * (perRow - 1)) / perRow);\n            const cx0 = x + LABEL_W + CHIP_PADX;\n            const g = mk(\"g\");\n            const policyItems = Array.isArray(layer.policies) ? layer.policies : [];\n            const fromAnchors = (forbiddenFromByLayer.get(layer.index) ?? []);\n            const toAnchors = (forbiddenToByLayer.get(layer.index) ?? []);\n            const polKey = String(layer.index) + \":policies\";\n            const ancKey = String(layer.index) + \":anchors\";\n            const polC = collapsedSections.get(polKey) ?? false;\n            const ancC = collapsedSections.get(ancKey) ?? false;\n            // Band background\n            const bandRect = mk(\"rect\", { x, y, width: boxWidth, height: h, rx: 10, ry: 10, fill: col.bg, stroke: col.border, \"stroke-width\": \"1.5\", style: \"cursor:default;\" });\n            const policyTip = policyItems.map((pi) => \"\\u2022 \" + (pi.severity ? pi.severity.toUpperCase() + \" \\u00b7 \" : \"\") + pi.ruleId +\n                (pi.adr ? \" [\" + pi.adr + \"]\" : \"\") + (pi.description ? \"\\n  \" + pi.description.trim() : \"\")).join(\"\\n\");\n            const layerTip = \"<b>Layer: \" + layer.name + \"<\/b>\\n\" + layer.fileCount + \" files \\u00b7 \" + layer.ruleViolationCount + \" violation(s)\" + (policyTip ? \"\\n\\n<b>Forbidden policies:<\/b>\\n\" + policyTip : \"\");\n            bandRect.addEventListener(\"mousemove\", (ev) => showTooltip(ev, layerTip));\n            bandRect.addEventListener(\"mouseleave\", hideTooltip);\n            g.appendChild(bandRect);\n            // Left colour slab\n            g.appendChild(mk(\"rect\", { x, y, width: LABEL_W, height: h, rx: 10, ry: 10, fill: col.slab, stroke: \"none\" }));\n            g.appendChild(mk(\"rect\", { x: x + LABEL_W - 12, y, width: 12, height: h, fill: col.slab, stroke: \"none\" }));\n            g.appendChild(mk(\"line\", { x1: x + LABEL_W, y1: y + 8, x2: x + LABEL_W, y2: y + h - 8, stroke: col.border, \"stroke-width\": \"1\" }));\n            const shortName = layer.name.replace(/^(packages|apps)\\//, \"\");\n            const slabMidX = x + LABEL_W / 2;\n            const hasMeta = layer.fileCount > 0 || layer.ruleViolationCount > 0;\n            const titleEl = mk(\"text\", { x: slabMidX, y: y + h / 2 + (hasMeta ? -6 : 4), \"text-anchor\": \"middle\", \"font-size\": \"11\", \"font-weight\": \"700\", fill: col.text });\n            titleEl.textContent = shortName.length > 17 ? shortName.slice(0, 15) + \"\\u2026\" : shortName;\n            g.appendChild(titleEl);\n            if (hasMeta) {\n                const metaEl = mk(\"text\", { x: slabMidX, y: y + h / 2 + 10, \"text-anchor\": \"middle\", \"font-size\": \"9\", fill: col.text, opacity: \"0.75\" });\n                metaEl.textContent = layer.fileCount + \"f  \" + layer.ruleViolationCount + \"v\";\n                g.appendChild(metaEl);\n            }\n            if (layer.ruleViolationCount > 0) {\n                g.appendChild(mk(\"rect\", { x: x + boxWidth - 80, y: y + 8, width: 68, height: 18, rx: 9, fill: \"#fee2e2\", stroke: col.border }));\n                const bt = mk(\"text\", { x: x + boxWidth - 46, y: y + 21, \"text-anchor\": \"middle\", \"font-size\": \"9\", \"font-weight\": \"700\", fill: \"#991b1b\" });\n                bt.textContent = layer.ruleViolationCount + \" issue(s)\";\n                g.appendChild(bt);\n            }\n            let cy0 = y + 10;\n            // ── Forbidden Policies section (D — collapsible) ──────────────────\n            if (policyItems.length > 0) {\n                const hdrG = mk(\"g\", { style: \"cursor:pointer;\" });\n                hdrG.appendChild(mk(\"rect\", { x: cx0 - 4, y: cy0, width: cw + 8, height: SEC_H, rx: 4, fill: col.slab, opacity: \"0.7\" }));\n                const ht = mk(\"text\", { x: cx0 + 2, y: cy0 + 12, \"font-size\": \"8\", \"font-weight\": \"700\", fill: col.text, \"letter-spacing\": \"0.4\" });\n                ht.textContent = (polC ? \"\\u25b6\" : \"\\u25bc\") + \" FORBIDDEN POLICIES (\" + policyItems.length + \")\";\n                hdrG.appendChild(ht);\n                const hdrHit = mk(\"rect\", { x: cx0 - 4, y: cy0, width: cw + 8, height: SEC_H, fill: \"transparent\" });\n                hdrHit.addEventListener(\"click\", (ev) => { ev.stopPropagation(); collapsedSections.set(polKey, !polC); build(); });\n                hdrG.appendChild(hdrHit);\n                g.appendChild(hdrG);\n                cy0 += SEC_H + 2;\n                if (!polC) {\n                    policyItems.slice(0, 9).forEach((pItem, idx) => {\n                        const c2 = idx % perRow, r2 = Math.floor(idx / perRow);\n                        const bx = cx0 + c2 * (cw1 + CHIP_GAP), by = cy0 + r2 * (CHIP_H + 4);\n                        g.appendChild(mk(\"rect\", { x: bx, y: by, width: cw1, height: CHIP_H, rx: 5, fill: \"#fff\", stroke: \"#fca5a5\", \"stroke-width\": \"1\" }));\n                        g.appendChild(mk(\"rect\", { x: bx, y: by, width: 5, height: CHIP_H, rx: 3, fill: \"#dc2626\" }));\n                        g.appendChild(mk(\"rect\", { x: bx + 2, y: by, width: 3, height: CHIP_H, fill: \"#dc2626\" }));\n                        const mc = Math.max(10, Math.floor((cw1 - 14) / 6));\n                        const rt = mk(\"text\", { x: bx + 10, y: by + CHIP_H / 2 + 4, \"font-size\": \"9\", fill: \"#7f1d1d\", \"font-weight\": \"600\" });\n                        rt.textContent = pItem.ruleId.length > mc ? pItem.ruleId.slice(0, mc - 1) + \"\\u2026\" : pItem.ruleId;\n                        const itip = \"<b>\" + pItem.ruleId + \"<\/b>\" + (pItem.severity ? \" \\u00b7 \" + pItem.severity.toUpperCase() : \"\") + (pItem.adr ? \" \\u00b7 \" + pItem.adr : \"\") + \"\\nType: \" + pItem.kind + \" \\u00b7 Violations: \" + pItem.count + (pItem.description ? \"\\n\\n\" + pItem.description.trim() : \"\");\n                        const ch = mk(\"rect\", { x: bx, y: by, width: cw1, height: CHIP_H, fill: \"transparent\", style: \"cursor:pointer;\" });\n                        ch.addEventListener(\"mousemove\", (ev) => { ev.stopPropagation(); showTooltip(ev, itip); });\n                        ch.addEventListener(\"mouseleave\", hideTooltip);\n                        if (rulesWithFlows.has(pItem.ruleId)) {\n                            ch.addEventListener(\"click\", (ev) => { ev.stopPropagation(); hideTooltip(); showFlowPanel(pItem.ruleId); });\n                        }\n                        g.appendChild(rt);\n                        g.appendChild(ch);\n                    });\n                    cy0 += Math.ceil(Math.min(policyItems.length, 9) / perRow) * (CHIP_H + 4) + 4;\n                }\n            }\n            // ── Rule Elements section (D — collapsible) ───────────────────────\n            if (toAnchors.length > 0 || fromAnchors.length > 0) {\n                const hdrG = mk(\"g\", { style: \"cursor:pointer;\" });\n                hdrG.appendChild(mk(\"rect\", { x: cx0 - 4, y: cy0, width: cw + 8, height: SEC_H, rx: 4, fill: col.slab, opacity: \"0.7\" }));\n                const ht = mk(\"text\", { x: cx0 + 2, y: cy0 + 12, \"font-size\": \"8\", \"font-weight\": \"700\", fill: col.text, \"letter-spacing\": \"0.4\" });\n                ht.textContent = (ancC ? \"\\u25b6\" : \"\\u25bc\") + \" RULE ELEMENTS (\" + (toAnchors.length + fromAnchors.length) + \")\";\n                hdrG.appendChild(ht);\n                const hdrHit = mk(\"rect\", { x: cx0 - 4, y: cy0, width: cw + 8, height: SEC_H, fill: \"transparent\" });\n                hdrHit.addEventListener(\"click\", (ev) => { ev.stopPropagation(); collapsedSections.set(ancKey, !ancC); build(); });\n                hdrG.appendChild(hdrHit);\n                g.appendChild(hdrG);\n                cy0 += SEC_H + 2;\n                if (!ancC) {\n                    toAnchors.slice(0, 4).forEach((anchor, idx) => {\n                        const c2 = idx % perRow, r2 = Math.floor(idx / perRow);\n                        const bx = cx0 + c2 * (cw1 + CHIP_GAP), by = cy0 + r2 * (CHIP_H + 4);\n                        const key = String(layer.index) + \"::\" + anchor.name;\n                        const isImp = anchor.kind === \"import_pattern\";\n                        g.appendChild(mk(\"rect\", { x: bx, y: by, width: cw1, height: CHIP_H, rx: 5, fill: \"#fff7f7\", stroke: \"#fca5a5\", \"stroke-width\": \"1\" }));\n                        const sx2 = bx + 7, cy2 = by + CHIP_H / 2;\n                        if (isImp) {\n                            g.appendChild(mk(\"line\", { x1: sx2, y1: cy2, x2: sx2 + 7, y2: cy2, stroke: \"#dc2626\", \"stroke-width\": \"1.5\" }));\n                            g.appendChild(mk(\"path\", { d: \"M \" + (sx2 + 7) + \" \" + (cy2 - 4) + \" A 4 4 0 0 1 \" + (sx2 + 7) + \" \" + (cy2 + 4), fill: \"none\", stroke: \"#dc2626\", \"stroke-width\": \"1.5\" }));\n                        }\n                        else {\n                            g.appendChild(mk(\"line\", { x1: sx2, y1: cy2, x2: sx2 + 5, y2: cy2, stroke: \"#dc2626\", \"stroke-width\": \"1.5\" }));\n                            g.appendChild(mk(\"circle\", { cx: sx2 + 9, cy: cy2, r: \"4\", fill: \"#fee2e2\", stroke: \"#dc2626\", \"stroke-width\": \"1.5\" }));\n                            g.appendChild(mk(\"line\", { x1: sx2 + 6, y1: cy2 - 3, x2: sx2 + 12, y2: cy2 + 3, stroke: \"#dc2626\", \"stroke-width\": \"1\" }));\n                            g.appendChild(mk(\"line\", { x1: sx2 + 12, y1: cy2 - 3, x2: sx2 + 6, y2: cy2 + 3, stroke: \"#dc2626\", \"stroke-width\": \"1\" }));\n                        }\n                        if (!elementPositions.has(key))\n                            elementPositions.set(key, { cx: bx + cw1 / 2, cy: by + CHIP_H / 2, x: bx, y: by, w: cw1, h: CHIP_H });\n                        const mc = Math.max(8, Math.floor((cw1 - 24) / 6));\n                        const lbl = mk(\"text\", { x: sx2 + 19, y: by + CHIP_H / 2 + 4, \"font-size\": \"9\", fill: \"#991b1b\", \"font-weight\": \"500\" });\n                        lbl.textContent = anchor.name.length > mc ? anchor.name.slice(0, mc - 1) + \"\\u2026\" : anchor.name;\n                        const ch = mk(\"rect\", { x: bx, y: by, width: cw1, height: CHIP_H, fill: \"transparent\", style: \"cursor:help;\" });\n                        ch.addEventListener(\"mousemove\", (ev) => { ev.stopPropagation(); showTooltip(ev, \"<b>\" + anchor.name + \"<\/b>\\nKind: \" + anchor.kind + \"\\nForbidden target\"); });\n                        ch.addEventListener(\"mouseleave\", hideTooltip);\n                        ch.addEventListener(\"mouseenter\", () => {\n                            lastHoveredElementKey = key;\n                            if (!showAllRuleElementEdges)\n                                showElementHoverOverlay(key);\n                        });\n                        ch.addEventListener(\"mouseleave\", () => {\n                            lastHoveredElementKey = null;\n                            if (!showAllRuleElementEdges)\n                                clearElementHoverOverlay();\n                        });\n                        g.appendChild(lbl);\n                        g.appendChild(ch);\n                    });\n                    cy0 += Math.ceil(Math.min(toAnchors.length, 4) / perRow) * (CHIP_H + 4);\n                    fromAnchors.slice(0, 2).forEach((anchor, idx) => {\n                        const c2 = idx % perRow, r2 = Math.floor(idx / perRow);\n                        const bx = cx0 + c2 * (cw1 + CHIP_GAP), by = cy0 + r2 * (CHIP_H + 4);\n                        const key = String(layer.index) + \"::\" + anchor.name;\n                        g.appendChild(mk(\"rect\", { x: bx, y: by, width: cw1, height: CHIP_H, rx: 5, fill: \"#fff8f0\", stroke: \"#fdba74\", \"stroke-width\": \"1\" }));\n                        const sx2 = bx + 7, cy2 = by + CHIP_H / 2;\n                        g.appendChild(mk(\"rect\", { x: sx2 + 3, y: cy2 - 5, width: 10, height: 9, rx: \"1\", fill: \"#fff8f0\", stroke: \"#f97316\", \"stroke-width\": \"1\" }));\n                        g.appendChild(mk(\"rect\", { x: sx2, y: cy2 - 4, width: 5, height: 3, rx: \"0.5\", fill: \"#fff8f0\", stroke: \"#f97316\", \"stroke-width\": \"0.8\" }));\n                        g.appendChild(mk(\"rect\", { x: sx2, y: cy2 + 1, width: 5, height: 3, rx: \"0.5\", fill: \"#fff8f0\", stroke: \"#f97316\", \"stroke-width\": \"0.8\" }));\n                        if (!elementPositions.has(key))\n                            elementPositions.set(key, { cx: bx + cw1 / 2, cy: by + CHIP_H / 2, x: bx, y: by, w: cw1, h: CHIP_H });\n                        const mc = Math.max(8, Math.floor((cw1 - 24) / 6));\n                        const lbl = mk(\"text\", { x: sx2 + 19, y: by + CHIP_H / 2 + 4, \"font-size\": \"9\", fill: \"#92400e\", \"font-weight\": \"500\" });\n                        lbl.textContent = anchor.name.length > mc ? anchor.name.slice(0, mc - 1) + \"\\u2026\" : anchor.name;\n                        const ch = mk(\"rect\", { x: bx, y: by, width: cw1, height: CHIP_H, fill: \"transparent\", style: \"cursor:help;\" });\n                        ch.addEventListener(\"mousemove\", (ev) => { ev.stopPropagation(); showTooltip(ev, \"<b>\" + anchor.name + \"<\/b>\\nKind: \" + anchor.kind + \"\\nForbidden scope\"); });\n                        ch.addEventListener(\"mouseleave\", hideTooltip);\n                        ch.addEventListener(\"mouseenter\", () => {\n                            lastHoveredElementKey = key;\n                            if (!showAllRuleElementEdges)\n                                showElementHoverOverlay(key);\n                        });\n                        ch.addEventListener(\"mouseleave\", () => {\n                            lastHoveredElementKey = null;\n                            if (!showAllRuleElementEdges)\n                                clearElementHoverOverlay();\n                        });\n                        g.appendChild(lbl);\n                        g.appendChild(ch);\n                    });\n                    cy0 += Math.ceil(Math.min(fromAnchors.length, 2) / perRow) * (CHIP_H + 4) + 4;\n                }\n            }\n            // ── Flow Elements section (expresses.elements, grouped by rule → horizontal strips) ───\n            if (data.options?.showRuleElements && Array.isArray(layer.elements)) {\n                const namedEls = layer.elements.filter((el) => !isGlobPattern(String(el.name)));\n                if (namedEls.length > 0) {\n                    // Section header\n                    const flHdr = mk(\"g\");\n                    flHdr.appendChild(mk(\"rect\", { x: cx0 - 4, y: cy0, width: cw + 8, height: SEC_H, rx: 4, fill: \"#eff6ff\", opacity: \"0.9\" }));\n                    const flHt = mk(\"text\", { x: cx0 + 2, y: cy0 + 12, \"font-size\": \"8\", \"font-weight\": \"700\", fill: \"#1e40af\", \"letter-spacing\": \"0.4\" });\n                    flHt.textContent = \"\\u25bc FLOW ELEMENTS (\" + namedEls.length + \")\";\n                    flHdr.appendChild(flHt);\n                    g.appendChild(flHdr);\n                    cy0 += SEC_H + 2;\n                    // Group by ruleId — one horizontal flow strip per rule\n                    const ruleGroups = new Map();\n                    namedEls.forEach((el) => {\n                        const rid = String(el.ruleId ?? \"\");\n                        const arr = ruleGroups.get(rid) ?? [];\n                        arr.push(el);\n                        ruleGroups.set(rid, arr);\n                    });\n                    const ARROW_GAP = 22;\n                    ruleGroups.forEach((groupEls) => {\n                        const sorted = groupEls.slice().sort((a, b) => (a.flowSeq ?? 999) - (b.flowSeq ?? 999));\n                        const gn = sorted.length;\n                        const totalArrowSpace = Math.max(0, gn - 1) * ARROW_GAP;\n                        const chipW = Math.max(80, Math.floor((cw - totalArrowSpace) / gn));\n                        sorted.forEach((el, i) => {\n                            const bx = cx0 + i * (chipW + ARROW_GAP);\n                            const by = cy0;\n                            g.appendChild(mk(\"rect\", { x: bx, y: by, width: chipW, height: CHIP_H, rx: 5, fill: \"#f0f9ff\", stroke: \"#7dd3fc\", \"stroke-width\": \"1.2\" }));\n                            const hasStep = el.flowSeq != null && el.flowSeq < 999;\n                            if (hasStep) {\n                                g.appendChild(mk(\"rect\", { x: bx + 5, y: by + 5, width: 16, height: 16, rx: 8, fill: \"#0284c7\" }));\n                                const stepTxt = mk(\"text\", { x: bx + 13, y: by + 16, \"text-anchor\": \"middle\", \"font-size\": \"7.5\", \"font-weight\": \"700\", fill: \"#fff\" });\n                                stepTxt.textContent = String(el.flowSeq + 1);\n                                g.appendChild(stepTxt);\n                            }\n                            const labelX = bx + (hasStep ? 26 : 8);\n                            const maxCh = Math.max(6, Math.floor((chipW - (hasStep ? 34 : 12)) / 6));\n                            const lbl = mk(\"text\", { x: labelX, y: by + CHIP_H / 2 + 4, \"font-size\": \"9\", fill: \"#0c4a6e\", \"font-weight\": \"600\" });\n                            lbl.textContent = String(el.name).length > maxCh ? String(el.name).slice(0, maxCh - 1) + \"\\u2026\" : String(el.name);\n                            g.appendChild(lbl);\n                            // Arrow to next chip in this layer's flow strip\n                            if (i < sorted.length - 1) {\n                                const ax = bx + chipW + 1, ay = by + CHIP_H / 2;\n                                g.appendChild(mk(\"line\", { x1: ax, y1: ay, x2: ax + ARROW_GAP - 6, y2: ay, stroke: \"#0284c7\", \"stroke-width\": \"1.5\", \"marker-end\": \"url(#arrow-allowed)\" }));\n                            }\n                            const key = String(layer.index) + \"::\" + String(el.name);\n                            elementPositions.set(key, { cx: bx + chipW / 2, cy: by + CHIP_H / 2, x: bx, y: by, w: chipW, h: CHIP_H });\n                            const eh = mk(\"rect\", { x: bx, y: by, width: chipW, height: CHIP_H, fill: \"transparent\", style: \"cursor:pointer;\" });\n                            const tip = \"<b>\" + el.name + \"<\/b>\\nKind: \" + el.kind +\n                                (hasStep ? \"\\nFlow step: \" + (el.flowSeq + 1) : \"\") +\n                                (el.ruleId ? \"\\nRule: \" + el.ruleId : \"\") +\n                                \"\\n\\n<i>Click to open full flow diagram<\/i>\";\n                            eh.addEventListener(\"mousemove\", (ev) => { ev.stopPropagation(); showTooltip(ev, tip); });\n                            eh.addEventListener(\"mouseleave\", hideTooltip);\n                            eh.addEventListener(\"click\", (ev) => { ev.stopPropagation(); hideTooltip(); if (el.ruleId)\n                                showFlowPanel(String(el.ruleId)); });\n                            eh.addEventListener(\"mouseenter\", () => {\n                                lastHoveredElementKey = key;\n                                if (!showAllRuleElementEdges)\n                                    showElementHoverOverlay(key);\n                            });\n                            eh.addEventListener(\"mouseleave\", () => {\n                                lastHoveredElementKey = null;\n                                if (!showAllRuleElementEdges)\n                                    clearElementHoverOverlay();\n                            });\n                            g.appendChild(eh);\n                        });\n                        cy0 += CHIP_H + 10;\n                    });\n                }\n            }\n            panGroup.appendChild(g);\n        }); // end bands\n        // ── Render edges ─────────────────────────────────────────────────────────\n        // Same-row  → S-curve in the band gap with a short label\n        // Allowed cross-row   → orthogonal elbow through LEFT  gutter (green) — staggered Y ports\n        // Forbidden cross-row → orthogonal elbow through RIGHT gutter (red)   — staggered Y ports\n        // No text in the gutter — all details in the edge panel (E)\n        const sameRowAllowed = data.edges.filter((e) => e.type === \"allowed\" && isSameRow(e));\n        const outASame = new Map();\n        const incASame = new Map();\n        sameRowAllowed.forEach((e, i) => {\n            const o = outASame.get(e.fromLayerIndex) ?? [];\n            o.push(i);\n            outASame.set(e.fromLayerIndex, o);\n            const t = incASame.get(e.toLayerIndex) ?? [];\n            t.push(i);\n            incASame.set(e.toLayerIndex, t);\n        });\n        function sameAllowedPortY(layerIdx, laneIdx, isOut) {\n            const pos = layerPositions.get(layerIdx);\n            if (!pos)\n                return 0;\n            const arr = (isOut ? outASame : incASame).get(layerIdx) ?? [];\n            const i = arr.indexOf(laneIdx), n = arr.length;\n            const zoneTop = pos.y + pos.h * 0.22;\n            const zoneH = pos.h * 0.56;\n            return n <= 1 ? pos.y + pos.h / 2 : zoneTop + (i / (n - 1)) * zoneH;\n        }\n        data.edges.forEach((edge) => {\n            const s = layerPositions.get(edge.fromLayerIndex);\n            const t = layerPositions.get(edge.toLayerIndex);\n            if (!s || !t)\n                return;\n            const isAllowed = edge.type === \"allowed\";\n            const ec = isAllowed ? \"#1f8f4e\" : \"#c53030\";\n            const da = edge.type === \"forbidden\" ? \"7 4\" : (edge.flowKind === \"data\" ? \"2 4\" : \"0\");\n            const me = isAllowed ? \"url(#arrow-allowed)\" : \"url(#arrow-forbidden)\";\n            const sw = isAllowed ? \"2\" : \"2.5\";\n            let pathD;\n            if (isSameRow(edge)) {\n                const lr = t.x > s.x;\n                const sx = lr ? s.x + s.w : s.x, tx = lr ? t.x : t.x + t.w;\n                const sameLane = sameRowAllowed.indexOf(edge);\n                const sy = isAllowed ? sameAllowedPortY(edge.fromLayerIndex, sameLane, true) : (s.y + s.h / 2);\n                const ty = isAllowed ? sameAllowedPortY(edge.toLayerIndex, sameLane, false) : (t.y + t.h / 2);\n                const mx = (sx + tx) / 2;\n                pathD = \"M \" + sx + \" \" + sy + \" C \" + mx + \" \" + sy + \" \" + mx + \" \" + ty + \" \" + tx + \" \" + ty;\n                const pe = mk(\"path\", { d: pathD, fill: \"none\", stroke: ec, \"stroke-width\": sw, \"stroke-dasharray\": da, \"marker-end\": me, opacity: \"0.85\", style: \"cursor:pointer;\" });\n                const he = mk(\"path\", { d: pathD, fill: \"none\", stroke: \"transparent\", \"stroke-width\": \"14\", style: \"cursor:pointer;\" });\n                he.addEventListener(\"mouseenter\", () => showEdgePanel(edge));\n                he.addEventListener(\"mouseleave\", clearEdgePanel);\n                panGroup.appendChild(pe);\n                panGroup.appendChild(he);\n                const lbl = mk(\"text\", { x: mx, y: Math.min(sy, ty) - 5, \"text-anchor\": \"middle\", \"font-size\": \"8\", fill: ec, style: \"pointer-events:none;\" });\n                lbl.textContent = edge.label.length > 26 ? edge.label.slice(0, 24) + \"\\u2026\" : edge.label;\n                panGroup.appendChild(lbl);\n                return;\n            }\n            const li = isAllowed ? sortedAllowed.indexOf(edge) : sortedForbidden.indexOf(edge);\n            const sy = portY(edge.fromLayerIndex, li, true, !isAllowed);\n            const ty = portY(edge.toLayerIndex, li, false, !isAllowed);\n            if (isAllowed) {\n                // LEFT gutter: rightmost lane closest to bands (lane 0 = closest)\n                const lx = LGUTTER_X0 + (sortedAllowed.length - 1 - li) * LANE_W + LANE_W / 2;\n                pathD = \"M \" + s.x + \" \" + sy + \" L \" + lx + \" \" + sy + \" L \" + lx + \" \" + ty + \" L \" + t.x + \" \" + ty;\n            }\n            else {\n                // RIGHT gutter: lane 0 closest to bands\n                const lx = RGUTTER_X0 + li * LANE_W + LANE_W / 2;\n                pathD = \"M \" + (s.x + s.w) + \" \" + sy + \" L \" + lx + \" \" + sy + \" L \" + lx + \" \" + ty + \" L \" + (t.x + t.w) + \" \" + ty;\n            }\n            const pe = mk(\"path\", { d: pathD, fill: \"none\", stroke: ec, \"stroke-width\": sw, \"stroke-dasharray\": da, \"marker-end\": me, opacity: \"0.85\", style: \"cursor:pointer;\", \"stroke-linejoin\": \"round\" });\n            const he = mk(\"path\", { d: pathD, fill: \"none\", stroke: \"transparent\", \"stroke-width\": \"14\", style: \"cursor:pointer;\" });\n            he.addEventListener(\"mouseenter\", () => showEdgePanel(edge));\n            he.addEventListener(\"mouseleave\", clearEdgePanel);\n            panGroup.appendChild(pe);\n            panGroup.appendChild(he);\n        }); // end edges\n        // Keep hover element-edge overlays above all chips and base edges.\n        panGroup.appendChild(elementHoverOverlay);\n        applyTransform();\n    } // end build()\n    build();\n    stats.innerHTML = [\n        \"<span>Total files: <strong>\" + data.meta.totalFiles + \"<\/strong><\/span>\",\n        \"<span>Rule violations: <strong>\" + data.meta.totalRuleViolations + \"<\/strong><\/span>\",\n        \"<span>Layer violations: <strong>\" + data.meta.totalLayerViolations + \"<\/strong><\/span>\",\n        \"<span>Layers: <strong>\" + data.layers.length + \"<\/strong><\/span>\",\n        \"<span style='font-size:10px;color:#6b7280'>Scroll to zoom \\u00b7 drag to pan \\u00b7 click \\u25bc headers to collapse<\/span>\",\n    ].join(\" \\u00b7 \");\n    const rules = [...data.rules].sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));\n    if (rules.length === 0) {\n        rulesList.innerHTML = '<div class=\"rule-item\"><div class=\"rule-id\">No active rule violations<\/div><\/div>';\n        return;\n    }\n    rulesList.innerHTML = rules.map((r) => '<div class=\"rule-item\">' +\n        '<div class=\"rule-id\">' + r.id + '<\/div>' +\n        '<div class=\"rule-meta\"><span class=\"badge ' + r.severity + '\">' + String(r.severity).toUpperCase() + '<\/span> ' + r.count + ' violation(s)' +\n        (r.adr ? ' \\u00b7 <span style=\"font-size:10px\">' + r.adr + '<\/span>' : '') + '<\/div>' +\n        (r.description ? '<div class=\"rule-desc\">' + r.description.trim() + '<\/div>' : '') + '<\/div>').join(\"\");\n}\nclientScript();\n<\/script>\n<\/body>\n<\/html>";
+function architectureBookClientScript() {
+    const data = DATA;
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isGlob(name) { return name.includes("*") || name.includes("/"); }
+    function esc(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    function sev(s) {
+        if (s === "high")
+            return `<span class="badge high">HIGH</span>`;
+        if (s === "medium")
+            return `<span class="badge medium">MED</span>`;
+        return `<span class="badge low">LOW</span>`;
+    }
+    function shortPath(p, max = 42) {
+        if (p.length <= max)
+            return p;
+        const parts = p.split("/");
+        if (parts.length > 2)
+            return "…/" + parts.slice(-2).join("/");
+        return p.slice(-max);
+    }
+    // Community colour palette (20 distinct, cycles)
+    const COMM_PALETTE = [
+        "#fde68a", "#bfdbfe", "#bbf7d0", "#fecaca", "#ddd6fe",
+        "#fed7aa", "#cffafe", "#fce7f3", "#d1fae5", "#e0f2fe",
+        "#fef9c3", "#ede9fe", "#dcfce7", "#ffedd5", "#f0fdf4",
+        "#fdf4ff", "#ecfdf5", "#fff7ed", "#f0f9ff", "#fefce8",
+    ];
+    // ── Build chapter index ───────────────────────────────────────────────────
+    const ruleElements = new Map();
+    data.layers.forEach((layer) => {
+        (layer.elements ?? []).forEach((el) => {
+            if (!el.ruleId || isGlob(String(el.name)))
+                return;
+            const arr = ruleElements.get(String(el.ruleId)) ?? [];
+            arr.push({ ...el, layerIndex: layer.index });
+            ruleElements.set(String(el.ruleId), arr);
+        });
+    });
+    const adrRuleIds = data.rules
+        .filter((r) => ruleElements.has(r.id))
+        .sort((a, b) => {
+        const ord = { high: 0, medium: 1, low: 2 };
+        return ord[a.severity] - ord[b.severity];
+    })
+        .map((r) => r.id);
+    const totalViolations = data.meta.totalRuleViolations + data.meta.totalLayerViolations;
+    const overlay = data.cariOverlay;
+    const layerCov = data.layerCoverage;
+    // ── Build sidebar + chapters ──────────────────────────────────────────────
+    const nav = document.getElementById("nav");
+    const content = document.getElementById("content");
+    const sidebarMeta = document.getElementById("sidebar-meta");
+    sidebarMeta.textContent = data.meta.generated.replace("T", " ").replace(/\..+/, "");
+    const navItems = [];
+    function activateChapter(id) {
+        navItems.forEach(({ el, chapterId }) => el.classList.toggle("active", chapterId === id));
+        document.querySelectorAll(".chapter").forEach((c) => c.classList.toggle("active", c.id === id));
+        const ch = document.getElementById(id);
+        if (ch && ch.dataset.cyPending) {
+            delete ch.dataset.cyPending;
+            initCytoscape(id);
+        }
+    }
+    function addNavItem(label, icon, chapterId, badge, badgeZero = false) {
+        const el = document.createElement("div");
+        el.className = "nav-item";
+        el.innerHTML =
+            `<span class="nav-icon">${icon}</span>` +
+                `<span>${esc(label)}</span>` +
+                (badge !== undefined
+                    ? `<span class="nav-badge${badgeZero ? " zero" : ""}">${esc(badge)}</span>`
+                    : "");
+        el.addEventListener("click", () => activateChapter(chapterId));
+        nav.appendChild(el);
+        navItems.push({ el, chapterId });
+    }
+    // ── Overview chapter ─────────────────────────────────────────────────────
+    const overviewDiv = document.createElement("div");
+    overviewDiv.id = "chapter-overview";
+    overviewDiv.className = "chapter active";
+    overviewDiv.innerHTML = buildOverviewHtml();
+    // Inject the §17 SVG into the iframe via srcdoc (avoids attribute-escaping issues).
+    const prescFrame = overviewDiv.querySelector("#prescriptive-iframe");
+    if (prescFrame)
+        prescFrame.srcdoc = PRESCRIPTIVE_HTML;
+    content.appendChild(overviewDiv);
+    const overviewSection = document.createElement("div");
+    overviewSection.className = "nav-section";
+    overviewSection.textContent = "Navigation";
+    nav.appendChild(overviewSection);
+    addNavItem("Overview", "🏛", "chapter-overview");
+    // ── Per-ADR chapters ─────────────────────────────────────────────────────
+    if (adrRuleIds.length > 0) {
+        const adrSection = document.createElement("div");
+        adrSection.className = "nav-section";
+        adrSection.textContent = "Rules";
+        nav.appendChild(adrSection);
+    }
+    adrRuleIds.forEach((ruleId) => {
+        const rule = data.rules.find((r) => r.id === ruleId);
+        const chapterId = "chapter-" + ruleId.replace(/[^a-z0-9]/gi, "-");
+        const chDiv = document.createElement("div");
+        chDiv.id = chapterId;
+        chDiv.className = "chapter";
+        chDiv.dataset.ruleId = ruleId;
+        chDiv.dataset.cyPending = "1";
+        chDiv.innerHTML = buildAdrChapterHtml(ruleId);
+        content.appendChild(chDiv);
+        const icon = rule.severity === "high" ? "🔴" : rule.severity === "medium" ? "🟡" : "🟢";
+        const shortLabel = ruleId.length > 26 ? ruleId.slice(0, 24) + "…" : ruleId;
+        addNavItem(shortLabel, icon, chapterId, rule.count > 0 ? String(rule.count) : "✓", rule.count === 0);
+    });
+    // ── Reports section ───────────────────────────────────────────────────────
+    const violSection = document.createElement("div");
+    violSection.className = "nav-section";
+    violSection.textContent = "Reports";
+    nav.appendChild(violSection);
+    // ── Violations chapter ───────────────────────────────────────────────────
+    const violDiv = document.createElement("div");
+    violDiv.id = "chapter-violations";
+    violDiv.className = "chapter";
+    violDiv.innerHTML = buildViolationsHtml();
+    content.appendChild(violDiv);
+    addNavItem("All Violations", "⚠️", "chapter-violations", totalViolations > 0 ? String(totalViolations) : undefined);
+    // ── Coverage chapter (18.3) ───────────────────────────────────────────────
+    const covDiv = document.createElement("div");
+    covDiv.id = "chapter-coverage";
+    covDiv.className = "chapter";
+    covDiv.innerHTML = buildCoverageHtml();
+    content.appendChild(covDiv);
+    addNavItem("Coverage", "📊", "chapter-coverage");
+    activateChapter("chapter-overview");
+    // ── Overview HTML builder ─────────────────────────────────────────────────
+    function buildOverviewHtml() {
+        // ── Stats strip (thin bar above the SVG iframe) ────────────────────────
+        const statsBar = `<div class="stats-bar" style="flex-shrink:0;padding:8px 16px;border-bottom:1px solid #e2e8f0;background:#fff">
+      <div class="stat-card"><div class="sc-val">${data.layers.length}</div><div class="sc-lbl">Layers</div></div>
+      <div class="stat-card"><div class="sc-val">${data.meta.totalFiles}</div><div class="sc-lbl">Total files</div></div>
+      <div class="stat-card"><div class="sc-val" style="color:${data.meta.totalRuleViolations > 0 ? "#991b1b" : "#166534"}">${data.meta.totalRuleViolations}</div><div class="sc-lbl">Rule violations</div></div>
+      <div class="stat-card"><div class="sc-val" style="color:${data.meta.totalLayerViolations > 0 ? "#991b1b" : "#166534"}">${data.meta.totalLayerViolations}</div><div class="sc-lbl">Layer violations</div></div>
+      <div class="stat-card"><div class="sc-val">${data.rules.length}</div><div class="sc-lbl">Rules</div></div>
+      <div class="stat-card"><div class="sc-val">${adrRuleIds.length}</div><div class="sc-lbl">ADR chapters</div></div>
+    </div>`;
+        return `<div class="chapter-header">
+      <h1 class="chapter-title">🏛 Architecture Overview</h1>
+      <p class="chapter-subtitle">Layer topology and rule conformance summary · ${data.meta.generated}</p>
+    </div>
+    ${statsBar}
+    <div style="flex:1;min-height:0">
+      <iframe
+        id="prescriptive-iframe"
+        style="width:100%;height:100%;border:none;display:block"
+        title="§17 Prescriptive Architecture Diagram"
+      ></iframe>
+    </div>`;
+    }
+    // ── ADR chapter HTML builder ──────────────────────────────────────────────
+    function buildAdrChapterHtml(ruleId) {
+        const rule = data.rules.find((r) => r.id === ruleId);
+        const els = (ruleElements.get(ruleId) ?? []).slice().sort((a, b) => (a.flowSeq ?? 999) - (b.flowSeq ?? 999));
+        const violations = (data.violations ?? []).filter((v) => v.ruleId === ruleId).slice(0, 20);
+        const cyId = "cy-" + ruleId.replace(/[^a-z0-9]/gi, "-");
+        // ── YAML config snippet (18.1) ──────────────────────────────────────────
+        const ruleEdges = data.edges.filter((e) => e.ruleId === ruleId);
+        const forbiddenKinds = [...new Set(ruleEdges.filter((e) => e.type === "forbidden").map((e) => e.kind ?? "import_pattern"))];
+        const allowedKinds = [...new Set(ruleEdges.filter((e) => e.type === "allowed").map((e) => e.kind ?? "import_pattern"))];
+        const yamlLines = [];
+        yamlLines.push("- id: " + ruleId);
+        if (rule?.severity)
+            yamlLines.push("  severity: " + rule.severity);
+        if (rule?.adr)
+            yamlLines.push("  adr: " + rule.adr);
+        if (rule?.description) {
+            const d = rule.description.split("\n")[0].trimEnd();
+            yamlLines.push("  description: |");
+            yamlLines.push("    " + (d.length > 90 ? d.slice(0, 90) + "…" : d));
+        }
+        if (els.length > 0) {
+            yamlLines.push("  expresses:");
+            yamlLines.push("    elements:");
+            els.slice(0, 6).forEach((el) => {
+                yamlLines.push('      - name: "' + el.name + '"');
+                yamlLines.push("        kind: " + el.kind);
+            });
+            if (els.length > 6)
+                yamlLines.push("      # … " + (els.length - 6) + " more");
+        }
+        if (forbiddenKinds.length > 0) {
+            yamlLines.push("  forbidden:");
+            forbiddenKinds.forEach((k) => yamlLines.push("    - kind: " + k));
+        }
+        if (allowedKinds.length > 0) {
+            yamlLines.push("  allowed:");
+            allowedKinds.forEach((k) => yamlLines.push("    - kind: " + k));
+        }
+        const yamlSnippet = esc(yamlLines.join("\n"));
+        const titleSuffix = rule?.adr ? ` · ${rule.adr}` : "";
+        const hasOverlay = overlay && (Object.keys(overlay.hotspot).length > 0 ||
+            Object.keys(overlay.hubs).length > 0 ||
+            Object.keys(overlay.communities).length > 0 ||
+            overlay.actualImports.length > 0);
+        let h = `<div class="chapter-header">
+      <h1 class="chapter-title">
+        ${rule ? sev(rule.severity) : ""}
+        ${esc(ruleId)}${titleSuffix ? `<span style="font-weight:400;font-size:13px;color:#6b7280">${esc(titleSuffix)}</span>` : ""}
+      </h1>
+      <p class="chapter-subtitle">${rule?.count ? `${rule.count} active violation${rule.count !== 1 ? "s" : ""}` : "✓ No violations"} · ${els.length} flow element${els.length !== 1 ? "s" : ""}</p>
+    </div>
+    <div class="chapter-body" style="display:flex;flex-direction:column;gap:12px;padding:12px 14px">
+      <div class="adr-layout">
+        <div class="adr-graph-wrap" id="graph-wrap-${ruleId.replace(/[^a-z0-9]/gi, "-")}">
+          ${els.length === 0
+            ? `<div class="adr-graph-empty">No <code>expresses.elements</code> declared for this rule.<br>Add them to <code>rules.yaml</code> to visualize the flow.</div>`
+            : `<div class="cy-container" id="${cyId}" style="width:100%;height:100%"></div>
+               <div class="cy-legend">
+                 <div class="leg-item"><div class="leg-dot" style="background:#0284c7;border:2px solid #7dd3fc"></div> Flow element</div>
+                 <div class="leg-item"><div class="leg-dot" style="background:#dcfce7;border:2px solid #86efac"></div> Allowed flow</div>
+                 <div class="leg-item"><div class="leg-dot" style="background:#fee2e2;border:2px solid #fca5a5"></div> Forbidden flow</div>
+                 ${hasOverlay ? `<div class="leg-item"><div class="leg-dot" style="background:#d1d5db;border:1px dashed #9ca3af"></div> Actual import</div>` : ""}
+               </div>`}
+          ${els.length > 0 && hasOverlay ? `<div class="overlay-controls" id="oc-${ruleId.replace(/[^a-z0-9]/gi, "-")}">
+            <span style="font-weight:600;color:#374151;margin-right:4px">Overlays:</span>
+            ${overlay && Object.keys(overlay.hotspot).length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="hotspot"> 🔥 Churn</label>` : ""}
+            ${overlay && Object.keys(overlay.hubs).length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="hubs"> ◎ Hub</label>` : ""}
+            ${overlay && Object.keys(overlay.communities).length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="communities"> 🎨 Community</label>` : ""}
+            ${overlay && overlay.actualImports.length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="imports"> ↔ Imports</label>` : ""}
+            ${rule && rule.count > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="violations"> ❗ Violations</label>` : ""}
+          </div>` : ""}
+        </div>
+        <div class="adr-side">
+          <div class="adr-panel">
+            <h3>Rule</h3>
+            ${rule?.description ? `<p class="adr-desc">${esc(rule.description)}</p>` : ""}
+            <div class="adr-meta-row"><b>ID:</b> ${esc(ruleId)}</div>
+            ${rule?.severity ? `<div class="adr-meta-row"><b>Severity:</b> ${sev(rule.severity)}</div>` : ""}
+            ${rule?.adr ? `<div class="adr-meta-row"><b>ADR:</b> ${esc(rule.adr)}</div>` : ""}
+            <div class="adr-meta-row"><b>Violations:</b> ${rule?.count ?? 0}</div>
+            <details style="margin-top:10px">
+              <summary style="font-size:10px;color:#64748b;cursor:pointer;user-select:none">📄 YAML config</summary>
+              <pre class="yaml-snippet">${yamlSnippet}</pre>
+            </details>
+          </div>
+          ${els.length > 0 ? `<div class="adr-panel">
+            <h3>Flow Elements</h3>
+            ${els.map((el, i) => {
+            const layerShort = el.layerName?.replace(/^(packages|apps)\//, "") ?? "";
+            const hot = overlay?.hotspot[el.name];
+            const hub = overlay?.hubs[el.name];
+            const comm = overlay?.communities[el.name];
+            const indicators = [
+                hot && hot.score > 0.3 ? `<span title="Churn score ${Math.round(hot.score * 100)}%" style="color:#b45309">🔥</span>` : "",
+                hub && hub.degree > 0.5 ? `<span title="Hub degree ${Math.round(hub.degree * 100)}%" style="color:#1d4ed8">◎</span>` : "",
+                comm ? `<span title="Community: ${esc(comm.label)}" style="color:#7c3aed">●</span>` : "",
+            ].filter(Boolean).join(" ");
+            return `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid #f3f4f6">
+                <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0284c7;color:#fff;font-size:7px;font-weight:700;text-align:center;line-height:16px;margin-right:5px">${i + 1}</span>
+                <b>${esc(String(el.name))}</b>
+                ${indicators}
+                <span style="font-size:10px;color:#64748b"> — ${esc(el.kind)}</span>
+                ${layerShort ? `<div style="font-size:10px;color:#94a3b8;padding-left:21px">${esc(layerShort)}</div>` : ""}
+              </div>`;
+        }).join("")}
+          </div>` : ""}
+          ${violations.length > 0 ? `<div class="adr-panel">
+            <h3>Top Violations</h3>
+            <ul class="adr-violations-list">
+              ${violations.slice(0, 8).map((v) => `<li>
+                  <div class="viol-file">${esc(shortPath(v.filePath))}</div>
+                  ${v.line ? `<div class="viol-detail">Line ${v.line}${v.symbol ? ` · ${esc(v.symbol)}` : ""}</div>` : ""}
+                  ${v.detail ? `<div class="viol-detail">${esc(v.detail.slice(0, 80))}</div>` : ""}
+                </li>`).join("")}
+              ${violations.length > 8 ? `<li class="viol-more">…and ${violations.length - 8} more. See All Violations.</li>` : ""}
+            </ul>
+          </div>` : violations.length === 0 && rule?.count ? `<div class="adr-panel">
+            <h3>Violations</h3>
+            <p style="font-size:11px;color:#6b7280">Run <code>iw index rules-check --json</code> for detailed violation output.</p>
+          </div>` : ""}
+        </div>
+      </div>
+    </div>`;
+        return h;
+    }
+    // ── Violations chapter ───────────────────────────────────────────────────
+    function buildViolationsHtml() {
+        const violations = data.violations ?? [];
+        const byRule = new Map();
+        violations.forEach((v) => {
+            const arr = byRule.get(v.ruleId) ?? [];
+            arr.push(v);
+            byRule.set(v.ruleId, arr);
+        });
+        const sortedRules = [...data.rules]
+            .filter((r) => r.count > 0)
+            .sort((a, b) => {
+            const ord = { high: 0, medium: 1, low: 2 };
+            return ord[a.severity] - ord[b.severity] || b.count - a.count;
+        });
+        let h = `<div class="chapter-header">
+      <h1 class="chapter-title">⚠️ All Violations</h1>
+      <p class="chapter-subtitle">${data.meta.totalRuleViolations} rule violation${data.meta.totalRuleViolations !== 1 ? "s" : ""} · ${data.meta.totalLayerViolations} layer violation${data.meta.totalLayerViolations !== 1 ? "s" : ""}</p>
+    </div>
+    <div class="chapter-body">`;
+        if (sortedRules.length === 0) {
+            h += `<div style="padding:32px;text-align:center;color:#6b7280;font-size:14px">
+        <div style="font-size:32px;margin-bottom:8px">✅</div>
+        No active rule violations — all rules pass.
+      </div>`;
+        }
+        else {
+            sortedRules.forEach((rule) => {
+                const ruleViols = byRule.get(rule.id) ?? [];
+                const violChId = "chapter-" + rule.id.replace(/[^a-z0-9]/gi, "-");
+                const hasAdrCh = adrRuleIds.includes(rule.id);
+                h += `<div class="viol-section">
+          <h3>${sev(rule.severity)} ${esc(rule.id)} ${rule.adr ? `<span style="font-weight:400;font-size:11px;color:#6b7280">${esc(rule.adr)}</span>` : ""}
+            <span style="font-size:11px;font-weight:400;color:#6b7280">&nbsp;· ${rule.count} violation${rule.count !== 1 ? "s" : ""}</span>
+            ${hasAdrCh ? `<button class="btn-goto" onclick="activateChapter('${violChId}')">↗ ADR chapter</button>` : ""}
+          </h3>`;
+                if (rule.description) {
+                    h += `<p style="font-size:12px;color:#6b7280;margin:0 0 10px">${esc(rule.description)}</p>`;
+                }
+                if (ruleViols.length > 0) {
+                    h += `<div class="violations-table-wrap"><table class="violations-table"><thead><tr>
+            <th>File</th><th>Line</th><th>Symbol</th><th>Detail</th>
+          </tr></thead><tbody>`;
+                    ruleViols.forEach((v) => {
+                        h += `<tr>
+              <td class="td-file" title="${esc(v.filePath)}">${esc(shortPath(v.filePath))}</td>
+              <td style="font-size:10px;white-space:nowrap">${v.line ?? "—"}</td>
+              <td style="font-family:ui-monospace,monospace;font-size:10px">${v.symbol ? esc(v.symbol) : "—"}</td>
+              <td class="td-detail">${esc(v.detail.slice(0, 120))}${v.detail.length > 120 ? "…" : ""}</td>
+            </tr>`;
+                    });
+                    h += `</tbody></table></div>`;
+                    if (rule.count > ruleViols.length) {
+                        h += `<p style="font-size:11px;color:#9ca3af;margin:4px 0 0">Showing ${ruleViols.length} of ${rule.count} violations. Run <code>iw index rules-check</code> for full output.</p>`;
+                    }
+                }
+                else {
+                    h += `<p style="font-size:11px;color:#9ca3af">Rebuild with <code>--book</code> after a fresh <code>iw index rules-check</code> for detailed violation output.</p>`;
+                }
+                h += `</div>`;
+            });
+        }
+        h += `</div>`;
+        return h;
+    }
+    // ── Coverage chapter (18.3) ───────────────────────────────────────────────
+    function buildCoverageHtml() {
+        const covData = layerCov ?? [];
+        const sorted = [...covData].sort((a, b) => b.layerIndex - a.layerIndex);
+        let h = `<div class="chapter-header">
+      <h1 class="chapter-title">📊 Coverage</h1>
+      <p class="chapter-subtitle">Per-layer documentation and rule coverage · driven by CARI moduleCoverage + hotspotPriority</p>
+    </div>
+    <div class="chapter-body">`;
+        if (sorted.length === 0) {
+            h += `<div style="padding:32px;text-align:center;color:#6b7280;font-size:14px">
+        <div style="font-size:28px;margin-bottom:8px">📋</div>
+        No coverage data available. Run <code>iw index build --depth full</code> first.
+      </div>`;
+        }
+        else {
+            h += `<div class="violations-table-wrap"><table class="coverage-table"><thead><tr>
+        <th>Layer</th><th>#</th><th>Files</th><th>Doc Coverage</th><th>Rules</th><th>Top Hotspots</th>
+      </tr></thead><tbody>`;
+            sorted.forEach((lc) => {
+                const barColor = lc.coveragePercent >= 70 ? "#22c55e" : lc.coveragePercent >= 40 ? "#f59e0b" : "#ef4444";
+                const ruleChips = lc.rulesGoverning.map((r) => `<span style="display:inline-block;font-size:9px;background:#e0f2fe;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;margin:1px 2px 0 0;color:#0c4a6e">${esc(r)}</span>`).join("") || "—";
+                const hotspots = lc.hotspotFiles.map((f) => `<span class="hotspot-pill" title="${esc(f.filePath)} · churn ${f.churn}">${esc(shortPath(f.filePath, 30))}</span>`).join("") || "—";
+                h += `<tr>
+          <td style="font-weight:600">${esc(lc.layerName.replace(/^(packages|apps)\//, ""))}</td>
+          <td style="font-size:10px;color:#9ca3af">#${lc.layerIndex}</td>
+          <td style="text-align:right">${lc.fileCount}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="cov-bar-wrap"><div class="cov-bar" style="width:${lc.coveragePercent}%;background:${barColor}"></div></div>
+              <span style="font-size:11px;font-weight:600;color:${barColor}">${lc.coveragePercent}%</span>
+            </div>
+          </td>
+          <td>${ruleChips}</td>
+          <td>${hotspots}</td>
+        </tr>`;
+            });
+            h += `</tbody></table></div>`;
+            // Coverage tips
+            const lowCov = sorted.filter((lc) => lc.fileCount > 0 && lc.coveragePercent < 40);
+            if (lowCov.length > 0) {
+                h += `<div style="margin-top:16px;padding:12px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:12px">
+          <b style="color:#92400e">⚠ Low-coverage layers</b>
+          <ul style="margin:8px 0 0;padding-left:20px;color:#78350f">
+            ${lowCov.map((lc) => `<li>${esc(lc.layerName)} — ${lc.coveragePercent}% (${lc.fileCount} files). Run <code>iw index hotspot-priority</code> to prioritize.</li>`).join("")}
+          </ul>
+        </div>`;
+            }
+        }
+        h += `</div>`;
+        return h;
+    }
+    // ── Cytoscape initializer ─────────────────────────────────────────────────
+    const cyInstances = new Map();
+    // Track which overlay checkbox states are active per cyId
+    const overlayState = new Map();
+    function initCytoscape(chapterId) {
+        if (typeof cytoscape === "undefined")
+            return;
+        const ch = document.getElementById(chapterId);
+        if (!ch)
+            return;
+        const ruleId = ch.dataset.ruleId;
+        if (!ruleId)
+            return;
+        const cyId = "cy-" + ruleId.replace(/[^a-z0-9]/gi, "-");
+        const container = document.getElementById(cyId);
+        if (!container)
+            return;
+        const els = (ruleElements.get(ruleId) ?? [])
+            .slice()
+            .sort((a, b) => (a.flowSeq ?? 999) - (b.flowSeq ?? 999));
+        if (els.length === 0)
+            return;
+        const nodes = els.map((el) => ({
+            data: {
+                id: el.name,
+                label: el.name,
+                step: el.flowSeq != null && el.flowSeq < 999 ? el.flowSeq + 1 : null,
+                kind: el.kind,
+                layerName: (el.layerName ?? "").replace(/^(packages|apps)\//, ""),
+                layerIndex: el.layerIndex,
+            },
+        }));
+        const ruleEdges = data.edges.filter((e) => e.ruleId === ruleId && e.fromElementName && e.toElementName &&
+            !isGlob(String(e.fromElementName)) && !isGlob(String(e.toElementName)));
+        const seenEdge = new Set();
+        const edges = ruleEdges.map((e, i) => {
+            const k = `${e.fromElementName}->${e.toElementName}`;
+            if (seenEdge.has(k))
+                return null;
+            seenEdge.add(k);
+            return {
+                data: {
+                    id: "e" + i,
+                    source: e.fromElementName,
+                    target: e.toElementName,
+                    edgeType: e.type,
+                    flowKind: e.flowKind ?? "",
+                    overlayType: "intent",
+                },
+            };
+        }).filter(Boolean);
+        if (edges.length === 0 && els.length > 1) {
+            for (let i = 0; i < els.length - 1; i++) {
+                edges.push({
+                    data: {
+                        id: "seq" + i,
+                        source: els[i].name,
+                        target: els[i + 1].name,
+                        edgeType: "allowed",
+                        flowKind: "flow",
+                        overlayType: "intent",
+                    },
+                });
+            }
+        }
+        try {
+            if (globalThis.cytoscapeDagre) {
+                cytoscape.use(globalThis.cytoscapeDagre);
+            }
+        }
+        catch { /* already registered */ }
+        const cy = cytoscape({
+            container,
+            elements: [...nodes, ...edges],
+            style: buildCyStyle(false),
+            layout: {
+                name: (typeof globalThis.cytoscapeDagre !== "undefined" ||
+                    typeof globalThis.dagre !== "undefined")
+                    ? "dagre" : "grid",
+                rankDir: "LR",
+                nodeSep: 60,
+                rankSep: 80,
+                padding: 24,
+            },
+        });
+        cy.fit(undefined, 24);
+        cyInstances.set(chapterId, cy);
+        overlayState.set(cyId, new Set());
+        // Wire overlay checkboxes
+        document.querySelectorAll(`input[data-cy="${cyId}"]`).forEach((cb) => {
+            cb.addEventListener("change", () => {
+                const state = overlayState.get(cyId) ?? new Set();
+                if (cb.checked)
+                    state.add(cb.dataset.overlay);
+                else
+                    state.delete(cb.dataset.overlay);
+                overlayState.set(cyId, state);
+                applyOverlays(cy, cyId, ruleId, state);
+            });
+        });
+    }
+    // Build Cytoscape style array; base styles only.
+    function buildCyStyle(_hasImports) {
+        return [
+            {
+                selector: "node",
+                style: {
+                    "background-color": "#f0f9ff",
+                    "border-color": "#7dd3fc",
+                    "border-width": 2,
+                    label: "data(label)",
+                    "text-valign": "bottom",
+                    "text-halign": "center",
+                    "font-size": "10px",
+                    "font-weight": "600",
+                    "color": "#0c4a6e",
+                    width: 40,
+                    height: 40,
+                    shape: "roundrectangle",
+                    "padding": "6px",
+                    "text-margin-y": 4,
+                },
+            },
+            {
+                selector: "node[step]",
+                style: {
+                    "background-color": "#0284c7",
+                    "border-color": "#0369a1",
+                    "color": "#fff",
+                },
+            },
+            {
+                selector: 'edge[overlayType = "import"]',
+                style: {
+                    "line-color": "#9ca3af",
+                    "target-arrow-color": "#9ca3af",
+                    "line-style": "dashed",
+                    "line-dash-pattern": [4, 4],
+                    width: 1.5,
+                    "z-index": 1,
+                    label: "",
+                },
+            },
+            {
+                selector: 'edge[edgeType = "forbidden"][overlayType != "import"]',
+                style: {
+                    "line-color": "#dc2626",
+                    "target-arrow-color": "#dc2626",
+                    "line-style": "dashed",
+                    "line-dash-pattern": [6, 3],
+                    width: 2,
+                },
+            },
+            {
+                selector: 'edge[edgeType = "allowed"][overlayType != "import"]',
+                style: {
+                    "line-color": "#0284c7",
+                    "target-arrow-color": "#0284c7",
+                    width: 2,
+                },
+            },
+            {
+                selector: "edge",
+                style: {
+                    "target-arrow-shape": "triangle",
+                    "curve-style": "bezier",
+                    "font-size": "9px",
+                    "color": "#64748b",
+                    label: "data(flowKind)",
+                    "text-rotation": "autorotate",
+                    "z-index": 5,
+                },
+            },
+        ];
+    }
+    // Apply/remove CARI overlays on a live Cytoscape instance.
+    function applyOverlays(cy, cyId, ruleId, active) {
+        const nodeNames = new Set(cy.nodes().map((n) => n.id()));
+        // ── hotspot overlay (node background: white→orange→red) ──
+        cy.nodes().forEach((n) => {
+            const name = n.id();
+            const hot = active.has("hotspot") ? overlay?.hotspot[name] : undefined;
+            if (hot) {
+                const r = Math.round(255);
+                const g = Math.round(255 * (1 - hot.score) * 0.6);
+                const b = Math.round(255 * (1 - hot.score) * 0.4);
+                n.style("background-color", `rgb(${r},${g},${b})`);
+                n.style("border-color", hot.score > 0.7 ? "#dc2626" : "#f97316");
+            }
+            else if (!active.has("communities") && !active.has("violations")) {
+                n.style("background-color", active.has("violations") ? n.style("background-color") : "#f0f9ff");
+                n.style("border-color", "#7dd3fc");
+            }
+        });
+        // ── hub overlay (border width 2–6px) ──
+        cy.nodes().forEach((n) => {
+            const hub = active.has("hubs") ? overlay?.hubs[n.id()] : undefined;
+            if (hub) {
+                n.style("border-width", 2 + hub.degree * 4);
+            }
+            else if (!active.has("hotspot")) {
+                n.style("border-width", 2);
+            }
+        });
+        // ── community overlay (node background colour) ──
+        cy.nodes().forEach((n) => {
+            const comm = active.has("communities") ? overlay?.communities[n.id()] : undefined;
+            if (comm && !active.has("hotspot") && !active.has("violations")) {
+                n.style("background-color", COMM_PALETTE[comm.id % COMM_PALETTE.length]);
+                n.style("border-color", "#a78bfa");
+            }
+        });
+        // ── violations overlay (node badge-like red tint, violating edges solid red) ──
+        if (active.has("violations")) {
+            const ruleViols = (data.violations ?? []).filter((v) => v.ruleId === ruleId);
+            const violFiles = new Set(ruleViols.map((v) => v.filePath));
+            cy.nodes().forEach((n) => {
+                // crude match: node name appears in any violation file path
+                const isViol = ruleViols.some((v) => v.filePath.includes(n.id()) || (v.symbol && v.symbol.includes(n.id())));
+                if (isViol) {
+                    n.style("background-color", "#fee2e2");
+                    n.style("border-color", "#dc2626");
+                    n.style("border-width", 3);
+                }
+            });
+        }
+        // ── actual imports overlay ──
+        // Remove any existing import edges first
+        cy.edges('[overlayType = "import"]').remove();
+        if (active.has("imports") && overlay && overlay.actualImports.length > 0) {
+            const importEdges = overlay.actualImports
+                .filter((imp) => nodeNames.has(imp.from) && nodeNames.has(imp.to))
+                .map((imp, i) => ({
+                data: {
+                    id: "imp" + i,
+                    source: imp.from,
+                    target: imp.to,
+                    edgeType: "allowed",
+                    overlayType: "import",
+                    flowKind: "",
+                },
+            }));
+            if (importEdges.length > 0) {
+                cy.add(importEdges);
+            }
+        }
+    }
+}
+architectureBookClientScript();
+</script>
+</body>
+</html>

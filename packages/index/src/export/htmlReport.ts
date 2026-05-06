@@ -17,8 +17,29 @@ import type { ArchReportData } from "../types.js";
 /**
  * Render an ArchReportData payload to a self-contained HTML string.
  */
-export function renderArchReportHtml(data: ArchReportData): string {
+export function renderArchReportHtml(
+  data: ArchReportData,
+  opts?: { embedDark?: boolean },
+): string {
   const json = JSON.stringify(data);
+  const darkOverrideCss = opts?.embedDark
+    ? `<style id="dark-override">
+#header { background: #0b0e14; border-bottom: 1px solid #1f2937; color: #e2e8f0; }
+#header h1 { color: #f0fdf4; }
+.btn { background: #1f2937; border-color: #374151; color: #9ca3af; }
+.btn:hover { background: #374151; color: #e2e8f0; }
+.btn.active { background: #15803d; border-color: #16a34a; color: #dcfce7; }
+.btn-group .btn:not(:last-child) { border-right-color: #374151; }
+.toggle { color: #9ca3af; }
+#search { background: #1f2937; border-color: #374151; color: #e2e8f0; }
+#search::placeholder { color: #4b5563; }
+#search:focus { border-color: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,.15); }
+#summary { color: #6b7280; }
+.dep-select { background: #1f2937; border-color: #374151; color: #e2e8f0; }
+.dep-select:focus { border-color: #4ade80; }
+#toggle-findings { background: #1f2937; border-color: #374151; color: #9ca3af; }
+</style>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -30,6 +51,7 @@ export function renderArchReportHtml(data: ArchReportData): string {
 <style>
 ${CSS}
 </style>
+${darkOverrideCss}
 </head>
 <body>
 <header id="header">
@@ -198,8 +220,14 @@ body {
 // ─── D3 Rendering Script ────────────────────────────────────────────────────
 
 const RENDER_SCRIPT = `
-(function() {
+(function tryInit() {
   'use strict';
+  // Defer init until the chart element has actual dimensions (handles srcdoc iframe timing)
+  var _chartCheck = document.getElementById('chart');
+  if (!_chartCheck || _chartCheck.clientWidth === 0) {
+    requestAnimationFrame(tryInit);
+    return;
+  }
 
   // ── Colour scales ────────────────────────────────────────────────
   const COMMUNITY_COLORS = [
@@ -292,8 +320,8 @@ const RENDER_SCRIPT = `
   const W = chartEl.clientWidth;
   const H = chartEl.clientHeight;
   const MARGIN = { top: 50, right: 30, bottom: 30, left: 30 };
-  const innerW = W - MARGIN.left - MARGIN.right;
-  const innerH = H - MARGIN.top - MARGIN.bottom;
+  const innerW = Math.max(1, W - MARGIN.left - MARGIN.right);
+  const innerH = Math.max(1, H - MARGIN.top - MARGIN.bottom);
 
   // ── Isolated file count ──────────────────────────────────────────
   const layeredFiles = new Set();

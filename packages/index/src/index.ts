@@ -172,9 +172,19 @@ export type {
 
 export {
   renderArchReportHtml,
+  renderPrescriptiveReportHtml,
+  renderInsightsBookHtml,
   renderFocusReportHtml,
   renderFocusDot,
   analyzeFocusInsights,
+} from "./export/index.js";
+
+export type {
+  InsightsBookData,
+  InsightsCodeHealth,
+  InsightsHotspots,
+  InsightsDocumentation,
+  InsightsLivingScore,
 } from "./export/index.js";
 
 export type {
@@ -322,9 +332,10 @@ export type {
   CommentCodeRatioResult,
   SkippedFileEntry,
   SkippedFilesResult,
-  // Semantic rule types (13.x)
+  // Semantic rule types (13.x + 17.2)
   RuleForbidden,
   RuleDefinition,
+  RulesAllowedEntry,
   RulesConfig,
   RulesViolation,
   RulesCheckResult,

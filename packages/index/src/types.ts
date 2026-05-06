@@ -202,6 +202,8 @@ export interface IndexBuildResult {
     propertyAccesses: number;
     typeAssertions: number;
     testDescriptions: number;
+    variableAssignments: number;
+    defUseChains: number;
   };
 
   /** Build duration in ms */
@@ -1133,10 +1135,34 @@ export interface LayerConfig {
 
     /** Glob patterns matching files in this layer */
     patterns: string[];
+
+    /** Optional visual row for prescriptive SVG layout (smaller renders higher) */
+    row?: number;
+
+    /** Optional visual column for prescriptive SVG layout */
+    column?: number;
+
+    /** Optional visual horizontal span in grid cells */
+    col_span?: number;
+
+    /** Optional visual vertical span in grid cells */
+    row_span?: number;
+
+    /** Optional side-lane hint for cross-cutting layers */
+    side?: "left" | "right";
   }>;
 
   /** Whether to allow skip-layer imports (default: false) */
   allowSkipLayer?: boolean;
+
+  /**
+   * Explicit allowed import overrides. Suppresses the synthetic forbidden edge
+   * for the named from→to layer pair in the prescriptive architecture report.
+   *
+   * Example: providers layer is allowed to import node builtins even though
+   * the rules.yaml adr003 rule also fires on its scope glob.
+   */
+  allowed?: Array<{ from: string; to: string }>;
 }
 
 /** A single layer violation. */
@@ -2070,8 +2096,16 @@ export interface RuleForbidden {
    * - `import_pattern`: matches against `imports.module_specifier` (glob)
    * - `variable_assignment`: matches assignment RHS text in `variable_assignments.value_text` (regex)
    * - `cypher`: CypherLite query over CARI graph projection (or raw SQL fallback)
+   * - `property_chain_length`: flags property access chains rooted at a symbol that exceed a minimum depth
    */
-  type: "property_access" | "call" | "symbol_name" | "import_pattern" | "variable_assignment" | "cypher";
+  type:
+    | "property_access"
+    | "call"
+    | "symbol_name"
+    | "import_pattern"
+    | "variable_assignment"
+    | "cypher"
+    | "property_chain_length";
 
   /** Glob for property_access chain (e.g. "**.source.path") */
   chain?: string;
@@ -2125,6 +2159,15 @@ export interface RuleForbidden {
   /** Glob restricting which files are in scope (e.g. "apps/ui/**") */
   in?: string;
 
+  /**
+   * Explicit target layer name for `import_pattern` rules whose `pattern` cannot be
+   * resolved to a layer automatically (e.g. patterns starting with "**&#47;").
+   * When set, the forbidden edge is drawn from the source layer to this named layer.
+   *
+   * Example: target_layer: "apps/arcdata-api"
+   */
+  target_layer?: string;
+
   /** Glob(s) to exclude from scope */
   except?: string | string[];
 
@@ -2133,6 +2176,58 @@ export interface RuleForbidden {
    * Used for context-specific detection (e.g. "flag match() only when .source.path is accessed").
    */
   context_access?: string;
+
+  /**
+   * Only flag when the caller file also imports from a glob-matching module specifier (15.1).
+   * Restricts `call` and `property_access` rules to files that depend on a specific import.
+   *
+   * Example: `context_import: '@acme/engine/src/transformers/**'`
+   */
+  context_import?: string;
+
+  /**
+   * Suppress violations whose enclosing function/method name matches any of these values (15.2).
+   * Matches against `symbol_calls.caller_name` / `property_accesses.symbol_name`.
+   *
+   * Example: `except_symbol: ['parseSearchQuery', 'formatBreadcrumb']`
+   */
+  except_symbol?: string | string[];
+
+  /**
+   * Enable intra-function taint propagation (16.1).
+   *
+   * When a `property_access` or `call` violation fires on an assignment line,
+   * the assigned variable is treated as tainted and downstream reads of that
+   * variable in the same function are also reported as violations.
+   */
+  taint_propagation?: boolean;
+
+  /**
+   * Root symbol name for `property_chain_length` rules (15.3).
+   * Only property accesses that start from a variable with this name are evaluated.
+   *
+   * Example: `root: 'entity'`
+   */
+  root?: string;
+
+  /**
+   * Minimum chain depth (number of `.`-segments) for `property_chain_length` rules (15.3).
+   * Chains with fewer segments are not flagged.
+   *
+   * Example: `min_depth: 4`
+   */
+  min_depth?: number;
+}
+
+/**
+ * Autofix hint block embedded in a rule definition (15.5).
+ * Rendered in `--format text` output and included in `--format json` violation objects.
+ */
+export interface AutofixHint {
+  /** Short remediation instruction (shown in CLI output) */
+  hint: string;
+  /** Workspace-relative file path or URL pointing to the canonical fix location */
+  reference?: string;
 }
 
 /** One rule definition (from rules.yaml). */
@@ -2141,12 +2236,58 @@ export interface RuleDefinition {
   description?: string;
   adr?: string;
   severity: "high" | "medium" | "low";
+  /**
+   * Violation counting mode (15.4).
+   * - `per_occurrence` (default): one violation per matching occurrence
+   * - `per_file`: at most one violation per file per rule (deduplicates multi-match files)
+   */
+  count_mode?: "per_occurrence" | "per_file";
+  /**
+   * Optional autofix hint shown in CLI output and included in JSON violations (15.5).
+   */
+  autofix?: AutofixHint;
   forbidden: RuleForbidden[];
+}
+
+/**
+ * An explicit positive permission declared in `rules.yaml` (§17.2).
+ * Used by the prescriptive architecture diagram to draw allowed (green) edges
+ * between layers. When `allowed:` is omitted the prescriptive renderer derives
+ * permitted edges as "within-layer or one-step-down in declared layer order".
+ *
+ * Can also feed into `cari_layers_check` to verify that the actual import graph
+ * contains the expected flows (not just the absence of forbidden ones).
+ *
+ * Example (`rules.yaml`):
+ * ```yaml
+ * allowed:
+ *   - from_layer: interface
+ *     to_layer: service
+ *     description: "Controllers may call service-layer code"
+ *   - from_layer: service
+ *     to_layer: data
+ *     description: "Services may access repositories directly"
+ * ```
+ */
+export interface RulesAllowedEntry {
+  /** Source layer name (must match a layer name in layers.yaml or inferred layers) */
+  from_layer: string;
+  /** Destination layer name */
+  to_layer: string;
+  /** Optional human-readable rationale shown in CLI output and prescriptive diagram */
+  description?: string;
 }
 
 /** Parsed .iw/rules.yaml config. */
 export interface RulesConfig {
   version: number;
+  /**
+   * Optional explicit positive permissions (§17.2).
+   * Declares which layer-to-layer flows are sanctioned by the team.
+   * Powers green "allowed" edges in the prescriptive architecture diagram.
+   * When absent, the prescriptive renderer derives permitted edges from layer order.
+   */
+  allowed?: RulesAllowedEntry[];
   rules: RuleDefinition[];
 }
 
@@ -2161,6 +2302,8 @@ export interface RulesViolation {
   symbol?: string | null;
   /** Human-readable detail about what was found */
   detail: string;
+  /** Autofix hint carried from the rule definition (15.5) */
+  autofix?: AutofixHint;
 }
 
 /** Result of rulesCheck. */

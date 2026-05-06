@@ -181,6 +181,18 @@ CREATE TABLE IF NOT EXISTS variable_assignments (
   context     TEXT
 );
 
+-- Intra-function def-use chains (16.1)
+
+CREATE TABLE IF NOT EXISTS def_use_chains (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  file        TEXT NOT NULL,
+  function    TEXT,
+  def_line    INTEGER NOT NULL,
+  var_name    TEXT NOT NULL,
+  use_line    INTEGER NOT NULL,
+  use_context TEXT NOT NULL
+);
+
 -- Indexes for retrieval
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
@@ -216,6 +228,9 @@ CREATE INDEX IF NOT EXISTS idx_test_descriptions_file ON test_descriptions(file)
 CREATE INDEX IF NOT EXISTS idx_test_descriptions_kind ON test_descriptions(kind);
 CREATE INDEX IF NOT EXISTS idx_var_assign_file ON variable_assignments(file);
 CREATE INDEX IF NOT EXISTS idx_var_assign_symbol ON variable_assignments(symbol_name);
+CREATE INDEX IF NOT EXISTS idx_def_use_file ON def_use_chains(file);
+CREATE INDEX IF NOT EXISTS idx_def_use_var ON def_use_chains(var_name);
+CREATE INDEX IF NOT EXISTS idx_def_use_def_line ON def_use_chains(def_line);
 
 -- Full-text search
 
@@ -317,9 +332,9 @@ export function initSchema(db: Database.Database): void {
   db.exec(SCHEMA_SQL);
 
   // Backward-compatible migration: older indexes may not have imports.line.
-  const importsCols = db
-    .prepare(`PRAGMA table_info(imports)`)
-    .all() as Array<{ name: string }>;
+  const importsCols = db.prepare(`PRAGMA table_info(imports)`).all() as Array<{
+    name: string;
+  }>;
   const hasImportLine = importsCols.some((c) => c.name === "line");
   if (!hasImportLine) {
     db.exec(`ALTER TABLE imports ADD COLUMN line INTEGER`);
@@ -327,6 +342,6 @@ export function initSchema(db: Database.Database): void {
 
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '12')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '13')`,
   ).run();
 }

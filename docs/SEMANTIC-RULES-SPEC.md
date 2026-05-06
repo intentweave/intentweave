@@ -1,9 +1,13 @@
 # Semantic Rule Checking — Specification
 
-> **Version:** 0.1  
-> **Status:** Concept / Proposal  
+> **Version:** 0.2  
+> **Status:** Partially Implemented (Stage 1 complete; Stages 2–3 in backlog)  
 > **Scope:** Extending CARI from import-graph checks to symbol-usage-pattern checks,
 > enabling CI enforcement of ADR-level architectural constraints.
+>
+> **Changelog v0.2:** Added `expresses` block format (§4.4) for visualization-intent
+> rules; added `target_layer` scope modifier (§4.3); documented `forbidden: []` pattern
+> for pure-visualization rules; updated implementation stage status.
 
 ---
 
@@ -221,6 +225,33 @@ rules:
         callee: "match|exec" # regex methods
         in: "apps/data-explorer/**"
         context_access: "**.source.path" # only flag when used on .source.path access
+
+  # Visualization-intent rule — no CI enforcement, pure SVG architecture diagram input
+  - id: adr003-provider-adapter-transformer-flow
+    description: "Intended ADR-003 pipeline flow (visualization-only)"
+    adr: ADR-003
+    severity: low
+    expresses:
+      elements:
+        - name: SourceProvider
+          kind: component
+          layer: "packages/@arccraft/providers"
+        - name: AdapterParser
+          kind: component
+          layer: "packages/@arccraft"
+        - name: PipelineWorkerPlugin
+          kind: component
+          layer: "packages/@arccraft/pipeline-workers"
+      flows:
+        - from: SourceProvider
+          to: AdapterParser
+          policy: allowed
+          kind: data
+        - from: AdapterParser
+          to: PipelineWorkerPlugin
+          policy: allowed
+          kind: control
+    forbidden: []
 ```
 
 ### 4.2 Rule types
@@ -232,14 +263,96 @@ rules:
 | `symbol_name`     | Declaration of a symbol with a name matching a pattern           | `symbols` (existing) |
 | `import_pattern`  | Import of a path matching a pattern (existing, via import graph) | `imports` (existing) |
 
+**Visualization-intent rules** (no enforcement, no table query — pure SVG rendering):
+
+| Key         | Purpose                                                                                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expresses` | Declare named components, their layers, and intended data/control flows between them. Used by `iw index export --prescriptive` to render the architecture SVG. Requires `forbidden: []`. |
+
 ### 4.3 Scope modifiers
 
-| Key              | Meaning                                                              |
-| ---------------- | -------------------------------------------------------------------- |
-| `in`             | Restrict violation detection to files matching this glob             |
-| `except`         | Whitelist paths that are allowed despite the rule                    |
-| `except_pattern` | Whitelist files whose _enclosing symbol name_ matches this regex     |
-| `context_access` | Only flag when co-located with an access chain matching this pattern |
+| Key              | Meaning                                                                                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `in`             | Restrict violation detection to files matching this glob                                                                                                                           |
+| `except`         | Whitelist paths that are allowed despite the rule                                                                                                                                  |
+| `except_pattern` | Whitelist files whose _enclosing symbol name_ matches this regex                                                                                                                   |
+| `context_access` | Only flag when co-located with an access chain matching this pattern                                                                                                               |
+| `target_layer`   | For `import_pattern`: only flag if the imported file resolves to this layer name (avoids false positives when two packages share a similar path pattern but only one is forbidden) |
+
+---
+
+### 4.4 The `expresses` block — Visualization-Intent Rules
+
+A rule may carry an `expresses` block **instead of** (or alongside an empty `forbidden: []`) a
+`forbidden` list. Rules with only `expresses` are _visualization-only_: they have `severity: low`
+and never produce CI violations. Their sole purpose is to encode **intended architecture** so that
+`iw index export --prescriptive --show-rule-elements` can render named components and their
+data/control flows as a prescriptive SVG architecture diagram.
+
+```yaml
+- id: adr003-provider-adapter-transformer-flow
+  description: >
+    Intended ADR-003 pipeline: Providers → Adapters/Parsers → Transformer pipeline.
+    Visualization-only — encodes expected data/control flow across current engine
+    implementation and a future pluggable async worker stage.
+  adr: ADR-003
+  severity: low
+  expresses:
+    elements:
+      - name: SourceProvider
+        kind: component # component | interface | service | store
+        layer: "packages/@arccraft/providers"
+      - name: AdapterParser
+        kind: component
+        layer: "packages/@arccraft"
+      - name: PipelineWorkerPlugin
+        kind: component
+        layer: "packages/@arccraft/pipeline-workers"
+    flows:
+      - from: SourceProvider
+        to: AdapterParser
+        policy: allowed # allowed | forbidden
+        kind: data # data | control
+      - from: AdapterParser
+        to: PipelineWorkerPlugin
+        policy: allowed
+        kind: control
+  forbidden: [] # explicit empty list — no CI enforcement
+```
+
+#### `expresses.elements` fields
+
+| Field   | Type   | Required | Description                                                      |
+| ------- | ------ | -------- | ---------------------------------------------------------------- |
+| `name`  | string | yes      | Display name for the component chip in the SVG                   |
+| `kind`  | string | yes      | Visual style class: `component`, `interface`, `service`, `store` |
+| `layer` | string | yes      | Layer name from `.iw/layers.yaml` that this component belongs to |
+
+#### `expresses.flows` fields
+
+| Field    | Type   | Required | Description                                                     |
+| -------- | ------ | -------- | --------------------------------------------------------------- |
+| `from`   | string | yes      | Source element `name`                                           |
+| `to`     | string | yes      | Target element `name`                                           |
+| `policy` | string | yes      | `allowed` (green solid arrow) or `forbidden` (red dashed arrow) |
+| `kind`   | string | no       | `data` or `control` — shown in the edge hover panel             |
+
+#### Relationship to `forbidden` enforcement
+
+A rule may contain **both** `expresses` and `forbidden` entries:
+
+```yaml
+expresses:
+  elements: [...]   # defines visual components
+  flows: [...]      # defines intended flows for SVG
+forbidden:
+  - type: import_pattern
+    ...             # the same rule also enforces a real constraint at CI
+```
+
+In this combined form the `expresses` block supplies the visualization intent while the
+`forbidden` clauses provide the enforcement signal. This pattern is recommended for rules
+that have _both_ a diagrammatic expression and a detectable code-level violation.
 
 ---
 
@@ -335,16 +448,21 @@ Copilot usage: _"Are there any ADR-003 violations in the explorer views?"_
 
 The feature has three independently shippable stages:
 
-### Stage 1 — Manual rules, import-graph detection only ($0, no AX changes)
+### Stage 1 — Manual rules, import-graph detection only ($0, no AX changes) ✅
 
 **Scope:** Implement `rulesCheck` for `import_pattern` type rules only. These use the existing
 `imports` table. No AX changes. Catches a subset of violations where the wrong dependency
 _is_ visible in the import graph (e.g., a UI file importing `resolved-entity-worker.ts` directly
 instead of via the API route).
 
-**Effort:** S (1 day). New query + YAML config loader.
+Also delivered in Stage 1: the `expresses` block parser and prescriptive SVG export pipeline
+(`iw index export --prescriptive --show-rule-elements`). Visualization-intent rules are loaded
+at export time; no SQLite query is issued for `forbidden: []` rules.
 
-### Stage 2 — AST extensions: call tracking and property access
+**Effort:** S (1 day). New query + YAML config loader.  
+**Status:** Complete. `import_pattern` rules and `expresses` visualization are live.
+
+### Stage 2 — AST extensions: call tracking and property access _(backlog: 13.1)_ ✅
 
 **Scope:** Extend the AX extractor (tree-sitter TS/JS/TSX) to capture:
 
@@ -359,7 +477,19 @@ instead of via the API route).
 - `extractSystem(entity.source.path)` → both `call` and `property_access` rules
 - `refToId()`, `idToName()`, `entityById` → `call` rules
 
-### Stage 3 — LLM rule extraction from ADRs
+**Status:** Complete. Full pipeline is live and validated:
+
+- `symbol_calls` table: 21 k rows (on IntentWeave codebase itself)
+- `property_accesses` table: 3.3 k rows
+- `imports.line` column: 1.1 k rows with line numbers
+- `rulesCheck` handles `call`, `property_access`, `symbol_name`, `import_pattern`,
+  `variable_assignment`, and `cypher` rule types (31 unit tests pass)
+- `iw index rules-check --format json` redirect is stable (uses `process.stdout.write`)
+- `--baseline` / `--save-baseline` / `--fail-on-increase` CI gate is live
+- `import_pattern` glob handling treats `**` as crossing `/` (13.6 fix is applied)
+- `symbol_name` `scope` modifier (`exported` / `top-level` / `any`) is supported
+
+### Stage 3 — LLM rule extraction from ADRs _(backlog: 13.4)_
 
 **Scope:** `iw index rules-extract` command. Reads ADR markdown, produces `.iw/rules.yaml`
 draft. Uses the same LLM provider pipeline as existing KG extraction.

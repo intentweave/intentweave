@@ -233,6 +233,24 @@ export interface ExtractedVariableAssignment {
   context: string | null;
 }
 
+/**
+ * One intra-function def-use edge for a local variable (16.1).
+ */
+export interface ExtractedDefUseChain {
+  /** File containing the definition and use */
+  file: string;
+  /** Enclosing function / class name; null for anonymous contexts */
+  functionName: string | null;
+  /** Line where the variable is defined */
+  defLine: number;
+  /** Local variable name */
+  varName: string;
+  /** Line where the variable is read */
+  useLine: number;
+  /** Read context (call_arg, property_access, return, assignment_rhs, read) */
+  useContext: string;
+}
+
 export interface FileExtractionResult {
   /** File path (relative to workspace) */
   filePath: string;
@@ -263,6 +281,9 @@ export interface FileExtractionResult {
 
   /** Variable assignments with RHS text (13.10) */
   variableAssignments?: ExtractedVariableAssignment[];
+
+  /** Intra-function def-use chains for local variables (16.1) */
+  defUseChains?: ExtractedDefUseChain[];
 
   /** Extraction timestamp */
   extractedAt: number;

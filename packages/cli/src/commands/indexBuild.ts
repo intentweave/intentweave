@@ -23,6 +23,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { load as yamlLoad } from "js-yaml";
+import { minimatch } from "minimatch";
 
 // Analyzer stages (used by update subcommand)
 import {
@@ -258,6 +259,8 @@ import {
   nameLayers,
   archReport,
   renderArchReportHtml,
+  renderPrescriptiveReportHtml,
+  renderInsightsBookHtml,
   renderFocusReportHtml,
   analyzeFocusInsights,
   archCheck,
@@ -276,6 +279,7 @@ import {
   rulesTrend,
   snapshotConformance,
   testIntent,
+  livingScore,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -285,10 +289,1028 @@ import type {
   LayerConfig,
   ArchConfig,
   RulesConfig,
+  RulesCheckResult,
+  InsightsBookData,
 } from "@intentweave/index";
 
 function resolveDbPath(output?: string): string {
   return output ?? path.join(process.cwd(), ".iw", "index.db");
+}
+
+function fileLayerIndexFromConfig(
+  filePath: string,
+  config: LayerConfig,
+): number | null {
+  for (let i = 0; i < config.layers.length; i++) {
+    const layer = config.layers[i];
+    if (layer.patterns.some((p) => minimatch(filePath, p, { dot: true }))) {
+      return i;
+    }
+  }
+  return null;
+}
+
+function globBase(pattern: string): string {
+  const normalized = pattern.replace(/\\/g, "/").trim();
+  const wildcardIdx = normalized.search(/[\*\?\[{]/);
+  const base = wildcardIdx >= 0 ? normalized.slice(0, wildcardIdx) : normalized;
+  return base.replace(/\/+$/, "");
+}
+
+function globsLikelyOverlap(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (minimatch(a, b, { dot: true }) || minimatch(b, a, { dot: true })) {
+    return true;
+  }
+  const aBase = globBase(a);
+  const bBase = globBase(b);
+  if (!aBase || !bBase) return false;
+  return aBase.startsWith(bBase) || bBase.startsWith(aBase);
+}
+
+function layerIndicesFromScope(
+  scope: string | undefined,
+  config: LayerConfig,
+): number[] {
+  if (!scope) return [];
+  const result: number[] = [];
+  for (let i = 0; i < config.layers.length; i++) {
+    const layer = config.layers[i];
+    if (layer.name === scope) {
+      result.push(i);
+      continue;
+    }
+    if (layer.patterns.some((p) => globsLikelyOverlap(scope, p))) {
+      result.push(i);
+    }
+  }
+  return [...new Set(result)];
+}
+
+function layerIndicesFromImportPattern(
+  pattern: string | undefined,
+  config: LayerConfig,
+  targetLayer?: string,
+): number[] {
+  // Explicit target_layer hint takes precedence — reliable for **/path patterns.
+  if (targetLayer) {
+    const idx = config.layers.findIndex((l) => l.name === targetLayer);
+    if (idx >= 0) return [idx];
+  }
+  if (!pattern) return [];
+  // Normalize protocol-style specifiers to path-like for glob matching.
+  // e.g. "node:fs*" → "node/fs*" so it can match a "node/**" layer pattern.
+  const normalized = pattern.replace(/^([a-z][a-z0-9+.\-]*):/, "$1/");
+  // Strip leading **/ for patterns like "**/workers/resolved-entity-worker*"
+  const stripped = normalized.startsWith("**/")
+    ? normalized.slice(3)
+    : normalized;
+  if (!stripped.includes("/")) {
+    return [];
+  }
+  const result: number[] = [];
+  for (let i = 0; i < config.layers.length; i++) {
+    const layer = config.layers[i];
+    if (
+      layer.patterns.some(
+        (p) =>
+          globsLikelyOverlap(stripped, p) || globsLikelyOverlap(normalized, p),
+      )
+    ) {
+      result.push(i);
+    }
+  }
+  return [...new Set(result)];
+}
+
+async function loadLayerConfigOrInfer(
+  dbPath: string,
+  hierarchical: boolean,
+): Promise<LayerConfig> {
+  const layersPath = path.join(process.cwd(), ".iw", "layers.yaml");
+  try {
+    const content = await fs.readFile(layersPath, "utf-8");
+    return parseLayersYaml(content);
+  } catch {
+    // Fallback to inferred layer config.
+    const inferred = layersInfer(
+      dbPath,
+      hierarchical ? { hierarchical: true } : undefined,
+    );
+    return {
+      layers: inferred.layers.map((l) => ({
+        name: l.label,
+        patterns: l.files,
+      })),
+    };
+  }
+}
+
+async function buildPrescriptiveReportData(
+  dbPath: string,
+  opts: {
+    hierarchical: boolean;
+    showRuleElements: boolean;
+    rulesConfigPath?: string;
+  },
+) {
+  const layerConfig = await loadLayerConfigOrInfer(dbPath, opts.hierarchical);
+  const layerCheckResult = layersCheck(dbPath, layerConfig);
+
+  let rulesConfig: RulesConfig | undefined;
+  const cfgPath = opts.rulesConfigPath
+    ? path.resolve(opts.rulesConfigPath)
+    : path.join(process.cwd(), ".iw", "rules.yaml");
+  try {
+    rulesConfig = await loadRulesConfig(cfgPath);
+  } catch {
+    rulesConfig = undefined;
+  }
+
+  const rulesResult = rulesConfig
+    ? rulesCheck(dbPath, rulesConfig, {
+        severity: "low",
+        limit: 5000,
+      })
+    : {
+        violations: [],
+        totalViolations: 0,
+        bySeverity: { high: 0, medium: 0, low: 0 },
+        byRule: {} as Record<string, number>,
+        rulesChecked: 0,
+      };
+
+  const ruleViolationsByLayer = new Map<number, number>();
+  for (const v of rulesResult.violations) {
+    const idx = fileLayerIndexFromConfig(v.filePath, layerConfig);
+    if (idx == null) continue;
+    ruleViolationsByLayer.set(idx, (ruleViolationsByLayer.get(idx) ?? 0) + 1);
+  }
+
+  const fileCounts = new Map<number, number>();
+  for (const row of layerCheckResult.layerSummary) {
+    fileCounts.set(row.index, row.fileCount);
+  }
+
+  const elementsByLayer = new Map<
+    string,
+    Array<{
+      name: string;
+      kind: "component" | "class" | "method" | "symbol";
+      layerName: string;
+      ruleId?: string;
+      flowSeq?: number;
+    }>
+  >();
+  const policiesByLayer = new Map<
+    number,
+    Array<{
+      ruleId: string;
+      kind: string;
+      count: number;
+      description?: string;
+      adr?: string;
+      severity?: "high" | "medium" | "low";
+    }>
+  >();
+
+  if (opts.showRuleElements && rulesConfig) {
+    const seen = new Set<string>();
+    const addElement = (
+      layerName: string,
+      name: string,
+      kind: "component" | "class" | "method" | "symbol",
+      ruleId: string,
+      flowSeq?: number,
+    ) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const dedupeKey = `${layerName}::${trimmed}::${kind}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      const arr = elementsByLayer.get(layerName) ?? [];
+      arr.push({
+        name: trimmed,
+        kind,
+        layerName,
+        ruleId,
+        flowSeq,
+      });
+      elementsByLayer.set(layerName, arr);
+    };
+
+    for (const rule of rulesConfig.rules) {
+      const expr = (rule as any).expresses;
+      const elements = Array.isArray(expr?.elements) ? expr.elements : [];
+      for (let elIdx = 0; elIdx < elements.length; elIdx++) {
+        const el = elements[elIdx];
+        if (
+          !el ||
+          typeof el.name !== "string" ||
+          typeof el.layer !== "string"
+        ) {
+          continue;
+        }
+        const kindRaw =
+          typeof el.kind === "string"
+            ? (el.kind as string).toLowerCase()
+            : "symbol";
+        const kind =
+          kindRaw === "component" || kindRaw === "class" || kindRaw === "method"
+            ? (kindRaw as "component" | "class" | "method")
+            : "symbol";
+        addElement(el.layer, el.name, kind, rule.id, elIdx);
+      }
+
+      // Fallback extraction: derive visualizable rule elements from forbidden
+      // clauses so --show-rule-elements is useful even without expresses.elements.
+      for (const forbidden of rule.forbidden ?? []) {
+        const sourceLayers = layerIndicesFromScope(forbidden.in, layerConfig);
+        if (sourceLayers.length === 0) continue;
+
+        for (const sourceLayerIndex of sourceLayers) {
+          const sourceLayerName = layerConfig.layers[sourceLayerIndex]?.name;
+          if (!sourceLayerName) continue;
+          if (typeof forbidden.in === "string") {
+            addElement(sourceLayerName, forbidden.in, "component", rule.id);
+          }
+
+          if (forbidden.type === "import_pattern") {
+            if (typeof forbidden.pattern === "string") {
+              const targetLayers = layerIndicesFromImportPattern(
+                forbidden.pattern,
+                layerConfig,
+                forbidden.target_layer,
+              );
+              // If a target layer is resolvable, the prescriptive edge already carries
+              // fromElementName/toElementName anchors; avoid adding duplicate fallback
+              // chips that compete as hover-edge endpoints.
+              if (targetLayers.length === 0) {
+                addElement(
+                  sourceLayerName,
+                  forbidden.pattern,
+                  "symbol",
+                  rule.id,
+                );
+              }
+            }
+            continue;
+          }
+
+          if (
+            forbidden.type === "call" &&
+            typeof forbidden.callee === "string"
+          ) {
+            addElement(sourceLayerName, forbidden.callee, "symbol", rule.id);
+          }
+          if (
+            forbidden.type === "symbol_name" &&
+            typeof forbidden.pattern === "string"
+          ) {
+            addElement(sourceLayerName, forbidden.pattern, "symbol", rule.id);
+          }
+          if (
+            forbidden.type === "property_access" &&
+            typeof forbidden.chain === "string"
+          ) {
+            addElement(sourceLayerName, forbidden.chain, "symbol", rule.id);
+          }
+          if (forbidden.type === "property_chain_length") {
+            const root =
+              typeof forbidden.root === "string"
+                ? forbidden.root
+                : "property chain";
+            const minDepth = Number.isFinite(forbidden.min_depth)
+              ? String(forbidden.min_depth)
+              : "?";
+            addElement(
+              sourceLayerName,
+              `${root} (depth>=${minDepth})`,
+              "symbol",
+              rule.id,
+            );
+          }
+          if (
+            forbidden.type === "variable_assignment" &&
+            typeof forbidden.value_pattern === "string"
+          ) {
+            addElement(
+              sourceLayerName,
+              forbidden.value_pattern,
+              "symbol",
+              rule.id,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const layers = layerConfig.layers.map((layer, index) => ({
+    index,
+    name: layer.name,
+    fileCount: fileCounts.get(index) ?? 0,
+    ruleViolationCount: ruleViolationsByLayer.get(index) ?? 0,
+    elements: elementsByLayer.get(layer.name) ?? [],
+    policies: policiesByLayer.get(index) ?? [],
+    row: typeof layer.row === "number" ? layer.row : undefined,
+    column: typeof layer.column === "number" ? layer.column : undefined,
+    colSpan: typeof layer.col_span === "number" ? layer.col_span : undefined,
+    rowSpan: typeof layer.row_span === "number" ? layer.row_span : undefined,
+    side:
+      layer.side === "left" || layer.side === "right" ? layer.side : undefined,
+  }));
+
+  const layerNameToIndex = new Map<string, number>();
+  for (const layer of layers) {
+    layerNameToIndex.set(layer.name, layer.index);
+  }
+
+  const elementNameToLayerIndex = new Map<string, number>();
+  for (const layer of layers) {
+    for (const el of layer.elements) {
+      if (!elementNameToLayerIndex.has(el.name)) {
+        elementNameToLayerIndex.set(el.name, layer.index);
+      }
+    }
+  }
+
+  const edges: Array<{
+    fromLayerIndex: number;
+    toLayerIndex: number;
+    type: "allowed" | "forbidden";
+    label: string;
+    count?: number;
+    flowKind?: "control" | "data" | "hop";
+    ruleId?: string;
+    description?: string;
+    adr?: string;
+    severity?: "high" | "medium" | "low";
+    fromElementName?: string;
+    toElementName?: string;
+  }> = [];
+
+  // §17.2 — When rules.yaml has explicit `allowed:` entries, use those as green edges.
+  // When absent, fall back to "within-layer + one-step-down" derived defaults.
+  if (rulesConfig?.allowed && rulesConfig.allowed.length > 0) {
+    for (const entry of rulesConfig.allowed) {
+      const fromIdx = layerConfig.layers.findIndex(
+        (l) => l.name === entry.from_layer,
+      );
+      const toIdx = layerConfig.layers.findIndex(
+        (l) => l.name === entry.to_layer,
+      );
+      if (fromIdx < 0 || toIdx < 0) continue;
+      edges.push({
+        fromLayerIndex: fromIdx,
+        toLayerIndex: toIdx,
+        type: "allowed",
+        label:
+          entry.description ??
+          `allowed (${entry.from_layer} → ${entry.to_layer})`,
+        description: entry.description,
+      });
+    }
+  } else {
+    // Default allowed policy: within-layer + one-step-down in declared order.
+    for (let i = 1; i < layerConfig.layers.length; i++) {
+      edges.push({
+        fromLayerIndex: i,
+        toLayerIndex: i - 1,
+        type: "allowed",
+        label: "allowed (derived)",
+      });
+    }
+  }
+
+  // Layer-check violations shown as forbidden edges.
+  const forbiddenCounts = new Map<string, number>();
+  for (const v of layerCheckResult.violations) {
+    const key = `${v.sourceLayerIndex}->${v.targetLayerIndex}`;
+    forbiddenCounts.set(key, (forbiddenCounts.get(key) ?? 0) + 1);
+  }
+  for (const [k, count] of forbiddenCounts) {
+    const [fromStr, toStr] = k.split("->");
+    const from = parseInt(fromStr, 10);
+    const to = parseInt(toStr, 10);
+    edges.push({
+      fromLayerIndex: from,
+      toLayerIndex: to,
+      type: "forbidden",
+      label: `forbidden (${count})`,
+      count,
+    });
+  }
+
+  // Build allowed-override set from explicit edges in layers.yaml (e.g. providers → node).
+  const allowedOverrides = new Set<string>(
+    (layerConfig.allowed ?? [])
+      .map((a) => {
+        const f = layerConfig.layers.findIndex((l) => l.name === a.from);
+        const t = layerConfig.layers.findIndex((l) => l.name === a.to);
+        return f >= 0 && t >= 0 ? `${f}->${t}` : "";
+      })
+      .filter(Boolean),
+  );
+
+  // Synthetic forbidden policy edges from rules (even without expresses metadata).
+  if (rulesConfig) {
+    const seenRuleEdges = new Set<string>();
+    const seenLayerPolicies = new Set<string>();
+    for (const rule of rulesConfig.rules) {
+      const ruleCount = rulesResult.byRule[rule.id] ?? 0;
+      for (const forbidden of rule.forbidden ?? []) {
+        const sourceLayers = layerIndicesFromScope(forbidden.in, layerConfig);
+        if (sourceLayers.length === 0) continue;
+
+        const inferredTargets =
+          forbidden.type === "import_pattern"
+            ? layerIndicesFromImportPattern(
+                forbidden.pattern,
+                layerConfig,
+                forbidden.target_layer,
+              )
+            : [];
+        const targetLayers = inferredTargets;
+
+        const flowKind: "control" | "data" | "hop" =
+          forbidden.type === "property_access" ||
+          forbidden.type === "property_chain_length"
+            ? "data"
+            : forbidden.type === "import_pattern"
+              ? "hop"
+              : "control";
+
+        for (const fromLayerIndex of sourceLayers) {
+          if (targetLayers.length === 0) {
+            const pKey = `${rule.id}::${forbidden.type}::${fromLayerIndex}`;
+            if (!seenLayerPolicies.has(pKey)) {
+              seenLayerPolicies.add(pKey);
+              const arr = policiesByLayer.get(fromLayerIndex) ?? [];
+              arr.push({
+                ruleId: rule.id,
+                kind: forbidden.type,
+                count: ruleCount,
+                description: rule.description,
+                adr: rule.adr,
+                severity: rule.severity,
+              });
+              policiesByLayer.set(fromLayerIndex, arr);
+            }
+            continue;
+          }
+
+          for (const toLayerIndex of targetLayers) {
+            const key = `${rule.id}::${forbidden.type}::${fromLayerIndex}->${toLayerIndex}`;
+            if (seenRuleEdges.has(key)) continue;
+            seenRuleEdges.add(key);
+
+            // Skip forbidden edge when layers.yaml declares an explicit allowed override.
+            const overrideKey = `${fromLayerIndex}->${toLayerIndex}`;
+            if (allowedOverrides.has(overrideKey)) continue;
+
+            const suffix = ruleCount > 0 ? `, ${ruleCount}` : ", 0";
+            edges.push({
+              fromLayerIndex,
+              toLayerIndex,
+              type: "forbidden",
+              flowKind,
+              ruleId: rule.id,
+              description: rule.description,
+              adr: rule.adr,
+              severity: rule.severity,
+              count: ruleCount,
+              label: `${forbidden.type} (${rule.id}${suffix})`,
+              fromElementName: forbidden.in,
+              toElementName: forbidden.pattern,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  for (const layer of layers) {
+    layer.policies = policiesByLayer.get(layer.index) ?? [];
+  }
+
+  // Rule-expressed flows (17.1b): policy + flow kind + optional element endpoints.
+  if (rulesConfig) {
+    const seenFlows = new Set<string>();
+    for (const rule of rulesConfig.rules) {
+      const expr = (rule as any).expresses;
+      const flows = Array.isArray(expr?.flows) ? expr.flows : [];
+      for (const flow of flows) {
+        if (
+          !flow ||
+          typeof flow.from !== "string" ||
+          typeof flow.to !== "string"
+        ) {
+          continue;
+        }
+
+        const fromLayerIdx =
+          typeof flow.from_layer === "string"
+            ? layerNameToIndex.get(flow.from_layer)
+            : elementNameToLayerIndex.get(flow.from);
+        const toLayerIdx =
+          typeof flow.to_layer === "string"
+            ? layerNameToIndex.get(flow.to_layer)
+            : elementNameToLayerIndex.get(flow.to);
+
+        if (fromLayerIdx == null || toLayerIdx == null) {
+          continue;
+        }
+
+        const kindRaw =
+          typeof flow.kind === "string"
+            ? String(flow.kind).toLowerCase()
+            : "control";
+        const flowKind: "control" | "data" | "hop" =
+          kindRaw === "data" || kindRaw === "hop" ? kindRaw : "control";
+
+        const policyRaw =
+          typeof flow.policy === "string"
+            ? String(flow.policy).toLowerCase()
+            : "forbidden";
+        const type: "allowed" | "forbidden" =
+          policyRaw === "allowed" ? "allowed" : "forbidden";
+
+        const key = [
+          rule.id,
+          fromLayerIdx,
+          toLayerIdx,
+          flow.from,
+          flow.to,
+          flowKind,
+          type,
+        ].join("::");
+        if (seenFlows.has(key)) {
+          continue;
+        }
+        seenFlows.add(key);
+
+        const ruleCount = rulesResult.byRule[rule.id] ?? 0;
+        edges.push({
+          fromLayerIndex: fromLayerIdx,
+          toLayerIndex: toLayerIdx,
+          type,
+          flowKind,
+          ruleId: rule.id,
+          fromElementName: flow.from,
+          toElementName: flow.to,
+          count: type === "forbidden" ? ruleCount : undefined,
+          label:
+            type === "forbidden"
+              ? `${flowKind} flow (${rule.id}, ${ruleCount})`
+              : `${flowKind} flow (${rule.id})`,
+        });
+      }
+    }
+  }
+
+  const totalFiles = [...fileCounts.values()].reduce((a, b) => a + b, 0);
+
+  // Build a lookup for rule metadata (description, adr, severity).
+  const ruleMetaMap = new Map<
+    string,
+    { description?: string; adr?: string; severity: "high" | "medium" | "low" }
+  >();
+  for (const rule of rulesConfig?.rules ?? []) {
+    ruleMetaMap.set(rule.id, {
+      description: rule.description,
+      adr: rule.adr,
+      severity: rule.severity,
+    });
+  }
+
+  const rules = Object.entries(rulesResult.byRule)
+    .map(([id, count]) => {
+      const meta = ruleMetaMap.get(id);
+      const severity =
+        meta?.severity ??
+        rulesResult.violations.find((v) => v.ruleId === id)?.ruleSeverity ??
+        "low";
+      return {
+        id,
+        severity: severity as "high" | "medium" | "low",
+        description: meta?.description,
+        adr: meta?.adr,
+        count,
+      };
+    })
+    .filter((r) => r.count > 0);
+
+  // Collect top violations per rule (up to 50 per rule, 500 total) for the architecture book.
+  const violationsForBook: Array<{
+    ruleId: string;
+    severity: "high" | "medium" | "low";
+    filePath: string;
+    line: number | null;
+    symbol?: string | null;
+    detail: string;
+  }> = [];
+  const violsByRule = new Map<string, number>();
+  for (const v of rulesResult.violations) {
+    const seen = violsByRule.get(v.ruleId) ?? 0;
+    if (seen >= 50) continue;
+    violsByRule.set(v.ruleId, seen + 1);
+    if (violationsForBook.length >= 500) continue;
+    violationsForBook.push({
+      ruleId: v.ruleId,
+      severity: v.ruleSeverity,
+      filePath: v.filePath,
+      line: v.line,
+      symbol: v.symbol ?? undefined,
+      detail: v.detail,
+    });
+  }
+
+  // ── 18.1b/18.3: CARI overlay + coverage data ──────────────────────────────
+  // Collect element names → file paths from the symbols table.
+  const allElementNames = new Set<string>();
+  for (const layer of layers) {
+    for (const el of layer.elements) {
+      if (el.name && !el.name.includes("*") && !el.name.includes("/")) {
+        allElementNames.add(el.name);
+      }
+    }
+  }
+
+  // Build CARI overlay maps (best-effort — empty if DB has no data).
+  let cariOverlay:
+    | {
+        hotspot: Record<
+          string,
+          { score: number; churn: number; coverage: number }
+        >;
+        hubs: Record<string, { degree: number }>;
+        communities: Record<string, { id: number; label: string }>;
+        actualImports: Array<{ from: string; to: string }>;
+      }
+    | undefined;
+
+  let analyticsCodeHealth: InsightsBookData["codeHealth"] | undefined;
+  let analyticsHotspots: InsightsBookData["hotspots"] | undefined;
+  let analyticsDocumentation: InsightsBookData["documentation"] | undefined;
+  let analyticsLivingScore: InsightsBookData["livingScore"] | undefined;
+
+  let layerCoverageData:
+    | Array<{
+        layerIndex: number;
+        layerName: string;
+        fileCount: number;
+        coveragePercent: number;
+        rulesGoverning: string[];
+        hotspotFiles: Array<{ filePath: string; churn: number; score: number }>;
+      }>
+    | undefined;
+
+  try {
+    // ── hotspot overlay ──
+    const hotspotResult = hotspotPriority(dbPath);
+    const maxScore = Math.max(
+      ...hotspotResult.priorities.map((p) => p.priorityScore),
+      1,
+    );
+    // Map: file path → priority data
+    const hotspotByFile = new Map<
+      string,
+      { score: number; churn: number; coverage: number }
+    >();
+    for (const p of hotspotResult.priorities) {
+      hotspotByFile.set(p.filePath, {
+        score: p.priorityScore / maxScore,
+        churn: p.churn,
+        coverage: p.coveragePercent,
+      });
+    }
+
+    // ── hubs overlay ──
+    const hubsResult = hubs(dbPath);
+    const maxDegree = Math.max(...hubsResult.hubs.map((h) => h.totalDegree), 1);
+    const hubsByName = new Map<string, { degree: number }>();
+    for (const h of hubsResult.hubs) {
+      hubsByName.set(h.name, { degree: h.totalDegree / maxDegree });
+      // Also key by file path for file-level lookup
+      if (h.filePath)
+        hubsByName.set(h.filePath, { degree: h.totalDegree / maxDegree });
+    }
+
+    // ── communities overlay ──
+    const commResult = communities(dbPath);
+    // Assign a stable palette index per community id
+    const communityById = new Map<number, string>();
+    commResult.communities.forEach((c) => communityById.set(c.id, c.label));
+    const memberToCommunity = new Map<string, { id: number; label: string }>();
+    for (const c of commResult.communities) {
+      for (const m of c.members) {
+        memberToCommunity.set(m.name, { id: c.id, label: c.label });
+        if (m.filePath)
+          memberToCommunity.set(m.filePath, { id: c.id, label: c.label });
+      }
+    }
+
+    // ── resolve element names → file paths from symbols ──
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(dbPath, { readonly: true });
+    let elementFileMap: Map<string, string>;
+    try {
+      const nameList = [...allElementNames]
+        .map((n) => `'${n.replace(/'/g, "''")}'`)
+        .join(",");
+      const rows: Array<{ name: string; file_path: string }> = nameList
+        ? (db
+            .prepare(
+              `SELECT name, file_path FROM symbols WHERE name IN (${nameList}) LIMIT 1000`,
+            )
+            .all() as any)
+        : [];
+      elementFileMap = new Map<string, string>(
+        rows.map((r) => [r.name, r.file_path]),
+      );
+    } finally {
+      db.close();
+    }
+
+    // ── build per-element overlay maps ──
+    const hotspotOverlay: Record<
+      string,
+      { score: number; churn: number; coverage: number }
+    > = {};
+    const hubsOverlay: Record<string, { degree: number }> = {};
+    const commOverlay: Record<string, { id: number; label: string }> = {};
+    for (const name of allElementNames) {
+      const fp = elementFileMap.get(name);
+      const hotspotData =
+        (fp ? hotspotByFile.get(fp) : undefined) ?? hotspotByFile.get(name);
+      if (hotspotData) hotspotOverlay[name] = hotspotData;
+      const hubData =
+        hubsByName.get(name) ?? (fp ? hubsByName.get(fp) : undefined);
+      if (hubData) hubsOverlay[name] = hubData;
+      const commData =
+        memberToCommunity.get(name) ??
+        (fp ? memberToCommunity.get(fp) : undefined);
+      if (commData) commOverlay[name] = commData;
+    }
+
+    // ── actual imports between element file paths ──
+    const elementFiles = [...new Set([...elementFileMap.values()])];
+    let actualImports: Array<{ from: string; to: string }> = [];
+    if (elementFiles.length >= 2) {
+      const Database2 = (await import("better-sqlite3")).default;
+      const db2 = new Database2(dbPath, { readonly: true });
+      try {
+        const fpList = elementFiles
+          .map((f) => `'${f.replace(/'/g, "''")}'`)
+          .join(",");
+        const importRows: Array<{ source_file: string; target_file: string }> =
+          db2
+            .prepare(
+              `SELECT DISTINCT source_file, target_file FROM imports
+             WHERE source_file IN (${fpList}) AND target_file IN (${fpList})
+             LIMIT 500`,
+            )
+            .all() as any;
+        // Invert file path back to element name
+        const fileToElement = new Map<string, string>();
+        for (const [elName, fp] of elementFileMap) {
+          if (!fileToElement.has(fp)) fileToElement.set(fp, elName);
+        }
+        actualImports = importRows
+          .map((r) => ({
+            from: fileToElement.get(r.source_file) ?? r.source_file,
+            to: fileToElement.get(r.target_file) ?? r.target_file,
+          }))
+          .filter((r) => r.from !== r.to);
+      } finally {
+        db2.close();
+      }
+    }
+
+    cariOverlay = {
+      hotspot: hotspotOverlay,
+      hubs: hubsOverlay,
+      communities: commOverlay,
+      actualImports,
+    };
+
+    // ── §18 Analytics chapters (best-effort) ──────────────────────────────
+    try {
+      const clonesResult = clones(dbPath);
+      const structResult = structuralClones(dbPath);
+      const circResult = circularImports(dbPath);
+      const unusedResult = unusedExports(dbPath);
+      const bvResult = boundaryViolations(dbPath);
+      analyticsCodeHealth = {
+        cloneGroups: clonesResult.cloneGroups.map((g) => ({
+          symbols: g.symbols,
+          bodyLines: g.bodyLines,
+        })),
+        structuralCloneGroups: structResult.cloneGroups.map((g) => ({
+          symbols: g.symbols,
+          bodyLines: g.bodyLines,
+        })),
+        circularCycles: circResult.cycles,
+        unusedExports: unusedResult.unused,
+        boundaryViolations: bvResult.violations.map((v) => ({
+          sourceFile: v.sourceFile,
+          targetFile: v.targetFile,
+          sourcePackage: v.sourcePackage,
+          targetPackage: v.targetPackage,
+          reason: v.reason,
+        })),
+        byPackagePair: bvResult.byPackagePair,
+      };
+    } catch {
+      /* best-effort */
+    }
+
+    try {
+      const depResult = dependencyDepth(dbPath);
+      analyticsHotspots = {
+        priorities: hotspotResult.priorities.map((p) => ({
+          filePath: p.filePath,
+          churn: p.churn,
+          coveragePercent: p.coveragePercent,
+          priorityScore: p.priorityScore,
+          totalExportedSymbols: p.totalExportedSymbols,
+        })),
+        depthFiles: depResult.files.map((f) => ({
+          filePath: f.filePath,
+          maxDepth: f.maxDepth,
+          directDependencies: f.directDependencies,
+          directDependents: f.directDependents,
+          risk: f.risk,
+          reason: f.reason,
+        })),
+        hubs: hubsResult.hubs.map((h) => ({
+          name: h.name,
+          kind: h.kind,
+          filePath: h.filePath,
+          totalDegree: h.totalDegree,
+          annotationDegree: h.annotationDegree,
+          importDegree: h.importDegree,
+        })),
+        communities: commResult.communities.map((c) => ({
+          id: c.id,
+          label: c.label,
+          size: c.size,
+          members: c.members.map((m) => ({ name: m.name, kind: m.kind })),
+        })),
+      };
+    } catch {
+      /* best-effort */
+    }
+
+    try {
+      const orphanedResult = orphanedSections(dbPath);
+      const docResult = docCompleteness(dbPath);
+      const rationaleResult = rationale(dbPath);
+      const termResult = terminologyInconsistency(dbPath);
+      analyticsDocumentation = {
+        orphanedSections: orphanedResult.sections,
+        docCompleteness: docResult.docs.map((d) => ({
+          docPath: d.docPath,
+          completenessPercent: d.completenessPercent,
+          totalRelevantExports: d.totalRelevantExports,
+          coveredExports: d.coveredExports,
+          missing: d.missing.map((m) => ({ name: m.name, kind: m.kind })),
+        })),
+        rationale: rationaleResult.rationale,
+        terminology: termResult.inconsistencies.map((ti) => ({
+          symbolName: ti.symbolName,
+          kind: ti.kind,
+          filePath: ti.filePath,
+          severity: ti.severity,
+          variants: ti.variants.map((v) => ({ text: v.text, count: v.count })),
+        })),
+      };
+    } catch {
+      /* best-effort */
+    }
+
+    try {
+      const lsResult = livingScore(dbPath);
+      analyticsLivingScore = {
+        score: lsResult.score,
+        grade: lsResult.grade,
+        specCoverage: {
+          score: lsResult.specCoverage.score,
+          available: lsResult.specCoverage.available,
+          detail: lsResult.specCoverage.detail,
+        },
+        constraintConsistency: {
+          score: lsResult.constraintConsistency.score,
+          available: lsResult.constraintConsistency.available,
+          detail: lsResult.constraintConsistency.detail,
+        },
+        docFreshness: {
+          score: lsResult.docFreshness.score,
+          available: lsResult.docFreshness.available,
+          detail: lsResult.docFreshness.detail,
+        },
+        archConformance: {
+          score: lsResult.archConformance.score,
+          available: lsResult.archConformance.available,
+          detail: lsResult.archConformance.detail,
+        },
+      };
+    } catch {
+      /* best-effort */
+    }
+
+    // ── 18.3 coverage chapter ──
+    const coverageResult = moduleCoverage(dbPath);
+    // Build: module path prefix → coverage data
+    const moduleCovMap = new Map<
+      string,
+      { totalExported: number; documented: number }
+    >();
+    for (const m of coverageResult.modules) {
+      moduleCovMap.set(m.module, {
+        totalExported: m.totalExported,
+        documented: m.documented,
+      });
+    }
+
+    // For each layer, find modules that belong to it (simple prefix match against layer name)
+    const rulesForLayer = new Map<number, Set<string>>();
+    for (const rule of rulesConfig?.rules ?? []) {
+      const expr = (rule as any).expresses;
+      const els = Array.isArray(expr?.elements) ? expr.elements : [];
+      for (const el of els) {
+        if (!el || typeof el.layer !== "string") continue;
+        const lIdx = layerConfig.layers.findIndex((l) => l.name === el.layer);
+        if (lIdx < 0) continue;
+        const set = rulesForLayer.get(lIdx) ?? new Set<string>();
+        set.add(rule.id);
+        rulesForLayer.set(lIdx, set);
+      }
+    }
+
+    layerCoverageData = layers.map((layer) => {
+      // Modules that belong to this layer: look for coverage modules whose path starts with the layer name
+      const layerModules = coverageResult.modules.filter(
+        (m) =>
+          m.module.startsWith(layer.name) || layer.name.startsWith(m.module),
+      );
+      let totalEx = 0,
+        totalDoc = 0;
+      for (const m of layerModules) {
+        totalEx += m.totalExported;
+        totalDoc += m.documented;
+      }
+      const covPct = totalEx > 0 ? Math.round((totalDoc / totalEx) * 100) : 0;
+
+      // Top 5 hotspot files for this layer
+      const layerHotspots = hotspotResult.priorities
+        .filter(
+          (p) =>
+            p.filePath.startsWith(layer.name + "/") ||
+            p.filePath.includes("/" + layer.name + "/"),
+        )
+        .slice(0, 5)
+        .map((p) => ({
+          filePath: p.filePath,
+          churn: p.churn,
+          score: Math.round(p.priorityScore),
+        }));
+
+      return {
+        layerIndex: layer.index,
+        layerName: layer.name,
+        fileCount: layer.fileCount,
+        coveragePercent: covPct,
+        rulesGoverning: [...(rulesForLayer.get(layer.index) ?? [])],
+        hotspotFiles: layerHotspots,
+      };
+    });
+  } catch {
+    // CARI overlay is best-effort; skip silently if queries fail
+  }
+
+  return {
+    meta: {
+      generated: new Date().toISOString(),
+      totalFiles,
+      totalRuleViolations: rulesResult.totalViolations,
+      totalLayerViolations: layerCheckResult.totalViolations,
+    },
+    layers,
+    edges,
+    rules,
+    violations: violationsForBook,
+    cariOverlay,
+    layerCoverage: layerCoverageData,
+    codeHealth: analyticsCodeHealth,
+    hotspots: analyticsHotspots,
+    documentation: analyticsDocumentation,
+    livingScore: analyticsLivingScore,
+    options: {
+      showRuleElements: opts.showRuleElements,
+    },
+  };
 }
 
 // ── iw index retrieve ──────────────────────────────────────────
@@ -2116,6 +3138,177 @@ const indexSkippedFilesSubcommand = new Command("skipped-files")
 
 // ── iw index rules-check ──────────────────────────────────────────────────────
 
+/**
+ * §17.4 — ASCII Architecture Conformance Diagram for `iw index rules-check`.
+ * Shows each rule as a flow edge (import_pattern) or bullet check (other types),
+ * with ✓/✗ verdict per rule and a summary line.
+ */
+function renderAsciiConformanceDiagram(
+  config: RulesConfig,
+  result: RulesCheckResult,
+  filteredRuleId?: string,
+): string {
+  // Extract a short human-readable label from a file glob
+  function labelFromGlob(g: string): string {
+    // Strip leading **/
+    let s = g.replace(/^\*\*\//, "");
+    const parts = s.split("/");
+    // Find first segment that is a real name (no wildcards)
+    for (const p of parts) {
+      if (p && !p.includes("*")) return p;
+    }
+    // Fallback: use whole thing trimmed
+    return g.slice(0, 16);
+  }
+
+  type FlowEdge = {
+    ruleId: string;
+    from: string;
+    to: string;
+    severity: "high" | "medium" | "low";
+    violations: number;
+    description?: string;
+  };
+  type CheckRule = {
+    ruleId: string;
+    severity: "high" | "medium" | "low";
+    violations: number;
+    description?: string;
+  };
+
+  const flowEdges: FlowEdge[] = [];
+  const checkRules: CheckRule[] = [];
+
+  const rulesToShow = filteredRuleId
+    ? config.rules.filter((r) => r.id === filteredRuleId)
+    : config.rules;
+
+  for (const rule of rulesToShow) {
+    const violations = result.byRule[rule.id] ?? 0;
+    const importForbidden = rule.forbidden.filter(
+      (f) => f.type === "import_pattern" && f.in && f.pattern,
+    );
+
+    if (importForbidden.length > 0) {
+      const fromLabels = [
+        ...new Set(importForbidden.map((f) => labelFromGlob(f.in!))),
+      ];
+      const toLabels = [
+        ...new Set(importForbidden.map((f) => labelFromGlob(f.pattern!))),
+      ];
+      flowEdges.push({
+        ruleId: rule.id,
+        from: fromLabels.join("/"),
+        to: toLabels.join("/"),
+        severity: rule.severity,
+        violations,
+        description: rule.description?.split("\n")[0].slice(0, 55),
+      });
+    } else {
+      checkRules.push({
+        ruleId: rule.id,
+        severity: rule.severity,
+        violations,
+        description: rule.description?.split("\n")[0].slice(0, 55),
+      });
+    }
+  }
+
+  if (
+    flowEdges.length === 0 &&
+    checkRules.length === 0 &&
+    !config.allowed?.length
+  )
+    return "";
+
+  const lines: string[] = [];
+  lines.push("");
+  lines.push("  Architecture Conformance (rules.yaml):");
+  lines.push("");
+
+  // §17.2 Allowed entries — explicit positive permissions
+  if (config.allowed && config.allowed.length > 0 && !filteredRuleId) {
+    const maxFrom = Math.max(...config.allowed.map((e) => e.from_layer.length));
+    for (const entry of config.allowed) {
+      const fromPad = entry.from_layer.padEnd(maxFrom);
+      const desc = entry.description
+        ? chalk.gray(` — ${entry.description}`)
+        : "";
+      lines.push(
+        `  ${chalk.gray("[OK]  ")}  ${fromPad}  ${chalk.green("──────────✓──────────▶")}  ${chalk.cyan(entry.to_layer)}${desc}`,
+      );
+    }
+    lines.push("");
+  }
+
+  // Flow edges (import_pattern rules with from/to topology)
+  if (flowEdges.length > 0) {
+    const maxFrom = Math.max(...flowEdges.map((e) => e.from.length));
+    for (const edge of flowEdges) {
+      const sevLabel =
+        edge.severity === "high"
+          ? chalk.red("[HIGH]")
+          : edge.severity === "medium"
+            ? chalk.yellow("[MED] ")
+            : chalk.gray("[LOW] ");
+      const fromPad = edge.from.padEnd(maxFrom);
+      const arrow =
+        edge.violations > 0
+          ? chalk.red(
+              `──✗ ${edge.violations} violation${edge.violations !== 1 ? "s" : ""}──▶`,
+            )
+          : chalk.green("──────────✓──────────▶");
+      const ruleLabel = chalk.gray(`  ${edge.ruleId}`);
+      const desc = edge.description ? chalk.gray(` — ${edge.description}`) : "";
+      lines.push(
+        `  ${sevLabel}  ${fromPad}  ${arrow}  ${chalk.cyan(edge.to)}${ruleLabel}${desc}`,
+      );
+    }
+    lines.push("");
+  }
+
+  // Non-flow rules (call, symbol_name, cypher, etc.)
+  if (checkRules.length > 0) {
+    const maxId = Math.max(...checkRules.map((r) => r.ruleId.length));
+    for (const rule of checkRules) {
+      const sevLabel =
+        rule.severity === "high"
+          ? chalk.red("[HIGH]")
+          : rule.severity === "medium"
+            ? chalk.yellow("[MED] ")
+            : chalk.gray("[LOW] ");
+      const verdict =
+        rule.violations > 0
+          ? chalk.red(
+              `✗ ${rule.violations} violation${rule.violations !== 1 ? "s" : ""}`,
+            )
+          : chalk.green("✓ clean");
+      const desc = rule.description ? chalk.gray(` — ${rule.description}`) : "";
+      lines.push(
+        `  ${sevLabel}  ● ${chalk.white(rule.ruleId.padEnd(maxId))}  ${verdict}${desc}`,
+      );
+    }
+    lines.push("");
+  }
+
+  // Summary line
+  const cleanCount = rulesToShow.filter(
+    (r) => (result.byRule[r.id] ?? 0) === 0,
+  ).length;
+  const totalCount = rulesToShow.length;
+  const totalViol = rulesToShow.reduce(
+    (s, r) => s + (result.byRule[r.id] ?? 0),
+    0,
+  );
+  const summaryColor = totalViol === 0 ? chalk.green : chalk.yellow;
+  lines.push(
+    `  ${summaryColor(`${cleanCount}/${totalCount} rule${totalCount !== 1 ? "s" : ""} clean`)}${totalViol > 0 ? chalk.red(`  ·  ${totalViol} total violation(s)`) : ""}`,
+  );
+  lines.push("");
+
+  return lines.join("\n");
+}
+
 async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
   let raw: string;
   try {
@@ -2131,6 +3324,21 @@ async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
   }
   if (!Array.isArray(parsed.rules)) {
     throw new Error(`rules.yaml must have a top-level 'rules' array.`);
+  }
+  // §17.2 — validate allowed: block if present
+  if (parsed.allowed !== undefined && !Array.isArray(parsed.allowed)) {
+    throw new Error(
+      `rules.yaml 'allowed' must be an array of {from_layer, to_layer} entries.`,
+    );
+  }
+  if (Array.isArray(parsed.allowed)) {
+    for (const entry of parsed.allowed) {
+      if (!entry.from_layer || !entry.to_layer) {
+        throw new Error(
+          `rules.yaml 'allowed' entries must have 'from_layer' and 'to_layer' fields.`,
+        );
+      }
+    }
   }
   return parsed;
 }
@@ -2175,6 +3383,10 @@ const indexRulesCheckSubcommand = new Command("rules-check")
     "--dry-run-query <rule-id>",
     "Execute a specific cypher rule and print resulting violations (13.11)",
   )
+  .option(
+    "--no-diagram",
+    "Suppress the ASCII conformance diagram in text output (17.4)",
+  )
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
     const configPath = path.resolve(opts.config);
@@ -2202,7 +3414,9 @@ const indexRulesCheckSubcommand = new Command("rules-check")
         (r) => r.id === ruleId && r.forbidden.some((f) => f.type === "cypher"),
       );
       if (!hasCypherRule) {
-        console.error(chalk.red(`\n  ✗ No cypher rule found with id: ${ruleId}\n`));
+        console.error(
+          chalk.red(`\n  ✗ No cypher rule found with id: ${ruleId}\n`),
+        );
         process.exitCode = 1;
         return;
       }
@@ -2237,7 +3451,10 @@ const indexRulesCheckSubcommand = new Command("rules-check")
       };
       const baselinePath = path.resolve(opts.saveBaseline);
       await fs.mkdir(path.dirname(baselinePath), { recursive: true });
-      await fs.writeFile(baselinePath, JSON.stringify(baselineData, null, 2) + "\n");
+      await fs.writeFile(
+        baselinePath,
+        JSON.stringify(baselineData, null, 2) + "\n",
+      );
       console.log(chalk.green(`\n  ✓ Baseline saved → ${baselinePath}`));
       console.log(
         chalk.gray(
@@ -2256,13 +3473,23 @@ const indexRulesCheckSubcommand = new Command("rules-check")
     }
 
     // ── --baseline comparison (13.5) ───────────────────────────────────────
-    let baseline: { high: number; medium: number; low: number; total: number; timestamp?: string } | undefined;
+    let baseline:
+      | {
+          high: number;
+          medium: number;
+          low: number;
+          total: number;
+          timestamp?: string;
+        }
+      | undefined;
     if (opts.baseline) {
       try {
         const raw = await fs.readFile(path.resolve(opts.baseline), "utf-8");
         baseline = JSON.parse(raw);
       } catch {
-        console.error(chalk.red(`\n  ✗ Could not read baseline: ${opts.baseline}\n`));
+        console.error(
+          chalk.red(`\n  ✗ Could not read baseline: ${opts.baseline}\n`),
+        );
         process.exitCode = 2;
         return;
       }
@@ -2278,20 +3505,38 @@ const indexRulesCheckSubcommand = new Command("rules-check")
       const deltaTotal = result.totalViolations - bl.total;
 
       const fmtDelta = (n: number) =>
-        n === 0 ? chalk.gray("0") : n > 0 ? chalk.red(`+${n}`) : chalk.green(`${n}`);
+        n === 0
+          ? chalk.gray("0")
+          : n > 0
+            ? chalk.red(`+${n}`)
+            : chalk.green(`${n}`);
       const pad = (s: string | number, w: number) => String(s).padStart(w);
 
       console.log();
-      console.log("  ╔══════════════════════════════════════════════════════════╗");
-      console.log("  ║  IntentWeave Semantic Rules — CI Report                 ║");
-      console.log("  ╠══════════════════════════════════════════════════════════╣");
+      console.log(
+        "  ╔══════════════════════════════════════════════════════════╗",
+      );
+      console.log(
+        "  ║  IntentWeave Semantic Rules — CI Report                 ║",
+      );
+      console.log(
+        "  ╠══════════════════════════════════════════════════════════╣",
+      );
       console.log(`  ║  Rules checked: ${result.rulesChecked}`);
       console.log(`  ║  Severity    Current   Baseline    Delta`);
       console.log(`  ║  ──────────  ────────  ────────  ──────────`);
-      console.log(`  ║  HIGH        ${pad(cur.high, 6)}    ${pad(bl.high, 6)}   ${fmtDelta(deltaHigh)}`);
-      console.log(`  ║  MEDIUM      ${pad(cur.medium, 6)}    ${pad(bl.medium, 6)}   ${fmtDelta(deltaMed)}`);
-      console.log(`  ║  LOW         ${pad(cur.low, 6)}    ${pad(bl.low, 6)}   ${fmtDelta(deltaLow)}`);
-      console.log(`  ║  TOTAL       ${pad(result.totalViolations, 6)}    ${pad(bl.total, 6)}   ${fmtDelta(deltaTotal)}`);
+      console.log(
+        `  ║  HIGH        ${pad(cur.high, 6)}    ${pad(bl.high, 6)}   ${fmtDelta(deltaHigh)}`,
+      );
+      console.log(
+        `  ║  MEDIUM      ${pad(cur.medium, 6)}    ${pad(bl.medium, 6)}   ${fmtDelta(deltaMed)}`,
+      );
+      console.log(
+        `  ║  LOW         ${pad(cur.low, 6)}    ${pad(bl.low, 6)}   ${fmtDelta(deltaLow)}`,
+      );
+      console.log(
+        `  ║  TOTAL       ${pad(result.totalViolations, 6)}    ${pad(bl.total, 6)}   ${fmtDelta(deltaTotal)}`,
+      );
       if (result.byRule && Object.keys(result.byRule).length > 0) {
         console.log("  ║");
         console.log("  ║  Per-rule breakdown:");
@@ -2299,7 +3544,9 @@ const indexRulesCheckSubcommand = new Command("rules-check")
           console.log(`  ║    ${ruleId}: ${count}`);
         }
       }
-      console.log("  ╚══════════════════════════════════════════════════════════╝");
+      console.log(
+        "  ╚══════════════════════════════════════════════════════════╝",
+      );
       console.log();
 
       if (opts.failOnIncrease) {
@@ -2342,7 +3589,10 @@ const indexRulesCheckSubcommand = new Command("rules-check")
           process.exitCode = 1;
           return;
         }
-        const scopeLabel = sevThreshold !== "low" ? ` ${sevThreshold.toUpperCase()}-severity` : "";
+        const scopeLabel =
+          sevThreshold !== "low"
+            ? ` ${sevThreshold.toUpperCase()}-severity`
+            : "";
         console.log(
           chalk.green(
             `  ✅ GATE PASSED — no new${scopeLabel} violations (current: ${result.bySeverity[sevThreshold === "low" ? "high" : sevThreshold]}, baseline: ${(baseline as any)[sevThreshold === "low" ? "high" : sevThreshold]})`,
@@ -2356,9 +3606,18 @@ const indexRulesCheckSubcommand = new Command("rules-check")
 
     if (result.violations.length === 0) {
       const scope = changed ? ` (${changed.length} changed file(s))` : "";
+      // §17.4 ASCII conformance diagram
+      if (opts.diagram !== false) {
+        const diagram = renderAsciiConformanceDiagram(
+          config,
+          result,
+          opts.ruleId,
+        );
+        if (diagram) process.stdout.write(diagram);
+      }
       console.log(
         chalk.green(
-          `\n  ✓ No semantic rule violations found${scope}. (${result.rulesChecked} rule(s) checked)\n`,
+          `  ✓ No semantic rule violations found${scope}. (${result.rulesChecked} rule(s) checked)\n`,
         ),
       );
       return;
@@ -2367,6 +3626,16 @@ const indexRulesCheckSubcommand = new Command("rules-check")
     console.log(
       chalk.red(`\n  ✗ ${result.totalViolations} semantic rule violation(s)\n`),
     );
+
+    // §17.4 ASCII conformance diagram
+    if (opts.diagram !== false) {
+      const diagram = renderAsciiConformanceDiagram(
+        config,
+        result,
+        opts.ruleId,
+      );
+      if (diagram) process.stdout.write(diagram);
+    }
 
     // Group by ruleId
     const grouped = new Map<string, typeof result.violations>();
@@ -2392,6 +3661,13 @@ const indexRulesCheckSubcommand = new Command("rules-check")
         console.log(
           `  ${chalk.cyan(v.filePath + loc).padEnd(55)} ${chalk.white(v.detail)}`,
         );
+        // 15.5 autofix hint
+        if (v.autofix) {
+          console.log(chalk.gray(`    → Fix: ${v.autofix.hint}`));
+          if (v.autofix.reference) {
+            console.log(chalk.gray(`      See: ${v.autofix.reference}`));
+          }
+        }
       }
       console.log();
     }
@@ -3312,12 +4588,66 @@ const indexLayersCheckSubcommand = new Command("layers-check")
  */
 function parseLayersYaml(content: string): LayerConfig {
   const layers: LayerConfig["layers"] = [];
-  let currentLayer: { name: string; patterns: string[] } | null = null;
+  const allowed: Array<{ from: string; to: string }> = [];
+  let currentLayer: LayerConfig["layers"][number] | null = null;
   let inPatterns = false;
+  let inAllowed = false;
+  let currentAllowed: Partial<{ from: string; to: string }> | null = null;
 
   for (const rawLine of content.split("\n")) {
     const line = rawLine.trim();
     if (line === "" || line.startsWith("#")) continue;
+
+    // Top-level "allowed:" section
+    if (line === "allowed:" || line === "allowed: []") {
+      if (currentLayer) {
+        layers.push(currentLayer);
+        currentLayer = null;
+      }
+      inPatterns = false;
+      inAllowed = true;
+      continue;
+    }
+
+    // Top-level "layers:" section
+    if (line === "layers:" || line === "layers: []") {
+      if (currentAllowed?.from && currentAllowed?.to) {
+        allowed.push({ from: currentAllowed.from, to: currentAllowed.to });
+        currentAllowed = null;
+      }
+      inAllowed = false;
+      continue;
+    }
+
+    // Inside allowed: section — parse "- from: X" / "to: Y" pairs
+    if (inAllowed) {
+      const fromMatch = line.match(/^-?\s*from:\s*["']?([^"'\n]+?)["']?\s*$/);
+      if (fromMatch) {
+        if (currentAllowed?.from && currentAllowed?.to) {
+          allowed.push({ from: currentAllowed.from, to: currentAllowed.to });
+        }
+        currentAllowed = { from: fromMatch[1] };
+        continue;
+      }
+      const toMatch = line.match(/^to:\s*["']?([^"'\n]+?)["']?\s*$/);
+      if (toMatch && currentAllowed) {
+        currentAllowed.to = toMatch[1];
+        if (currentAllowed.from) {
+          allowed.push({ from: currentAllowed.from, to: currentAllowed.to });
+          currentAllowed = null;
+        }
+        continue;
+      }
+      // Inline "- { from: X, to: Y }" or "- from: X to: Y" style
+      const inlineMatch = line.match(
+        /from:\s*["']?([^"',\s]+?)["']?[,\s]+to:\s*["']?([^"',}\s]+?)["']?/,
+      );
+      if (inlineMatch) {
+        allowed.push({ from: inlineMatch[1], to: inlineMatch[2] });
+        continue;
+      }
+      continue;
+    }
 
     // Detect "- name:" which starts a new layer
     const nameMatch = line.match(/^-\s*name:\s*["']?([^"'\n]+?)["']?\s*$/);
@@ -3334,6 +4664,36 @@ function parseLayersYaml(content: string): LayerConfig {
       if (currentLayer) layers.push(currentLayer);
       currentLayer = { name: plainNameMatch[1], patterns: [] };
       inPatterns = false;
+      continue;
+    }
+
+    const rowMatch = line.match(/^row:\s*(-?\d+)\s*$/);
+    if (rowMatch && currentLayer) {
+      currentLayer.row = parseInt(rowMatch[1], 10);
+      continue;
+    }
+
+    const columnMatch = line.match(/^column:\s*(-?\d+)\s*$/);
+    if (columnMatch && currentLayer) {
+      currentLayer.column = parseInt(columnMatch[1], 10);
+      continue;
+    }
+
+    const colSpanMatch = line.match(/^col_span:\s*(\d+)\s*$/);
+    if (colSpanMatch && currentLayer) {
+      currentLayer.col_span = Math.max(1, parseInt(colSpanMatch[1], 10));
+      continue;
+    }
+
+    const rowSpanMatch = line.match(/^row_span:\s*(\d+)\s*$/);
+    if (rowSpanMatch && currentLayer) {
+      currentLayer.row_span = Math.max(1, parseInt(rowSpanMatch[1], 10));
+      continue;
+    }
+
+    const sideMatch = line.match(/^side:\s*(left|right)\s*$/);
+    if (sideMatch && currentLayer) {
+      currentLayer.side = sideMatch[1] as "left" | "right";
       continue;
     }
 
@@ -3354,13 +4714,16 @@ function parseLayersYaml(content: string): LayerConfig {
     }
   }
 
+  if (currentAllowed?.from && currentAllowed?.to) {
+    allowed.push({ from: currentAllowed.from, to: currentAllowed.to });
+  }
   if (currentLayer) layers.push(currentLayer);
 
   if (layers.length === 0) {
     throw new Error("No layers found in config");
   }
 
-  return { layers };
+  return { layers, allowed: allowed.length > 0 ? allowed : undefined };
 }
 
 // ── iw index arch-check ───────────────────────────────────────────
@@ -4195,6 +5558,25 @@ const indexExportSubcommand = new Command("export")
   .description("Export architecture report as a self-contained HTML file")
   .option("--db <path>", "Path to index.db")
   .option("--html", "Generate HTML architecture report (default)", true)
+  .option(
+    "--book",
+    "Generate interactive Insights Book HTML with per-ADR Cytoscape flow diagrams (18.0)",
+    false,
+  )
+  .option(
+    "--prescriptive",
+    "Generate prescriptive architecture report (17.1) with top-down SVG layers",
+    false,
+  )
+  .option(
+    "--show-rule-elements",
+    "In --prescriptive mode, render rule-expressed elements inside layers",
+    false,
+  )
+  .option(
+    "--rules-config <path>",
+    "Path to rules.yaml for --prescriptive (default: .iw/rules.yaml)",
+  )
   .option("-o, --output <path>", "Output file path")
   .option(
     "--focus <target>",
@@ -4209,6 +5591,10 @@ const indexExportSubcommand = new Command("export")
   .option(
     "--explain",
     "Generate an LLM-narrated architecture explanation (requires --provider)",
+  )
+  .option(
+    "--adr-docs <glob>",
+    "Glob of ADR markdown files to use as context for --prescriptive --explain (e.g. 'docs/ADR-*.md')",
   )
   .option(
     "--provider <name>",
@@ -4239,9 +5625,14 @@ const indexExportSubcommand = new Command("export")
     async (opts: {
       db?: string;
       html?: boolean;
+      book?: boolean;
+      prescriptive?: boolean;
+      showRuleElements?: boolean;
+      rulesConfig?: string;
       output?: string;
       focus?: string;
       explain?: boolean;
+      adrDocs?: string;
       hops: string;
       maxNodes: string;
       provider?: string;
@@ -4253,6 +5644,207 @@ const indexExportSubcommand = new Command("export")
       mode: string;
     }) => {
       const dbPath = resolveDbPath(opts.db);
+
+      // ── Architecture Book mode (18.0) ─────────────────────────────────────
+      if (opts.book) {
+        const outputPath = opts.output ?? "insights-book.html";
+        console.log("Collecting architecture book data…");
+
+        const data = await buildPrescriptiveReportData(dbPath, {
+          hierarchical: opts.hierarchical,
+          showRuleElements: true, // always show elements in the book
+          rulesConfigPath: opts.rulesConfig,
+        });
+
+        const adrChapters = data.rules.filter((r) =>
+          data.layers.some((l) =>
+            (l.elements ?? []).some((e: any) => e.ruleId === r.id),
+          ),
+        );
+
+        console.log(
+          `  ${data.layers.length} layers · ${data.rules.length} rule(s) · ` +
+            `${adrChapters.length} ADR chapter(s) · ` +
+            `${data.meta.totalRuleViolations} violation(s)`,
+        );
+
+        // Also collect §10.1 arch report for the interactive D3 "Arch Graph" chapter.
+        let archReportHtmlStr: string | undefined;
+        try {
+          const archData = archReport(dbPath, {});
+          archReportHtmlStr = renderArchReportHtml(archData, {
+            embedDark: true,
+          });
+        } catch {
+          // Non-fatal — book still renders without the arch graph chapter.
+        }
+
+        const html = renderInsightsBookHtml(data, archReportHtmlStr);
+        const fsSync = await import("node:fs");
+        fsSync.writeFileSync(outputPath, html, "utf-8");
+        console.log(`\n✓ Written to ${outputPath}`);
+        return;
+      }
+
+      // ── Prescriptive mode: SVG should-be architecture report (17.1) ─────────
+      if (opts.prescriptive) {
+        const outputPath = opts.output ?? "architecture-prescriptive.html";
+        console.log("Collecting prescriptive architecture data…");
+
+        const data = await buildPrescriptiveReportData(dbPath, {
+          hierarchical: opts.hierarchical,
+          showRuleElements: Boolean(opts.showRuleElements),
+          rulesConfigPath: opts.rulesConfig,
+        });
+
+        const totalRuleElements = data.layers.reduce(
+          (sum, layer) =>
+            sum + (Array.isArray(layer.elements) ? layer.elements.length : 0),
+          0,
+        );
+
+        console.log(
+          `  ${data.layers.length} layers · ${data.edges.length} policy edge(s) · ` +
+            `${data.meta.totalRuleViolations} rule violation(s)`,
+        );
+        if (opts.showRuleElements) {
+          console.log(`  ${totalRuleElements} rule element(s) rendered`);
+          if (totalRuleElements === 0) {
+            console.log(
+              "  Note: no `expresses.elements` found in rules.yaml; add them to display rule elements.",
+            );
+          }
+        }
+
+        // ── Optional LLM edge rationale (--explain, §17.3) ──────────────
+        if (opts.explain) {
+          if (!opts.provider) {
+            console.error(
+              chalk.red(
+                "--explain requires --provider (e.g. --provider openai)",
+              ),
+            );
+            process.exit(1);
+          }
+
+          const { OpenAILLMProvider, SmartMockLLMProvider } =
+            await import("@intentweave/analyzer/llm");
+          const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY ?? "";
+          const llm =
+            opts.provider === "smart-mock"
+              ? new SmartMockLLMProvider({
+                  workspaceKey: "prescriptive-explain",
+                })
+              : new OpenAILLMProvider({ apiKey, model: opts.model });
+
+          // Read ADR docs if provided via --adr-docs glob
+          let adrContext = "";
+          if (opts.adrDocs) {
+            const { glob: tinyGlob } = await import("tinyglobby");
+            const fsSync2 = await import("node:fs");
+            const adrFiles = await tinyGlob(opts.adrDocs, {
+              cwd: process.cwd(),
+            });
+            if (adrFiles.length > 0) {
+              adrContext =
+                "\n\nADR context:\n" +
+                adrFiles
+                  .map((f: string) => {
+                    try {
+                      return `=== ${path.basename(f)} ===\n${fsSync2.readFileSync(path.resolve(f), "utf-8").slice(0, 3000)}`;
+                    } catch {
+                      return "";
+                    }
+                  })
+                  .filter(Boolean)
+                  .join("\n\n---\n\n");
+              console.log(
+                chalk.blue(`  Using ${adrFiles.length} ADR doc(s) as context…`),
+              );
+            }
+          }
+
+          // Build edge list for the prompt
+          const layerNames = data.layers.map((l) => l.name);
+          const edgeSummary = data.edges
+            .map((e) => {
+              const from =
+                layerNames[e.fromLayerIndex] ?? `layer[${e.fromLayerIndex}]`;
+              const to =
+                layerNames[e.toLayerIndex] ?? `layer[${e.toLayerIndex}]`;
+              const arrow = e.type === "allowed" ? "→" : "↛";
+              const existing = e.description
+                ? ` (existing: "${e.description}")`
+                : "";
+              return `${from} ${arrow} ${to} [${e.type.toUpperCase()}${e.severity ? ` ${e.severity}` : ""}${e.ruleId ? ` ${e.ruleId}` : ""}]${existing}`;
+            })
+            .join("\n");
+
+          const explainSystem = `You are an architecture documentation assistant.
+Given a list of architecture edges (allowed and forbidden layer flows), write a single
+clear sentence per edge explaining the architectural rationale.
+
+Output ONLY a JSON object mapping "fromLayer→toLayer" to a rationale string.
+Use the exact from/to layer names from the input.
+Example: {"apps/ui → packages/data": "The UI must not bypass the service layer to preserve transaction integrity."}
+If the edge already has a description, improve and cite it; otherwise synthesise from context.
+Be concise: one sentence, under 160 characters.`;
+
+          const explainUser = `Architecture edges:\n${edgeSummary}${adrContext}`;
+
+          console.log(chalk.blue("  Generating LLM edge rationale…"));
+          try {
+            const resp = await llm.complete({
+              system: explainSystem,
+              messages: [{ role: "user", content: explainUser }],
+              temperature: 0.2,
+              maxTokens: 1024,
+            });
+
+            // Parse JSON map
+            const jsonText = (() => {
+              const m = resp.content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+              if (m) return m[1];
+              const s = resp.content.indexOf("{");
+              const e2 = resp.content.lastIndexOf("}");
+              return s !== -1 && e2 !== -1
+                ? resp.content.slice(s, e2 + 1)
+                : resp.content;
+            })();
+            const rationaleMap: Record<string, string> = JSON.parse(jsonText);
+
+            // Inject into edge descriptions
+            let injected = 0;
+            for (const edge of data.edges) {
+              const from = layerNames[edge.fromLayerIndex] ?? "";
+              const to = layerNames[edge.toLayerIndex] ?? "";
+              const key = `${from}→${to}`;
+              const altKey = `${from} → ${to}`;
+              const rationale = rationaleMap[key] ?? rationaleMap[altKey];
+              if (rationale) {
+                edge.description = rationale;
+                injected++;
+              }
+            }
+            console.log(
+              `  ✓ Rationale injected for ${injected}/${data.edges.length} edge(s)`,
+            );
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(
+              chalk.yellow(
+                `  ⚠ --explain LLM call failed: ${msg} (continuing without rationale)`,
+              ),
+            );
+          }
+        }
+
+        const html = renderPrescriptiveReportHtml(data);
+        const fsSync = await import("node:fs");
+        fsSync.writeFileSync(outputPath, html, "utf-8");
+        console.log(`\n✓ Written to ${outputPath}`);
+        return;
+      }
 
       // ── Focus mode: Graphviz SVG report ─────────────────────
       if (opts.focus) {

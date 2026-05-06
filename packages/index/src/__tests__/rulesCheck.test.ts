@@ -80,6 +80,35 @@ function insertImport(
   ).run(sourceFile, moduleSpecifier, targetFile, line);
 }
 
+function insertVariableAssignment(
+  db: Database.Database,
+  file: string,
+  line: number,
+  symbolName: string,
+  valueText: string,
+  context: string | null = null,
+) {
+  db.prepare(
+    `INSERT INTO variable_assignments (file, line, symbol_name, value_text, context)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(file, line, symbolName, valueText, context);
+}
+
+function insertDefUse(
+  db: Database.Database,
+  file: string,
+  fn: string | null,
+  defLine: number,
+  varName: string,
+  useLine: number,
+  useContext: string,
+) {
+  db.prepare(
+    `INSERT INTO def_use_chains (file, function, def_line, var_name, use_line, use_context)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(file, fn, defLine, varName, useLine, useContext);
+}
+
 // ── matchesChainGlob unit tests (via rulesCheckFromDb) ────────────────────────
 
 describe("matchesChainGlob — property_access rule", () => {
@@ -294,6 +323,133 @@ describe("rulesCheck — call type", () => {
   });
 });
 
+describe("rulesCheck — taint_propagation (16.1)", () => {
+  let db: Database.Database;
+  let dbPath: string;
+
+  beforeAll(() => {
+    ({ db, dbPath } = tmpDb());
+
+    // Base forbidden property access on assignment line
+    insertPropertyAccess(
+      db,
+      "src/views/EntityView.tsx",
+      "entity.source.path",
+      "renderEntity",
+      10,
+    );
+    insertVariableAssignment(
+      db,
+      "src/views/EntityView.tsx",
+      10,
+      "sourcePath",
+      "entity.source.path",
+      "renderEntity",
+    );
+    insertDefUse(
+      db,
+      "src/views/EntityView.tsx",
+      "renderEntity",
+      10,
+      "sourcePath",
+      12,
+      "call_arg",
+    );
+    insertDefUse(
+      db,
+      "src/views/EntityView.tsx",
+      "renderEntity",
+      10,
+      "sourcePath",
+      14,
+      "return",
+    );
+
+    // Base forbidden call on assignment line
+    insertCall(
+      db,
+      "src/views/EntityView.tsx",
+      "refToId",
+      "renderEntity",
+      30,
+      0,
+    );
+    insertVariableAssignment(
+      db,
+      "src/views/EntityView.tsx",
+      30,
+      "resolved",
+      "refToId(entityId)",
+      "renderEntity",
+    );
+    insertDefUse(
+      db,
+      "src/views/EntityView.tsx",
+      "renderEntity",
+      30,
+      "resolved",
+      33,
+      "property_access",
+    );
+  });
+
+  afterAll(() => cleanup(db, dbPath));
+
+  it("adds downstream propagated violations for property_access", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-source-path",
+          description: "forbid source.path",
+          severity: "high",
+          forbidden: [
+            {
+              type: "property_access",
+              chain: "**.source.path",
+              taint_propagation: true,
+              in: "src/views/**",
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = rulesCheckFromDb(db, config);
+    const lines = result.violations.map((v) => v.line);
+
+    // Base violation + propagated def-use violations.
+    expect(lines).toContain(10);
+    expect(lines).toContain(12);
+    expect(lines).toContain(14);
+  });
+
+  it("adds downstream propagated violations for call", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "no-ref-to-id",
+          description: "forbid refToId",
+          severity: "high",
+          forbidden: [
+            {
+              type: "call",
+              callee: "refToId",
+              taint_propagation: true,
+              in: "src/views/**",
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = rulesCheckFromDb(db, config);
+    const lines = result.violations.map((v) => v.line);
+
+    expect(lines).toContain(30);
+    expect(lines).toContain(33);
+  });
+});
+
 // ── import_pattern rule ───────────────────────────────────────────────────────
 
 describe("rulesCheck — import_pattern type", () => {
@@ -304,7 +460,13 @@ describe("rulesCheck — import_pattern type", () => {
     ({ db, dbPath } = tmpDb());
     insertImport(db, "src/views/PduView.tsx", "lodash", null, 3);
     insertImport(db, "src/utils/helper.ts", "lodash", null);
-    insertImport(db, "src/views/SignalView.tsx", "@company/api-client", null, 11);
+    insertImport(
+      db,
+      "src/views/SignalView.tsx",
+      "@company/api-client",
+      null,
+      11,
+    );
     insertImport(db, "src/views/IoView.tsx", "node:fs/promises", null, 22);
     insertImport(db, "src/views/PathView.tsx", "node:path", null, 7);
   });
@@ -497,7 +659,9 @@ describe("rulesCheck — symbol_name scope modifier (13.9)", () => {
         {
           id: "r-exported",
           severity: "high",
-          forbidden: [{ type: "symbol_name", pattern: "badName", scope: "exported" }],
+          forbidden: [
+            { type: "symbol_name", pattern: "badName", scope: "exported" },
+          ],
         },
       ],
     };
@@ -530,7 +694,9 @@ describe("rulesCheck — symbol_name scope modifier (13.9)", () => {
         {
           id: "r-toplevel",
           severity: "high",
-          forbidden: [{ type: "symbol_name", pattern: "badName", scope: "top-level" }],
+          forbidden: [
+            { type: "symbol_name", pattern: "badName", scope: "top-level" },
+          ],
         },
       ],
     };
@@ -547,7 +713,9 @@ describe("rulesCheck — symbol_name scope modifier (13.9)", () => {
         {
           id: "r-any",
           severity: "high",
-          forbidden: [{ type: "symbol_name", pattern: "badName", scope: "any" }],
+          forbidden: [
+            { type: "symbol_name", pattern: "badName", scope: "any" },
+          ],
         },
       ],
     };
@@ -587,13 +755,17 @@ describe("checkVariableAssignment (13.10)", () => {
         {
           id: "no-new-map",
           severity: "high",
-          forbidden: [{ type: "variable_assignment", value_pattern: "^new Map" }],
+          forbidden: [
+            { type: "variable_assignment", value_pattern: "^new Map" },
+          ],
         },
       ],
     };
     const result = rulesCheckFromDb(db, config);
     expect(result.violations).toHaveLength(2);
-    expect(result.violations.every((v) => v.detail.includes("new Map"))).toBe(true);
+    expect(result.violations.every((v) => v.detail.includes("new Map"))).toBe(
+      true,
+    );
   });
 
   it("returns no violations when pattern does not match", () => {
@@ -602,7 +774,9 @@ describe("checkVariableAssignment (13.10)", () => {
         {
           id: "no-set",
           severity: "low",
-          forbidden: [{ type: "variable_assignment", value_pattern: "^new Set" }],
+          forbidden: [
+            { type: "variable_assignment", value_pattern: "^new Set" },
+          ],
         },
       ],
     };
@@ -617,7 +791,11 @@ describe("checkVariableAssignment (13.10)", () => {
           id: "no-new-map-config",
           severity: "high",
           forbidden: [
-            { type: "variable_assignment", value_pattern: "new Map", in: ["src/config.ts"] },
+            {
+              type: "variable_assignment",
+              value_pattern: "new Map",
+              in: ["src/config.ts"],
+            },
           ],
         },
       ],
@@ -676,17 +854,35 @@ describe("checkCypherRule (13.11)", () => {
     db.prepare(
       `INSERT INTO symbols (id, name, kind, file_path, line, export)
        VALUES (?, ?, 'function', ?, ?, 'exported')`,
-    ).run("sym:DocumentedService", "DocumentedService", "src/domain/documented.ts", 55);
+    ).run(
+      "sym:DocumentedService",
+      "DocumentedService",
+      "src/domain/documented.ts",
+      55,
+    );
 
     db.prepare(
       `INSERT INTO symbol_calls (caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
        VALUES (?, ?, ?, ?, ?, 0)`,
-    ).run("src/app/main.ts", "boot", 10, "DocumentedService", "sym:DocumentedService");
+    ).run(
+      "src/app/main.ts",
+      "boot",
+      10,
+      "DocumentedService",
+      "sym:DocumentedService",
+    );
 
     db.prepare(
       `INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("docs/architecture.md", 20, "Documented service coverage", "sym:DocumentedService", 0.95, "identifier");
+    ).run(
+      "docs/architecture.md",
+      20,
+      "Documented service coverage",
+      "sym:DocumentedService",
+      0.95,
+      "identifier",
+    );
   });
 
   afterAll(() => {
@@ -745,7 +941,9 @@ describe("checkCypherRule (13.11)", () => {
     expect(result.violations[0].filePath).toBe("src/domain/auth.ts");
     expect(result.violations[0].line).toBe(40);
     expect(result.violations[0].detail).toContain("AuthService");
-    expect(result.violations.some((v) => v.detail.includes("DocumentedService"))).toBe(false);
+    expect(
+      result.violations.some((v) => v.detail.includes("DocumentedService")),
+    ).toBe(false);
   });
 
   it("returns no violations when query field is absent", () => {
@@ -771,7 +969,8 @@ describe("checkCypherRule (13.11)", () => {
           forbidden: [
             {
               type: "cypher",
-              query: "SELECT path AS file, NULL AS line, 'sql-ok' AS detail FROM files WHERE path = 'src/ui/view.tsx'",
+              query:
+                "SELECT path AS file, NULL AS line, 'sql-ok' AS detail FROM files WHERE path = 'src/ui/view.tsx'",
             },
           ],
         },
@@ -788,11 +987,230 @@ describe("checkCypherRule (13.11)", () => {
         {
           id: "bad-cypher",
           severity: "low",
-          forbidden: [{ type: "cypher", query: "MATCH (a:File RETURN a.path AS file" }],
+          forbidden: [
+            { type: "cypher", query: "MATCH (a:File RETURN a.path AS file" },
+          ],
         },
       ],
     };
     const result = rulesCheckFromDb(db, config);
     expect(result.violations).toHaveLength(0);
+  });
+});
+
+// ── 15.x Sprint: context_import, except_symbol, property_chain_length, count_mode, autofix ──
+
+describe("15.x sprint features", () => {
+  let db: Database.Database;
+  let dbPath: string;
+
+  beforeAll(() => {
+    ({ db, dbPath } = tmpDb());
+
+    // seed a couple of source files
+    db.prepare(
+      `INSERT INTO files (path, last_modified, churn) VALUES (?, 0, 0), (?, 0, 0)`,
+    ).run("src/alpha.ts", "src/beta.ts");
+
+    // symbols
+    db.prepare(
+      `INSERT INTO symbols (id, name, kind, file_path, line, export)
+       VALUES ('s1', 'alphaFn', 'function', 'src/alpha.ts', 10, 1),
+              ('s2', 'betaFn', 'function', 'src/beta.ts', 5, 1)`,
+    ).run();
+
+    // property_accesses
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS property_accesses (
+         id INTEGER PRIMARY KEY,
+         file TEXT NOT NULL,
+         symbol_name TEXT,
+         line INTEGER,
+         chain TEXT NOT NULL,
+         root TEXT NOT NULL,
+         depth INTEGER NOT NULL
+       )`,
+    ).run();
+
+    db.prepare(
+      `INSERT INTO property_accesses (file, symbol_name, line, chain, root, depth)
+       VALUES
+         ('src/alpha.ts', 'alphaFn', 10, 'entity.a.b.c', 'entity', 4),
+         ('src/alpha.ts', 'excludedFn', 20, 'entity.x.y.z', 'entity', 4),
+         ('src/beta.ts',  'betaFn',  5,  'obj.p.q',       'obj',    3)`,
+    ).run();
+
+    // imports — alpha imports from @heavy/lib, beta does not
+    db.prepare(
+      `INSERT INTO imports (source_file, target_file, module_specifier, line, is_relative, imported_names)
+       VALUES ('src/alpha.ts', NULL, '@heavy/lib/index', 1, 0, NULL)`,
+    ).run();
+
+    // symbol_calls — for except_symbol via call rule
+    db.prepare(
+      `INSERT OR IGNORE INTO symbol_calls (caller_file, caller_name, caller_line, callee_name, is_method)
+       VALUES
+         ('src/alpha.ts', 'alphaFn',    15, 'legacyHelper', 0),
+         ('src/alpha.ts', 'safeWrapper', 30, 'legacyHelper', 0),
+         ('src/beta.ts',  'betaFn',     8,  'legacyHelper', 0)`,
+    ).run();
+  });
+
+  afterAll(() => {
+    db.close();
+    fs.unlinkSync(dbPath);
+  });
+
+  // 15.1 context_import
+  it("15.1 context_import: only flags files that import matching module", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "call-context-import",
+          severity: "high",
+          forbidden: [
+            {
+              type: "call",
+              callee: "legacyHelper",
+              context_import: "@heavy/lib/**",
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    // only alpha.ts imports @heavy/lib — beta.ts should be excluded
+    expect(result.violations.every((v) => v.filePath === "src/alpha.ts")).toBe(
+      true,
+    );
+    expect(result.violations.some((v) => v.filePath === "src/beta.ts")).toBe(
+      false,
+    );
+    expect(result.violations.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // 15.2 except_symbol
+  it("15.2 except_symbol: suppresses violations in excluded functions", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "call-except-symbol",
+          severity: "medium",
+          forbidden: [
+            {
+              type: "call",
+              callee: "legacyHelper",
+              except_symbol: "safeWrapper",
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const callers = result.violations.map((v) => v.symbol);
+    expect(callers).not.toContain("safeWrapper");
+    expect(callers).toContain("alphaFn"); // still flagged
+  });
+
+  // 15.3 property_chain_length
+  it("15.3 property_chain_length: flags chains at or above min_depth", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "chain-depth",
+          severity: "low",
+          forbidden: [
+            {
+              type: "property_chain_length",
+              min_depth: 4,
+              root: "entity",
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    // depth=4 chains on entity root in alpha.ts — both alphaFn row AND excludedFn row
+    expect(result.violations.length).toBeGreaterThanOrEqual(1);
+    expect(result.violations.every((v) => v.filePath === "src/alpha.ts")).toBe(
+      true,
+    );
+    expect(result.violations[0].detail).toMatch(/property chain/);
+  });
+
+  it("15.3 property_chain_length: except_symbol excludes matching function", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "chain-depth-exc",
+          severity: "low",
+          forbidden: [
+            {
+              type: "property_chain_length",
+              min_depth: 4,
+              root: "entity",
+              except_symbol: "excludedFn",
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const symbols = result.violations.map((v) => v.symbol);
+    expect(symbols).not.toContain("excludedFn");
+    expect(symbols).toContain("alphaFn");
+  });
+
+  // 15.4 count_mode: per_file
+  it("15.4 count_mode per_file: deduplicates violations to one per file", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "per-file-rule",
+          severity: "low",
+          count_mode: "per_file",
+          forbidden: [
+            {
+              type: "property_chain_length",
+              min_depth: 4,
+              root: "entity",
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    const files = result.violations.map((v) => v.filePath);
+    const uniqueFiles = [...new Set(files)];
+    expect(files.length).toBe(uniqueFiles.length);
+  });
+
+  // 15.5 autofix
+  it("15.5 autofix: violation carries hint from rule definition", () => {
+    const config: RulesConfig = {
+      rules: [
+        {
+          id: "autofix-rule",
+          severity: "low",
+          autofix: {
+            hint: "Replace with safeWrapper()",
+            reference: "docs/MIGRATION.md",
+          },
+          forbidden: [
+            {
+              type: "call",
+              callee: "legacyHelper",
+            },
+          ],
+        },
+      ],
+    };
+    const result = rulesCheckFromDb(db, config);
+    expect(result.violations.length).toBeGreaterThan(0);
+    for (const v of result.violations) {
+      expect(v.autofix).toBeDefined();
+      expect(v.autofix!.hint).toBe("Replace with safeWrapper()");
+      expect(v.autofix!.reference).toBe("docs/MIGRATION.md");
+    }
   });
 });

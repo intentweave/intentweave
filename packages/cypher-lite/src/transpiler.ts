@@ -986,7 +986,9 @@ export class CypherLiteTranspiler {
       const [firstJoin, ...remainingJoins] = subCtx.joinParts;
       // A correlated EXISTS may start from a relationship join and reference
       // only outer-bound node aliases. Promote the first JOIN into FROM.
-      const promoted = firstJoin.match(/^(?:LEFT\s+)?JOIN\s+(.+?)\s+ON\s+(.+)$/i);
+      const promoted = firstJoin.match(
+        /^(?:LEFT\s+)?JOIN\s+(.+?)\s+ON\s+(.+)$/i,
+      );
       if (promoted) {
         subSql += " FROM " + promoted[1];
         subCtx.whereParts.unshift(promoted[2]);

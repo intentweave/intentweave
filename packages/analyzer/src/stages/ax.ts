@@ -234,6 +234,18 @@ export interface AxVariableAssignment {
 }
 
 /**
+ * One intra-function def-use edge for a local variable (16.1).
+ * Mirrors ExtractedDefUseChain from @intentweave/ast-extractor.
+ */
+export interface AxDefUseChain {
+  functionName: string | null;
+  defLine: number;
+  varName: string;
+  useLine: number;
+  useContext: string;
+}
+
+/**
  * Per-file extraction result
  */
 export interface AxFileResult {
@@ -279,6 +291,9 @@ export interface AxFileResult {
 
   /** Variable assignments with RHS text (13.10) */
   variableAssignments?: AxVariableAssignment[];
+
+  /** Intra-function def-use chains for local variables (16.1) */
+  defUseChains?: AxDefUseChain[];
 
   /** Extraction timestamp */
   extractedAt: number;
@@ -669,6 +684,16 @@ async function processFile(
     context: v.context,
   }));
 
+  const defUseChains: AxDefUseChain[] = (result.defUseChains ?? []).map(
+    (c) => ({
+      functionName: c.functionName,
+      defLine: c.defLine,
+      varName: c.varName,
+      useLine: c.useLine,
+      useContext: c.useContext,
+    }),
+  );
+
   return {
     filePath: relativePath,
     contentHash,
@@ -682,6 +707,7 @@ async function processFile(
     typeAssertions,
     testDescriptions,
     variableAssignments,
+    defUseChains,
     commentLines,
     codeLines,
     extractedAt: Date.now(),

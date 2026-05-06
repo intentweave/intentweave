@@ -87,6 +87,7 @@ export function buildIndex(
       typeAssertions: writeTypeAssertions(db, ax),
       testDescriptions: writeTestDescriptions(db, ax),
       variableAssignments: writeVariableAssignments(db, ax),
+      defUseChains: writeDefUseChains(db, ax),
     };
 
     // Populate FTS indexes
@@ -109,7 +110,7 @@ export function buildIndex(
         `files=${counts.files} imports=${counts.imports} todos=${counts.todos} rationale=${counts.rationale} ` +
         `calls=${counts.calls} property_accesses=${counts.propertyAccesses} ` +
         `type_assertions=${counts.typeAssertions} test_descriptions=${counts.testDescriptions} ` +
-        `variable_assignments=${counts.variableAssignments}`,
+        `variable_assignments=${counts.variableAssignments} def_use_chains=${counts.defUseChains}`,
     );
 
     return { dbPath, counts, durationMs };
@@ -375,9 +376,9 @@ function countBusFactor(own: OwnershipRecord): number {
 // =============================================================================
 
 function writeImports(db: Database.Database, ax: AxOutput): number {
-  const importCols = db
-    .prepare(`PRAGMA table_info(imports)`)
-    .all() as Array<{ name: string }>;
+  const importCols = db.prepare(`PRAGMA table_info(imports)`).all() as Array<{
+    name: string;
+  }>;
   const hasLine = importCols.some((c) => c.name === "line");
 
   const stmt = hasLine
@@ -614,7 +615,8 @@ function writeVariableAssignments(db: Database.Database, ax: AxOutput): number {
 
   let count = 0;
   for (const file of ax.files) {
-    if (!file.variableAssignments || file.variableAssignments.length === 0) continue;
+    if (!file.variableAssignments || file.variableAssignments.length === 0)
+      continue;
     for (let i = 0; i < file.variableAssignments.length; i += BATCH_SIZE) {
       const batch = file.variableAssignments.slice(i, i + BATCH_SIZE);
       const tx = db.transaction(() => {
@@ -625,6 +627,40 @@ function writeVariableAssignments(db: Database.Database, ax: AxOutput): number {
             va.symbolName,
             va.valueText,
             va.context ?? null,
+          );
+          count++;
+        }
+      });
+      tx();
+    }
+  }
+  return count;
+}
+
+// =============================================================================
+// Def-Use Chains (16.1)
+// =============================================================================
+
+function writeDefUseChains(db: Database.Database, ax: AxOutput): number {
+  const stmt = db.prepare(`
+    INSERT INTO def_use_chains (file, function, def_line, var_name, use_line, use_context)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let count = 0;
+  for (const file of ax.files) {
+    if (!file.defUseChains || file.defUseChains.length === 0) continue;
+    for (let i = 0; i < file.defUseChains.length; i += BATCH_SIZE) {
+      const batch = file.defUseChains.slice(i, i + BATCH_SIZE);
+      const tx = db.transaction(() => {
+        for (const c of batch) {
+          stmt.run(
+            file.filePath,
+            c.functionName ?? null,
+            c.defLine,
+            c.varName,
+            c.useLine,
+            c.useContext,
           );
           count++;
         }
