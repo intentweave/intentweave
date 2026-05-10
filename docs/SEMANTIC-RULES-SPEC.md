@@ -357,6 +357,145 @@ that have _both_ a diagrammatic expression and a detectable code-level violation
 
 ---
 
+### 4.5 Mermaid Inline Behavioral Rules
+
+*Design status: planned — not yet implemented. Supersedes hand-rolled `expresses.flows` for the behavioral domain.*
+
+The behavioral domain supports Mermaid diagrams as a **first-class rule format**. Instead
+of manually authoring `must_call` / `must_not_call` YAML checks, or hand-rolling the
+`expresses.flows` block, teams embed Mermaid diagrams directly in `rules.yaml` under a
+`mermaid:` key. The Intent Runtime parses the Mermaid AST at check time — no extraction
+step, no intermediate representation.
+
+**Three advantages:**
+
+1. The diagram IS the rule — what renders in GitHub is exactly what runs in CI
+2. The Insights Book renders the Mermaid diagram directly alongside its violations — the
+   behavioral spec is self-documenting in the output
+3. Mermaid diagrams already exist in ADR files — the authoring workflow is copy-paste
+
+#### Sequence diagram — call edge enforcement
+
+```yaml
+- id: bdd-auth-sequence
+  domain: behavioral
+  description: "Login must route through AuthService; UI must not call TokenStore directly"
+  severity: high
+  mode: warn        # promote to error when calls table ships
+  source:
+    type: mermaid_inline
+  mermaid: |
+    sequenceDiagram
+      UI->>AuthService: login(credentials)
+      AuthService->>TokenStore: issue(token)
+      AuthService-->>UI: token
+```
+
+Auto-derived checks from this diagram:
+- `must_call { from: UI, to: AuthService }` — edge exists in diagram
+- `must_call { from: AuthService, to: TokenStore }` — edge exists in diagram
+- `must_not_call { from: UI, to: TokenStore }` — implied: UI→TokenStore bypasses AuthService
+
+#### State diagram — valid transition enforcement
+
+```yaml
+- id: adr002-order-state-machine
+  domain: behavioral
+  description: "Order lifecycle must follow the defined state machine"
+  severity: high
+  mode: warn
+  source:
+    type: mermaid_inline
+  mermaid: |
+    stateDiagram-v2
+      [*] --> Pending
+      Pending --> Processing : submit
+      Processing --> Fulfilled : complete
+      Processing --> Cancelled : cancel
+      Fulfilled --> [*]
+      Cancelled --> [*]
+```
+
+Auto-derived checks: only the listed transitions are valid. Any code path that moves
+`OrderState` from `Pending` directly to `Fulfilled` (skipping `Processing`) is a violation.
+
+#### Flowchart — must-precede / must-not-bypass enforcement
+
+```yaml
+- id: adr001-auth-gate
+  domain: behavioral
+  description: "Every request path must traverse AuthCheck before reaching Process"
+  severity: high
+  mode: warn
+  source:
+    type: mermaid_inline
+  mermaid: |
+    flowchart TD
+      Request --> AuthCheck
+      AuthCheck -->|authenticated| Process
+      AuthCheck -->|rejected| Error
+```
+
+Auto-derived check: any call path from `Request`-handling code to `Process`-handling code
+that does not traverse `AuthCheck` is a violation.
+
+#### Referencing an existing diagram in an ADR file
+
+Instead of inlining, point to a named Mermaid block in a markdown file:
+
+```yaml
+- id: bdd-auth-sequence
+  domain: behavioral
+  severity: high
+  source:
+    type: mermaid_file
+    file: docs/ADR-001-auth.md
+    block_id: auth-login-flow   # optional: named block, else first mermaid block
+  # no mermaid: key needed — loaded from file at check time
+```
+
+When the ADR is updated, `iw intent check` picks up the change automatically — the rule
+and the diagram are the same artifact.
+
+#### Confidence and mode
+
+Mermaid behavioral rules inherit the confidence tier of the underlying check type:
+
+| Diagram type | Check type | Confidence (now) | Confidence (+calls table) |
+|---|---|---|---|
+| `sequenceDiagram` | `must_call` / `must_not_call` | ~0.70–0.85 | ~0.90+ |
+| `stateDiagram-v2` | `valid_transition` | ~0.50 | ~0.80 (+CFG, future) |
+| `flowchart` | `must_precede` | ~0.30 | ~0.80 (+CFG, future) |
+
+Sequence diagrams are the recommended starting point: they cover the most common ADR
+violation patterns and reach CI-grade confidence (~0.90) as soon as the `calls` table
+ships. State machine and flowchart checks should remain `mode: warn` until CFG analysis
+is available.
+
+#### Relationship to `expresses` block
+
+The `expresses.flows` block (§4.4) is the *current* way to declare intended flows for
+SVG visualization. Mermaid inline rules are the *planned replacement* for the behavioral
+enforcement use case — not for visualization (the SVG renderer will continue to use
+`expresses.elements` for component chips and styling metadata that Mermaid does not carry).
+
+A rule can carry both during the transition:
+
+```yaml
+- id: adr001-pipeline-flow
+  domain: behavioral
+  expresses:                      # still used for SVG component chips
+    elements:
+      - { name: UI, kind: component, layer: apps/ui }
+      - { name: AuthService, kind: service, layer: packages/auth }
+  mermaid: |                      # used for behavioral enforcement
+    sequenceDiagram
+      UI->>AuthService: login(credentials)
+  forbidden: []                   # no additional YAML checks needed
+```
+
+---
+
 ## 5. CLI Interface
 
 ### 5.1 `iw index rules-check`

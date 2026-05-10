@@ -8,35 +8,20 @@
   <h1>IntentWeave</h1>
 </div>
 
-**From code graph to intent graph** — a unified platform that builds a queryable index
-of your codebase, enriches it with semantic understanding, and weaves code intent with
-implementation reality.
+IntentWeave ships two products for engineering teams:
 
-IntentWeave is built as three composable layers:
+**CARI** *(Code-Aware Retrieval Index)* — a zero-cost SQLite index built from your
+code's AST, document keywords, and git history. No LLM, no servers, no API keys.
+Produces ranked retrieval, architecture visualization, dependency analysis, clone
+detection, and 30+ code intelligence queries. **Always free. Always local.**
 
-1. **CARI (Code-Aware Retrieval Index)** — A zero-cost SQLite index built from your
-   code's AST, document keywords, and git history. No LLM, no servers, no API keys.
-   Produces ranked retrieval, architecture visualization, dependency analysis, clone
-   detection, CI drift checks, and 30+ code intelligence queries. **This is the
-   foundation — always free, always local.**
+**Intent Guardrails** — turn your ADRs and conventions into executable CI rules.
+Catches property-access violations, forbidden call patterns, architecture drift, and
+documentation staleness — without Neo4j or LLMs in CI. Extract rules from ADR prose
+once with an LLM; all subsequent enforcement runs at $0 against the CARI index.
 
-2. **Semantic Enrichment** — Selectively apply LLM extraction to the files CARI flags
-   as highest-value (hotspots, orphaned docs, architectural hubs). Budget-controlled,
-   stored in the same SQLite index. Unlocks decision tracking, diagram validation,
-   cross-doc contradiction detection, and config-to-docs synchronization — without
-   processing your entire codebase.
-
-3. **Knowledge Graph** — For teams needing full-scale semantic analysis, persist to
-   Neo4j for rich queries, impact analysis, and documentation health checks. The same
-   Cypher queries work against both SQLite (via CypherLite) and Neo4j — swap backends
-   with a single plugin command.
-
-The name pays off at the top: CARI gives you the **code graph**, enrichment gives you
-the **intent graph**, and the third layer **weaves them together** — bridging what you
-said you'd build with what you actually built.
-
-All layers are available through CLI, MCP tools (GitHub Copilot), REST API, and a
-plugin architecture that keeps the core lightweight.
+Both products are available through CLI, MCP tools (GitHub Copilot), REST API, and
+a plugin architecture that keeps the core lightweight.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
@@ -44,7 +29,7 @@ plugin architecture that keeps the core lightweight.
 
 ## Quick Start
 
-### CARI — Zero-Cost Index (no LLM, no Neo4j)
+### CARI Index — zero cost, zero config
 
 ```bash
 npm install -g @intentweave/cli
@@ -54,8 +39,20 @@ iw init
 iw index build                         # < 3 seconds for most projects
 iw index retrieve "authentication"     # ranked file retrieval
 iw index connections "AuthService"     # cross-layer connection discovery
-iw index check --changed src/auth.ts   # CI drift detection
 iw index report                        # coverage, staleness, hidden couplings
+```
+
+### Intent Guardrails — enforce your ADRs
+
+```bash
+# Extract rules from an ADR once (requires LLM)
+iw index rules-extract docs/ADR-001.md --provider openai --output .iw/rules.yaml
+
+# Enforce in CI — no LLM, < 100ms
+iw index rules-check
+
+# PR mode: only changed files, only high severity
+iw index rules-check --changed src/auth.ts --severity high --format json
 ```
 
 ### Architecture Analysis & Visualization
@@ -159,7 +156,7 @@ pnpm dev
 
 ---
 
-## Ensure the Intent in the Code (Semantic Rule Checking 0.11.0)
+## Intent Guardrails (Semantic Rule Checking)
 
 Vibe-coding AI agents and busy developers can easily implement against architectural decisions. IntentWeave turns your Architectural Decision Records (ADRs) and conventions into enforceable code constraints—without requiring Neo4j or LLMs in your CI.
 
