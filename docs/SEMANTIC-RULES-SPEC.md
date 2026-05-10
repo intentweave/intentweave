@@ -359,7 +359,7 @@ that have _both_ a diagrammatic expression and a detectable code-level violation
 
 ### 4.5 Mermaid Inline Behavioral Rules
 
-*Design status: planned — not yet implemented. Supersedes hand-rolled `expresses.flows` for the behavioral domain.*
+_Design status: planned — not yet implemented. Supersedes hand-rolled `expresses.flows` for the behavioral domain._
 
 The behavioral domain supports Mermaid diagrams as a **first-class rule format**. Instead
 of manually authoring `must_call` / `must_not_call` YAML checks, or hand-rolling the
@@ -381,7 +381,7 @@ step, no intermediate representation.
   domain: behavioral
   description: "Login must route through AuthService; UI must not call TokenStore directly"
   severity: high
-  mode: warn        # promote to error when calls table ships
+  mode: warn # promote to error when calls table ships
   source:
     type: mermaid_inline
   mermaid: |
@@ -392,6 +392,7 @@ step, no intermediate representation.
 ```
 
 Auto-derived checks from this diagram:
+
 - `must_call { from: UI, to: AuthService }` — edge exists in diagram
 - `must_call { from: AuthService, to: TokenStore }` — edge exists in diagram
 - `must_not_call { from: UI, to: TokenStore }` — implied: UI→TokenStore bypasses AuthService
@@ -450,7 +451,7 @@ Instead of inlining, point to a named Mermaid block in a markdown file:
   source:
     type: mermaid_file
     file: docs/ADR-001-auth.md
-    block_id: auth-login-flow   # optional: named block, else first mermaid block
+    block_id: auth-login-flow # optional: named block, else first mermaid block
   # no mermaid: key needed — loaded from file at check time
 ```
 
@@ -461,11 +462,11 @@ and the diagram are the same artifact.
 
 Mermaid behavioral rules inherit the confidence tier of the underlying check type:
 
-| Diagram type | Check type | Confidence (now) | Confidence (+calls table) |
-|---|---|---|---|
-| `sequenceDiagram` | `must_call` / `must_not_call` | ~0.70–0.85 | ~0.90+ |
-| `stateDiagram-v2` | `valid_transition` | ~0.50 | ~0.80 (+CFG, future) |
-| `flowchart` | `must_precede` | ~0.30 | ~0.80 (+CFG, future) |
+| Diagram type      | Check type                    | Confidence (now) | Confidence (+calls table) |
+| ----------------- | ----------------------------- | ---------------- | ------------------------- |
+| `sequenceDiagram` | `must_call` / `must_not_call` | ~0.70–0.85       | ~0.90+                    |
+| `stateDiagram-v2` | `valid_transition`            | ~0.50            | ~0.80 (+CFG, future)      |
+| `flowchart`       | `must_precede`                | ~0.30            | ~0.80 (+CFG, future)      |
 
 Sequence diagrams are the recommended starting point: they cover the most common ADR
 violation patterns and reach CI-grade confidence (~0.90) as soon as the `calls` table
@@ -474,8 +475,8 @@ is available.
 
 #### Relationship to `expresses` block
 
-The `expresses.flows` block (§4.4) is the *current* way to declare intended flows for
-SVG visualization. Mermaid inline rules are the *planned replacement* for the behavioral
+The `expresses.flows` block (§4.4) is the _current_ way to declare intended flows for
+SVG visualization. Mermaid inline rules are the _planned replacement_ for the behavioral
 enforcement use case — not for visualization (the SVG renderer will continue to use
 `expresses.elements` for component chips and styling metadata that Mermaid does not carry).
 
@@ -484,14 +485,14 @@ A rule can carry both during the transition:
 ```yaml
 - id: adr001-pipeline-flow
   domain: behavioral
-  expresses:                      # still used for SVG component chips
+  expresses: # still used for SVG component chips
     elements:
       - { name: UI, kind: component, layer: apps/ui }
       - { name: AuthService, kind: service, layer: packages/auth }
-  mermaid: |                      # used for behavioral enforcement
+  mermaid: | # used for behavioral enforcement
     sequenceDiagram
       UI->>AuthService: login(credentials)
-  forbidden: []                   # no additional YAML checks needed
+  forbidden: [] # no additional YAML checks needed
 ```
 
 ---

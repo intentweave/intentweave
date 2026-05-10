@@ -24,26 +24,27 @@ The solution is not fewer features. It is **fewer entry points and one unified o
 
 IntentWeave is two products built on one evidence layer:
 
-| # | Product | Question it answers | Core CLI |
-|---|---------|---------------------|----------|
-| 1 | **CARI Evidence Engine** | What does my codebase look like? | `iw index build` |
-| 2 | **Intent Engine** | Does my code honour its intent? | `iw intent check` |
+| #   | Product                  | Question it answers              | Core CLI          |
+| --- | ------------------------ | -------------------------------- | ----------------- |
+| 1   | **CARI Evidence Engine** | What does my codebase look like? | `iw index build`  |
+| 2   | **Intent Engine**        | Does my code honour its intent?  | `iw intent check` |
 
 **CARI** (Evidence Engine) is the evidence layer — AST, imports, call graph, annotations, git history.
 No LLM, no cost, always-on.
 
 **Intent Engine** is the enforcement layer — one rule checker, three intent domains:
 
-| Domain | Enforces | Extracted from |
-|--------|----------|----------------|
-| **Structural** | Import rules, symbol access, layer boundaries | ADR prose, `layers.yaml` |
-| **Behavioral** | Call flows, state machines, sequence constraints | Mermaid diagrams, BDD scenarios |
-| **Documentary** | Coverage, freshness, terminology, structure | Living doc intent, annotation coverage |
+| Domain          | Enforces                                         | Extracted from                         |
+| --------------- | ------------------------------------------------ | -------------------------------------- |
+| **Structural**  | Import rules, symbol access, layer boundaries    | ADR prose, `layers.yaml`               |
+| **Behavioral**  | Call flows, state machines, sequence constraints | Mermaid diagrams, BDD scenarios        |
+| **Documentary** | Coverage, freshness, terminology, structure      | Living doc intent, annotation coverage |
 
 All three domains run under `iw intent check`. All three report into the same
 violations table, grouped by domain. One CI exit code.
 
 The Intent Engine has two components:
+
 - **Intent Runtime** — deterministic enforcement against CARI evidence ($0, no LLM in CI)
 - **Intent Extraction** — converts natural language intent into `rules.yaml` (LLM once; future: chat client)
 
@@ -53,9 +54,10 @@ See [ADR-001-INTENT-ENGINE.md](ADR-001-INTENT-ENGINE.md) for the full architectu
 
 ## Product 1 — CARI Evidence Engine
 
-**One-liner:** *"Your codebase, indexed. $0, no AI, always on."*
+**One-liner:** _"Your codebase, indexed. $0, no AI, always on."_
 
 **What it does:**
+
 - Builds a SQLite index from AST, keywords, and git history in < 3 seconds
 - No LLM, no server, no API keys — ever
 - Outputs ranked retrieval, architecture visualization, dependency graph,
@@ -77,7 +79,7 @@ write (or a large one they did).
 
 ## Product 2 — Intent Engine
 
-**One-liner:** *"Your intent, enforced. Extract once, verify forever."*
+**One-liner:** _"Your intent, enforced. Extract once, verify forever."_
 
 ### Intent Runtime (enforcement)
 
@@ -129,6 +131,7 @@ The Runtime is unchanged — enforcement stays deterministic regardless of how r
 were authored.
 
 **LLM dependency:**
+
 - Runtime: **none** — $0, deterministic, stable
 - Extraction: one-time per intent artifact
 - Chat: per-session, human-in-the-loop, not in CI
@@ -143,21 +146,21 @@ directly to the three-product framing:
 
 ### Extended Chapter Plan
 
-| Chapter | Product | Currently implemented |
-|---------|---------|----------------------|
-| **Executive Summary** | All | ❌ — new |
-| Architecture Map | CARI Evidence Engine | ✅ (arch graph) |
-| Layer Structure | CARI Evidence Engine | ✅ (prescriptive SVG) |
-| Communities & Clusters | CARI Evidence Engine | ✅ (communities) |
-| Control & Data Flow (per ADR) | Intent Engine (behavioral) | ✅ (per-ADR Cytoscape) |
-| All Violations | Intent Engine (all domains) | ✅ |
-| Architecture Conformance | Intent Engine (structural) | ✅ (arch conformance) |
-| **Doc Coverage** | Intent Engine (documentary) | ❌ — new chapter |
-| **Stale Docs** | Intent Engine (documentary) | ❌ — new chapter |
-| **Terminology & Consistency** | Intent Engine (documentary) | ❌ — new chapter |
-| Code Health | CARI Evidence Engine | ✅ (clones, imports, exports) |
-| Living Score | All | ✅ |
-| **Recommendations** | All | ❌ — new |
+| Chapter                       | Product                     | Currently implemented         |
+| ----------------------------- | --------------------------- | ----------------------------- |
+| **Executive Summary**         | All                         | ❌ — new                      |
+| Architecture Map              | CARI Evidence Engine        | ✅ (arch graph)               |
+| Layer Structure               | CARI Evidence Engine        | ✅ (prescriptive SVG)         |
+| Communities & Clusters        | CARI Evidence Engine        | ✅ (communities)              |
+| Control & Data Flow (per ADR) | Intent Engine (behavioral)  | ✅ (per-ADR Cytoscape)        |
+| All Violations                | Intent Engine (all domains) | ✅                            |
+| Architecture Conformance      | Intent Engine (structural)  | ✅ (arch conformance)         |
+| **Doc Coverage**              | Intent Engine (documentary) | ❌ — new chapter              |
+| **Stale Docs**                | Intent Engine (documentary) | ❌ — new chapter              |
+| **Terminology & Consistency** | Intent Engine (documentary) | ❌ — new chapter              |
+| Code Health                   | CARI Evidence Engine        | ✅ (clones, imports, exports) |
+| Living Score                  | All                         | ✅                            |
+| **Recommendations**           | All                         | ❌ — new                      |
 
 ### The Executive Summary chapter (new, high priority)
 
@@ -168,7 +171,7 @@ The first page a user sees. Should show:
 - Top 3 most urgent actions, ranked by (severity × affected files)
 - Product health indicators: CARI ✅ / Intent Engine ⚠ (structural ✅ / behavioral ⚠ / documentary ❌)
 
-*CARI = CARI Evidence Engine (short form used in headers)*
+_CARI = CARI Evidence Engine (short form used in headers)_
 
 This alone answers "is my project OK?" without reading the rest of the book.
 
@@ -242,7 +245,7 @@ The Insights Book should run a sensible default set without flags:
 iw index export --book       # coverage + violations + living score + code health
 ```
 
-Individual flags (`--with-score`, `--with-health`) become opt-*out* not opt-in.
+Individual flags (`--with-score`, `--with-health`) become opt-_out_ not opt-in.
 The book should be comprehensive by default — let users trim it down if needed.
 
 ---
@@ -294,34 +297,34 @@ Mapping the four dimensions from the product discussion to existing capabilities
 
 ### A — Do public-facing APIs have documentation?
 
-| Check | Command | Status |
-|-------|---------|--------|
-| Exported symbols with no doc mention | `iw index module-coverage` | ✅ shipped |
+| Check                                      | Command                     | Status     |
+| ------------------------------------------ | --------------------------- | ---------- |
+| Exported symbols with no doc mention       | `iw index module-coverage`  | ✅ shipped |
 | Per-file completeness vs. exported symbols | `iw index doc-completeness` | ✅ shipped |
-| Symbols exported but never imported | `iw index unused-exports` | ✅ shipped |
+| Symbols exported but never imported        | `iw index unused-exports`   | ✅ shipped |
 
 **Gap:** no "API surface diff" — detecting when a symbol is exported and documented
 but the doc describes the wrong signature. Requires LLM or type-aware analysis.
 
 ### B — Are hotspot / critical files properly documented?
 
-| Check | Command | Status |
-|-------|---------|--------|
+| Check                             | Command                     | Status     |
+| --------------------------------- | --------------------------- | ---------- |
 | High-churn + low-coverage ranking | `iw index hotspot-priority` | ✅ shipped |
-| Hub / god-node analysis | `iw index hubs` | ✅ shipped |
-| Transitive dependency depth | `iw index dep-depth` | ✅ shipped |
+| Hub / god-node analysis           | `iw index hubs`             | ✅ shipped |
+| Transitive dependency depth       | `iw index dep-depth`        | ✅ shipped |
 
 **Gap:** no "criticality score" combining churn + hub degree + dependency depth into
 one ranked list. Currently three separate commands. `iw docs hotspots` would combine them.
 
 ### C — Are control paths (use cases) documented?
 
-| Check | Command | Status |
-|-------|---------|--------|
-| Cross-layer connection flows | `iw index connections` | ✅ shipped |
-| Focus subgraph around a component | `iw index focus` | ✅ shipped |
-| Community detection (feature clusters) | `iw index communities` | ✅ shipped |
-| Per-ADR flow diagrams | Insights Book (expresses block) | ✅ shipped |
+| Check                                  | Command                         | Status     |
+| -------------------------------------- | ------------------------------- | ---------- |
+| Cross-layer connection flows           | `iw index connections`          | ✅ shipped |
+| Focus subgraph around a component      | `iw index focus`                | ✅ shipped |
+| Community detection (feature clusters) | `iw index communities`          | ✅ shipped |
+| Per-ADR flow diagrams                  | Insights Book (expresses block) | ✅ shipped |
 
 **Gap:** no entry-point tracing — "given this CLI command / API route, what code path
 does it touch, and which parts of that path are documented?" This would require tracing
@@ -330,12 +333,12 @@ from `cli/src/commands/*.ts` inward via the call graph. Feasible as a new query
 
 ### D — Are there contradictions, inconsistencies, problems?
 
-| Check | Command | Status | AI needed? |
-|-------|---------|--------|-----------|
-| Naming inconsistencies | `iw index terminology` | ✅ shipped | No |
-| Orphaned doc sections | `iw index orphaned-sections` | ✅ shipped | No |
-| Cross-group entity conflicts | `iw index cross-group-drift` | ✅ shipped | No |
-| Semantic contradictions | `iw doc-health --neo4j` | ✅ shipped | Yes (KG) |
+| Check                        | Command                      | Status     | AI needed? |
+| ---------------------------- | ---------------------------- | ---------- | ---------- |
+| Naming inconsistencies       | `iw index terminology`       | ✅ shipped | No         |
+| Orphaned doc sections        | `iw index orphaned-sections` | ✅ shipped | No         |
+| Cross-group entity conflicts | `iw index cross-group-drift` | ✅ shipped | No         |
+| Semantic contradictions      | `iw doc-health --neo4j`      | ✅ shipped | Yes (KG)   |
 
 **Gap:** detecting that doc A says "X is true" and doc B says "X is false" without
 Neo4j. Requires selective enrichment (`iw index enrich`) + LLM comparison of extracted
@@ -354,20 +357,20 @@ tools implement.
 
 ### BDD as the Behavioral Bridge
 
-Behavior Driven Development (BDD) captures *what the system should do* in structured
+Behavior Driven Development (BDD) captures _what the system should do_ in structured
 natural language (Given/When/Then). It was a breakthrough — business intent as
 executable specification. But BDD has a fragility problem: as products evolve,
 scenarios become stale, or are written too abstractly to enforce. The coupling to
 step-definition code is brittle on every refactor.
 
-IntentWeave extends BDD's model to cover *how the system should be built* and
-*whether documentation is still true*:
+IntentWeave extends BDD's model to cover _how the system should be built_ and
+_whether documentation is still true_:
 
-| Dimension | Expresses | Intent Engine domain | Extraction input |
-|-----------|-----------|----------------------|------------------|
-| Behavioral intent | What the system does | Behavioral | BDD scenarios, Mermaid sequence/state/flow |
-| Structural intent | How the system is organized | Structural | ADR prose, `layers.yaml` |
-| Documentary intent | What is explained and how | Documentary | Living doc intent, annotation coverage |
+| Dimension          | Expresses                   | Intent Engine domain | Extraction input                           |
+| ------------------ | --------------------------- | -------------------- | ------------------------------------------ |
+| Behavioral intent  | What the system does        | Behavioral           | BDD scenarios, Mermaid sequence/state/flow |
+| Structural intent  | How the system is organized | Structural           | ADR prose, `layers.yaml`                   |
+| Documentary intent | What is explained and how   | Documentary          | Living doc intent, annotation coverage     |
 
 All three domains are enforced by the same Intent Runtime under `iw intent check`.
 The extraction step converts any intent artifact into `rules.yaml` — once, with LLM
@@ -383,6 +386,7 @@ Write intent            →    Build code    →    Verify
 ```
 
 The Insights Book is the IDD dashboard — one output that answers both product questions:
+
 - **CARI:** What does my codebase look like now?
 - **Intent Engine:** Are all three intent domains still honoured?
 
@@ -433,7 +437,7 @@ drift with model updates.
 ### What IDD Is Not
 
 - **Not BDD** — IDD enforces structural and documentary intent, not just behavioral
-  scenarios. BDD is one possible *input* to the Intent Extraction step.
+  scenarios. BDD is one possible _input_ to the Intent Extraction step.
 - **Not spec-driven development** — SDD generates code from formal specs (OpenAPI,
   JSON Schema). IDD verifies existing code against informal natural language intent.
 - **Not "AI code review"** — AI code review re-runs an LLM on every PR.
@@ -509,10 +513,10 @@ table in the Insights Book, grouped by domain.
 
 ### Evidence Sources by Domain
 
-| Domain | Primary evidence | CARI table | Confidence ceiling |
-|--------|-----------------|------------|-------------------|
-| Structural | AST import graph, symbol access | `imports`, `symbols` | High (AST is exact) |
-| Behavioral | Call graph, taint paths, def-use chains | `symbols`, `co_occurrences` | Medium (dynamic dispatch not tracked) |
+| Domain      | Primary evidence                              | CARI table                               | Confidence ceiling                    |
+| ----------- | --------------------------------------------- | ---------------------------------------- | ------------------------------------- |
+| Structural  | AST import graph, symbol access               | `imports`, `symbols`                     | High (AST is exact)                   |
+| Behavioral  | Call graph, taint paths, def-use chains       | `symbols`, `co_occurrences`              | Medium (dynamic dispatch not tracked) |
 | Documentary | Annotation coverage, co-occurrence, staleness | `annotations`, `files`, `co_occurrences` | Medium (annotation confidence varies) |
 
 ### Cross-Domain Contradiction Detection
@@ -520,21 +524,21 @@ table in the Insights Book, grouped by domain.
 With all three domains in one rule graph, cross-domain contradictions become
 standard queries — no LLM needed after extraction:
 
-| Contradiction type | Detection mechanism |
-|-------------------|---------------------|
-| Behavioral rule ↔ structural rule | Two rules with conflicting `checks` on the same symbol |
+| Contradiction type                 | Detection mechanism                                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------- |
+| Behavioral rule ↔ structural rule  | Two rules with conflicting `checks` on the same symbol                          |
 | Documentary rule ↔ behavioral rule | A BDD flow is required but the doc coverage rule flags the path as undocumented |
-| Rule vs. code (violation) | Standard: `iw guardrails check` |
-| Doc says X, code does Y | Documentary rule + annotation staleness + structural check on same entity |
-| Two doc sections contradict | `cross_group_drift` applied to documentary domain entities |
+| Rule vs. code (violation)          | Standard: `iw guardrails check`                                                 |
+| Doc says X, code does Y            | Documentary rule + annotation staleness + structural check on same entity       |
+| Two doc sections contradict        | `cross_group_drift` applied to documentary domain entities                      |
 
 ---
 
 ## Behavioral Rule Syntax — Mermaid Integration
 
-*Mermaid diagrams are already embedded in ADR markdown files and rendered natively by
+_Mermaid diagrams are already embedded in ADR markdown files and rendered natively by
 GitHub. Making them the canonical syntax for behavioral rules closes the loop between
-the diagram a team draws and the rule that gets enforced.*
+the diagram a team draws and the rule that gets enforced._
 
 ### Why Mermaid Fits
 
@@ -546,16 +550,19 @@ Teams already draw these diagrams. The rule becomes the diagram.
 ### Diagram Type → Rule Type Mapping
 
 **Sequence diagram** — call edges and optional ordering:
+
 ```mermaid
 sequenceDiagram
   UI->>AuthService: login(credentials)
   AuthService->>TokenStore: issue(token)
   AuthService-->>UI: token
 ```
+
 Extracted rule: UI must call AuthService; AuthService must call TokenStore.
 Strong form: UI must not call TokenStore directly (bypasses AuthService).
 
 **State diagram** — valid/invalid transitions:
+
 ```mermaid
 stateDiagram-v2
   [*] --> Unauthenticated
@@ -563,16 +570,19 @@ stateDiagram-v2
   Authenticated --> Unauthenticated : logout
   Authenticated --> [*]
 ```
+
 Extracted rule: only `login` may move from Unauthenticated→Authenticated;
 only `logout` may reverse it. Any other transition is a violation.
 
 **Flowchart** — must-precede / must-not-bypass constraints:
+
 ```mermaid
 flowchart TD
   Request --> AuthCheck
   AuthCheck -->|authenticated| Process
   AuthCheck -->|rejected| Error
 ```
+
 Extracted rule: every `Request`-handling path must traverse `AuthCheck` before
 reaching `Process`. Direct Request→Process edge is a violation.
 
@@ -586,11 +596,11 @@ rules:
     severity: high
     source:
       type: mermaid_sequence
-      diagram: docs/ADR-001-auth.md   # file containing the mermaid block
-      block_id: auth-login-flow       # optional: named block within the file
+      diagram: docs/ADR-001-auth.md # file containing the mermaid block
+      block_id: auth-login-flow # optional: named block within the file
     checks:
       - must_call: { from: UI, to: AuthService }
-      - must_not_call: { from: UI, to: TokenStore }  # auto-derived from diagram
+      - must_not_call: { from: UI, to: TokenStore } # auto-derived from diagram
 
   - id: adr002-order-state
     domain: behavioral
@@ -606,14 +616,14 @@ When the ADR is updated, `iw guardrails extract --update` re-derives the rule.
 
 ### What CARI Can Check Today vs. What Needs Extension
 
-| Mermaid check | Mechanism | Current CARI | Confidence | Gap |
-|---|---|---|---|---|
-| A→B edge exists | co-occurrences + imports | ✅ | ~0.70 | No directed call graph |
-| A must NOT call B | imports (absence check) | ✅ | ~0.85 | — |
-| Layer order (A before B in stack) | `imports` table | ✅ | ~0.90 | — |
-| A calls B before C (ordering) | call graph + ordering | ❌ | ~0.30 | No CFG |
-| State transition valid | state variable tracking | ❌ | ~0.50 | No state analysis |
-| Flowchart must-precede | control flow graph | ❌ | ~0.30 | No CFG |
+| Mermaid check                     | Mechanism                | Current CARI | Confidence | Gap                    |
+| --------------------------------- | ------------------------ | ------------ | ---------- | ---------------------- |
+| A→B edge exists                   | co-occurrences + imports | ✅           | ~0.70      | No directed call graph |
+| A must NOT call B                 | imports (absence check)  | ✅           | ~0.85      | —                      |
+| Layer order (A before B in stack) | `imports` table          | ✅           | ~0.90      | —                      |
+| A calls B before C (ordering)     | call graph + ordering    | ❌           | ~0.30      | No CFG                 |
+| State transition valid            | state variable tracking  | ❌           | ~0.50      | No state analysis      |
+| Flowchart must-precede            | control flow graph       | ❌           | ~0.30      | No CFG                 |
 
 **The key missing piece: a directed call graph.**
 
@@ -629,11 +639,11 @@ dispatch and closures. These belong to a later phase.
 
 ### Confidence Roadmap
 
-| Phase | What ships | Confidence | Mode |
-|---|---|---|---|
-| **Now** | Sequence edges via co-occurrences; must-not-call via import absence | ~0.70–0.85 | `warn` |
-| **+call graph** | Directed call edges; sequence diagram enforcement | ~0.90 | `error` |
-| **+CFG (later)** | Call ordering; state machine transitions; flowchart paths | ~0.80 | `warn` → `error` |
+| Phase            | What ships                                                          | Confidence | Mode             |
+| ---------------- | ------------------------------------------------------------------- | ---------- | ---------------- |
+| **Now**          | Sequence edges via co-occurrences; must-not-call via import absence | ~0.70–0.85 | `warn`           |
+| **+call graph**  | Directed call edges; sequence diagram enforcement                   | ~0.90      | `error`          |
+| **+CFG (later)** | Call ordering; state machine transitions; flowchart paths           | ~0.80      | `warn` → `error` |
 
 ### Implication for the `iw guardrails extract` Pipeline
 
@@ -658,17 +668,17 @@ doesn't appear verbatim in the code (e.g., "Login Flow" → `AuthController.logi
 
 ## The Rule Evolution Problem
 
-*This is the hard part. Capturing it early so it shapes implementation decisions.*
+_This is the hard part. Capturing it early so it shapes implementation decisions._
 
 Rules must evolve as codebases evolve — intentionally, not by accident. The risks:
 
-| Risk | Description | Domain most affected |
-|------|-------------|---------------------|
-| **Rule staleness** | Rule enforces old intent that was deliberately superseded | All |
-| **Rule over-fit** | Rule is too specific; breaks on every legitimate refactor | Structural |
-| **Coverage gaps** | New code patterns not covered by any rule | Behavioral |
-| **Rule-rule conflicts** | Two rules were consistent when written; now conflict after growth | All |
-| **Confidence decay** | A rule's evidence source degrades (e.g., doc annotation quality drops) | Documentary |
+| Risk                    | Description                                                            | Domain most affected |
+| ----------------------- | ---------------------------------------------------------------------- | -------------------- |
+| **Rule staleness**      | Rule enforces old intent that was deliberately superseded              | All                  |
+| **Rule over-fit**       | Rule is too specific; breaks on every legitimate refactor              | Structural           |
+| **Coverage gaps**       | New code patterns not covered by any rule                              | Behavioral           |
+| **Rule-rule conflicts** | Two rules were consistent when written; now conflict after growth      | All                  |
+| **Confidence decay**    | A rule's evidence source degrades (e.g., doc annotation quality drops) | Documentary          |
 
 ### The Core Tension
 
@@ -682,15 +692,15 @@ Over-flexible rules can't catch anything.
 
 Not all checks are equally certain. Implementors must be honest about ceilings:
 
-| Check type | Confidence | Why |
-|-----------|-----------|-----|
-| `forbidden_import` | ~0.99 | AST — exact |
-| `doc_structure` (heading exists) | ~0.97 | Markdown AST — exact |
-| `taint_source` (must reach) | ~0.80 | Graph traversal; dynamic dispatch not tracked |
-| `doc_coverage` (symbol mentioned) | ~0.75 | CARI annotation confidence range |
-| `doc_cooccurrence` (terms co-present) | ~0.70 | Keyword matching; synonym blindness |
-| `behavioral_flow` (scenario → code path) | ~0.60 | Requires entry-point tracing + annotation matching |
-| Semantic contradiction (doc A vs doc B) | ~0.50 | Requires LLM; non-deterministic |
+| Check type                               | Confidence | Why                                                |
+| ---------------------------------------- | ---------- | -------------------------------------------------- |
+| `forbidden_import`                       | ~0.99      | AST — exact                                        |
+| `doc_structure` (heading exists)         | ~0.97      | Markdown AST — exact                               |
+| `taint_source` (must reach)              | ~0.80      | Graph traversal; dynamic dispatch not tracked      |
+| `doc_coverage` (symbol mentioned)        | ~0.75      | CARI annotation confidence range                   |
+| `doc_cooccurrence` (terms co-present)    | ~0.70      | Keyword matching; synonym blindness                |
+| `behavioral_flow` (scenario → code path) | ~0.60      | Requires entry-point tracing + annotation matching |
+| Semantic contradiction (doc A vs doc B)  | ~0.50      | Requires LLM; non-deterministic                    |
 
 **Implication:** every violation should carry a `confidence` field. CI gates should let
 teams set thresholds per domain: `structural: 0.9`, `documentary: 0.65`.
@@ -722,11 +732,11 @@ and documentary rules in `warn` mode first — they fail the book but not CI —
 promote to `error` after confirming accuracy.
 
 ```yaml
-  - id: doc-exports-covered
-    domain: documentary
-    severity: medium
-    mode: warn          # warn = Insights Book only, not CI exit code
-    # later: mode: error
+- id: doc-exports-covered
+  domain: documentary
+  severity: medium
+  mode: warn # warn = Insights Book only, not CI exit code
+  # later: mode: error
 ```
 
 **6. LLM-assisted rule review (not rule checking)**
@@ -753,7 +763,7 @@ not automated enforcement.
    detection may be impossible without comparing extracted propositions.
    Honest framing: this check is LLM-assisted and carries confidence ~0.50.
 
-4. **Rule learning:** Can CARI detect patterns that are *systematically violated*
+4. **Rule learning:** Can CARI detect patterns that are _systematically violated_
    and suggest a rule candidate? (i.e., "packages/ui imports packages/domain in
    47 files — you might want a rule for this.") Medium-term research item.
 
@@ -761,14 +771,14 @@ not automated enforcement.
 
 ## What Is Not the Product
 
-To reduce noise, we should be explicit about what IntentWeave does *not* try to do:
+To reduce noise, we should be explicit about what IntentWeave does _not_ try to do:
 
 - **Not a linter** — ESLint, Biome, and similar tools handle style/syntax. IntentWeave
   handles architectural intent and documentation health.
 - **Not a test coverage tool** — Istanbul/V8 cover line/branch coverage. IntentWeave
-  covers *documentation* coverage and *architectural* coverage.
+  covers _documentation_ coverage and _architectural_ coverage.
 - **Not a full documentation generator** — TypeDoc/JSDoc generate API docs.
-  IntentWeave checks whether *existing* docs are accurate and complete.
+  IntentWeave checks whether _existing_ docs are accurate and complete.
 - **Not a knowledge base** — Confluence, Notion, and wikis store docs.
   IntentWeave validates them against the code.
 

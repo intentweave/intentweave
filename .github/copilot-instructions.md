@@ -59,6 +59,8 @@ npx vitest run packages/index/src/__tests__/
 
 ## CARI (Code-Aware Retrieval Index)
 
+_Also referred to as CARI Evidence Engine. `iw index _` is the canonical power API.\*
+
 ### CLI Commands
 
 ```bash
@@ -80,6 +82,22 @@ iw index export --html                # standalone architecture.html report
 iw index export --html -o report.html # custom output path
 iw index export --focus "AuthService" # focused Graphviz SVG report (focus.html)
 iw index export --focus "auth.ts" --hops 3 --max-nodes 30 -o auth-focus.html
+```
+
+### Intent Engine CLI (Phase 0 alias layer)
+
+```bash
+# iw intent * — canonical Intent Engine namespace (translates to iw index rules-* internally)
+iw intent check                       # check rules.yaml against codebase
+iw intent check --rule-id bdd-auth    # check a specific rule
+iw intent extract docs/ADR-001.md     # extract rules from ADR via LLM
+iw intent scan                        # scan diagrams for components
+iw intent living                      # living documentation health (= iw doc-health)
+iw intent score                       # living documentation score (= iw verify --score)
+
+# Backward-compatible aliases
+iw living                             # → iw doc-health (documentary domain)
+iw guardrails check                   # → iw index rules-check (structural domain)
 ```
 
 ### Library API (Facade)
@@ -184,9 +202,12 @@ iw persist --latest -v                                    # Persist to Neo4j
 iw query "What are the main components?" -s my-project   # Query
 iw context "authentication" -s my-project                 # RAG context
 iw impact src/auth.ts -s my-project                       # Impact analysis
-iw doc-health                                               # Doc health (CARI default)
-iw doc-health --neo4j -s my-project                         # Doc health (full KG mode)
+iw doc-health                                               # Living Documentation (documentary domain, CARI default)
+iw intent living                                            # Living Documentation (alias)
+iw living                                                   # Living Documentation (alias)
+iw doc-health --neo4j -s my-project                         # Living Documentation (full KG mode)
 iw verify --score                                           # Living Documentation Score (12.3): composite 0-100/A-F
+iw intent score                                             # Living Documentation Score (alias)
 iw verify --score -f json                                   # JSON output for CI integration
 ```
 

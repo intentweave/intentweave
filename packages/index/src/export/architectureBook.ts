@@ -32,7 +32,10 @@ export function renderArchitectureBookHtml(
   // Replace "</" with "<\/" so the browser HTML parser does not mistake the
   // "</script>" inside the embedded HTML for the closing tag of our script block.
   const prescriptiveHtml = renderPrescriptiveReportHtml(data);
-  const prescriptiveJson = JSON.stringify(prescriptiveHtml).replace(/<\//g, "<\\/");
+  const prescriptiveJson = JSON.stringify(prescriptiveHtml).replace(
+    /<\//g,
+    "<\\/",
+  );
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -440,9 +443,15 @@ function architectureBookClientScript() {
   const data = DATA;
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-  function isGlob(name: string) { return name.includes("*") || name.includes("/"); }
+  function isGlob(name: string) {
+    return name.includes("*") || name.includes("/");
+  }
   function esc(s: string) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
   function sev(s: string) {
     if (s === "high") return `<span class="badge high">HIGH</span>`;
@@ -458,14 +467,33 @@ function architectureBookClientScript() {
 
   // Community colour palette (20 distinct, cycles)
   const COMM_PALETTE = [
-    "#fde68a","#bfdbfe","#bbf7d0","#fecaca","#ddd6fe",
-    "#fed7aa","#cffafe","#fce7f3","#d1fae5","#e0f2fe",
-    "#fef9c3","#ede9fe","#dcfce7","#ffedd5","#f0fdf4",
-    "#fdf4ff","#ecfdf5","#fff7ed","#f0f9ff","#fefce8",
+    "#fde68a",
+    "#bfdbfe",
+    "#bbf7d0",
+    "#fecaca",
+    "#ddd6fe",
+    "#fed7aa",
+    "#cffafe",
+    "#fce7f3",
+    "#d1fae5",
+    "#e0f2fe",
+    "#fef9c3",
+    "#ede9fe",
+    "#dcfce7",
+    "#ffedd5",
+    "#f0fdf4",
+    "#fdf4ff",
+    "#ecfdf5",
+    "#fff7ed",
+    "#f0f9ff",
+    "#fefce8",
   ];
 
   // ── Build chapter index ───────────────────────────────────────────────────
-  const ruleElements = new Map<string, Array<PrescriptiveElementNode & { layerIndex: number }>>();
+  const ruleElements = new Map<
+    string,
+    Array<PrescriptiveElementNode & { layerIndex: number }>
+  >();
   data.layers.forEach((layer) => {
     (layer.elements ?? []).forEach((el: any) => {
       if (!el.ruleId || isGlob(String(el.name))) return;
@@ -483,30 +511,47 @@ function architectureBookClientScript() {
     })
     .map((r) => r.id);
 
-  const totalViolations = data.meta.totalRuleViolations + data.meta.totalLayerViolations;
-  const overlay = (data as any).cariOverlay as {
-    hotspot: Record<string, { score: number; churn: number; coverage: number }>;
-    hubs: Record<string, { degree: number }>;
-    communities: Record<string, { id: number; label: string }>;
-    actualImports: Array<{ from: string; to: string }>;
-  } | undefined;
-  const layerCov = (data as any).layerCoverage as Array<{
-    layerIndex: number; layerName: string; fileCount: number;
-    coveragePercent: number; rulesGoverning: string[];
-    hotspotFiles: Array<{ filePath: string; churn: number; score: number }>;
-  }> | undefined;
+  const totalViolations =
+    data.meta.totalRuleViolations + data.meta.totalLayerViolations;
+  const overlay = (data as any).cariOverlay as
+    | {
+        hotspot: Record<
+          string,
+          { score: number; churn: number; coverage: number }
+        >;
+        hubs: Record<string, { degree: number }>;
+        communities: Record<string, { id: number; label: string }>;
+        actualImports: Array<{ from: string; to: string }>;
+      }
+    | undefined;
+  const layerCov = (data as any).layerCoverage as
+    | Array<{
+        layerIndex: number;
+        layerName: string;
+        fileCount: number;
+        coveragePercent: number;
+        rulesGoverning: string[];
+        hotspotFiles: Array<{ filePath: string; churn: number; score: number }>;
+      }>
+    | undefined;
 
   // ── Build sidebar + chapters ──────────────────────────────────────────────
   const nav = document.getElementById("nav");
   const content = document.getElementById("content");
   const sidebarMeta = document.getElementById("sidebar-meta");
-  sidebarMeta.textContent = data.meta.generated.replace("T", " ").replace(/\..+/, "");
+  sidebarMeta.textContent = data.meta.generated
+    .replace("T", " ")
+    .replace(/\..+/, "");
 
   const navItems: Array<{ el: any; chapterId: string }> = [];
 
   function activateChapter(id: string) {
-    navItems.forEach(({ el, chapterId }) => el.classList.toggle("active", chapterId === id));
-    document.querySelectorAll(".chapter").forEach((c: any) => c.classList.toggle("active", c.id === id));
+    navItems.forEach(({ el, chapterId }) =>
+      el.classList.toggle("active", chapterId === id),
+    );
+    document
+      .querySelectorAll(".chapter")
+      .forEach((c: any) => c.classList.toggle("active", c.id === id));
     const ch = document.getElementById(id);
     if (ch && ch.dataset.cyPending) {
       delete ch.dataset.cyPending;
@@ -514,7 +559,13 @@ function architectureBookClientScript() {
     }
   }
 
-  function addNavItem(label: string, icon: string, chapterId: string, badge?: string, badgeZero = false) {
+  function addNavItem(
+    label: string,
+    icon: string,
+    chapterId: string,
+    badge?: string,
+    badgeZero = false,
+  ) {
     const el = document.createElement("div");
     el.className = "nav-item";
     el.innerHTML =
@@ -563,10 +614,20 @@ function architectureBookClientScript() {
     chDiv.innerHTML = buildAdrChapterHtml(ruleId);
     content.appendChild(chDiv);
 
-    const icon = rule.severity === "high" ? "🔴" : rule.severity === "medium" ? "🟡" : "🟢";
+    const icon =
+      rule.severity === "high"
+        ? "🔴"
+        : rule.severity === "medium"
+          ? "🟡"
+          : "🟢";
     const shortLabel = ruleId.length > 26 ? ruleId.slice(0, 24) + "…" : ruleId;
-    addNavItem(shortLabel, icon, chapterId,
-      rule.count > 0 ? String(rule.count) : "✓", rule.count === 0);
+    addNavItem(
+      shortLabel,
+      icon,
+      chapterId,
+      rule.count > 0 ? String(rule.count) : "✓",
+      rule.count === 0,
+    );
   });
 
   // ── Reports section ───────────────────────────────────────────────────────
@@ -581,8 +642,12 @@ function architectureBookClientScript() {
   violDiv.className = "chapter";
   violDiv.innerHTML = buildViolationsHtml();
   content.appendChild(violDiv);
-  addNavItem("All Violations", "⚠️", "chapter-violations",
-    totalViolations > 0 ? String(totalViolations) : undefined);
+  addNavItem(
+    "All Violations",
+    "⚠️",
+    "chapter-violations",
+    totalViolations > 0 ? String(totalViolations) : undefined,
+  );
 
   // ── Coverage chapter (18.3) ───────────────────────────────────────────────
   const covDiv = document.createElement("div");
@@ -623,18 +688,34 @@ function architectureBookClientScript() {
   // ── ADR chapter HTML builder ──────────────────────────────────────────────
   function buildAdrChapterHtml(ruleId: string): string {
     const rule = data.rules.find((r) => r.id === ruleId);
-    const els = (ruleElements.get(ruleId) ?? []).slice().sort((a: any, b: any) => (a.flowSeq ?? 999) - (b.flowSeq ?? 999));
-    const violations = (data.violations ?? []).filter((v) => v.ruleId === ruleId).slice(0, 20);
+    const els = (ruleElements.get(ruleId) ?? [])
+      .slice()
+      .sort((a: any, b: any) => (a.flowSeq ?? 999) - (b.flowSeq ?? 999));
+    const violations = (data.violations ?? [])
+      .filter((v) => v.ruleId === ruleId)
+      .slice(0, 20);
     const cyId = "cy-" + ruleId.replace(/[^a-z0-9]/gi, "-");
 
     // ── YAML config snippet (18.1) ──────────────────────────────────────────
     const ruleEdges = data.edges.filter((e: any) => e.ruleId === ruleId);
-    const forbiddenKinds = [...new Set(ruleEdges.filter((e: any) => e.type === "forbidden").map((e: any) => e.kind ?? "import_pattern"))];
-    const allowedKinds   = [...new Set(ruleEdges.filter((e: any) => e.type === "allowed").map((e: any) => e.kind ?? "import_pattern"))];
+    const forbiddenKinds = [
+      ...new Set(
+        ruleEdges
+          .filter((e: any) => e.type === "forbidden")
+          .map((e: any) => e.kind ?? "import_pattern"),
+      ),
+    ];
+    const allowedKinds = [
+      ...new Set(
+        ruleEdges
+          .filter((e: any) => e.type === "allowed")
+          .map((e: any) => e.kind ?? "import_pattern"),
+      ),
+    ];
     const yamlLines: string[] = [];
     yamlLines.push("- id: " + ruleId);
     if (rule?.severity) yamlLines.push("  severity: " + rule.severity);
-    if (rule?.adr)      yamlLines.push("  adr: " + rule.adr);
+    if (rule?.adr) yamlLines.push("  adr: " + rule.adr);
     if (rule?.description) {
       const d = rule.description.split("\n")[0].trimEnd();
       yamlLines.push("  description: |");
@@ -647,7 +728,8 @@ function architectureBookClientScript() {
         yamlLines.push('      - name: "' + el.name + '"');
         yamlLines.push("        kind: " + el.kind);
       });
-      if (els.length > 6) yamlLines.push("      # … " + (els.length - 6) + " more");
+      if (els.length > 6)
+        yamlLines.push("      # … " + (els.length - 6) + " more");
     }
     if (forbiddenKinds.length > 0) {
       yamlLines.push("  forbidden:");
@@ -660,12 +742,12 @@ function architectureBookClientScript() {
     const yamlSnippet = esc(yamlLines.join("\n"));
 
     const titleSuffix = rule?.adr ? ` · ${rule.adr}` : "";
-    const hasOverlay = overlay && (
-      Object.keys(overlay.hotspot).length > 0 ||
-      Object.keys(overlay.hubs).length > 0 ||
-      Object.keys(overlay.communities).length > 0 ||
-      overlay.actualImports.length > 0
-    );
+    const hasOverlay =
+      overlay &&
+      (Object.keys(overlay.hotspot).length > 0 ||
+        Object.keys(overlay.hubs).length > 0 ||
+        Object.keys(overlay.communities).length > 0 ||
+        overlay.actualImports.length > 0);
 
     let h = `<div class="chapter-header">
       <h1 class="chapter-title">
@@ -677,23 +759,29 @@ function architectureBookClientScript() {
     <div class="chapter-body" style="display:flex;flex-direction:column;gap:12px;padding:12px 14px">
       <div class="adr-layout">
         <div class="adr-graph-wrap" id="graph-wrap-${ruleId.replace(/[^a-z0-9]/gi, "-")}">
-          ${els.length === 0
-            ? `<div class="adr-graph-empty">No <code>expresses.elements</code> declared for this rule.<br>Add them to <code>rules.yaml</code> to visualize the flow.</div>`
-            : `<div class="cy-container" id="${cyId}" style="width:100%;height:100%"></div>
+          ${
+            els.length === 0
+              ? `<div class="adr-graph-empty">No <code>expresses.elements</code> declared for this rule.<br>Add them to <code>rules.yaml</code> to visualize the flow.</div>`
+              : `<div class="cy-container" id="${cyId}" style="width:100%;height:100%"></div>
                <div class="cy-legend">
                  <div class="leg-item"><div class="leg-dot" style="background:#0284c7;border:2px solid #7dd3fc"></div> Flow element</div>
                  <div class="leg-item"><div class="leg-dot" style="background:#dcfce7;border:2px solid #86efac"></div> Allowed flow</div>
                  <div class="leg-item"><div class="leg-dot" style="background:#fee2e2;border:2px solid #fca5a5"></div> Forbidden flow</div>
                  ${hasOverlay ? `<div class="leg-item"><div class="leg-dot" style="background:#d1d5db;border:1px dashed #9ca3af"></div> Actual import</div>` : ""}
-               </div>`}
-          ${els.length > 0 && hasOverlay ? `<div class="overlay-controls" id="oc-${ruleId.replace(/[^a-z0-9]/gi, "-")}">
+               </div>`
+          }
+          ${
+            els.length > 0 && hasOverlay
+              ? `<div class="overlay-controls" id="oc-${ruleId.replace(/[^a-z0-9]/gi, "-")}">
             <span style="font-weight:600;color:#374151;margin-right:4px">Overlays:</span>
             ${overlay && Object.keys(overlay.hotspot).length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="hotspot"> 🔥 Churn</label>` : ""}
             ${overlay && Object.keys(overlay.hubs).length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="hubs"> ◎ Hub</label>` : ""}
             ${overlay && Object.keys(overlay.communities).length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="communities"> 🎨 Community</label>` : ""}
             ${overlay && overlay.actualImports.length > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="imports"> ↔ Imports</label>` : ""}
             ${rule && rule.count > 0 ? `<label><input type="checkbox" data-cy="${cyId}" data-overlay="violations"> ❗ Violations</label>` : ""}
-          </div>` : ""}
+          </div>`
+              : ""
+          }
         </div>
         <div class="adr-side">
           <div class="adr-panel">
@@ -708,42 +796,68 @@ function architectureBookClientScript() {
               <pre class="yaml-snippet">${yamlSnippet}</pre>
             </details>
           </div>
-          ${els.length > 0 ? `<div class="adr-panel">
+          ${
+            els.length > 0
+              ? `<div class="adr-panel">
             <h3>Flow Elements</h3>
-            ${els.map((el: any, i: number) => {
-              const layerShort = el.layerName?.replace(/^(packages|apps)\//, "") ?? "";
-              const hot = overlay?.hotspot[el.name];
-              const hub = overlay?.hubs[el.name];
-              const comm = overlay?.communities[el.name];
-              const indicators = [
-                hot && hot.score > 0.3 ? `<span title="Churn score ${Math.round(hot.score * 100)}%" style="color:#b45309">🔥</span>` : "",
-                hub && hub.degree > 0.5 ? `<span title="Hub degree ${Math.round(hub.degree * 100)}%" style="color:#1d4ed8">◎</span>` : "",
-                comm ? `<span title="Community: ${esc(comm.label)}" style="color:#7c3aed">●</span>` : "",
-              ].filter(Boolean).join(" ");
-              return `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid #f3f4f6">
+            ${els
+              .map((el: any, i: number) => {
+                const layerShort =
+                  el.layerName?.replace(/^(packages|apps)\//, "") ?? "";
+                const hot = overlay?.hotspot[el.name];
+                const hub = overlay?.hubs[el.name];
+                const comm = overlay?.communities[el.name];
+                const indicators = [
+                  hot && hot.score > 0.3
+                    ? `<span title="Churn score ${Math.round(hot.score * 100)}%" style="color:#b45309">🔥</span>`
+                    : "",
+                  hub && hub.degree > 0.5
+                    ? `<span title="Hub degree ${Math.round(hub.degree * 100)}%" style="color:#1d4ed8">◎</span>`
+                    : "",
+                  comm
+                    ? `<span title="Community: ${esc(comm.label)}" style="color:#7c3aed">●</span>`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                return `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid #f3f4f6">
                 <span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0284c7;color:#fff;font-size:7px;font-weight:700;text-align:center;line-height:16px;margin-right:5px">${i + 1}</span>
                 <b>${esc(String(el.name))}</b>
                 ${indicators}
                 <span style="font-size:10px;color:#64748b"> — ${esc(el.kind)}</span>
                 ${layerShort ? `<div style="font-size:10px;color:#94a3b8;padding-left:21px">${esc(layerShort)}</div>` : ""}
               </div>`;
-            }).join("")}
-          </div>` : ""}
-          ${violations.length > 0 ? `<div class="adr-panel">
+              })
+              .join("")}
+          </div>`
+              : ""
+          }
+          ${
+            violations.length > 0
+              ? `<div class="adr-panel">
             <h3>Top Violations</h3>
             <ul class="adr-violations-list">
-              ${violations.slice(0, 8).map((v) =>
-                `<li>
+              ${violations
+                .slice(0, 8)
+                .map(
+                  (v) =>
+                    `<li>
                   <div class="viol-file">${esc(shortPath(v.filePath))}</div>
                   ${v.line ? `<div class="viol-detail">Line ${v.line}${v.symbol ? ` · ${esc(v.symbol)}` : ""}</div>` : ""}
                   ${v.detail ? `<div class="viol-detail">${esc(v.detail.slice(0, 80))}</div>` : ""}
-                </li>`).join("")}
+                </li>`,
+                )
+                .join("")}
               ${violations.length > 8 ? `<li class="viol-more">…and ${violations.length - 8} more. See All Violations.</li>` : ""}
             </ul>
-          </div>` : violations.length === 0 && rule?.count ? `<div class="adr-panel">
+          </div>`
+              : violations.length === 0 && rule?.count
+                ? `<div class="adr-panel">
             <h3>Violations</h3>
             <p style="font-size:11px;color:#6b7280">Run <code>iw index rules-check --json</code> for detailed violation output.</p>
-          </div>` : ""}
+          </div>`
+                : ""
+          }
         </div>
       </div>
     </div>`;
@@ -837,13 +951,26 @@ function architectureBookClientScript() {
         <th>Layer</th><th>#</th><th>Files</th><th>Doc Coverage</th><th>Rules</th><th>Top Hotspots</th>
       </tr></thead><tbody>`;
       sorted.forEach((lc) => {
-        const barColor = lc.coveragePercent >= 70 ? "#22c55e" : lc.coveragePercent >= 40 ? "#f59e0b" : "#ef4444";
-        const ruleChips = lc.rulesGoverning.map((r) =>
-          `<span style="display:inline-block;font-size:9px;background:#e0f2fe;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;margin:1px 2px 0 0;color:#0c4a6e">${esc(r)}</span>`
-        ).join("") || "—";
-        const hotspots = lc.hotspotFiles.map((f) =>
-          `<span class="hotspot-pill" title="${esc(f.filePath)} · churn ${f.churn}">${esc(shortPath(f.filePath, 30))}</span>`
-        ).join("") || "—";
+        const barColor =
+          lc.coveragePercent >= 70
+            ? "#22c55e"
+            : lc.coveragePercent >= 40
+              ? "#f59e0b"
+              : "#ef4444";
+        const ruleChips =
+          lc.rulesGoverning
+            .map(
+              (r) =>
+                `<span style="display:inline-block;font-size:9px;background:#e0f2fe;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;margin:1px 2px 0 0;color:#0c4a6e">${esc(r)}</span>`,
+            )
+            .join("") || "—";
+        const hotspots =
+          lc.hotspotFiles
+            .map(
+              (f) =>
+                `<span class="hotspot-pill" title="${esc(f.filePath)} · churn ${f.churn}">${esc(shortPath(f.filePath, 30))}</span>`,
+            )
+            .join("") || "—";
         h += `<tr>
           <td style="font-weight:600">${esc(lc.layerName.replace(/^(packages|apps)\//, ""))}</td>
           <td style="font-size:10px;color:#9ca3af">#${lc.layerIndex}</td>
@@ -861,7 +988,9 @@ function architectureBookClientScript() {
       h += `</tbody></table></div>`;
 
       // Coverage tips
-      const lowCov = sorted.filter((lc) => lc.fileCount > 0 && lc.coveragePercent < 40);
+      const lowCov = sorted.filter(
+        (lc) => lc.fileCount > 0 && lc.coveragePercent < 40,
+      );
       if (lowCov.length > 0) {
         h += `<div style="margin-top:16px;padding:12px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:12px">
           <b style="color:#92400e">⚠ Low-coverage layers</b>
@@ -908,25 +1037,31 @@ function architectureBookClientScript() {
     }));
 
     const ruleEdges = data.edges.filter(
-      (e: PrescriptiveEdge) => e.ruleId === ruleId && e.fromElementName && e.toElementName &&
-        !isGlob(String(e.fromElementName)) && !isGlob(String(e.toElementName)),
+      (e: PrescriptiveEdge) =>
+        e.ruleId === ruleId &&
+        e.fromElementName &&
+        e.toElementName &&
+        !isGlob(String(e.fromElementName)) &&
+        !isGlob(String(e.toElementName)),
     );
     const seenEdge = new Set<string>();
-    const edges = ruleEdges.map((e: PrescriptiveEdge, i: number) => {
-      const k = `${e.fromElementName}->${e.toElementName}`;
-      if (seenEdge.has(k)) return null;
-      seenEdge.add(k);
-      return {
-        data: {
-          id: "e" + i,
-          source: e.fromElementName,
-          target: e.toElementName,
-          edgeType: e.type,
-          flowKind: e.flowKind ?? "",
-          overlayType: "intent",
-        },
-      };
-    }).filter(Boolean);
+    const edges = ruleEdges
+      .map((e: PrescriptiveEdge, i: number) => {
+        const k = `${e.fromElementName}->${e.toElementName}`;
+        if (seenEdge.has(k)) return null;
+        seenEdge.add(k);
+        return {
+          data: {
+            id: "e" + i,
+            source: e.fromElementName,
+            target: e.toElementName,
+            edgeType: e.type,
+            flowKind: e.flowKind ?? "",
+            overlayType: "intent",
+          },
+        };
+      })
+      .filter(Boolean);
 
     if (edges.length === 0 && els.length > 1) {
       for (let i = 0; i < els.length - 1; i++) {
@@ -947,16 +1082,20 @@ function architectureBookClientScript() {
       if ((globalThis as any).cytoscapeDagre) {
         cytoscape.use((globalThis as any).cytoscapeDagre);
       }
-    } catch { /* already registered */ }
+    } catch {
+      /* already registered */
+    }
 
     const cy = cytoscape({
       container,
       elements: [...nodes, ...edges],
       style: buildCyStyle(false),
       layout: {
-        name: (typeof (globalThis as any).cytoscapeDagre !== "undefined" ||
-               typeof (globalThis as any).dagre !== "undefined")
-              ? "dagre" : "grid",
+        name:
+          typeof (globalThis as any).cytoscapeDagre !== "undefined" ||
+          typeof (globalThis as any).dagre !== "undefined"
+            ? "dagre"
+            : "grid",
         rankDir: "LR",
         nodeSep: 60,
         rankSep: 80,
@@ -993,11 +1132,11 @@ function architectureBookClientScript() {
           "text-halign": "center",
           "font-size": "10px",
           "font-weight": "600",
-          "color": "#0c4a6e",
+          color: "#0c4a6e",
           width: 40,
           height: 40,
           shape: "roundrectangle",
-          "padding": "6px",
+          padding: "6px",
           "text-margin-y": 4,
         },
       },
@@ -1006,7 +1145,7 @@ function architectureBookClientScript() {
         style: {
           "background-color": "#0284c7",
           "border-color": "#0369a1",
-          "color": "#fff",
+          color: "#fff",
         },
       },
       {
@@ -1045,7 +1184,7 @@ function architectureBookClientScript() {
           "target-arrow-shape": "triangle",
           "curve-style": "bezier",
           "font-size": "9px",
-          "color": "#64748b",
+          color: "#64748b",
           label: "data(flowKind)",
           "text-rotation": "autorotate",
           "z-index": 5,
@@ -1055,7 +1194,12 @@ function architectureBookClientScript() {
   }
 
   // Apply/remove CARI overlays on a live Cytoscape instance.
-  function applyOverlays(cy: any, cyId: string, ruleId: string, active: Set<string>) {
+  function applyOverlays(
+    cy: any,
+    cyId: string,
+    ruleId: string,
+    active: Set<string>,
+  ) {
     const nodeNames = new Set(cy.nodes().map((n: any) => n.id()));
 
     // ── hotspot overlay (node background: white→orange→red) ──
@@ -1069,7 +1213,10 @@ function architectureBookClientScript() {
         n.style("background-color", `rgb(${r},${g},${b})`);
         n.style("border-color", hot.score > 0.7 ? "#dc2626" : "#f97316");
       } else if (!active.has("communities") && !active.has("violations")) {
-        n.style("background-color", active.has("violations") ? n.style("background-color") : "#f0f9ff");
+        n.style(
+          "background-color",
+          active.has("violations") ? n.style("background-color") : "#f0f9ff",
+        );
         n.style("border-color", "#7dd3fc");
       }
     });
@@ -1086,21 +1233,30 @@ function architectureBookClientScript() {
 
     // ── community overlay (node background colour) ──
     cy.nodes().forEach((n: any) => {
-      const comm = active.has("communities") ? overlay?.communities[n.id()] : undefined;
+      const comm = active.has("communities")
+        ? overlay?.communities[n.id()]
+        : undefined;
       if (comm && !active.has("hotspot") && !active.has("violations")) {
-        n.style("background-color", COMM_PALETTE[comm.id % COMM_PALETTE.length]);
+        n.style(
+          "background-color",
+          COMM_PALETTE[comm.id % COMM_PALETTE.length],
+        );
         n.style("border-color", "#a78bfa");
       }
     });
 
     // ── violations overlay (node badge-like red tint, violating edges solid red) ──
     if (active.has("violations")) {
-      const ruleViols = (data.violations ?? []).filter((v) => v.ruleId === ruleId);
+      const ruleViols = (data.violations ?? []).filter(
+        (v) => v.ruleId === ruleId,
+      );
       const violFiles = new Set(ruleViols.map((v) => v.filePath));
       cy.nodes().forEach((n: any) => {
         // crude match: node name appears in any violation file path
-        const isViol = ruleViols.some((v) =>
-          v.filePath.includes(n.id()) || (v.symbol && v.symbol.includes(n.id()))
+        const isViol = ruleViols.some(
+          (v) =>
+            v.filePath.includes(n.id()) ||
+            (v.symbol && v.symbol.includes(n.id())),
         );
         if (isViol) {
           n.style("background-color", "#fee2e2");

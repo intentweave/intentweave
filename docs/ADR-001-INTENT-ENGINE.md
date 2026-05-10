@@ -1,11 +1,11 @@
 # ADR-001 — Unified Intent Engine Architecture
 
-| Field | Value |
-|---|---|
-| **Status** | Draft |
-| **Date** | 2026-05-10 |
-| **Deciders** | Core team |
-| **Supersedes** | — |
+| Field          | Value      |
+| -------------- | ---------- |
+| **Status**     | Draft      |
+| **Date**       | 2026-05-10 |
+| **Deciders**   | Core team  |
+| **Supersedes** | —          |
 
 ---
 
@@ -20,7 +20,7 @@ IntentWeave started with two separate enforcement concepts:
 
 These were presented as separate products with separate commands (`iw guardrails *`,
 `iw living *`) and separate output channels. As the design evolved, it became clear
-that both systems answer the same question — *"is the code honouring its intent?"* —
+that both systems answer the same question — _"is the code honouring its intent?"_ —
 using the same evidence layer (CARI), the same rule format (`rules.yaml`), and the
 same enforcement model (deterministic check → violations table → CI exit code).
 
@@ -58,9 +58,9 @@ rules:
     domain: structural | behavioral | documentary
     description: "..."
     severity: low | medium | high | critical
-    mode: warn | error          # warn: Insights Book only; error: CI exit code
+    mode: warn | error # warn: Insights Book only; error: CI exit code
     confidence_threshold: 0.0–1.0
-    source:                     # optional: links rule to the intent artifact
+    source: # optional: links rule to the intent artifact
       type: adr_prose | bdd_scenario | mermaid_sequence | mermaid_state | mermaid_flow | manual
       file: docs/ADR-001.md
       block_id: auth-login-flow # optional: named block within the file
@@ -73,15 +73,15 @@ rules:
 
 ```yaml
 checks:
-  - type: forbidden_import          # ~0.99 — AST exact
+  - type: forbidden_import # ~0.99 — AST exact
     from_layer: packages/ui
     import_pattern: "packages/domain/**"
 
-  - type: forbidden_symbol_access   # ~0.95 — AST exact
+  - type: forbidden_symbol_access # ~0.95 — AST exact
     pattern: "item.resource.path"
     in_layer: packages/ui
 
-  - type: taint_source              # ~0.80 — graph traversal
+  - type: taint_source # ~0.80 — graph traversal
     pattern: "req.body.password"
     must_reach: AuthService
     must_not_bypass: true
@@ -91,25 +91,25 @@ checks:
 
 ```yaml
 checks:
-  - type: must_call                 # ~0.70 now, ~0.90 with calls table
+  - type: must_call # ~0.70 now, ~0.90 with calls table
     from: UI
     to: AuthService
 
-  - type: must_not_call             # ~0.85 now (import absence)
+  - type: must_not_call # ~0.85 now (import absence)
     from: UI
     to: TokenStore
 
-  - type: layer_order               # ~0.90 — imports table
+  - type: layer_order # ~0.90 — imports table
     before: packages/providers
     after: packages/adapters
 
-  - type: valid_transition          # ~0.50 — requires state analysis (future)
+  - type: valid_transition # ~0.50 — requires state analysis (future)
     entity: OrderState
     from: Unauthenticated
     to: Authenticated
-    via: login                      # only this call may cause the transition
+    via: login # only this call may cause the transition
 
-  - type: must_precede              # ~0.30 — requires CFG (future)
+  - type: must_precede # ~0.30 — requires CFG (future)
     node: AuthCheck
     before: Process
 ```
@@ -118,21 +118,21 @@ checks:
 
 ```yaml
 checks:
-  - type: doc_coverage              # ~0.75 — annotation confidence
+  - type: doc_coverage # ~0.75 — annotation confidence
     min_confidence: 0.6
 
-  - type: doc_cooccurrence          # ~0.70 — keyword matching
+  - type: doc_cooccurrence # ~0.70 — keyword matching
     entity: AuthService
     requires_terms: ["security", "token", "session"]
 
-  - type: doc_structure             # ~0.97 — Markdown AST exact
+  - type: doc_structure # ~0.97 — Markdown AST exact
     file_pattern: "docs/ADR-*.md"
     requires_heading: "Status"
 
-  - type: doc_freshness             # ~0.85 — git + annotation staleness
+  - type: doc_freshness # ~0.85 — git + annotation staleness
     max_staleness_days: 90
 
-  - type: doc_terminology           # ~0.80 — cross-file annotation comparison
+  - type: doc_terminology # ~0.80 — cross-file annotation comparison
     entity: AuthService
     disallow_aliases: ["auth-service", "authSvc"]
 ```
@@ -155,6 +155,7 @@ sequenceDiagram
 ```
 
 Auto-extracted checks:
+
 - `must_call { from: UI, to: AuthService }`
 - `must_call { from: AuthService, to: TokenStore }`
 - `must_not_call { from: UI, to: TokenStore }` (implied: bypasses AuthService)
@@ -169,6 +170,7 @@ stateDiagram-v2
 ```
 
 Auto-extracted checks:
+
 - `valid_transition { from: Unauthenticated, to: Authenticated, via: login }`
 - `valid_transition { from: Authenticated, to: Unauthenticated, via: logout }`
 - Any other transition → violation
@@ -183,6 +185,7 @@ flowchart TD
 ```
 
 Auto-extracted checks:
+
 - `must_precede { node: AuthCheck, before: Process }`
 - `must_not_call { from: Request, to: Process }` (direct bypass)
 
@@ -222,6 +225,7 @@ The `AX` stage (ast-extractor) will be extended to emit `calls` rows alongside
 references or dependency injection — these are not used for `mode: error` checks.
 
 **Confidence model:**
+
 - `call_kind = 'direct'` → ~0.95 confidence for `must_call` / `must_not_call`
 - `call_kind = 'method'` → ~0.85
 - `call_kind = 'dynamic'` → ~0.60 (dynamic dispatch, used for `mode: warn` only)
@@ -241,7 +245,7 @@ enforcement:
     mode: error
   behavioral:
     min_confidence: 0.75
-    mode: warn       # promote to error after call graph ships
+    mode: warn # promote to error after call graph ships
   documentary:
     min_confidence: 0.65
     mode: warn
@@ -275,16 +279,16 @@ before promotion to `mode: error`. The LLM is never invoked during CI enforcemen
 
 ## CLI Migration Plan
 
-| Current command | Target command | Notes |
-|---|---|---|
-| `iw index rules-check` | `iw intent check` | Alias kept for backward compat |
-| `iw index rules-extract` | `iw intent extract` | Alias kept |
-| `iw guardrails check` | `iw intent check` | Alias kept |
-| `iw guardrails extract` | `iw intent extract` | Alias kept |
-| `iw living verify` | `iw intent check --domain documentary` | Alias kept |
-| *(new)* | `iw intent check --domain behavioral` | Mermaid + BDD rules |
-| *(new)* | `iw intent review --rule <id>` | LLM-assisted rule review |
-| *(future)* | `iw intent chat` | Conversational rule authoring |
+| Current command          | Target command                         | Notes                          |
+| ------------------------ | -------------------------------------- | ------------------------------ |
+| `iw index rules-check`   | `iw intent check`                      | Alias kept for backward compat |
+| `iw index rules-extract` | `iw intent extract`                    | Alias kept                     |
+| `iw guardrails check`    | `iw intent check`                      | Alias kept                     |
+| `iw guardrails extract`  | `iw intent extract`                    | Alias kept                     |
+| `iw living verify`       | `iw intent check --domain documentary` | Alias kept                     |
+| _(new)_                  | `iw intent check --domain behavioral`  | Mermaid + BDD rules            |
+| _(new)_                  | `iw intent review --rule <id>`         | LLM-assisted rule review       |
+| _(future)_               | `iw intent chat`                       | Conversational rule authoring  |
 
 All existing commands remain functional. No breaking changes in v0.x.
 

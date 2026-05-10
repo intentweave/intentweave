@@ -88,7 +88,9 @@ export {
 const BAR = "████████████████████████████████";
 
 const indexBuildSubcommand = new Command("build")
-  .description("Build CARI index: KWG + TCG + AX → SQLite (.iw/index.db)")
+  .description(
+    "Build the CARI Evidence Engine index: KWG + TCG + AX → SQLite (.iw/index.db)",
+  )
   .argument(
     "[paths...]",
     "Document file(s) or directories to analyze (default: .)",
@@ -140,7 +142,9 @@ const indexBuildSubcommand = new Command("build")
       return group ? { path: rootPath, role, group } : { path: rootPath, role };
     });
 
-    console.log(chalk.blue(`\n  ▸ CARI Index Build — session: ${session}`));
+    console.log(
+      chalk.blue(`\n  ▸ CARI Evidence Engine Build — session: ${session}`),
+    );
     console.log(
       chalk.blue(
         `  ▸ depth: ${opts.depth} | output: ${opts.output ?? ".iw/index.db"}\n`,
@@ -3637,39 +3641,62 @@ const indexRulesCheckSubcommand = new Command("rules-check")
       if (diagram) process.stdout.write(diagram);
     }
 
-    // Group by ruleId
-    const grouped = new Map<string, typeof result.violations>();
+    // Group violations by domain, then by ruleId
+    const DOMAIN_LABEL: Record<string, string> = {
+      structural: "Structural",
+      behavioral: "Behavioral",
+      documentary: "Documentary",
+    };
+
+    const byDomain = new Map<string, typeof result.violations>();
     for (const v of result.violations) {
-      const arr = grouped.get(v.ruleId) ?? [];
+      const domain = v.ruleDomain ?? "structural";
+      const arr = byDomain.get(domain) ?? [];
       arr.push(v);
-      grouped.set(v.ruleId, arr);
+      byDomain.set(domain, arr);
     }
 
-    for (const [ruleId, violations] of grouped) {
-      const first = violations[0];
-      const sev = first.ruleSeverity.toUpperCase();
-      const colorFn = SEVERITY_COLOR[first.ruleSeverity] ?? chalk.white;
-      const adrStr = first.adr ? ` (${first.adr})` : "";
-      console.log(colorFn(`  Rule: ${ruleId}${adrStr} [${sev}]`));
-      if (first.ruleDescription) {
-        console.log(chalk.gray(`  ${first.ruleDescription}`));
-      }
-      console.log(chalk.gray("  " + "─".repeat(60)));
+    for (const domain of ["structural", "behavioral", "documentary"]) {
+      const domainViolations = byDomain.get(domain);
+      if (!domainViolations?.length) continue;
 
-      for (const v of violations) {
-        const loc = v.line != null ? `:${v.line}` : "";
-        console.log(
-          `  ${chalk.cyan(v.filePath + loc).padEnd(55)} ${chalk.white(v.detail)}`,
-        );
-        // 15.5 autofix hint
-        if (v.autofix) {
-          console.log(chalk.gray(`    → Fix: ${v.autofix.hint}`));
-          if (v.autofix.reference) {
-            console.log(chalk.gray(`      See: ${v.autofix.reference}`));
+      console.log(chalk.bold(`  ── ${DOMAIN_LABEL[domain]} domain ──`));
+
+      const grouped = new Map<string, typeof result.violations>();
+      for (const v of domainViolations) {
+        const arr = grouped.get(v.ruleId) ?? [];
+        arr.push(v);
+        grouped.set(v.ruleId, arr);
+      }
+
+      for (const [ruleId, violations] of grouped) {
+        const first = violations[0];
+        const sev = first.ruleSeverity.toUpperCase();
+        const colorFn = SEVERITY_COLOR[first.ruleSeverity] ?? chalk.white;
+        const adrStr = first.adr ? ` (${first.adr})` : "";
+        const modeTag =
+          first.ruleMode === "warn" ? chalk.yellow(" [WARN]") : "";
+        console.log(colorFn(`  Rule: ${ruleId}${adrStr} [${sev}]`) + modeTag);
+        if (first.ruleDescription) {
+          console.log(chalk.gray(`  ${first.ruleDescription}`));
+        }
+        console.log(chalk.gray("  " + "─".repeat(60)));
+
+        for (const v of violations) {
+          const loc = v.line != null ? `:${v.line}` : "";
+          console.log(
+            `  ${chalk.cyan(v.filePath + loc).padEnd(55)} ${chalk.white(v.detail)}`,
+          );
+          // 15.5 autofix hint
+          if (v.autofix) {
+            console.log(chalk.gray(`    → Fix: ${v.autofix.hint}`));
+            if (v.autofix.reference) {
+              console.log(chalk.gray(`      See: ${v.autofix.reference}`));
+            }
           }
         }
+        console.log();
       }
-      console.log();
     }
 
     if (result.totalViolations > result.violations.length) {
@@ -3680,7 +3707,19 @@ const indexRulesCheckSubcommand = new Command("rules-check")
       );
     }
 
-    process.exitCode = 1;
+    // Only exit non-zero if there are error-mode violations (warn-only → pass)
+    const hasErrorViolations = result.violations.some(
+      (v) => (v.ruleMode ?? "error") === "error",
+    );
+    if (hasErrorViolations) {
+      process.exitCode = 1;
+    } else {
+      console.log(
+        chalk.yellow(
+          `  ⚠ All violations are mode:warn — CI gate passed (warnings only)\n`,
+        ),
+      );
+    }
   });
 
 // ── iw index deprecated-callers ─────────────────────────────────
@@ -5983,7 +6022,7 @@ Be concise: one sentence, under 160 characters.`;
   );
 
 export const indexCommand = new Command("index")
-  .description("CARI — Code-Aware Retrieval Index commands")
+  .description("CARI Evidence Engine commands")
   .addCommand(indexBuildSubcommand)
   .addCommand(indexUpdateSubcommand)
   .addCommand(indexWatchSubcommand)

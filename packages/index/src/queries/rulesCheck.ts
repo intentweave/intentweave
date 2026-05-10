@@ -239,6 +239,8 @@ function checkPropertyAccess(
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
+      ruleDomain: rule.domain ?? "structural",
+      ruleMode: rule.mode ?? "error",
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.file,
@@ -333,6 +335,8 @@ function checkCall(
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
+      ruleDomain: rule.domain ?? "structural",
+      ruleMode: rule.mode ?? "error",
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.caller_file,
@@ -426,6 +430,8 @@ function buildTaintPropagationViolations(
         propagated.push({
           ruleId: rule.id,
           ruleSeverity: rule.severity,
+          ruleDomain: rule.domain ?? "structural",
+          ruleMode: rule.mode ?? "error",
           ruleDescription: rule.description,
           adr: rule.adr,
           filePath: evt.file,
@@ -486,6 +492,8 @@ function checkSymbolName(
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
+      ruleDomain: rule.domain ?? "structural",
+      ruleMode: rule.mode ?? "error",
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.file_path,
@@ -543,6 +551,8 @@ function checkImportPattern(
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
+      ruleDomain: rule.domain ?? "structural",
+      ruleMode: rule.mode ?? "error",
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.source_file,
@@ -600,6 +610,8 @@ function checkVariableAssignment(
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
+      ruleDomain: rule.domain ?? "structural",
+      ruleMode: rule.mode ?? "error",
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.file,
@@ -652,6 +664,8 @@ function checkCypherRule(
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
+      ruleDomain: rule.domain ?? "structural",
+      ruleMode: rule.mode ?? "error",
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.file,
@@ -831,6 +845,8 @@ function checkPropertyChainLength(
     violations.push({
       ruleId: rule.id,
       ruleSeverity: rule.severity,
+      ruleDomain: rule.domain ?? "structural",
+      ruleMode: rule.mode ?? "error",
       ruleDescription: rule.description,
       adr: rule.adr,
       filePath: row.file,

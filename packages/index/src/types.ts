@@ -2237,6 +2237,24 @@ export interface RuleDefinition {
   adr?: string;
   severity: "high" | "medium" | "low";
   /**
+   * Intent domain this rule belongs to (Phase 1 — Intent Engine Foundation).
+   * - `structural` (default): import-graph and symbol-usage checks
+   * - `behavioral`: call-sequence and transition checks
+   * - `documentary`: coverage, stale-docs, and terminology checks
+   *
+   * Used to group violations by domain in `iw intent check` output and
+   * to filter with `--domain structural|behavioral|documentary`.
+   */
+  domain?: "structural" | "behavioral" | "documentary";
+  /**
+   * Enforcement mode (Phase 1).
+   * - `error` (default): violation causes non-zero exit code in CI
+   * - `warn`: violation is reported but does not fail CI
+   *
+   * Use `warn` for behavioral rules until the calls table ships (~0.90 confidence).
+   */
+  mode?: "error" | "warn";
+  /**
    * Violation counting mode (15.4).
    * - `per_occurrence` (default): one violation per matching occurrence
    * - `per_file`: at most one violation per file per rule (deduplicates multi-match files)
@@ -2295,6 +2313,10 @@ export interface RulesConfig {
 export interface RulesViolation {
   ruleId: string;
   ruleSeverity: "high" | "medium" | "low";
+  /** Intent domain — carried from RuleDefinition.domain (defaults to "structural") */
+  ruleDomain: "structural" | "behavioral" | "documentary";
+  /** Enforcement mode — carried from RuleDefinition.mode (defaults to "error") */
+  ruleMode: "error" | "warn";
   ruleDescription?: string;
   adr?: string;
   filePath: string;

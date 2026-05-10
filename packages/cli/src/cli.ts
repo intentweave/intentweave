@@ -42,6 +42,7 @@ import { buildCommand } from "./commands/buildKwg.js";
 import { codeCommand } from "./commands/code.js";
 import { contextCommand } from "./commands/context.js";
 import { docHealthCommand } from "./commands/doc-health.js";
+import { intentCommand } from "./commands/intent.js";
 import { driftCommand } from "./commands/drift.js";
 import { embedCommand } from "./commands/embed.js";
 import { evalCommand } from "./commands/eval.js";
@@ -73,6 +74,41 @@ import { CLI_NAME, PRODUCT_NAME } from "./constants.js";
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
 
+// ─── Phase 0: iw intent / iw living argv translation ─────────────────────────
+// Translate `iw intent <sub>` to its canonical command before Commander parses.
+// This is the Phase 0 alias layer — zero code duplication, all option/help
+// handling falls through to the original subcommand implementation.
+// Phase 1 will promote these to first-class subcommands under iw intent.
+(function translateIntentArgs(): void {
+  const intentMap: Record<string, string[]> = {
+    check: ["index", "rules-check"],
+    extract: ["index", "rules-extract"],
+    scan: ["index", "scan-diagrams"],
+    living: ["doc-health"],
+    score: ["verify", "--score"],
+  };
+
+  const [node, bin, cmd, sub, ...rest] = process.argv;
+
+  if (cmd === "intent" && sub && intentMap[sub]) {
+    // iw intent check [...] → iw index rules-check [...]
+    process.argv = [node, bin, ...intentMap[sub], ...rest];
+    return;
+  }
+
+  if (cmd === "living") {
+    // iw living [...] → iw doc-health [...]
+    process.argv = [node, bin, "doc-health", sub ?? "", ...rest].filter(
+      Boolean,
+    );
+  }
+
+  if (cmd === "guardrails" && sub && intentMap[sub]) {
+    // iw guardrails check [...] → iw index rules-check [...]
+    process.argv = [node, bin, ...intentMap[sub], ...rest];
+  }
+})();
+
 const program = new Command();
 
 program
@@ -91,6 +127,7 @@ program.addCommand(codeCommand);
 program.addCommand(contextCommand);
 program.addCommand(docHealthCommand);
 program.addCommand(driftCommand);
+program.addCommand(intentCommand);
 program.addCommand(embedCommand);
 program.addCommand(evalCommand);
 program.addCommand(evidenceCommand);
