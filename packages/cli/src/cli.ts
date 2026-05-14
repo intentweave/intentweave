@@ -91,16 +91,30 @@ const { version } = require("../package.json");
   const [node, bin, cmd, sub, ...rest] = process.argv;
 
   if (cmd === "intent" && sub && intentMap[sub]) {
-    // iw intent check [...] → iw index rules-check [...]
+    // iw intent check [--domain X] [...] → iw index rules-check [--domain X] [...]
     process.argv = [node, bin, ...intentMap[sub], ...rest];
     return;
   }
 
   if (cmd === "living") {
+    if (sub === "verify") {
+      // iw living verify [...] → iw index rules-check --domain documentary [...]
+      process.argv = [
+        node,
+        bin,
+        "index",
+        "rules-check",
+        "--domain",
+        "documentary",
+        ...rest,
+      ];
+      return;
+    }
     // iw living [...] → iw doc-health [...]
     process.argv = [node, bin, "doc-health", sub ?? "", ...rest].filter(
       Boolean,
     );
+    return;
   }
 
   if (cmd === "guardrails" && sub && intentMap[sub]) {

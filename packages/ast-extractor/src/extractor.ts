@@ -1499,44 +1499,77 @@ export class AstExtractor {
   }
 
   /**
-   * Extract JSDoc comment from preceding node
+   * Extract JSDoc / leading comment from preceding node.
+   *
+   * Captures the full description body (all content lines before the first
+   * @-tag), capped at 600 characters, so that symbols_fts search covers
+   * the complete comment — not just the first sentence.
+   *
+   * Also falls back to trailing `//` comments on the declaration line itself.
    */
   private extractDocComment(
     node: Parser.SyntaxNode,
     content: string,
   ): string | undefined {
-    // Look for comment immediately before this node
     const startLine = node.startPosition.row;
     const lines = content.split("\n");
 
-    // Look backwards for JSDoc
-    for (let i = startLine - 1; i >= Math.max(0, startLine - 5); i--) {
+    // ── 1. Look backwards for a block comment (/** … */ or /* … */) ────────
+    for (let i = startLine - 1; i >= Math.max(0, startLine - 20); i--) {
       const line = lines[i].trim();
-      if (line.startsWith("/**")) {
-        // Found start of JSDoc, extract first meaningful line
+
+      if (line.startsWith("/**") || (line.startsWith("/*") && !line.startsWith("/**/"))) {
+        // Collect all description lines from start of block to startLine
+        const bodyParts: string[] = [];
         for (let j = i; j < startLine; j++) {
           const docLine = lines[j].trim();
-          // Skip /** and */ and @param etc
-          if (
-            docLine.startsWith("/**") ||
-            docLine.startsWith("*/") ||
-            docLine.startsWith("* @") ||
-            docLine === "*"
-          ) {
-            continue;
-          }
-          // Found content line
-          const match = docLine.match(/^\*\s*(.+)/);
-          if (match) {
-            return match[1].trim();
-          }
+          // Stop description at first JSDoc @-tag
+          if (docLine.startsWith("* @") || docLine.startsWith("@")) break;
+          // Skip delimiters
+          if (docLine === "/**" || docLine === "*/" || docLine === "/*" || docLine === "*") continue;
+          // Single-line /** … */
+          const singleLine = docLine.match(/^\/\*+\s*(.+?)\s*\*\/$/);
+          if (singleLine) { bodyParts.push(singleLine[1]); continue; }
+          // /** content or /* content (opening line has text)
+          const openLine = docLine.match(/^\/\*+\s*(.+)/);
+          if (openLine) { bodyParts.push(openLine[1]); continue; }
+          // * content line
+          const starLine = docLine.match(/^\*\s*(.*)/);
+          if (starLine && starLine[1]) bodyParts.push(starLine[1]);
         }
+        if (bodyParts.length === 0) break;
+        const full = bodyParts.join(" ").replace(/\s+/g, " ").trim();
+        return full.length > 600 ? full.slice(0, 597) + "…" : full;
+      }
+
+      // Stop if we hit real code (not comment or blank)
+      if (line && !line.startsWith("//") && !line.startsWith("*") && !line.startsWith("*/")) {
         break;
       }
-      // Stop if we hit non-comment, non-whitespace
-      if (line && !line.startsWith("//") && !line.startsWith("*")) {
+    }
+
+    // ── 2. Look backwards for consecutive // comment lines ─────────────────
+    const commentLines: string[] = [];
+    for (let i = startLine - 1; i >= Math.max(0, startLine - 10); i--) {
+      const line = lines[i].trim();
+      if (line.startsWith("//")) {
+        commentLines.unshift(line.replace(/^\/\/\s?/, ""));
+      } else if (line === "") {
+        break; // blank line separates comment blocks
+      } else {
         break;
       }
+    }
+    if (commentLines.length > 0) {
+      const full = commentLines.join(" ").replace(/\s+/g, " ").trim();
+      return full.length > 600 ? full.slice(0, 597) + "…" : full;
+    }
+
+    // ── 3. Trailing // comment on the declaration line itself ───────────────
+    if (startLine < lines.length) {
+      const declLine = lines[startLine];
+      const trailingMatch = declLine.match(/\/\/\s*(.+)$/);
+      if (trailingMatch) return trailingMatch[1].trim();
     }
 
     return undefined;

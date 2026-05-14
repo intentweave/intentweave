@@ -68,6 +68,12 @@ export interface PrescriptiveRuleSummary {
 export interface PrescriptiveViolation {
   ruleId: string;
   severity: "high" | "medium" | "low";
+  /** Intent domain — "structural", "behavioral", or "documentary" (Phase 3) */
+  ruleDomain?: "structural" | "behavioral" | "documentary";
+  /** Enforcement mode — "error" or "warn" (Phase 3) */
+  ruleMode?: "error" | "warn";
+  /** Confidence score 0–1 (Phase 3, behavioral rules) */
+  confidence?: number;
   filePath: string;
   line: number | null;
   symbol?: string | null;
@@ -221,6 +227,8 @@ export interface InsightsDocumentation {
     severity: string;
     variants: Array<{ text: string; count: number }>;
   }>;
+  /** Overall codebase symbol coverage across all docs combined */
+  docCoverageAggregate?: { coveredSymbols: number; totalSymbols: number };
 }
 
 export interface InsightsLivingScore {
@@ -232,12 +240,90 @@ export interface InsightsLivingScore {
   archConformance: { score: number; available: boolean; detail: string };
 }
 
+export interface InsightsRuleCatalogEntry {
+  id: string;
+  description?: string;
+  adr?: string;
+  severity: "high" | "medium" | "low";
+  domain?: "structural" | "behavioral" | "documentary";
+  mode?: "error" | "warn";
+  sourceType?: "mermaid_inline" | "mermaid_file";
+  sourceFile?: string;
+  sourceBlockId?: string;
+  mermaid?: string;
+  forbidden?: unknown[];
+}
+
+export interface InsightsRulesCatalog {
+  configPath?: string;
+  rawYaml?: string;
+  rules: InsightsRuleCatalogEntry[];
+}
+
+/** One resolved annotation entry: a mention in a doc that maps to a code symbol. */
+export interface InsightsDocAnnotation {
+  symbolName: string;
+  symbolKind: string;
+  symbolFile: string;
+  symbolLine: number;
+  confidence: number;
+  /** Line number in the documentation file (1-based) */
+  docLine: number;
+  /** The matched span text as it appears in the source (or normalized form) */
+  text: string;
+  /** Annotation source: 'code-span' | 'bold' | 'identifier' | 'heading' | 'dictionary' */
+  source: string;
+}
+
+/** Aggregated data for one indexed documentation file. */
+export interface InsightsDocEntry {
+  /** Workspace-relative path, e.g. "docs/API.md" */
+  path: string;
+  /** Raw markdown content (capped at 600 lines for large files) */
+  content: string;
+  /** Number of unique code symbols referenced in this document */
+  uniqueSymbols: number;
+  /** Number of distinct source files referenced */
+  uniqueSourceFiles: number;
+  /** Package/app prefixes referenced (e.g. "packages/index", "apps/server") */
+  referencedPackages: string[];
+  /** Quality-filtered annotations for inline highlighting (code-span, bold, identifier; conf ≥ 0.5) */
+  topAnnotations: InsightsDocAnnotation[];
+}
+
+/** A code symbol that appears in multiple documentation files — a "hot" cross-cutting concept. */
+export interface InsightsDocHotSymbol {
+  name: string;
+  kind: string;
+  /** Source file path */
+  file: string;
+  /** Number of documentation files that mention this symbol */
+  docCount: number;
+  /** Paths of those documentation files */
+  docs: string[];
+}
+
+/** Documentation Map chapter data — connects indexed docs to code via CARI annotations. */
+export interface InsightsDocMap {
+  /** All indexed doc entries with annotation data, sorted by uniqueSymbols desc */
+  docs: InsightsDocEntry[];
+  /** Total number of annotation rows in the index */
+  totalAnnotations: number;
+  /** Symbols mentioned in 3+ doc files (cross-cutting concepts) */
+  hotSymbols: InsightsDocHotSymbol[];
+  /** Source files referenced by links in the docs (workspace-relative path → raw content) */
+  sourceFiles: Record<string, string>;
+}
+
 /** Extended data type for the Insights Book — superset of PrescriptiveReportData. */
 export interface InsightsBookData extends PrescriptiveReportData {
   codeHealth?: InsightsCodeHealth;
   hotspots?: InsightsHotspots;
   documentation?: InsightsDocumentation;
   livingScore?: InsightsLivingScore;
+  rulesCatalog?: InsightsRulesCatalog;
+  /** CARI-powered doc→code interconnection map (Documentation Map chapter) */
+  docMap?: InsightsDocMap;
 }
 
 declare const DATA: PrescriptiveReportData;
@@ -246,7 +332,8 @@ declare const document: any;
 export function renderPrescriptiveReportHtml(
   data: PrescriptiveReportData,
 ): string {
-  const json = JSON.stringify(data);
+  // Prevent embedded '</script>' in data strings from terminating this script tag.
+  const json = JSON.stringify(data).replace(/<\//g, "<\\/");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -21,7 +21,8 @@ export function renderArchReportHtml(
   data: ArchReportData,
   opts?: { embedDark?: boolean },
 ): string {
-  const json = JSON.stringify(data);
+  // Prevent embedded '</script>' in data strings from terminating this script tag.
+  const json = JSON.stringify(data).replace(/<\//g, "<\\/");
   const darkOverrideCss = opts?.embedDark
     ? `<style id="dark-override">
 #header { background: #0b0e14; border-bottom: 1px solid #1f2937; color: #e2e8f0; }

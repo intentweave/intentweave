@@ -569,6 +569,41 @@ is completely silent. Queries return results as if those files don't exist.
 
 Dependends on: AX extractor size check (already exists, just needs surfacing).
 
+### 6.6 `.iwignore` Scope for Insights Book _(CARI, S)_
+
+**Problem:** The Insights Book's Executive Summary, Recommendations, and Documentation
+chapters surface violations for every file in the workspace — including meta-docs like
+`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `NOTICE`, and `CHANGELOG.md` that are not
+meaningful targets for coverage or completeness checks.
+
+`.iwignore` already gates what enters the SQLite index at build time
+(`packages/index/src/facade.ts`), so the right fix is ensuring the Insights Book
+data pipeline and the documentary check query both respect the same pattern list.
+
+**Solution:**
+
+1. **`documentaryCheckFromDb()`** reads `.iwignore` (via the exported `loadIwIgnore()`
+   helper) and filters out matched file paths before emitting violations.
+2. The `buildPrescriptiveReportData()` book collector passes the ignore list so that
+   `analyticsDocumentation` also filters orphaned sections, completeness, and terminology
+   results from ignored paths.
+3. Surface the count of ignored files in the Insights Book footer:
+   _"N files excluded by .iwignore"_
+
+**Typical `.iwignore` additions for documentation checks:**
+```
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+NOTICE
+CHANGELOG.md
+LICENSE
+```
+
+CLI: no new commands — the fix is transparent to the user.
+
+Depends on: `loadIwIgnore()` (exists in `facade.ts`), `documentaryCheck.ts` (Phase 1).
+
 ---
 
 ## 7. Language Support

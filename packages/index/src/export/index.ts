@@ -20,6 +20,7 @@ export {
   type InsightsHotspots,
   type InsightsDocumentation,
   type InsightsLivingScore,
+  type InsightsDocMap,
 } from "./prescriptiveReport.js";
 export {
   renderFocusReportHtml,

@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS annotations (
   source TEXT NOT NULL,
   qualifier TEXT,
   idf_score REAL,
+  char_start INTEGER,
+  char_end INTEGER,
   FOREIGN KEY (symbol_id) REFERENCES symbols(id)
 );
 

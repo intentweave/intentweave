@@ -54,6 +54,12 @@ export interface Annotation {
 
   /** IDF score for this term (higher = more discriminative) */
   idfScore?: number;
+
+  /** Character offset start within the line (0-based) */
+  charStart?: number;
+
+  /** Character offset end within the line (0-based) */
+  charEnd?: number;
 }
 
 // =============================================================================
@@ -2265,6 +2271,46 @@ export interface RuleDefinition {
    */
   autofix?: AutofixHint;
   forbidden: RuleForbidden[];
+  /**
+   * Mermaid diagram source (Phase 3 — Behavioral Domain).
+   * When present the Intent Runtime parses the diagram at check time and
+   * auto-derives `must_call` / `must_not_call` violations from the import graph.
+   * No extraction step, no intermediate representation.
+   *
+   * Supported diagram types:
+   *  - `sequenceDiagram`  → must_call + must_not_call edges (confidence ~0.85)
+   *  - `stateDiagram-v2`  → valid_transition checks (confidence ~0.50, mode: warn)
+   *  - `flowchart TD/LR`  → must_precede checks (confidence ~0.30, mode: warn)
+   *
+   * Leave `forbidden: []` — the mermaid block is the sole source of behavioral checks.
+   */
+  source?: {
+    /**
+     * `mermaid_inline` — diagram is embedded in the `mermaid:` key below.
+     * `mermaid_file`   — diagram is loaded from a markdown file at check time.
+     */
+    type: "mermaid_inline" | "mermaid_file";
+    /**
+     * For `mermaid_file`: workspace-relative path to the ADR / markdown file
+     * containing the diagram (e.g. `docs/ADR-001-auth.md`).
+     */
+    file?: string;
+    /**
+     * For `mermaid_file`: optional named block anchor comment in the markdown file.
+     * When omitted the first ` ```mermaid ` block is used.
+     * Example: `block_id: auth-login-flow`
+     */
+    block_id?: string;
+  };
+  /**
+   * Inline Mermaid diagram text (Phase 3).
+   * Required when `source.type = "mermaid_inline"`.
+   * The diagram type is inferred from the first non-empty line:
+   *  - `sequenceDiagram` — call-sequence enforcement
+   *  - `stateDiagram-v2` — state-machine transition enforcement
+   *  - `flowchart`        — must-precede / must-not-bypass enforcement
+   */
+  mermaid?: string;
 }
 
 /**
@@ -2309,6 +2355,54 @@ export interface RulesConfig {
   rules: RuleDefinition[];
 }
 
+// =============================================================================
+// Workspace config (.iw/config.yaml) — Phase 1
+// =============================================================================
+
+/**
+ * Per-domain enforcement threshold configuration.
+ * Written to `.iw/config.yaml` and loaded by `iw intent check`.
+ *
+ * @example
+ * ```yaml
+ * version: 1
+ * thresholds:
+ *   structural:
+ *     max_violations: 0
+ *   documentary:
+ *     coverage_min: 60
+ *     completeness_min: 50
+ *     mode: error          # promote documentary checks to CI-blocking
+ *   behavioral:
+ *     mode: warn
+ * ```
+ */
+export interface IwConfig {
+  version?: number;
+  thresholds?: {
+    structural?: {
+      /** Maximum allowed structural violations before CI fails (default: 0) */
+      max_violations?: number;
+    };
+    behavioral?: {
+      /** Enforcement mode override for all behavioral violations (default: warn) */
+      mode?: "error" | "warn";
+    };
+    documentary?: {
+      /** Minimum coverage % below which a module is flagged (default: 50) */
+      coverage_min?: number;
+      /** Minimum completeness % below which a doc is flagged (default: 40) */
+      completeness_min?: number;
+      /**
+       * Enforcement mode for built-in documentary checks.
+       * Default: "warn" (never fails CI).
+       * Set to "error" to make documentary violations block CI.
+       */
+      mode?: "error" | "warn";
+    };
+  };
+}
+
 /** One violation found by rulesCheck. */
 export interface RulesViolation {
   ruleId: string;
@@ -2317,6 +2411,13 @@ export interface RulesViolation {
   ruleDomain: "structural" | "behavioral" | "documentary";
   /** Enforcement mode — carried from RuleDefinition.mode (defaults to "error") */
   ruleMode: "error" | "warn";
+  /**
+   * Confidence score for this violation (0–1).
+   * - Structural rules: always 1.0 (deterministic AST checks)
+   * - Documentary rules: derived from annotation confidence (0.5–0.97)
+   * - Behavioral rules: co-occurrence based (~0.70–0.85)
+   */
+  confidence?: number;
   ruleDescription?: string;
   adr?: string;
   filePath: string;
@@ -2490,3 +2591,89 @@ export interface TestIntentResult {
     count: number;
   }>;
 }
+
+// ── Phase 4: Call Graph (symbol_calls) ───────────────────────────────────────
+
+export interface CallEdge {
+  callerFile: string;
+  callerName: string | null;
+  callerLine: number | null;
+  calleeName: string;
+  calleeId: string | null;
+  isMethod: boolean;
+}
+
+export interface CallsOptions {
+  /** Filter by caller file path (substring match). */
+  callerFile?: string;
+  /** Filter by callee function/method name (substring match). */
+  calleeName?: string;
+  /** Filter by caller function/method name (substring match). */
+  callerName?: string;
+  /** Only return method calls (receiver.method()). */
+  methodOnly?: boolean;
+  /** Maximum edges to return (default: 100). */
+  limit?: number;
+}
+
+export interface CallsResult {
+  edges: CallEdge[];
+  total: number;
+  topCallees: Array<{ calleeName: string; count: number }>;
+}
+
+export interface TraceOptions {
+  /** Entry-point file path (relative, or substring match). */
+  entry: string;
+  /** Maximum BFS depth (default: 6). */
+  hops?: number;
+  /** Maximum total nodes in result (default: 50). */
+  maxNodes?: number;
+  /** Direction of traversal: `"forward"` (default) or `"backward"`. */
+  direction?: "forward" | "backward";
+}
+
+export interface TraceNode {
+  file: string;
+  symbols: string[];
+  depth: number;
+}
+
+export interface TraceEdge {
+  fromFile: string;
+  fromSymbol: string | null;
+  toFile: string;
+  toCalleeName: string;
+  callerLine: number | null;
+}
+
+export interface TraceResult {
+  entryFile: string;
+  nodes: TraceNode[];
+  edges: TraceEdge[];
+  truncated: boolean;
+  callsTableActive: boolean;
+}
+
+// ── Phase 4: Rule Coverage Monitoring ────────────────────────────────────────
+
+export interface RuleCoverageOptions {
+  rulesConfig: RulesConfig;
+  /** Minimum depth of directory grouping (default: 2). */
+  groupDepth?: number;
+}
+
+export interface PackageCoverage {
+  dir: string;
+  fileCount: number;
+  behavioralRuleCount: number;
+  coveredByRules: string[];
+}
+
+export interface RuleCoverageResult {
+  totalBehavioralRules: number;
+  covered: PackageCoverage[];
+  uncovered: PackageCoverage[];
+  topUncovered: PackageCoverage[];
+}
+

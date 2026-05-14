@@ -157,12 +157,20 @@ export {
   resolveComponentFromDb,
   livingScore,
   livingScoreFromDb,
+  documentaryCheckFromDb,
   openIndex,
+  calls,
+  callsFromDb,
+  trace,
+  traceFromDb,
+  ruleCoverage,
+  ruleCoverageFromDb,
 } from "./queries/index.js";
 export type {
   DiagramEntityCheckResult,
   EntityGrounding,
 } from "./queries/diagramEntityCheck.js";
+export type { DocumentaryCheckOptions } from "./queries/documentaryCheck.js";
 export type {
   ResolvedComponent,
   ResolvedSymbol,
@@ -185,6 +193,7 @@ export type {
   InsightsHotspots,
   InsightsDocumentation,
   InsightsLivingScore,
+  InsightsDocMap,
 } from "./export/index.js";
 
 export type {
@@ -199,6 +208,9 @@ export type {
   LayersFromDecoratorsOptions,
   RulesTrendOptions,
   TestIntentOptions,
+  CallEdge as CallEdgeQuery,
+  RuleCoverageOptions as RuleCoverageQueryOptions,
+  PackageCoverage as PackageCoverageQuery,
 } from "./queries/index.js";
 
 export type { NamingViolationsOptions } from "./queries/namingViolations.js";
@@ -337,6 +349,7 @@ export type {
   RuleDefinition,
   RulesAllowedEntry,
   RulesConfig,
+  IwConfig,
   RulesViolation,
   RulesCheckResult,
   // Signal layer types (14.x)
@@ -353,4 +366,14 @@ export type {
   RulesTrendResult,
   TestDescriptionMatch,
   TestIntentResult,
+  CallEdge,
+  CallsOptions,
+  CallsResult,
+  TraceOptions,
+  TraceResult,
+  TraceNode,
+  TraceEdge,
+  RuleCoverageOptions,
+  RuleCoverageResult,
+  PackageCoverage,
 } from "./types.js";

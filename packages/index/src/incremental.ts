@@ -172,8 +172,9 @@ export function applyChanges(
       if (codeChanges.length > 0 && data.ax) {
         for (const change of codeChanges) {
           log(`  CODE ${change.status}: ${change.path}`);
-          // Delete old symbols for this file
+          // Delete old symbols and calls for this file
           deleteSymbolsForFile(db, change.path);
+          deleteCallsForFile(db, change.path);
           counts.files++;
         }
 
@@ -197,6 +198,25 @@ export function applyChanges(
               sym.docSummary ?? null,
             );
             counts.symbols++;
+          }
+        }
+
+        // Insert new calls from AX (Phase 4: symbol_calls incremental)
+        const callStmt = db.prepare(`
+          INSERT INTO symbol_calls (caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!file.calls || file.calls.length === 0) continue;
+          for (const call of file.calls) {
+            callStmt.run(
+              file.filePath,
+              call.callerName ?? null,
+              call.callerLine,
+              call.calleeName,
+              call.calleeId ?? null,
+              call.isMethod ? 1 : 0,
+            );
           }
         }
       }
@@ -374,6 +394,11 @@ function deleteFileData(db: Database.Database, filePath: string): void {
   deleteCoOccurrencesForFiles(db, new Set([filePath]));
   // Delete file metadata
   db.prepare("DELETE FROM files WHERE path = ?").run(filePath);
+}
+
+/** Delete call edges from symbol_calls for a code file (Phase 4). */
+function deleteCallsForFile(db: Database.Database, filePath: string): void {
+  db.prepare("DELETE FROM symbol_calls WHERE caller_file = ?").run(filePath);
 }
 
 /** Delete symbols (and annotations referencing them) for a code file. */

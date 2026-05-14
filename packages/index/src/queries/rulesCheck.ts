@@ -28,8 +28,11 @@ import type {
   RuleForbidden,
   RulesViolation,
   RulesCheckResult,
+  IwConfig,
 } from "../types.js";
 import { openIndex } from "./shared.js";
+import { documentaryCheckFromDb } from "./documentaryCheck.js";
+import { checkMermaidRule } from "./mermaidCheck.js";
 
 // ── Options ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +45,24 @@ export interface RulesCheckOptions {
   ruleId?: string;
   /** Maximum violations to return (across all rules) */
   limit?: number;
+  /**
+   * Filter by intent domain (Phase 1).
+   * When omitted: runs structural domain only (rules.yaml entries without explicit domain).
+   * When set: runs the specified domain(s).
+   * Use "all" to run all domains including the built-in documentary checks.
+   */
+  domain?: "structural" | "behavioral" | "documentary" | "all";
+  /**
+   * Workspace config thresholds loaded from `.iw/config.yaml` (Phase 1).
+   * When provided, overrides default documentary check thresholds and mode.
+   */
+  iwConfig?: IwConfig;
+  /**
+   * Workspace root directory (Phase 3).
+   * Required for loading Mermaid diagrams from ADR files via `source.type: mermaid_file`.
+   * Defaults to `process.cwd()` when omitted.
+   */
+  workspaceRoot?: string;
 }
 
 // ── Severity ordering ─────────────────────────────────────────────────────────
@@ -79,19 +100,80 @@ export function rulesCheckFromDb(
   config: RulesConfig,
   opts: RulesCheckOptions = {},
 ): RulesCheckResult {
-  const { changed, severity = "low", ruleId, limit } = opts;
+  const { changed, severity = "low", ruleId, limit, domain, iwConfig } = opts;
+  const workspaceRoot = opts.workspaceRoot ?? process.cwd();
+
+  // Determine which domains to run
+  const runStructural = !domain || domain === "structural" || domain === "all";
+  const runBehavioral = !domain || domain === "behavioral" || domain === "all";
+  const runDocumentary =
+    domain === "documentary" || domain === "all";
 
   const activeRules = config.rules.filter((r) => {
     if (ruleId && r.id !== ruleId) return false;
     if (!meetsThreshold(r.severity, severity)) return false;
+    // Domain filtering
+    const ruleDomain = r.domain ?? "structural";
+    if (ruleDomain === "structural" && !runStructural) return false;
+    if (ruleDomain === "behavioral" && !runBehavioral) return false;
+    if (ruleDomain === "documentary" && !runDocumentary) return false;
     return true;
   });
 
   const allViolations: RulesViolation[] = [];
 
   for (const rule of activeRules) {
+    // Phase 3: Mermaid behavioral rules take a different code path
+    if (
+      rule.domain === "behavioral" &&
+      (rule.source?.type === "mermaid_inline" ||
+        rule.source?.type === "mermaid_file")
+    ) {
+      const mermaidViolations = checkMermaidRule(
+        db,
+        rule,
+        workspaceRoot,
+        changed,
+      );
+      allViolations.push(...mermaidViolations);
+      continue;
+    }
+
     const violations = checkRule(db, rule, changed);
     allViolations.push(...violations);
+  }
+
+  // Append built-in documentary domain violations when requested
+  if (runDocumentary) {
+    const docThresholds = iwConfig?.thresholds?.documentary;
+    const docModeOverride = docThresholds?.mode;
+
+    let docViolations = documentaryCheckFromDb(db, {
+      severity,
+      limit,
+      coverageThreshold: docThresholds?.coverage_min,
+      completenessThreshold: docThresholds?.completeness_min,
+    });
+
+    // Apply mode override from config.yaml
+    if (docModeOverride) {
+      docViolations = docViolations.map((v) => ({
+        ...v,
+        ruleMode: docModeOverride,
+      }));
+    }
+
+    allViolations.push(...docViolations);
+  }
+
+  // Apply behavioral mode override
+  if (iwConfig?.thresholds?.behavioral?.mode) {
+    const behavMode = iwConfig.thresholds.behavioral.mode;
+    for (const v of allViolations) {
+      if (v.ruleDomain === "behavioral") {
+        (v as any).ruleMode = behavMode;
+      }
+    }
   }
 
   // Apply limit

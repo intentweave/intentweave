@@ -80,6 +80,9 @@ import {
   layersFromDecoratorsFromDb,
   rulesTrendFromDb,
   testIntentFromDb,
+  callsFromDb,
+  traceFromDb,
+  ruleCoverageFromDb,
 } from "./queries/index.js";
 import type {
   ReportOptions,
@@ -147,6 +150,12 @@ import type {
   LayersFromDecoratorsResult,
   RulesTrendResult,
   TestIntentResult,
+  CallsOptions,
+  CallsResult,
+  TraceOptions,
+  TraceResult,
+  RuleCoverageOptions,
+  RuleCoverageResult,
 } from "./types.js";
 
 import type { ArchReportOptions } from "./queries/archReport.js";
@@ -398,6 +407,54 @@ function toArtifactId(filePath: string, cwd: string): string {
   return rel.replace(/[/\\]/g, ".").replace(/\.[^.]+$/, "");
 }
 
+/**
+ * Extract only the comment content from a source file, blanking out all
+ * non-comment lines so that line numbers remain accurate.
+ *
+ * Handles single-line slash comments, block slash-star comments,
+ * and Python/shell hash comments.
+ */
+function extractSourceCommentContent(content: string): string {
+  const lines = content.split("\n");
+  const result: string[] = [];
+  let inBlock = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (inBlock) {
+      // Inside a block comment — emit the content, strip leading * or */
+      if (trimmed.includes("*/")) {
+        const before = trimmed.slice(0, trimmed.indexOf("*/")).replace(/^\*?\s?/, "");
+        result.push(before.trim());
+        inBlock = false;
+      } else {
+        result.push(trimmed.replace(/^\*\s?/, ""));
+      }
+    } else if (trimmed.startsWith("/**") || trimmed.startsWith("/*")) {
+      inBlock = true;
+      // Opening line may have content: /** Foo bar */ or /** Foo bar
+      const afterOpen = trimmed.replace(/^\/\*+\s?/, "");
+      if (afterOpen.includes("*/")) {
+        // Single-line block: /** Foo */
+        result.push(afterOpen.slice(0, afterOpen.indexOf("*/")).trim());
+        inBlock = false;
+      } else {
+        result.push(afterOpen.trim());
+      }
+    } else if (trimmed.startsWith("//")) {
+      result.push(trimmed.replace(/^\/\/\s?/, "").trim());
+    } else if (trimmed.startsWith("#") && !trimmed.startsWith("#!")) {
+      // Python / shell style
+      result.push(trimmed.replace(/^#+\s?/, "").trim());
+    } else {
+      result.push(""); // blank out code lines — preserves line numbers
+    }
+  }
+
+  return result.join("\n");
+}
+
 // =============================================================================
 // Pipeline Orchestration
 // =============================================================================
@@ -609,6 +666,58 @@ export async function buildFromPaths(
       const base = error instanceof Error ? error.message : String(error);
       throw new Error(`KWX failed for ${relPath}: ${base}`);
     }
+  }
+
+  // ── 2b. KWX pass over source-file comments ──────────────────────────────
+  // Run KWX on each source file that AX indexed, but pass only the comment
+  // content (non-comment lines blanked out so line numbers stay correct).
+  // This creates annotations where doc_path = source_file, enabling gutter
+  // dots on comment lines in the AR Evidence viewer.
+  const SOURCE_COMMENT_EXTS = new Set([
+    ".ts", ".tsx", ".js", ".jsx", ".py", ".swift", ".go", ".java", ".cs",
+  ]);
+  const sourceFilesForKwx = axOutput.files
+    .map((f: { filePath: string }) => f.filePath)
+    .filter((fp: string) => {
+      const ext = path.extname(fp).toLowerCase();
+      return SOURCE_COMMENT_EXTS.has(ext);
+    });
+
+  let srcCommentCount = 0;
+  for (const relPath of sourceFilesForKwx) {
+    const absPath = path.join(primaryCodeRoot, relPath);
+    try {
+      const raw = await fs.promises.readFile(absPath, "utf-8");
+      const commentContent = extractSourceCommentContent(raw);
+      if (!commentContent.trim()) continue;
+
+      const artifactId = toArtifactId(absPath, primaryCodeRoot);
+      const inInput: InStageInput = {
+        artifactId,
+        filePath: relPath,
+        // Use plain-text format so parseGenericText handles it (preserves line numbers)
+        artifactFormat: "text",
+        content: commentContent,
+      };
+      const inOutput = await analyzer.runInStage(
+        inInput,
+        ctx as Parameters<typeof analyzer.runInStage>[1],
+        // Lower minChunkSize so isolated comment lines are not filtered out
+        { minChunkSize: 1 },
+      );
+      const kwxOutput = await analyzer.runKwxStage(
+        { inOutput },
+        // Always use full depth for comments — they're structured text
+        { depth: "full", dictionary: symbolDictionary },
+      );
+      kwxOutputs.push(kwxOutput);
+      srcCommentCount++;
+    } catch {
+      // Skip files that can't be read or parsed
+    }
+  }
+  if (srcCommentCount > 0) {
+    log(`KWX-comments: processed comments from ${srcCommentCount} source files`);
   }
 
   const coxOutput = await analyzer.runCoxStage({ kwxOutputs });
@@ -880,6 +989,23 @@ export class CariIndex {
   /** Find stale test descriptions and orphaned test files (14.6). */
   testIntent(opts: TestIntentOptions = {}): TestIntentResult {
     return testIntentFromDb(this.db, opts);
+  }
+
+  // ── Phase 4: Call Graph ───────────────────────────────────────────────────
+
+  /** Query the symbol_calls call graph (Phase 4). */
+  calls(opts: CallsOptions = {}): CallsResult {
+    return callsFromDb(this.db, opts);
+  }
+
+  /** BFS call-path trace from an entry-point file (Phase 4). */
+  trace(opts: TraceOptions): TraceResult {
+    return traceFromDb(this.db, opts);
+  }
+
+  /** Flag packages with zero behavioral rules (Phase 4). */
+  ruleCoverage(opts: RuleCoverageOptions): RuleCoverageResult {
+    return ruleCoverageFromDb(this.db, opts);
   }
 
   /** Documentation coverage percentage per directory. */

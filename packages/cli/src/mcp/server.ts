@@ -1562,6 +1562,12 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         .optional()
         .default(50)
         .describe("Maximum violations to return"),
+      domain: z
+        .enum(["structural", "behavioral", "documentary", "all"])
+        .optional()
+        .describe(
+          "Intent domain to check: structural (rules.yaml), behavioral, documentary (built-in CARI checks), or all",
+        ),
     },
     async (args) => {
       log(
@@ -1608,6 +1614,13 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           ruleId: args.ruleId,
           changed: args.changed,
           limit: args.limit ?? 50,
+          domain: args.domain as
+            | "structural"
+            | "behavioral"
+            | "documentary"
+            | "all"
+            | undefined,
+          workspaceRoot: process.cwd(),
         });
 
         if (result.violations.length === 0) {
@@ -1634,6 +1647,149 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           ...result.violations.map(
             (v) =>
               `| ${v.ruleId} | ${v.ruleSeverity} | ${v.filePath} | ${v.line ?? "—"} | ${v.detail} |`,
+          ),
+        ];
+
+        if (result.totalViolations > result.violations.length) {
+          lines.push(
+            "",
+            `_Showing ${result.violations.length} of ${result.totalViolations} violations._`,
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: any) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: intent_check ────────────────────────────────────────────
+  // Alias for cari_rules_check with domain as first-class parameter.
+  // Preferred tool for Phase 1+ Intent Engine workflows.
+  server.tool(
+    "intent_check",
+    `Check codebase intent conformance across structural, behavioral, and documentary domains.
+
+Run rules from .iw/rules.yaml AND built-in CARI documentary checks in a single call.
+
+Domain options:
+- structural (default): rules.yaml structural rules (forbidden imports, naming, call patterns)
+- behavioral: Mermaid diagram rules (sequence must_call/must_not_call, state transitions, flowchart must_precede)
+- documentary: built-in checks — coverage, terminology, orphaned sections, doc completeness
+- all: all three domains combined
+
+Behavioral rules require a \`domain: behavioral\` rule in rules.yaml with a \`mermaid:\` key
+(inline diagram) or \`source.type: mermaid_file\` pointing to an ADR markdown file.
+
+No LLM or Neo4j needed — queries a local SQLite index.`,
+    {
+      domain: z
+        .enum(["structural", "behavioral", "documentary", "all"])
+        .optional()
+        .default("all")
+        .describe(
+          "Intent domain: structural | behavioral | documentary | all (default: all)",
+        ),
+      severity: z
+        .enum(["high", "medium", "low"])
+        .optional()
+        .default("low")
+        .describe("Minimum severity to report"),
+      ruleId: z
+        .string()
+        .optional()
+        .describe("Only check this specific rule ID"),
+      changed: z
+        .array(z.string())
+        .optional()
+        .describe("Only check violations in these changed files"),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum violations to return"),
+    },
+    async (args) => {
+      log(
+        `intent_check: domain=${args.domain} severity=${args.severity} ruleId=${args.ruleId ?? "all"}`,
+      );
+      try {
+        const { rulesCheck } = await loadIndex();
+        const { load: yamlLoadMcp } = await import("js-yaml");
+        const { readFile } = await import("node:fs/promises");
+        const dbPath = resolveIndexDb();
+        const iwDir = path.join(process.cwd(), ".iw");
+
+        const configPath = path.join(iwDir, "rules.yaml");
+        let config: import("@intentweave/index").RulesConfig = { version: 1, rules: [] };
+        try {
+          const rawYaml = await readFile(configPath, "utf-8");
+          const parsed = yamlLoadMcp(rawYaml) as import("@intentweave/index").RulesConfig;
+          if (parsed && Array.isArray(parsed.rules)) {
+            config = parsed;
+          }
+        } catch {
+          // No rules.yaml — documentary domain will still run if requested
+        }
+
+        // Load optional .iw/config.yaml thresholds
+        let iwConfig: import("@intentweave/index").IwConfig | undefined;
+        try {
+          const rawIwConfig = await readFile(
+            path.join(iwDir, "config.yaml"),
+            "utf-8",
+          );
+          const parsed = yamlLoadMcp(rawIwConfig) as import("@intentweave/index").IwConfig;
+          if (parsed && typeof parsed === "object") iwConfig = parsed;
+        } catch {
+          // Optional — no config.yaml is fine
+        }
+
+        const result = rulesCheck(dbPath, config, {
+          severity: args.severity as "high" | "medium" | "low",
+          ruleId: args.ruleId,
+          changed: args.changed,
+          limit: args.limit ?? 50,
+          domain: (args.domain ?? "all") as
+            | "structural"
+            | "behavioral"
+            | "documentary"
+            | "all",
+          iwConfig,
+          workspaceRoot: process.cwd(),
+        });
+
+        if (result.violations.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No intent violations found. (${result.rulesChecked} rule(s) checked, domain: ${args.domain ?? "all"})`,
+              },
+            ],
+          };
+        }
+
+        const severityCounts = Object.entries(result.bySeverity)
+          .filter(([, n]) => n > 0)
+          .map(([sev, n]) => `${sev}: ${n}`)
+          .join(", ");
+
+        const domainLabel = args.domain ?? "all";
+        const hasErrors = result.violations.some((v) => v.ruleMode === "error");
+        const lines = [
+          `## Intent Check Violations [domain: ${domainLabel}] — ${result.totalViolations} total (${severityCounts})`,
+          hasErrors
+            ? "_CI gate: **FAIL** (error-mode violations present)_"
+            : "_CI gate: **PASS** (all violations are warn-only)_",
+          "",
+          "| Rule | Domain | Severity | Mode | Confidence | File | Line | Detail |",
+          "|------|--------|----------|------|------------|------|------|--------|",
+          ...result.violations.map(
+            (v) =>
+              `| ${v.ruleId} | ${v.ruleDomain} | ${v.ruleSeverity} | ${v.ruleMode} | ${v.confidence != null ? Math.round(v.confidence * 100) + "%" : "100%"} | ${v.filePath} | ${v.line ?? "—"} | ${v.detail} |`,
           ),
         ];
 
@@ -4612,6 +4768,189 @@ Use to get an at-a-glance health score for a project's living documentation.`,
           ...dims.map(
             (d) =>
               `| ${d.label} | ${d.available ? `${d.score}%` : "N/A"} | ${d.detail} | ${d.available ? "✓" : "✗"} |`,
+          ),
+        ];
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: unknown) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_calls (Phase 4) ───────────────────────────────────────
+  server.tool(
+    "cari_calls",
+    `Query the symbol_calls call graph extracted from AST analysis (Phase 4).
+Returns call edges between functions/methods across files in the indexed codebase.
+
+Use to:
+- Find what functions a given file or caller calls
+- Find all callers of a specific function name
+- Understand method call patterns
+- Cross-check with behavioral Mermaid rules
+
+Returns: edges[], total count, topCallees[] sorted by call frequency.
+Note: Only available for languages with AX call extraction support. Check callsTableActive field.`,
+    {
+      callerFile: z
+        .string()
+        .optional()
+        .describe("Filter by caller file path (substring match)"),
+      calleeName: z
+        .string()
+        .optional()
+        .describe("Filter by callee function name (substring match)"),
+      callerName: z
+        .string()
+        .optional()
+        .describe("Filter by caller function name (substring match)"),
+      methodOnly: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Only show method calls (is_method = 1)"),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum results to return"),
+    },
+    async (args) => {
+      log(
+        `cari_calls: callerFile=${args.callerFile}, calleeName=${args.calleeName}, limit=${args.limit}`,
+      );
+      try {
+        const { calls } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = calls(dbPath, {
+          callerFile: args.callerFile,
+          calleeName: args.calleeName,
+          callerName: args.callerName,
+          methodOnly: args.methodOnly,
+          limit: args.limit,
+        });
+
+        if (result.total === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No call edges found. Check filter options or rebuild the index with AX call extraction.",
+              },
+            ],
+          };
+        }
+
+        const lines = [
+          `## Call Graph Query — ${result.total} edge(s)`,
+          "",
+          result.topCallees.length > 0
+            ? `**Top callees:** ${result.topCallees
+                .slice(0, 8)
+                .map((c: { calleeName: string; count: number }) => `${c.calleeName}(×${c.count})`)
+                .join(", ")}`
+            : "",
+          "",
+          "| Caller File | Caller | Line | Callee | Method |",
+          "|-------------|--------|------|--------|--------|",
+          ...result.edges.map(
+            (e: { callerFile: string; callerName: string | null; callerLine: number | null; calleeName: string; isMethod: boolean }) =>
+              `| ${e.callerFile} | ${e.callerName ?? ""} | ${e.callerLine ?? ""} | ${e.calleeName} | ${e.isMethod ? "✓" : ""} |`,
+          ),
+        ];
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: unknown) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_trace (Phase 4) ───────────────────────────────────────
+  server.tool(
+    "cari_trace",
+    `Trace call paths from an entry-point file using BFS through the symbol_calls table (Phase 4).
+
+Use to:
+- Understand what a module calls transitively (forward direction)
+- Find all callers of a module transitively (backward direction)
+- Validate Mermaid sequence diagrams against actual call paths
+- Identify unexpected call chains
+
+Returns: entryFile, nodes[] (each with file + symbols + depth), edges[] (fromFile → toFile with callee name), truncated flag, callsTableActive flag.`,
+    {
+      entry: z
+        .string()
+        .describe("Entry-point file path (substring match, e.g. 'auth.ts')"),
+      hops: z
+        .number()
+        .optional()
+        .default(6)
+        .describe("Maximum BFS traversal depth"),
+      maxNodes: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum number of nodes to include in result"),
+      direction: z
+        .enum(["forward", "backward"])
+        .optional()
+        .default("forward")
+        .describe(
+          "forward: what does entry call? backward: who calls into entry?",
+        ),
+    },
+    async (args) => {
+      log(
+        `cari_trace: entry=${args.entry}, hops=${args.hops}, direction=${args.direction}`,
+      );
+      try {
+        const { trace } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = trace(dbPath, {
+          entry: args.entry,
+          hops: args.hops,
+          maxNodes: args.maxNodes,
+          direction: args.direction,
+        });
+
+        if (result.nodes.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No entry files found matching "${args.entry}". Try a shorter substring.`,
+              },
+            ],
+          };
+        }
+
+        const callsStatus = result.callsTableActive
+          ? "✓ Call graph active (~0.95 confidence)"
+          : "⚠ No call graph data — rebuild index with AX call extraction";
+
+        const lines = [
+          `## Call Trace — ${args.direction} from "${result.entryFile}"`,
+          `${callsStatus}`,
+          `Nodes: ${result.nodes.length}  Edges: ${result.edges.length}${result.truncated ? "  *(truncated)*" : ""}`,
+          "",
+          "### Nodes by Depth",
+          "| Depth | File | Symbols |",
+          "|-------|------|---------|",
+          ...result.nodes
+            .sort((a: { depth: number }, b: { depth: number }) => a.depth - b.depth)
+            .map(
+              (n: { depth: number; file: string; symbols: string[] }) =>
+                `| ${n.depth} | ${n.file} | ${n.symbols.slice(0, 5).join(", ")}${n.symbols.length > 5 ? ", ..." : ""} |`,
+            ),
+          "",
+          "### Call Edges",
+          "| From | Symbol | Line | To | Callee |",
+          "|------|--------|------|----|--------|",
+          ...result.edges.map(
+            (e: { fromFile: string; fromSymbol: string | null; callerLine: number | null; toFile: string; toCalleeName: string }) =>
+              `| ${e.fromFile} | ${e.fromSymbol ?? ""} | ${e.callerLine ?? ""} | ${e.toFile} | ${e.toCalleeName} |`,
           ),
         ];
         return { content: [{ type: "text", text: lines.join("\n") }] };

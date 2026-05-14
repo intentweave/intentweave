@@ -173,8 +173,8 @@ function writeAnnotations(
   annotations: Annotation[],
 ): number {
   const stmt = db.prepare(`
-    INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source, qualifier, idf_score)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source, qualifier, idf_score, char_start, char_end)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let count = 0;
@@ -191,6 +191,8 @@ function writeAnnotations(
           ann.source,
           ann.qualifier ?? null,
           ann.idfScore ?? null,
+          ann.charStart ?? null,
+          ann.charEnd ?? null,
         );
         count++;
       }
@@ -846,8 +848,8 @@ function annotateExternalEntities(
   }>;
 
   const insertStmt = db.prepare(`
-    INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source, qualifier, idf_score)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO annotations (doc_path, line, text, symbol_id, confidence, source, qualifier, idf_score, char_start, char_end)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let count = 0;
@@ -866,6 +868,8 @@ function annotateExternalEntities(
           "external",
           row.qualifier,
           row.idf_score,
+          null,
+          null,
         );
         count++;
       }

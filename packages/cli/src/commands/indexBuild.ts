@@ -284,6 +284,9 @@ import {
   snapshotConformance,
   testIntent,
   livingScore,
+  calls,
+  trace,
+  ruleCoverage,
 } from "@intentweave/index";
 import type {
   RetrieveParams,
@@ -295,6 +298,7 @@ import type {
   RulesConfig,
   RulesCheckResult,
   InsightsBookData,
+  InsightsDocMap,
 } from "@intentweave/index";
 
 function resolveDbPath(output?: string): string {
@@ -422,6 +426,7 @@ async function buildPrescriptiveReportData(
   const layerCheckResult = layersCheck(dbPath, layerConfig);
 
   let rulesConfig: RulesConfig | undefined;
+  let rulesYamlRaw: string | undefined;
   const cfgPath = opts.rulesConfigPath
     ? path.resolve(opts.rulesConfigPath)
     : path.join(process.cwd(), ".iw", "rules.yaml");
@@ -430,11 +435,20 @@ async function buildPrescriptiveReportData(
   } catch {
     rulesConfig = undefined;
   }
+  if (rulesConfig) {
+    try {
+      rulesYamlRaw = await fs.readFile(cfgPath, "utf-8");
+    } catch {
+      rulesYamlRaw = undefined;
+    }
+  }
 
   const rulesResult = rulesConfig
     ? rulesCheck(dbPath, rulesConfig, {
         severity: "low",
         limit: 5000,
+        domain: "all", // Phase 3: include behavioral (Mermaid) violations
+        workspaceRoot: process.cwd(),
       })
     : {
         violations: [],
@@ -909,6 +923,9 @@ async function buildPrescriptiveReportData(
   const violationsForBook: Array<{
     ruleId: string;
     severity: "high" | "medium" | "low";
+    ruleDomain?: "structural" | "behavioral" | "documentary";
+    ruleMode?: "error" | "warn";
+    confidence?: number;
     filePath: string;
     line: number | null;
     symbol?: string | null;
@@ -923,6 +940,9 @@ async function buildPrescriptiveReportData(
     violationsForBook.push({
       ruleId: v.ruleId,
       severity: v.ruleSeverity,
+      ruleDomain: v.ruleDomain,
+      ruleMode: v.ruleMode,
+      confidence: v.confidence,
       filePath: v.filePath,
       line: v.line,
       symbol: v.symbol ?? undefined,
@@ -958,6 +978,7 @@ async function buildPrescriptiveReportData(
   let analyticsHotspots: InsightsBookData["hotspots"] | undefined;
   let analyticsDocumentation: InsightsBookData["documentation"] | undefined;
   let analyticsLivingScore: InsightsBookData["livingScore"] | undefined;
+  let analyticsDocMap: InsightsDocMap | undefined;
 
   let layerCoverageData:
     | Array<{
@@ -969,6 +990,26 @@ async function buildPrescriptiveReportData(
         hotspotFiles: Array<{ filePath: string; churn: number; score: number }>;
       }>
     | undefined;
+
+  const rulesCatalog: InsightsBookData["rulesCatalog"] = rulesConfig
+    ? {
+        configPath: path.relative(process.cwd(), cfgPath),
+        rawYaml: rulesYamlRaw,
+        rules: rulesConfig.rules.map((rule) => ({
+          id: rule.id,
+          description: rule.description,
+          adr: rule.adr,
+          severity: rule.severity,
+          domain: rule.domain,
+          mode: rule.mode,
+          sourceType: rule.source?.type,
+          sourceFile: rule.source?.file,
+          sourceBlockId: rule.source?.block_id,
+          mermaid: rule.mermaid,
+          forbidden: rule.forbidden ?? [],
+        })),
+      }
+    : undefined;
 
   try {
     // ── hotspot overlay ──
@@ -1172,9 +1213,30 @@ async function buildPrescriptiveReportData(
       const docResult = docCompleteness(dbPath);
       const rationaleResult = rationale(dbPath);
       const termResult = terminologyInconsistency(dbPath);
+      // Aggregate: how many exported symbols are covered by at least one doc?
+      const AggDatabase = (await import("better-sqlite3")).default;
+      const aggDb = new AggDatabase(dbPath, { readonly: true });
+      const aggRow = aggDb
+        .prepare(`SELECT
+          (SELECT COUNT(DISTINCT a.symbol_id) FROM annotations a
+           JOIN symbols s ON a.symbol_id = s.id
+           WHERE s.export='exported' AND a.confidence >= 0.5) AS covered,
+          (SELECT COUNT(*) FROM symbols WHERE export='exported') AS total`)
+        .get() as { covered: number; total: number };
+      aggDb.close();
+
+      // Meta-doc paths to exclude from completeness reporting
+      const META_DOC_PREFIXES = [".github/", "ISSUE_TEMPLATE/"];
+      const META_DOC_EXACT = new Set(["CLA.md","SECURITY.md","CODE_OF_CONDUCT.md","CONTRIBUTING.md","CHANGELOG.md","NOTICE"]);
+      function isMetaDoc(p: string): boolean {
+        const base = p.split("/").pop() ?? p;
+        return META_DOC_PREFIXES.some(pre => p.startsWith(pre)) || META_DOC_EXACT.has(base);
+      }
+
       analyticsDocumentation = {
         orphanedSections: orphanedResult.sections,
-        docCompleteness: docResult.docs.map((d) => ({
+        docCoverageAggregate: { coveredSymbols: aggRow.covered, totalSymbols: aggRow.total },
+        docCompleteness: docResult.docs.filter(d => !isMetaDoc(d.docPath)).map((d) => ({
           docPath: d.docPath,
           completenessPercent: d.completenessPercent,
           totalRelevantExports: d.totalRelevantExports,
@@ -1294,6 +1356,236 @@ async function buildPrescriptiveReportData(
     // CARI overlay is best-effort; skip silently if queries fail
   }
 
+  // ── Documentation Map: doc→code interconnections via CARI annotations ──
+  try {
+    const DocDatabase = (await import("better-sqlite3")).default;
+    const docDb = new DocDatabase(dbPath, { readonly: true });
+    try {
+      // Total annotations count
+      const totalAnnotations = (
+        docDb.prepare("SELECT COUNT(*) as cnt FROM annotations").get() as any
+      ).cnt as number;
+
+      // Per-doc stats: unique symbols and source files
+      const docStats = docDb
+        .prepare(
+          `SELECT a.doc_path, COUNT(DISTINCT s.id) as unique_symbols, COUNT(DISTINCT s.file_path) as source_files
+           FROM annotations a JOIN symbols s ON a.symbol_id = s.id
+           GROUP BY a.doc_path
+           ORDER BY unique_symbols DESC`,
+        )
+        .all() as Array<{
+          doc_path: string;
+          unique_symbols: number;
+          source_files: number;
+        }>;
+
+      // Quality-filtered annotations for inline highlighting:
+      // include code-span, bold, and high-confidence identifier/dictionary annotations
+      const highlightAnnRows = docDb
+        .prepare(
+          `SELECT a.doc_path, a.line, a.text, a.source, a.confidence,
+                  a.char_start, a.char_end,
+                  s.name, s.kind, s.file_path, s.line as sym_line
+           FROM annotations a JOIN symbols s ON a.symbol_id = s.id
+           WHERE (a.source IN ('code-span', 'bold', 'heading')
+                  OR (a.source = 'identifier' AND a.confidence >= 0.55)
+                  OR (a.source = 'dictionary' AND a.confidence >= 0.85))
+           ORDER BY a.doc_path, a.line, a.confidence DESC`,
+        )
+        .all() as Array<{
+          doc_path: string;
+          line: number;
+          text: string;
+          source: string;
+          confidence: number;
+          char_start: number | null;
+          char_end: number | null;
+          name: string;
+          kind: string;
+          file_path: string;
+          sym_line: number;
+        }>;
+
+      // Also collect unmatched code-spans (symbol_id IS NULL) — these are
+      // things like MCP tool names (`kg_query`, `cari_retrieve`) that are string
+      // literals in the codebase, not TypeScript identifiers the AST can index.
+      // Synthesise them as pointing to the MCP server file so they get highlighted.
+      const mcpServerPath = "packages/cli/src/mcp/server.ts";
+      const unmatchedCodeSpans = docDb
+        .prepare(
+          `SELECT a.doc_path, a.line, a.text, a.source
+           FROM annotations a
+           WHERE a.source = 'code-span' AND (a.symbol_id IS NULL OR a.symbol_id = '')
+             AND length(a.text) >= 3`,
+        )
+        .all() as Array<{ doc_path: string; line: number; text: string; source: string }>;
+
+      // Synthesise as virtual annotations pointing to the MCP server
+      const syntheticRows = unmatchedCodeSpans.map(r => ({
+        doc_path: r.doc_path,
+        line: r.line,
+        text: r.text,
+        source: r.source,
+        confidence: 0.5,
+        char_start: null,
+        char_end: null,
+        name: r.text,       // display as the literal tool/command name
+        kind: "tool",
+        file_path: mcpServerPath,
+        sym_line: 1,
+      }));
+      const allHighlightRows = [...highlightAnnRows, ...syntheticRows];
+
+      // Group highlight annotations per doc
+      const highlightsByDoc = new Map<string, typeof allHighlightRows>();
+      for (const row of allHighlightRows) {
+        const arr = highlightsByDoc.get(row.doc_path) ?? [];
+        arr.push(row);
+        highlightsByDoc.set(row.doc_path, arr);
+      }
+
+      // Summary annotations (deduplicated by symbol, for sidebar stats)
+      const allAnnRows = docDb
+        .prepare(
+          `SELECT a.doc_path, s.name, s.kind, s.file_path, s.line, MAX(a.confidence) as confidence,
+                  (SELECT a2.line FROM annotations a2 WHERE a2.symbol_id = s.id AND a2.doc_path = a.doc_path ORDER BY a2.confidence DESC LIMIT 1) as best_line,
+                  (SELECT a2.text FROM annotations a2 WHERE a2.symbol_id = s.id AND a2.doc_path = a.doc_path ORDER BY a2.confidence DESC LIMIT 1) as best_text,
+                  (SELECT a2.source FROM annotations a2 WHERE a2.symbol_id = s.id AND a2.doc_path = a.doc_path ORDER BY a2.confidence DESC LIMIT 1) as best_source
+           FROM annotations a JOIN symbols s ON a.symbol_id = s.id
+           GROUP BY a.doc_path, s.id
+           ORDER BY a.doc_path, confidence DESC`,
+        )
+        .all() as Array<{
+          doc_path: string;
+          name: string;
+          kind: string;
+          file_path: string;
+          line: number;
+          confidence: number;
+          best_line: number;
+          best_text: string;
+          best_source: string;
+        }>;
+
+      // Group summary annotations per doc, cap at 30 for display
+      const topByDoc = new Map<string, typeof allAnnRows>();
+      for (const row of allAnnRows) {
+        const arr = topByDoc.get(row.doc_path) ?? [];
+        if (arr.length < 30) arr.push(row);
+        topByDoc.set(row.doc_path, arr);
+      }
+
+      // Hot symbols: mentioned in 3+ docs
+      const hotSymbolRows = docDb
+        .prepare(
+          `SELECT s.name, s.kind, s.file_path,
+                  COUNT(DISTINCT a.doc_path) as doc_count,
+                  GROUP_CONCAT(DISTINCT a.doc_path) as docs
+           FROM annotations a JOIN symbols s ON a.symbol_id = s.id
+           GROUP BY s.id
+           HAVING doc_count >= 3
+           ORDER BY doc_count DESC
+           LIMIT 60`,
+        )
+        .all() as Array<{
+          name: string;
+          kind: string;
+          file_path: string;
+          doc_count: number;
+          docs: string;
+        }>;
+
+      const docEntries = await Promise.all(
+        docStats.map(async (stat) => {
+          const anns = topByDoc.get(stat.doc_path) ?? [];
+          const highlights = highlightsByDoc.get(stat.doc_path) ?? [];
+
+          // Extract package prefixes from referenced file paths
+          const pkgSet = new Set<string>();
+          for (const ann of anns) {
+            const m = ann.file_path.match(/^(packages\/[^/]+|apps\/[^/]+)/);
+            if (m) pkgSet.add(m[1]);
+          }
+
+          // Read full file content (best-effort)
+          let content = "";
+          try {
+            const fullPath = path.join(process.cwd(), stat.doc_path);
+            content = await fs.readFile(fullPath, "utf8");
+          } catch {
+            /* file not readable — skip content */
+          }
+
+          return {
+            path: stat.doc_path,
+            content,
+            uniqueSymbols: stat.unique_symbols,
+            uniqueSourceFiles: stat.source_files,
+            referencedPackages: [...pkgSet].slice(0, 12),
+            topAnnotations: highlights.map((ann) => ({
+              symbolName: ann.name,
+              symbolKind: ann.kind,
+              symbolFile: ann.file_path,
+              symbolLine: ann.sym_line,
+              confidence: ann.confidence,
+              docLine: ann.line,
+              text: ann.text,
+              source: ann.source,
+              charStart: ann.char_start,
+              charEnd: ann.char_end,
+            })),
+          };
+        }),
+      );
+
+      // Collect all source files referenced by annotations across all docs.
+      // Cap: max 200 unique files to keep the book size manageable.
+      const linkedSourcePaths = new Set<string>();
+      for (const entry of docEntries) {
+        for (const ann of entry.topAnnotations) {
+          if (ann.symbolFile) linkedSourcePaths.add(ann.symbolFile);
+          if (linkedSourcePaths.size >= 200) break;
+        }
+        if (linkedSourcePaths.size >= 200) break;
+      }
+
+      // Read each referenced source file (best-effort, cap at 2000 lines to keep size reasonable)
+      const SOURCE_LINE_CAP = 2000;
+      const sourceFiles: Record<string, string> = {};
+      await Promise.all(
+        [...linkedSourcePaths].map(async (relPath) => {
+          try {
+            const fullPath = path.join(process.cwd(), relPath);
+            const raw = await fs.readFile(fullPath, "utf8");
+            const lines = raw.split("\n");
+            sourceFiles[relPath] = lines.slice(0, SOURCE_LINE_CAP).join("\n") +
+              (lines.length > SOURCE_LINE_CAP ? `\n// … [truncated at ${SOURCE_LINE_CAP} lines]` : "");
+          } catch {
+            /* skip unreadable */
+          }
+        }),
+      );
+
+      analyticsDocMap = {
+        docs: docEntries,
+        totalAnnotations,
+        hotSymbols: hotSymbolRows.map((h) => ({
+          name: h.name,
+          kind: h.kind,
+          file: h.file_path,
+          docCount: h.doc_count,
+          docs: h.docs ? h.docs.split(",") : [],
+        })),
+        sourceFiles,
+      };
+    } finally {
+      docDb.close();
+    }
+  } catch {
+    /* best-effort */
+  }
+
   return {
     meta: {
       generated: new Date().toISOString(),
@@ -1311,6 +1603,8 @@ async function buildPrescriptiveReportData(
     hotspots: analyticsHotspots,
     documentation: analyticsDocumentation,
     livingScore: analyticsLivingScore,
+    rulesCatalog,
+    docMap: analyticsDocMap,
     options: {
       showRuleElements: opts.showRuleElements,
     },
@@ -3347,6 +3641,24 @@ async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
   return parsed;
 }
 
+/**
+ * Load optional .iw/config.yaml workspace config.
+ * Returns undefined (silently) if the file doesn't exist.
+ */
+async function loadIwConfig(
+  configDir: string,
+): Promise<import("@intentweave/index").IwConfig | undefined> {
+  const configPath = path.join(configDir, "config.yaml");
+  try {
+    const raw = await fs.readFile(configPath, "utf-8");
+    const parsed = yamlLoad(raw) as import("@intentweave/index").IwConfig;
+    if (!parsed || typeof parsed !== "object") return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
 const SEVERITY_COLOR: Record<string, (s: string) => string> = {
   high: chalk.red,
   medium: chalk.yellow,
@@ -3371,6 +3683,10 @@ const indexRulesCheckSubcommand = new Command("rules-check")
   )
   .option("-n, --limit <n>", "Maximum violations to report", "100")
   .option("-f, --format <format>", "Output format: text | json", "text")
+  .option(
+    "--domain <domain>",
+    "Intent domain to check: structural | behavioral | documentary | all",
+  )
   .option(
     "--save-baseline <file>",
     "Save current violation counts as baseline JSON (13.5)",
@@ -3404,6 +3720,10 @@ const indexRulesCheckSubcommand = new Command("rules-check")
       return;
     }
 
+    // Load optional .iw/config.yaml for per-domain thresholds (Phase 1)
+    const iwConfigDir = path.join(path.dirname(configPath));
+    const iwConfig = await loadIwConfig(iwConfigDir);
+
     const changed = opts.changed
       ? opts.changed
           .split(",")
@@ -3430,6 +3750,7 @@ const indexRulesCheckSubcommand = new Command("rules-check")
         ruleId,
         changed,
         limit: parseInt(opts.limit, 10),
+        workspaceRoot: process.cwd(),
       });
 
       process.stdout.write(JSON.stringify(dryRun, null, 2) + "\n");
@@ -3441,6 +3762,14 @@ const indexRulesCheckSubcommand = new Command("rules-check")
       ruleId: opts.ruleId,
       changed,
       limit: parseInt(opts.limit, 10),
+      domain: opts.domain as
+        | "structural"
+        | "behavioral"
+        | "documentary"
+        | "all"
+        | undefined,
+      iwConfig,
+      workspaceRoot: process.cwd(),
     });
 
     // ── --save-baseline (13.5) ──────────────────────────────────────────────
@@ -3684,8 +4013,12 @@ const indexRulesCheckSubcommand = new Command("rules-check")
 
         for (const v of violations) {
           const loc = v.line != null ? `:${v.line}` : "";
+          const confStr =
+            v.confidence != null && v.confidence < 1.0
+              ? chalk.gray(` [conf ${Math.round(v.confidence * 100)}%]`)
+              : "";
           console.log(
-            `  ${chalk.cyan(v.filePath + loc).padEnd(55)} ${chalk.white(v.detail)}`,
+            `  ${chalk.cyan(v.filePath + loc).padEnd(55)} ${chalk.white(v.detail)}${confStr}`,
           );
           // 15.5 autofix hint
           if (v.autofix) {
@@ -3711,9 +4044,27 @@ const indexRulesCheckSubcommand = new Command("rules-check")
     const hasErrorViolations = result.violations.some(
       (v) => (v.ruleMode ?? "error") === "error",
     );
+
+    // Show config.yaml threshold context when they are active
+    const docCfg = iwConfig?.thresholds?.documentary;
+    if (docCfg && opts.format !== "json") {
+      const notes: string[] = [];
+      if (docCfg.coverage_min !== undefined)
+        notes.push(`coverage_min=${docCfg.coverage_min}%`);
+      if (docCfg.completeness_min !== undefined)
+        notes.push(`completeness_min=${docCfg.completeness_min}%`);
+      if (docCfg.mode)
+        notes.push(`mode=${docCfg.mode}`);
+      if (notes.length) {
+        console.log(
+          chalk.gray(`  config.yaml documentary thresholds: ${notes.join(", ")}\n`),
+        );
+      }
+    }
+
     if (hasErrorViolations) {
       process.exitCode = 1;
-    } else {
+    } else if (result.totalViolations > 0) {
       console.log(
         chalk.yellow(
           `  ⚠ All violations are mode:warn — CI gate passed (warnings only)\n`,
@@ -6021,6 +6372,209 @@ Be concise: one sentence, under 160 characters.`;
     },
   );
 
+// ── iw index calls (Phase 4) ─────────────────────────────────────
+
+const indexCallsSubcommand = new Command("calls")
+  .description("Query the symbol_calls call graph (Phase 4)")
+  .option("--db <path>", "Path to index.db")
+  .option("--caller-file <path>", "Filter by caller file path (substring)")
+  .option("--callee-name <name>", "Filter by callee name (substring)")
+  .option("--caller-name <name>", "Filter by caller function name (substring)")
+  .option("--method-only", "Only show method calls")
+  .option("-n, --limit <n>", "Maximum results", "100")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = calls(dbPath, {
+      callerFile: opts.callerFile,
+      calleeName: opts.calleeName,
+      callerName: opts.callerName,
+      methodOnly: opts.methodOnly,
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.total === 0) {
+      console.log(chalk.green("\n  ✓ No call edges found (check filter options).\n"));
+      return;
+    }
+
+    console.log(chalk.blue(`\n  ▸ ${result.total} call edge(s) in index`));
+    if (result.topCallees.length > 0) {
+      console.log(chalk.gray(`  Top callees: ${result.topCallees.slice(0, 5).map((c) => `${c.calleeName}(${c.count})`).join(", ")}`));
+    }
+    console.log();
+
+    const limit = parseInt(opts.limit, 10);
+    for (const edge of result.edges.slice(0, limit)) {
+      const methodMark = edge.isMethod ? chalk.cyan(".") : " ";
+      const line = edge.callerLine ? chalk.gray(`:${edge.callerLine}`) : "";
+      const caller = edge.callerName ? chalk.gray(`[${edge.callerName}]`) : "";
+      console.log(
+        `  ${methodMark} ${chalk.white(edge.callerFile)}${line} ${caller} → ${chalk.yellow(edge.calleeName)}`,
+      );
+    }
+    if (result.edges.length > limit) {
+      console.log(chalk.gray(`  ...and ${result.total - limit} more (use --limit or --format json)`));
+    }
+    console.log();
+  });
+
+// ── iw index trace (Phase 4) ─────────────────────────────────────
+
+const indexTraceSubcommand = new Command("trace")
+  .description("Trace call paths from an entry-point file (Phase 4)")
+  .requiredOption("--entry <file>", "Entry-point file path (substring match)")
+  .option("--db <path>", "Path to index.db")
+  .option("--hops <n>", "Maximum BFS depth", "6")
+  .option("--max-nodes <n>", "Maximum nodes in result", "50")
+  .option(
+    "--direction <dir>",
+    "forward (what does entry call?) or backward (who calls entry?)",
+    "forward",
+  )
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action((opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const result = trace(dbPath, {
+      entry: opts.entry,
+      hops: parseInt(opts.hops, 10),
+      maxNodes: parseInt(opts.maxNodes, 10),
+      direction: opts.direction as "forward" | "backward",
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.nodes.length === 0) {
+      console.log(
+        chalk.yellow(`\n  ⚠ No entry files found matching "${opts.entry}".\n`),
+      );
+      return;
+    }
+
+    const callsStatus = result.callsTableActive
+      ? chalk.green("(call graph active, ~0.95 confidence)")
+      : chalk.yellow("(no call graph data — index with AX extractor)");
+    console.log(
+      chalk.blue(
+        `\n  ▸ Call trace from "${result.entryFile}" — ${result.nodes.length} node(s), ${result.edges.length} edge(s) ${callsStatus}`,
+      ),
+    );
+    if (result.truncated) {
+      console.log(chalk.gray("  (truncated — use --hops or --max-nodes to expand)"));
+    }
+    console.log();
+
+    // Group nodes by depth
+    const byDepth = new Map<number, typeof result.nodes>();
+    for (const node of result.nodes) {
+      if (!byDepth.has(node.depth)) byDepth.set(node.depth, []);
+      byDepth.get(node.depth)!.push(node);
+    }
+
+    for (const [depth, nodes] of [...byDepth.entries()].sort((a, b) => a[0] - b[0])) {
+      const indent = "  " + "  ".repeat(depth);
+      const depthLabel = depth === 0 ? chalk.cyan("[entry]") : chalk.gray(`[depth ${depth}]`);
+      for (const node of nodes) {
+        const syms =
+          node.symbols.length > 0
+            ? chalk.gray(` (${node.symbols.slice(0, 3).join(", ")}${node.symbols.length > 3 ? ", ..." : ""})`)
+            : "";
+        console.log(`${indent}${depthLabel} ${chalk.white(node.file)}${syms}`);
+      }
+    }
+    console.log();
+  });
+
+// ── iw index rule-coverage (Phase 4) ────────────────────────────
+
+const indexRuleCoverageSubcommand = new Command("rule-coverage")
+  .description(
+    "Flag packages/directories with zero behavioral rules (Phase 4)",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "--rules <path>",
+    "Path to rules.yaml",
+    path.join(process.cwd(), ".iw", "rules.yaml"),
+  )
+  .option("--group-depth <n>", "Directory grouping depth", "2")
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const { readFile } = await import("node:fs/promises");
+    const { load: yamlLoadRc } = await import("js-yaml");
+
+    let rulesConfig: import("@intentweave/index").RulesConfig = {
+      version: 1,
+      rules: [],
+    };
+    try {
+      const raw = await readFile(opts.rules, "utf-8");
+      const parsed = yamlLoadRc(raw) as import("@intentweave/index").RulesConfig;
+      if (parsed?.rules) rulesConfig = parsed;
+    } catch {
+      // No rules.yaml — will show all packages as uncovered
+    }
+
+    const result = ruleCoverage(dbPath, {
+      rulesConfig,
+      groupDepth: parseInt(opts.groupDepth, 10),
+    });
+
+    if (opts.format === "json") {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(
+      chalk.blue(
+        `\n  ▸ Behavioral rule coverage — ${result.totalBehavioralRules} rule(s)`,
+      ),
+    );
+    console.log(
+      `    Covered packages: ${chalk.green(String(result.covered.length))}  ` +
+        `Uncovered: ${chalk.yellow(String(result.uncovered.length))}`,
+    );
+    console.log();
+
+    if (result.totalBehavioralRules === 0) {
+      console.log(
+        chalk.gray(
+          "  No behavioral rules defined. Add rules with domain: behavioral to .iw/rules.yaml\n",
+        ),
+      );
+      return;
+    }
+
+    if (result.topUncovered.length > 0) {
+      console.log(chalk.yellow("  Packages with no behavioral rules (top by file count):"));
+      for (const pkg of result.topUncovered) {
+        console.log(
+          `    ${chalk.white(pkg.dir.padEnd(40))} ${chalk.gray(pkg.fileCount + " file(s)")}`,
+        );
+      }
+      console.log();
+    }
+
+    if (result.covered.length > 0) {
+      console.log(chalk.green("  Covered packages:"));
+      for (const pkg of result.covered) {
+        console.log(
+          `    ${chalk.white(pkg.dir.padEnd(40))} rules: ${chalk.cyan(pkg.coveredByRules.join(", "))}`,
+        );
+      }
+      console.log();
+    }
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI Evidence Engine commands")
   .addCommand(indexBuildSubcommand)
@@ -6072,7 +6626,10 @@ export const indexCommand = new Command("index")
   .addCommand(indexExportSubcommand)
   .addCommand(indexEnrichSubcommand)
   .addCommand(indexRulesExtractSubcommand)
-  .addCommand(indexScanDiagramsSubcommand);
+  .addCommand(indexScanDiagramsSubcommand)
+  .addCommand(indexCallsSubcommand)
+  .addCommand(indexTraceSubcommand)
+  .addCommand(indexRuleCoverageSubcommand);
 
 // ── LLM narrative generation for --explain ──────────────────────
 

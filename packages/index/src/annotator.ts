@@ -90,6 +90,8 @@ export function annotate(
         source: mention.source,
         qualifier: mention.qualifiers[0],
         idfScore,
+        charStart: mention.startChar,
+        charEnd: mention.endChar,
       });
     }
   }
@@ -142,10 +144,39 @@ function buildSymbolIndex(ax: AxOutput): SymbolIndex {
       if (!bySlug.has(slug) || sym.export === "exported") {
         bySlug.set(slug, sym.id);
       }
+
+      // Also register camelCase suffix slugs so that doc mentions of a
+      // concept substring can find the full symbol name.
+      // e.g. "IndexCoChange" → also registers "cochange", so a doc mention
+      // of "co-change" (slug: "cochange") is grounded to IndexCoChange.
+      // Minimum suffix length 5 to avoid overly broad matches.
+      const parts = splitCamelCase(sym.name);
+      if (parts.length >= 2) {
+        for (let i = 1; i < parts.length; i++) {
+          const suffixSlug = parts.slice(i).join("");
+          if (suffixSlug.length >= 5 && !bySlug.has(suffixSlug)) {
+            bySlug.set(suffixSlug, sym.id);
+          }
+        }
+      }
     }
   }
 
   return { byExactName, bySlug, allNames };
+}
+
+/**
+ * Split a CamelCase (or PascalCase) identifier into lowercase parts.
+ * "IndexCoChange" → ["index", "co", "change"]
+ * "TCGPipeline"   → ["tcg", "pipeline"]
+ */
+function splitCamelCase(name: string): string[] {
+  return name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")      // camelCase boundary
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2") // run of caps before word
+    .toLowerCase()
+    .split(/[\s_\-./]+/)
+    .filter((t) => t.length > 0);
 }
 
 // =============================================================================

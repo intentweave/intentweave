@@ -37,6 +37,8 @@ export {
 export { skippedFiles, skippedFilesFromDb } from "./skippedFiles.js";
 export { rulesCheck, rulesCheckFromDb } from "./rulesCheck.js";
 export type { RulesCheckOptions } from "./rulesCheck.js";
+export { documentaryCheckFromDb } from "./documentaryCheck.js";
+export type { DocumentaryCheckOptions } from "./documentaryCheck.js";
 export {
   deprecatedCallers,
   deprecatedCallersFromDb,
@@ -128,4 +130,14 @@ export {
   resolveComponentFromDb,
 } from "./resolveComponent.js";
 export { livingScore, livingScoreFromDb } from "./livingScore.js";
+export { calls, callsFromDb } from "./calls.js";
+export type { CallsOptions, CallsResult, CallEdge } from "./calls.js";
+export { trace, traceFromDb } from "./trace.js";
+export type { TraceOptions, TraceResult, TraceNode, TraceEdge } from "./trace.js";
+export { ruleCoverage, ruleCoverageFromDb } from "./ruleCoverage.js";
+export type {
+  RuleCoverageOptions,
+  RuleCoverageResult,
+  PackageCoverage,
+} from "./ruleCoverage.js";
 export { openIndex } from "./shared.js";
