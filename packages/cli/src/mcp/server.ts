@@ -1723,10 +1723,15 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         const iwDir = path.join(process.cwd(), ".iw");
 
         const configPath = path.join(iwDir, "rules.yaml");
-        let config: import("@intentweave/index").RulesConfig = { version: 1, rules: [] };
+        let config: import("@intentweave/index").RulesConfig = {
+          version: 1,
+          rules: [],
+        };
         try {
           const rawYaml = await readFile(configPath, "utf-8");
-          const parsed = yamlLoadMcp(rawYaml) as import("@intentweave/index").RulesConfig;
+          const parsed = yamlLoadMcp(
+            rawYaml,
+          ) as import("@intentweave/index").RulesConfig;
           if (parsed && Array.isArray(parsed.rules)) {
             config = parsed;
           }
@@ -1741,7 +1746,9 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
             path.join(iwDir, "config.yaml"),
             "utf-8",
           );
-          const parsed = yamlLoadMcp(rawIwConfig) as import("@intentweave/index").IwConfig;
+          const parsed = yamlLoadMcp(
+            rawIwConfig,
+          ) as import("@intentweave/index").IwConfig;
           if (parsed && typeof parsed === "object") iwConfig = parsed;
         } catch {
           // Optional — no config.yaml is fine
@@ -4848,14 +4855,23 @@ Note: Only available for languages with AX call extraction support. Check callsT
           result.topCallees.length > 0
             ? `**Top callees:** ${result.topCallees
                 .slice(0, 8)
-                .map((c: { calleeName: string; count: number }) => `${c.calleeName}(×${c.count})`)
+                .map(
+                  (c: { calleeName: string; count: number }) =>
+                    `${c.calleeName}(×${c.count})`,
+                )
                 .join(", ")}`
             : "",
           "",
           "| Caller File | Caller | Line | Callee | Method |",
           "|-------------|--------|------|--------|--------|",
           ...result.edges.map(
-            (e: { callerFile: string; callerName: string | null; callerLine: number | null; calleeName: string; isMethod: boolean }) =>
+            (e: {
+              callerFile: string;
+              callerName: string | null;
+              callerLine: number | null;
+              calleeName: string;
+              isMethod: boolean;
+            }) =>
               `| ${e.callerFile} | ${e.callerName ?? ""} | ${e.callerLine ?? ""} | ${e.calleeName} | ${e.isMethod ? "✓" : ""} |`,
           ),
         ];
@@ -4939,7 +4955,9 @@ Returns: entryFile, nodes[] (each with file + symbols + depth), edges[] (fromFil
           "| Depth | File | Symbols |",
           "|-------|------|---------|",
           ...result.nodes
-            .sort((a: { depth: number }, b: { depth: number }) => a.depth - b.depth)
+            .sort(
+              (a: { depth: number }, b: { depth: number }) => a.depth - b.depth,
+            )
             .map(
               (n: { depth: number; file: string; symbols: string[] }) =>
                 `| ${n.depth} | ${n.file} | ${n.symbols.slice(0, 5).join(", ")}${n.symbols.length > 5 ? ", ..." : ""} |`,
@@ -4949,7 +4967,13 @@ Returns: entryFile, nodes[] (each with file + symbols + depth), edges[] (fromFil
           "| From | Symbol | Line | To | Callee |",
           "|------|--------|------|----|--------|",
           ...result.edges.map(
-            (e: { fromFile: string; fromSymbol: string | null; callerLine: number | null; toFile: string; toCalleeName: string }) =>
+            (e: {
+              fromFile: string;
+              fromSymbol: string | null;
+              callerLine: number | null;
+              toFile: string;
+              toCalleeName: string;
+            }) =>
               `| ${e.fromFile} | ${e.fromSymbol ?? ""} | ${e.callerLine ?? ""} | ${e.toFile} | ${e.toCalleeName} |`,
           ),
         ];

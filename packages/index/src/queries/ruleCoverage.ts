@@ -68,9 +68,10 @@ export function ruleCoverageFromDb(
 
   // ── Get all packages (code files grouped by directory depth) ─────────────
   const codeFiles = db
-    .prepare<[], { path: string }>(
-      `SELECT DISTINCT path FROM files WHERE is_doc = 0 OR is_doc IS NULL ORDER BY path`,
-    )
+    .prepare<
+      [],
+      { path: string }
+    >(`SELECT DISTINCT path FROM files WHERE is_doc = 0 OR is_doc IS NULL ORDER BY path`)
     .all() as Array<{ path: string }>;
 
   const dirFileCounts = new Map<string, number>();

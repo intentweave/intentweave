@@ -172,7 +172,7 @@ function buildSymbolIndex(ax: AxOutput): SymbolIndex {
  */
 function splitCamelCase(name: string): string[] {
   return name
-    .replace(/([a-z])([A-Z])/g, "$1 $2")      // camelCase boundary
+    .replace(/([a-z])([A-Z])/g, "$1 $2") // camelCase boundary
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2") // run of caps before word
     .toLowerCase()
     .split(/[\s_\-./]+/)

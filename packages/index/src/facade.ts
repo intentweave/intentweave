@@ -425,7 +425,9 @@ function extractSourceCommentContent(content: string): string {
     if (inBlock) {
       // Inside a block comment — emit the content, strip leading * or */
       if (trimmed.includes("*/")) {
-        const before = trimmed.slice(0, trimmed.indexOf("*/")).replace(/^\*?\s?/, "");
+        const before = trimmed
+          .slice(0, trimmed.indexOf("*/"))
+          .replace(/^\*?\s?/, "");
         result.push(before.trim());
         inBlock = false;
       } else {
@@ -674,7 +676,15 @@ export async function buildFromPaths(
   // This creates annotations where doc_path = source_file, enabling gutter
   // dots on comment lines in the AR Evidence viewer.
   const SOURCE_COMMENT_EXTS = new Set([
-    ".ts", ".tsx", ".js", ".jsx", ".py", ".swift", ".go", ".java", ".cs",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".py",
+    ".swift",
+    ".go",
+    ".java",
+    ".cs",
   ]);
   const sourceFilesForKwx = axOutput.files
     .map((f: { filePath: string }) => f.filePath)
@@ -717,7 +727,9 @@ export async function buildFromPaths(
     }
   }
   if (srcCommentCount > 0) {
-    log(`KWX-comments: processed comments from ${srcCommentCount} source files`);
+    log(
+      `KWX-comments: processed comments from ${srcCommentCount} source files`,
+    );
   }
 
   const coxOutput = await analyzer.runCoxStage({ kwxOutputs });

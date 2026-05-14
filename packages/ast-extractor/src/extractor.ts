@@ -1518,7 +1518,10 @@ export class AstExtractor {
     for (let i = startLine - 1; i >= Math.max(0, startLine - 20); i--) {
       const line = lines[i].trim();
 
-      if (line.startsWith("/**") || (line.startsWith("/*") && !line.startsWith("/**/"))) {
+      if (
+        line.startsWith("/**") ||
+        (line.startsWith("/*") && !line.startsWith("/**/"))
+      ) {
         // Collect all description lines from start of block to startLine
         const bodyParts: string[] = [];
         for (let j = i; j < startLine; j++) {
@@ -1526,13 +1529,25 @@ export class AstExtractor {
           // Stop description at first JSDoc @-tag
           if (docLine.startsWith("* @") || docLine.startsWith("@")) break;
           // Skip delimiters
-          if (docLine === "/**" || docLine === "*/" || docLine === "/*" || docLine === "*") continue;
+          if (
+            docLine === "/**" ||
+            docLine === "*/" ||
+            docLine === "/*" ||
+            docLine === "*"
+          )
+            continue;
           // Single-line /** … */
           const singleLine = docLine.match(/^\/\*+\s*(.+?)\s*\*\/$/);
-          if (singleLine) { bodyParts.push(singleLine[1]); continue; }
+          if (singleLine) {
+            bodyParts.push(singleLine[1]);
+            continue;
+          }
           // /** content or /* content (opening line has text)
           const openLine = docLine.match(/^\/\*+\s*(.+)/);
-          if (openLine) { bodyParts.push(openLine[1]); continue; }
+          if (openLine) {
+            bodyParts.push(openLine[1]);
+            continue;
+          }
           // * content line
           const starLine = docLine.match(/^\*\s*(.*)/);
           if (starLine && starLine[1]) bodyParts.push(starLine[1]);
@@ -1543,7 +1558,12 @@ export class AstExtractor {
       }
 
       // Stop if we hit real code (not comment or blank)
-      if (line && !line.startsWith("//") && !line.startsWith("*") && !line.startsWith("*/")) {
+      if (
+        line &&
+        !line.startsWith("//") &&
+        !line.startsWith("*") &&
+        !line.startsWith("*/")
+      ) {
         break;
       }
     }

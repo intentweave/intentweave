@@ -84,9 +84,10 @@ export function traceFromDb(
 
   // ── Find entry files ──────────────────────────────────────────────────────
   const entryRows = db
-    .prepare<{ pat: string }, { path: string }>(
-      `SELECT DISTINCT path FROM files WHERE path LIKE :pat`,
-    )
+    .prepare<
+      { pat: string },
+      { path: string }
+    >(`SELECT DISTINCT path FROM files WHERE path LIKE :pat`)
     .all({ pat: `%${opts.entry}%` }) as Array<{ path: string }>;
 
   if (entryRows.length === 0) {
@@ -105,9 +106,10 @@ export function traceFromDb(
   // Check if calls table has data for entry files
   const ph = [...entryFiles].map(() => "?").join(",");
   const callsCheck = db
-    .prepare<unknown[], { cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM symbol_calls WHERE caller_file IN (${ph})`,
-    )
+    .prepare<
+      unknown[],
+      { cnt: number }
+    >(`SELECT COUNT(*) as cnt FROM symbol_calls WHERE caller_file IN (${ph})`)
     .get([...entryFiles]) as { cnt: number } | undefined;
   const callsTableActive = (callsCheck?.cnt ?? 0) > 0;
 
@@ -207,8 +209,7 @@ export function traceFromDb(
 
         // Track edge
         edges.push({
-          fromFile:
-            direction === "forward" ? row.caller_file : row.caller_file,
+          fromFile: direction === "forward" ? row.caller_file : row.caller_file,
           fromSymbol: row.caller_name,
           toFile: targetFile,
           toCalleeName: row.callee_name,
@@ -217,7 +218,11 @@ export function traceFromDb(
 
         // Track node symbol
         const existing = nodeMap.get(currentFile);
-        if (existing && row.caller_name && !existing.symbols.includes(row.caller_name)) {
+        if (
+          existing &&
+          row.caller_name &&
+          !existing.symbols.includes(row.caller_name)
+        ) {
           existing.symbols.push(row.caller_name);
         }
 

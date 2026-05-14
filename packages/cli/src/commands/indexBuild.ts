@@ -1217,32 +1217,49 @@ async function buildPrescriptiveReportData(
       const AggDatabase = (await import("better-sqlite3")).default;
       const aggDb = new AggDatabase(dbPath, { readonly: true });
       const aggRow = aggDb
-        .prepare(`SELECT
+        .prepare(
+          `SELECT
           (SELECT COUNT(DISTINCT a.symbol_id) FROM annotations a
            JOIN symbols s ON a.symbol_id = s.id
            WHERE s.export='exported' AND a.confidence >= 0.5) AS covered,
-          (SELECT COUNT(*) FROM symbols WHERE export='exported') AS total`)
+          (SELECT COUNT(*) FROM symbols WHERE export='exported') AS total`,
+        )
         .get() as { covered: number; total: number };
       aggDb.close();
 
       // Meta-doc paths to exclude from completeness reporting
       const META_DOC_PREFIXES = [".github/", "ISSUE_TEMPLATE/"];
-      const META_DOC_EXACT = new Set(["CLA.md","SECURITY.md","CODE_OF_CONDUCT.md","CONTRIBUTING.md","CHANGELOG.md","NOTICE"]);
+      const META_DOC_EXACT = new Set([
+        "CLA.md",
+        "SECURITY.md",
+        "CODE_OF_CONDUCT.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "NOTICE",
+      ]);
       function isMetaDoc(p: string): boolean {
         const base = p.split("/").pop() ?? p;
-        return META_DOC_PREFIXES.some(pre => p.startsWith(pre)) || META_DOC_EXACT.has(base);
+        return (
+          META_DOC_PREFIXES.some((pre) => p.startsWith(pre)) ||
+          META_DOC_EXACT.has(base)
+        );
       }
 
       analyticsDocumentation = {
         orphanedSections: orphanedResult.sections,
-        docCoverageAggregate: { coveredSymbols: aggRow.covered, totalSymbols: aggRow.total },
-        docCompleteness: docResult.docs.filter(d => !isMetaDoc(d.docPath)).map((d) => ({
-          docPath: d.docPath,
-          completenessPercent: d.completenessPercent,
-          totalRelevantExports: d.totalRelevantExports,
-          coveredExports: d.coveredExports,
-          missing: d.missing.map((m) => ({ name: m.name, kind: m.kind })),
-        })),
+        docCoverageAggregate: {
+          coveredSymbols: aggRow.covered,
+          totalSymbols: aggRow.total,
+        },
+        docCompleteness: docResult.docs
+          .filter((d) => !isMetaDoc(d.docPath))
+          .map((d) => ({
+            docPath: d.docPath,
+            completenessPercent: d.completenessPercent,
+            totalRelevantExports: d.totalRelevantExports,
+            coveredExports: d.coveredExports,
+            missing: d.missing.map((m) => ({ name: m.name, kind: m.kind })),
+          })),
         rationale: rationaleResult.rationale,
         terminology: termResult.inconsistencies.map((ti) => ({
           symbolName: ti.symbolName,
@@ -1375,10 +1392,10 @@ async function buildPrescriptiveReportData(
            ORDER BY unique_symbols DESC`,
         )
         .all() as Array<{
-          doc_path: string;
-          unique_symbols: number;
-          source_files: number;
-        }>;
+        doc_path: string;
+        unique_symbols: number;
+        source_files: number;
+      }>;
 
       // Quality-filtered annotations for inline highlighting:
       // include code-span, bold, and high-confidence identifier/dictionary annotations
@@ -1394,18 +1411,18 @@ async function buildPrescriptiveReportData(
            ORDER BY a.doc_path, a.line, a.confidence DESC`,
         )
         .all() as Array<{
-          doc_path: string;
-          line: number;
-          text: string;
-          source: string;
-          confidence: number;
-          char_start: number | null;
-          char_end: number | null;
-          name: string;
-          kind: string;
-          file_path: string;
-          sym_line: number;
-        }>;
+        doc_path: string;
+        line: number;
+        text: string;
+        source: string;
+        confidence: number;
+        char_start: number | null;
+        char_end: number | null;
+        name: string;
+        kind: string;
+        file_path: string;
+        sym_line: number;
+      }>;
 
       // Also collect unmatched code-spans (symbol_id IS NULL) — these are
       // things like MCP tool names (`kg_query`, `cari_retrieve`) that are string
@@ -1419,10 +1436,15 @@ async function buildPrescriptiveReportData(
            WHERE a.source = 'code-span' AND (a.symbol_id IS NULL OR a.symbol_id = '')
              AND length(a.text) >= 3`,
         )
-        .all() as Array<{ doc_path: string; line: number; text: string; source: string }>;
+        .all() as Array<{
+        doc_path: string;
+        line: number;
+        text: string;
+        source: string;
+      }>;
 
       // Synthesise as virtual annotations pointing to the MCP server
-      const syntheticRows = unmatchedCodeSpans.map(r => ({
+      const syntheticRows = unmatchedCodeSpans.map((r) => ({
         doc_path: r.doc_path,
         line: r.line,
         text: r.text,
@@ -1430,7 +1452,7 @@ async function buildPrescriptiveReportData(
         confidence: 0.5,
         char_start: null,
         char_end: null,
-        name: r.text,       // display as the literal tool/command name
+        name: r.text, // display as the literal tool/command name
         kind: "tool",
         file_path: mcpServerPath,
         sym_line: 1,
@@ -1457,16 +1479,16 @@ async function buildPrescriptiveReportData(
            ORDER BY a.doc_path, confidence DESC`,
         )
         .all() as Array<{
-          doc_path: string;
-          name: string;
-          kind: string;
-          file_path: string;
-          line: number;
-          confidence: number;
-          best_line: number;
-          best_text: string;
-          best_source: string;
-        }>;
+        doc_path: string;
+        name: string;
+        kind: string;
+        file_path: string;
+        line: number;
+        confidence: number;
+        best_line: number;
+        best_text: string;
+        best_source: string;
+      }>;
 
       // Group summary annotations per doc, cap at 30 for display
       const topByDoc = new Map<string, typeof allAnnRows>();
@@ -1489,12 +1511,12 @@ async function buildPrescriptiveReportData(
            LIMIT 60`,
         )
         .all() as Array<{
-          name: string;
-          kind: string;
-          file_path: string;
-          doc_count: number;
-          docs: string;
-        }>;
+        name: string;
+        kind: string;
+        file_path: string;
+        doc_count: number;
+        docs: string;
+      }>;
 
       const docEntries = await Promise.all(
         docStats.map(async (stat) => {
@@ -1559,8 +1581,11 @@ async function buildPrescriptiveReportData(
             const fullPath = path.join(process.cwd(), relPath);
             const raw = await fs.readFile(fullPath, "utf8");
             const lines = raw.split("\n");
-            sourceFiles[relPath] = lines.slice(0, SOURCE_LINE_CAP).join("\n") +
-              (lines.length > SOURCE_LINE_CAP ? `\n// … [truncated at ${SOURCE_LINE_CAP} lines]` : "");
+            sourceFiles[relPath] =
+              lines.slice(0, SOURCE_LINE_CAP).join("\n") +
+              (lines.length > SOURCE_LINE_CAP
+                ? `\n// … [truncated at ${SOURCE_LINE_CAP} lines]`
+                : "");
           } catch {
             /* skip unreadable */
           }
@@ -4053,11 +4078,12 @@ const indexRulesCheckSubcommand = new Command("rules-check")
         notes.push(`coverage_min=${docCfg.coverage_min}%`);
       if (docCfg.completeness_min !== undefined)
         notes.push(`completeness_min=${docCfg.completeness_min}%`);
-      if (docCfg.mode)
-        notes.push(`mode=${docCfg.mode}`);
+      if (docCfg.mode) notes.push(`mode=${docCfg.mode}`);
       if (notes.length) {
         console.log(
-          chalk.gray(`  config.yaml documentary thresholds: ${notes.join(", ")}\n`),
+          chalk.gray(
+            `  config.yaml documentary thresholds: ${notes.join(", ")}\n`,
+          ),
         );
       }
     }
@@ -6399,13 +6425,22 @@ const indexCallsSubcommand = new Command("calls")
     }
 
     if (result.total === 0) {
-      console.log(chalk.green("\n  ✓ No call edges found (check filter options).\n"));
+      console.log(
+        chalk.green("\n  ✓ No call edges found (check filter options).\n"),
+      );
       return;
     }
 
     console.log(chalk.blue(`\n  ▸ ${result.total} call edge(s) in index`));
     if (result.topCallees.length > 0) {
-      console.log(chalk.gray(`  Top callees: ${result.topCallees.slice(0, 5).map((c) => `${c.calleeName}(${c.count})`).join(", ")}`));
+      console.log(
+        chalk.gray(
+          `  Top callees: ${result.topCallees
+            .slice(0, 5)
+            .map((c) => `${c.calleeName}(${c.count})`)
+            .join(", ")}`,
+        ),
+      );
     }
     console.log();
 
@@ -6419,7 +6454,11 @@ const indexCallsSubcommand = new Command("calls")
       );
     }
     if (result.edges.length > limit) {
-      console.log(chalk.gray(`  ...and ${result.total - limit} more (use --limit or --format json)`));
+      console.log(
+        chalk.gray(
+          `  ...and ${result.total - limit} more (use --limit or --format json)`,
+        ),
+      );
     }
     console.log();
   });
@@ -6468,7 +6507,9 @@ const indexTraceSubcommand = new Command("trace")
       ),
     );
     if (result.truncated) {
-      console.log(chalk.gray("  (truncated — use --hops or --max-nodes to expand)"));
+      console.log(
+        chalk.gray("  (truncated — use --hops or --max-nodes to expand)"),
+      );
     }
     console.log();
 
@@ -6479,13 +6520,18 @@ const indexTraceSubcommand = new Command("trace")
       byDepth.get(node.depth)!.push(node);
     }
 
-    for (const [depth, nodes] of [...byDepth.entries()].sort((a, b) => a[0] - b[0])) {
+    for (const [depth, nodes] of [...byDepth.entries()].sort(
+      (a, b) => a[0] - b[0],
+    )) {
       const indent = "  " + "  ".repeat(depth);
-      const depthLabel = depth === 0 ? chalk.cyan("[entry]") : chalk.gray(`[depth ${depth}]`);
+      const depthLabel =
+        depth === 0 ? chalk.cyan("[entry]") : chalk.gray(`[depth ${depth}]`);
       for (const node of nodes) {
         const syms =
           node.symbols.length > 0
-            ? chalk.gray(` (${node.symbols.slice(0, 3).join(", ")}${node.symbols.length > 3 ? ", ..." : ""})`)
+            ? chalk.gray(
+                ` (${node.symbols.slice(0, 3).join(", ")}${node.symbols.length > 3 ? ", ..." : ""})`,
+              )
             : "";
         console.log(`${indent}${depthLabel} ${chalk.white(node.file)}${syms}`);
       }
@@ -6496,9 +6542,7 @@ const indexTraceSubcommand = new Command("trace")
 // ── iw index rule-coverage (Phase 4) ────────────────────────────
 
 const indexRuleCoverageSubcommand = new Command("rule-coverage")
-  .description(
-    "Flag packages/directories with zero behavioral rules (Phase 4)",
-  )
+  .description("Flag packages/directories with zero behavioral rules (Phase 4)")
   .option("--db <path>", "Path to index.db")
   .option(
     "--rules <path>",
@@ -6518,7 +6562,9 @@ const indexRuleCoverageSubcommand = new Command("rule-coverage")
     };
     try {
       const raw = await readFile(opts.rules, "utf-8");
-      const parsed = yamlLoadRc(raw) as import("@intentweave/index").RulesConfig;
+      const parsed = yamlLoadRc(
+        raw,
+      ) as import("@intentweave/index").RulesConfig;
       if (parsed?.rules) rulesConfig = parsed;
     } catch {
       // No rules.yaml — will show all packages as uncovered
@@ -6555,7 +6601,11 @@ const indexRuleCoverageSubcommand = new Command("rule-coverage")
     }
 
     if (result.topUncovered.length > 0) {
-      console.log(chalk.yellow("  Packages with no behavioral rules (top by file count):"));
+      console.log(
+        chalk.yellow(
+          "  Packages with no behavioral rules (top by file count):",
+        ),
+      );
       for (const pkg of result.topUncovered) {
         console.log(
           `    ${chalk.white(pkg.dir.padEnd(40))} ${chalk.gray(pkg.fileCount + " file(s)")}`,

@@ -133,7 +133,12 @@ export { livingScore, livingScoreFromDb } from "./livingScore.js";
 export { calls, callsFromDb } from "./calls.js";
 export type { CallsOptions, CallsResult, CallEdge } from "./calls.js";
 export { trace, traceFromDb } from "./trace.js";
-export type { TraceOptions, TraceResult, TraceNode, TraceEdge } from "./trace.js";
+export type {
+  TraceOptions,
+  TraceResult,
+  TraceNode,
+  TraceEdge,
+} from "./trace.js";
 export { ruleCoverage, ruleCoverageFromDb } from "./ruleCoverage.js";
 export type {
   RuleCoverageOptions,

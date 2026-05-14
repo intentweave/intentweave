@@ -591,6 +591,7 @@ data pipeline and the documentary check query both respect the same pattern list
    _"N files excluded by .iwignore"_
 
 **Typical `.iwignore` additions for documentation checks:**
+
 ```
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md

@@ -104,16 +104,14 @@ export function callsFromDb(
   }>;
 
   const countRow = db
-    .prepare<unknown[], { cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM symbol_calls ${where}`,
-    )
+    .prepare<
+      unknown[],
+      { cnt: number }
+    >(`SELECT COUNT(*) as cnt FROM symbol_calls ${where}`)
     .get([...params]) as { cnt: number } | undefined;
 
   const topCallees = db
-    .prepare<
-      unknown[],
-      { callee_name: string; cnt: number }
-    >(
+    .prepare<unknown[], { callee_name: string; cnt: number }>(
       `SELECT callee_name, COUNT(*) as cnt
        FROM symbol_calls
        ${where}

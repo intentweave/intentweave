@@ -125,9 +125,7 @@ export function documentaryCheckFromDb(
 
         if (!meetsThreshold(ruleSeverity, severity)) continue;
 
-        const variantList = inc.variants
-          .map((v) => `"${v.text}"`)
-          .join(", ");
+        const variantList = inc.variants.map((v) => `"${v.text}"`).join(", ");
 
         violations.push({
           ruleId: "doc.terminology",
@@ -165,7 +163,8 @@ export function documentaryCheckFromDb(
           ruleDomain: "documentary",
           ruleMode: "warn",
           confidence: 0.9,
-          ruleDescription: "Documentation section with no grounded code mentions",
+          ruleDescription:
+            "Documentation section with no grounded code mentions",
           filePath: s.docPath,
           line: s.line,
           detail: `Section "${s.heading}" has ${s.ungroundedMentions} ungrounded mention(s) — may be outdated or refer to removed code`,
@@ -198,7 +197,8 @@ export function documentaryCheckFromDb(
           .slice(0, 3)
           .map((m) => `\`${m.name}\``)
           .join(", ");
-        const moreCount = d.missing.length > 3 ? ` +${d.missing.length - 3} more` : "";
+        const moreCount =
+          d.missing.length > 3 ? ` +${d.missing.length - 3} more` : "";
 
         violations.push({
           ruleId: "doc.completeness.low",
@@ -206,7 +206,8 @@ export function documentaryCheckFromDb(
           ruleDomain: "documentary",
           ruleMode: "warn",
           confidence: 0.97,
-          ruleDescription: "Documentation file covers fewer than threshold% of referenced exports",
+          ruleDescription:
+            "Documentation file covers fewer than threshold% of referenced exports",
           filePath: d.docPath,
           line: null,
           detail: `${d.completenessPercent}% completeness (${d.coveredExports}/${d.totalRelevantExports} exports covered). Missing: ${topMissing}${moreCount}`,

@@ -195,7 +195,9 @@ export function parseMermaidState(diagram: string): MermaidEdge[] {
     if (/^state\s+/i.test(line)) continue; // composite state declarations
 
     // A --> B : label
-    const m = line.match(/^(\[?\*?\]?[\w\s[\]]+?)\s*-->\s*([\w\s[\]*]+?)(?:\s*:\s*(.+))?$/);
+    const m = line.match(
+      /^(\[?\*?\]?[\w\s[\]]+?)\s*-->\s*([\w\s[\]*]+?)(?:\s*:\s*(.+))?$/,
+    );
     if (!m) continue;
     const [, from, to, label = ""] = m;
     edges.push({
@@ -234,7 +236,12 @@ export function parseMermaidFlowchart(diagram: string): MermaidEdge[] {
     const [, rawFrom, label, rawTo] = m;
     const fromId = rawFrom.trim().match(nodeIdPattern)?.[1] ?? rawFrom.trim();
     const toId = rawTo.trim().match(nodeIdPattern)?.[1] ?? rawTo.trim();
-    edges.push({ from: fromId, to: toId, label: label.trim(), arrowKind: "solid" });
+    edges.push({
+      from: fromId,
+      to: toId,
+      label: label.trim(),
+      arrowKind: "solid",
+    });
   }
 
   return edges;
@@ -258,27 +265,30 @@ export function resolveParticipantToFiles(
 
   // 1. Exact symbol name
   const exact = db
-    .prepare<[string], { file_path: string }>(
-      `SELECT DISTINCT file_path FROM symbols WHERE LOWER(name) = LOWER(?)`,
-    )
+    .prepare<
+      [string],
+      { file_path: string }
+    >(`SELECT DISTINCT file_path FROM symbols WHERE LOWER(name) = LOWER(?)`)
     .all(name);
 
   if (exact.length > 0) return exact.map((r) => r.file_path);
 
-  // 2. Symbol name contains slug  
+  // 2. Symbol name contains slug
   const bySymbol = db
-    .prepare<{ slug: string }, { file_path: string }>(
-      `SELECT DISTINCT file_path FROM symbols WHERE LOWER(name) LIKE '%' || LOWER(:slug) || '%'`,
-    )
+    .prepare<
+      { slug: string },
+      { file_path: string }
+    >(`SELECT DISTINCT file_path FROM symbols WHERE LOWER(name) LIKE '%' || LOWER(:slug) || '%'`)
     .all({ slug });
 
   if (bySymbol.length > 0) return bySymbol.map((r) => r.file_path);
 
   // 3. File path segment contains slug
   const byFile = db
-    .prepare<{ slug: string }, { path: string }>(
-      `SELECT DISTINCT path FROM files WHERE LOWER(path) LIKE '%' || LOWER(:slug) || '%'`,
-    )
+    .prepare<
+      { slug: string },
+      { path: string }
+    >(`SELECT DISTINCT path FROM files WHERE LOWER(path) LIKE '%' || LOWER(:slug) || '%'`)
     .all({ slug });
 
   return byFile.map((r) => r.path);
@@ -331,14 +341,22 @@ function hasDirectCall(
   db: Database.Database,
   fromFiles: string[],
   toFiles: string[],
-): { exists: boolean; fromFile: string; callerLine: number | null; calleeName: string } | false {
+):
+  | {
+      exists: boolean;
+      fromFile: string;
+      callerLine: number | null;
+      calleeName: string;
+    }
+  | false {
   if (fromFiles.length === 0 || toFiles.length === 0) return false;
 
   // Resolve symbol names defined in toFiles
   const toSymRows = db
-    .prepare<unknown[], { name: string }>(
-      `SELECT DISTINCT name FROM symbols WHERE file_path IN (${toFiles.map(() => "?").join(",")})`,
-    )
+    .prepare<
+      unknown[],
+      { name: string }
+    >(`SELECT DISTINCT name FROM symbols WHERE file_path IN (${toFiles.map(() => "?").join(",")})`)
     .all(toFiles) as Array<{ name: string }>;
 
   if (toSymRows.length === 0) return false;
@@ -379,9 +397,10 @@ function hasCallsData(db: Database.Database, fromFiles: string[]): boolean {
   if (fromFiles.length === 0) return false;
   const ph = fromFiles.map(() => "?").join(",");
   const row = db
-    .prepare<unknown[], { cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM symbol_calls WHERE caller_file IN (${ph})`,
-    )
+    .prepare<
+      unknown[],
+      { cnt: number }
+    >(`SELECT COUNT(*) as cnt FROM symbol_calls WHERE caller_file IN (${ph})`)
     .get(fromFiles) as { cnt: number } | undefined;
   return (row?.cnt ?? 0) > 0;
 }
@@ -412,9 +431,7 @@ function checkSequenceDiagram(
   const mustCallEdges = edges.filter((e) => e.arrowKind === "solid");
 
   // Collect all participants
-  const participants = [
-    ...new Set(edges.flatMap((e) => [e.from, e.to])),
-  ];
+  const participants = [...new Set(edges.flatMap((e) => [e.from, e.to]))];
 
   // Derive implied must_not_call:
   // For each participant P that has at least one solid outbound edge,
@@ -557,9 +574,7 @@ function checkStateDiagram(
   }
 
   // Build set of valid (from, to) transitions
-  const validPairs = new Set(
-    transitions.map((t) => `${t.from}→${t.to}`),
-  );
+  const validPairs = new Set(transitions.map((t) => `${t.from}→${t.to}`));
 
   // Look for enum/const symbols whose names match the state names in the index.
   // A symbol named "Pending", "Processing", "Fulfilled", etc. in the context of

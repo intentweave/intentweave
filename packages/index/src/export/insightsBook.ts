@@ -602,13 +602,17 @@ function insightsBookClientScript() {
     return p.slice(-max);
   }
   function slugId(s: string) {
-    return String(s).replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    return String(s)
+      .replace(/[^a-z0-9]/gi, "-")
+      .toLowerCase();
   }
   function ruleCardDomId(ruleId: string) {
     return "rule-card-" + slugId(ruleId);
   }
 
-  function parseMermaidEdges(src: string): Array<{ from: string; to: string; label?: string }> {
+  function parseMermaidEdges(
+    src: string,
+  ): Array<{ from: string; to: string; label?: string }> {
     const edges: Array<{ from: string; to: string; label?: string }> = [];
     const lines = String(src || "").split(/\r?\n/);
     const clean = (s: string) =>
@@ -623,16 +627,28 @@ function insightsBookClientScript() {
       if (!line || line.startsWith("%%")) continue;
 
       // sequenceDiagram: A->>B: label
-      const seq = line.match(/^([\w.-]+)\s*[-=]+>{1,2}\s*([\w.-]+)\s*(?::\s*(.+))?$/);
+      const seq = line.match(
+        /^([\w.-]+)\s*[-=]+>{1,2}\s*([\w.-]+)\s*(?::\s*(.+))?$/,
+      );
       if (seq) {
-        edges.push({ from: clean(seq[1]), to: clean(seq[2]), label: seq[3]?.trim() });
+        edges.push({
+          from: clean(seq[1]),
+          to: clean(seq[2]),
+          label: seq[3]?.trim(),
+        });
         continue;
       }
 
       // flowchart/stateDiagram: A --> B / A -->|label| B
-      const flow = line.match(/^([^\s]+)\s*-+\.?-*>\s*(?:\|([^|]+)\|\s*)?([^\s]+)$/);
+      const flow = line.match(
+        /^([^\s]+)\s*-+\.?-*>\s*(?:\|([^|]+)\|\s*)?([^\s]+)$/,
+      );
       if (flow) {
-        edges.push({ from: clean(flow[1]), to: clean(flow[3]), label: flow[2]?.trim() });
+        edges.push({
+          from: clean(flow[1]),
+          to: clean(flow[3]),
+          label: flow[2]?.trim(),
+        });
       }
     }
     return edges;
@@ -660,16 +676,25 @@ function insightsBookClientScript() {
     return h;
   }
 
-  function splitCypherClauses(query: string): Array<{ key: string; value: string }> {
-    const text = String(query || "").replace(/\s+/g, " ").trim();
+  function splitCypherClauses(
+    query: string,
+  ): Array<{ key: string; value: string }> {
+    const text = String(query || "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!text) return [];
 
     const parts: Array<{ key: string; value: string }> = [];
-    const re = /\b(OPTIONAL\s+MATCH|DETACH\s+DELETE|ORDER\s+BY|UNION\s+ALL|MATCH|WHERE|WITH|RETURN|UNION|CALL|UNWIND|MERGE|CREATE|SET|DELETE|LIMIT|SKIP)\b/gi;
+    const re =
+      /\b(OPTIONAL\s+MATCH|DETACH\s+DELETE|ORDER\s+BY|UNION\s+ALL|MATCH|WHERE|WITH|RETURN|UNION|CALL|UNWIND|MERGE|CREATE|SET|DELETE|LIMIT|SKIP)\b/gi;
     const hits: Array<{ key: string; idx: number; len: number }> = [];
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
-      hits.push({ key: m[1].toUpperCase().replace(/\s+/g, " "), idx: m.index, len: m[0].length });
+      hits.push({
+        key: m[1].toUpperCase().replace(/\s+/g, " "),
+        idx: m.index,
+        len: m[0].length,
+      });
     }
     if (hits.length === 0) return [];
     for (let i = 0; i < hits.length; i++) {
@@ -897,12 +922,18 @@ function insightsBookClientScript() {
   // ── Shared source-viewer syntax highlighter ────────────────────────────
   function highlightLine(raw: string, lang: string): string {
     function e(t: string): string {
-      return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      return t
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
     }
     const trimmed = raw.trimStart();
     // Full-line comment
     const fullComment =
-      (lang !== "python" && (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*"))) ||
+      (lang !== "python" &&
+        (trimmed.startsWith("//") ||
+          trimmed.startsWith("*") ||
+          trimmed.startsWith("/*"))) ||
       (lang === "python" && trimmed.startsWith("#")) ||
       (lang === "swift" && trimmed.startsWith("//"));
     if (fullComment) return `<span class="src-comment">${e(raw)}</span>`;
@@ -912,10 +943,22 @@ function insightsBookClientScript() {
       let esc2 = false;
       for (let i = 0; i < raw.length; i++) {
         const ch = raw[i];
-        if (esc2) { esc2 = false; continue; }
-        if (ch === "\\" && inStr) { esc2 = true; continue; }
-        if (!inStr && (ch === '"' || ch === "'" || ch === "`")) { inStr = ch; continue; }
-        if (inStr && ch === inStr) { inStr = null; continue; }
+        if (esc2) {
+          esc2 = false;
+          continue;
+        }
+        if (ch === "\\" && inStr) {
+          esc2 = true;
+          continue;
+        }
+        if (!inStr && (ch === '"' || ch === "'" || ch === "`")) {
+          inStr = ch;
+          continue;
+        }
+        if (inStr && ch === inStr) {
+          inStr = null;
+          continue;
+        }
         if (!inStr && ch === "/" && raw[i + 1] === "/") {
           return `${e(raw.slice(0, i))}<span class="src-comment">${e(raw.slice(i))}</span>`;
         }
@@ -1013,9 +1056,7 @@ function insightsBookClientScript() {
     (v) => !v.ruleDomain || v.ruleDomain === "structural",
   );
   // Behavioral = Mermaid-derived violations (Phase 3)
-  const behavViols = allViolations.filter(
-    (v) => v.ruleDomain === "behavioral",
-  );
+  const behavViols = allViolations.filter((v) => v.ruleDomain === "behavioral");
   const dormantRules = (data.rules ?? []).filter((r) => r.count === 0);
 
   // ── Executive Summary chapter (Phase 2) ─────────────────────────────────
@@ -1037,7 +1078,8 @@ function insightsBookClientScript() {
   summaryNavSection.className = "nav-section";
   summaryNavSection.textContent = "Summary";
   nav.appendChild(summaryNavSection);
-  const totalCrossIssues = structViols.length + behavViols.length + docViols.length;
+  const totalCrossIssues =
+    structViols.length + behavViols.length + docViols.length;
   addNavItem(
     "Executive Summary",
     "📋",
@@ -1065,7 +1107,9 @@ function insightsBookClientScript() {
       "Rules Catalog",
       "📚",
       "chapter-rules-catalog",
-      rulesCatalog?.rules?.length ? String(rulesCatalog.rules.length) : undefined,
+      rulesCatalog?.rules?.length
+        ? String(rulesCatalog.rules.length)
+        : undefined,
       (rulesCatalog?.rules?.length ?? 0) === 0,
     );
   }
@@ -1120,13 +1164,18 @@ function insightsBookClientScript() {
     dmDiv.innerHTML = buildDocMapHtml();
     content.appendChild(dmDiv);
     setupDocMapChapter(dmDiv, dmData);
-    const srcFiles = (dmData as any).sourceFiles as Record<string, string> | undefined;
+    const srcFiles = (dmData as any).sourceFiles as
+      | Record<string, string>
+      | undefined;
     if (srcFiles && Object.keys(srcFiles).length > 0) {
       setupARGlassesChapter(dmDiv, dmData);
     }
     const hotCount = dmData.hotSymbols?.length ?? 0;
     const srcCount2 = srcFiles ? Object.keys(srcFiles).length : 0;
-    const badge = hotCount > 0 ? String(hotCount) + " hot" : String(dmData.docs.length) + "+" + String(srcCount2);
+    const badge =
+      hotCount > 0
+        ? String(hotCount) + " hot"
+        : String(dmData.docs.length) + "+" + String(srcCount2);
     addNavItem("Documentation", "🗺", "chapter-doc-map", badge);
   }
 
@@ -1497,7 +1546,9 @@ function insightsBookClientScript() {
   // ── Violations chapter ───────────────────────────────────────────────────
   function buildViolationsHtml(): string {
     const violations = data.violations ?? [];
-    const catalogRuleIds = new Set((rulesCatalog?.rules ?? []).map((r) => r.id));
+    const catalogRuleIds = new Set(
+      (rulesCatalog?.rules ?? []).map((r) => r.id),
+    );
     const byRule = new Map<string, typeof violations>();
     violations.forEach((v) => {
       const arr = byRule.get(v.ruleId) ?? [];
@@ -1869,11 +1920,22 @@ function insightsBookClientScript() {
             (f as any).root ??
             "—";
           const notesBits: string[] = [];
-          if ((f as any).target_layer) notesBits.push(`target_layer=${String((f as any).target_layer)}`);
-          if ((f as any).context_import) notesBits.push(`context_import=${String((f as any).context_import)}`);
-          if ((f as any).context_access) notesBits.push(`context_access=${String((f as any).context_access)}`);
-          if ((f as any).min_depth !== undefined) notesBits.push(`min_depth=${String((f as any).min_depth)}`);
-          if ((f as any).except_symbol) notesBits.push(`except_symbol=${JSON.stringify((f as any).except_symbol)}`);
+          if ((f as any).target_layer)
+            notesBits.push(`target_layer=${String((f as any).target_layer)}`);
+          if ((f as any).context_import)
+            notesBits.push(
+              `context_import=${String((f as any).context_import)}`,
+            );
+          if ((f as any).context_access)
+            notesBits.push(
+              `context_access=${String((f as any).context_access)}`,
+            );
+          if ((f as any).min_depth !== undefined)
+            notesBits.push(`min_depth=${String((f as any).min_depth)}`);
+          if ((f as any).except_symbol)
+            notesBits.push(
+              `except_symbol=${JSON.stringify((f as any).except_symbol)}`,
+            );
           const notes = notesBits.length ? notesBits.join("; ") : "—";
           h += `<tr>
             <td style="padding:6px 8px;border-top:1px solid #f1f5f9;font:600 10px ui-monospace,monospace">${esc(type)}</td>
@@ -1902,33 +1964,35 @@ function insightsBookClientScript() {
 
   // ── Documentation Map chapter ─────────────────────────────────────────────
   function buildDocMapHtml(): string {
-    const dm = (data as any).docMap as {
-      docs: Array<{
-        path: string;
-        content: string;
-        uniqueSymbols: number;
-        uniqueSourceFiles: number;
-        referencedPackages: string[];
-        topAnnotations: Array<{
-          symbolName: string;
-          symbolKind: string;
-          symbolFile: string;
-          symbolLine: number;
-          confidence: number;
-          docLine: number;
-          text: string;
-          source: string;
-        }>;
-      }>;
-      totalAnnotations: number;
-      hotSymbols: Array<{
-        name: string;
-        kind: string;
-        file: string;
-        docCount: number;
-        docs: string[];
-      }>;
-    } | undefined;
+    const dm = (data as any).docMap as
+      | {
+          docs: Array<{
+            path: string;
+            content: string;
+            uniqueSymbols: number;
+            uniqueSourceFiles: number;
+            referencedPackages: string[];
+            topAnnotations: Array<{
+              symbolName: string;
+              symbolKind: string;
+              symbolFile: string;
+              symbolLine: number;
+              confidence: number;
+              docLine: number;
+              text: string;
+              source: string;
+            }>;
+          }>;
+          totalAnnotations: number;
+          hotSymbols: Array<{
+            name: string;
+            kind: string;
+            file: string;
+            docCount: number;
+            docs: string[];
+          }>;
+        }
+      | undefined;
     if (!dm || dm.docs.length === 0) {
       return `<div class="chapter-header">
         <h1 class="chapter-title">🗺 Documentation Map</h1>
@@ -1939,7 +2003,9 @@ function insightsBookClientScript() {
     const { docs, totalAnnotations, hotSymbols } = dm;
     const totalDocFiles = docs.length;
     const allPkgs = new Set<string>();
-    docs.forEach((d) => d.referencedPackages.forEach((p: string) => allPkgs.add(p)));
+    docs.forEach((d) =>
+      d.referencedPackages.forEach((p: string) => allPkgs.add(p)),
+    );
 
     function docTitle(docPath: string): string {
       const base = docPath.split("/").pop() ?? docPath;
@@ -1948,9 +2014,10 @@ function insightsBookClientScript() {
 
     // Two-panel layout: split sidebar (docs top / source bottom) + shared viewer.
     const srcCount = Object.keys((dm as any)?.sourceFiles ?? {}).length;
-    const subtitle = srcCount > 0
-      ? `${totalDocFiles} doc files · ${srcCount} source files · ${totalAnnotations.toLocaleString()} annotations · powered by CARI`
-      : `${totalDocFiles} doc files · ${totalAnnotations.toLocaleString()} annotations · ${allPkgs.size} packages referenced · powered by CARI`;
+    const subtitle =
+      srcCount > 0
+        ? `${totalDocFiles} doc files · ${srcCount} source files · ${totalAnnotations.toLocaleString()} annotations · powered by CARI`
+        : `${totalDocFiles} doc files · ${totalAnnotations.toLocaleString()} annotations · ${allPkgs.size} packages referenced · powered by CARI`;
     return `<div class="chapter-header">
       <h1 class="chapter-title">🗺 Documentation &amp; Source</h1>
       <p class="chapter-subtitle">${subtitle}</p>
@@ -1971,7 +2038,9 @@ function insightsBookClientScript() {
   // ── AR Evidence Glasses chapter HTML builder ──────────────────────────────
   function buildARGlassesHtml(): string {
     const dm = (data as any).docMap;
-    const srcCount = Object.keys((dm?.sourceFiles as Record<string, string>) ?? {}).length;
+    const srcCount = Object.keys(
+      (dm?.sourceFiles as Record<string, string>) ?? {},
+    ).length;
     const totalAnns: number = dm?.totalAnnotations ?? 0;
     return `<div class="chapter-header">
       <h1 class="chapter-title">🔍 AR Evidence Glasses</h1>
@@ -1998,11 +2067,23 @@ function insightsBookClientScript() {
       return pkg.replace("packages/", "").replace("apps/", "app:");
     }
     function pkgColor(pkg: string): string {
-      const palette = ["#dbeafe:#1d4ed8","#fce7f3:#9d174d","#dcfce7:#15803d","#fff7ed:#9a3412",
-        "#f3e8ff:#7c3aed","#e0f2fe:#0284c7","#fef9c3:#92400e","#ffedd5:#c2410c",
-        "#f0fdf4:#166534","#fdf4ff:#86198f","#ecfeff:#0e7490","#fafaf9:#44403c"];
+      const palette = [
+        "#dbeafe:#1d4ed8",
+        "#fce7f3:#9d174d",
+        "#dcfce7:#15803d",
+        "#fff7ed:#9a3412",
+        "#f3e8ff:#7c3aed",
+        "#e0f2fe:#0284c7",
+        "#fef9c3:#92400e",
+        "#ffedd5:#c2410c",
+        "#f0fdf4:#166534",
+        "#fdf4ff:#86198f",
+        "#ecfeff:#0e7490",
+        "#fafaf9:#44403c",
+      ];
       let hh = 0;
-      for (let i = 0; i < pkg.length; i++) hh = (hh * 31 + pkg.charCodeAt(i)) & 0xffff;
+      for (let i = 0; i < pkg.length; i++)
+        hh = (hh * 31 + pkg.charCodeAt(i)) & 0xffff;
       const pair = palette[hh % palette.length];
       const [bg, fg] = pair.split(":");
       return `background:${bg};color:${fg}`;
@@ -2127,7 +2208,11 @@ function insightsBookClientScript() {
     }
 
     function escHtml(t: string): string {
-      return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      return t
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     }
 
     // ── Markdown renderer ──────────────────────────────────────────────────
@@ -2148,7 +2233,10 @@ function insightsBookClientScript() {
 
       function processInline(text: string): string {
         // Escape HTML first (except already-escaped entities)
-        text = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+        text = text
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
         // Inline code (must come before bold/italic)
         text = text.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
         // Bold
@@ -2156,13 +2244,17 @@ function insightsBookClientScript() {
         text = text.replace(/__([^_]+)__/g, "<strong>$1</strong>");
         // Italic — underscores must be at word boundaries, not inside identifiers like cari_retrieve
         text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-        text = text.replace(/(^|[\s([.,!?;:"'])_([^_\s][^_]*)_([\s)\].,!?;:"']|$)/g, "$1<em>$2</em>$3");
+        text = text.replace(
+          /(^|[\s([.,!?;:"'])_([^_\s][^_]*)_([\s)\].,!?;:"']|$)/g,
+          "$1<em>$2</em>$3",
+        );
         // Links — internal doc links get data-doc attribute; source file links get data-src; external open in new tab
         text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, t, u) => {
           if (u.startsWith("http") || u.startsWith("#")) {
             return `<a href="${escHtml(u)}" target="_blank" rel="noopener">${t}</a>`;
           }
-          const SRC_EXT = /\.(ts|tsx|js|jsx|py|swift|go|rs|rb|java|c|cpp|h|cs|kt|sh|yaml|yml|json|toml)$/i;
+          const SRC_EXT =
+            /\.(ts|tsx|js|jsx|py|swift|go|rs|rb|java|c|cpp|h|cs|kt|sh|yaml|yml|json|toml)$/i;
           if (SRC_EXT.test(u)) {
             return `<a href="#" data-src="${escHtml(u)}" class="dm-src-link">${t}</a>`;
           }
@@ -2181,7 +2273,10 @@ function insightsBookClientScript() {
         // Fenced code blocks
         if (!inFence && line.match(/^```/)) {
           closeList();
-          if (inTable) { out.push("</tbody></table>"); inTable = false; }
+          if (inTable) {
+            out.push("</tbody></table>");
+            inTable = false;
+          }
           fenceLang = line.slice(3).trim();
           out.push(`<pre><code class="lang-${escHtml(fenceLang)}">`);
           inFence = true;
@@ -2199,7 +2294,11 @@ function insightsBookClientScript() {
 
         // Horizontal rule
         if (line.match(/^(\s*[-*_]){3,}\s*$/)) {
-          closeList(); if (inTable) { out.push("</tbody></table>"); inTable = false; }
+          closeList();
+          if (inTable) {
+            out.push("</tbody></table>");
+            inTable = false;
+          }
           out.push("<hr>");
           continue;
         }
@@ -2207,16 +2306,29 @@ function insightsBookClientScript() {
         // Headings
         const hm = line.match(/^(#{1,6})\s+(.*)/);
         if (hm) {
-          closeList(); if (inTable) { out.push("</tbody></table>"); inTable = false; }
+          closeList();
+          if (inTable) {
+            out.push("</tbody></table>");
+            inTable = false;
+          }
           const level = hm[1].length;
-          const id = hm[2].toLowerCase().replace(/[^\w\s-]/g,"").replace(/\s+/g,"-");
-          out.push(`<h${level} id="${escHtml(id)}">${processInline(hm[2])}</h${level}>`);
+          const id = hm[2]
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, "")
+            .replace(/\s+/g, "-");
+          out.push(
+            `<h${level} id="${escHtml(id)}">${processInline(hm[2])}</h${level}>`,
+          );
           continue;
         }
 
         // Blockquote
         if (line.match(/^>\s/)) {
-          closeList(); if (inTable) { out.push("</tbody></table>"); inTable = false; }
+          closeList();
+          if (inTable) {
+            out.push("</tbody></table>");
+            inTable = false;
+          }
           out.push(`<blockquote>${processInline(line.slice(2))}</blockquote>`);
           continue;
         }
@@ -2228,14 +2340,23 @@ function insightsBookClientScript() {
             // Separator row — already in table
             continue;
           }
-          const cells = line.split("|").slice(1,-1).map(c => c.trim());
+          const cells = line
+            .split("|")
+            .slice(1, -1)
+            .map((c) => c.trim());
           if (!inTable) {
-            out.push("<table><thead><tr>" +
-              cells.map(c => `<th>${processInline(c)}</th>`).join("") +
-              "</tr></thead><tbody>");
+            out.push(
+              "<table><thead><tr>" +
+                cells.map((c) => `<th>${processInline(c)}</th>`).join("") +
+                "</tr></thead><tbody>",
+            );
             inTable = true;
           } else {
-            out.push("<tr>" + cells.map(c => `<td>${processInline(c)}</td>`).join("") + "</tr>");
+            out.push(
+              "<tr>" +
+                cells.map((c) => `<td>${processInline(c)}</td>`).join("") +
+                "</tr>",
+            );
           }
           continue;
         } else if (inTable) {
@@ -2247,9 +2368,14 @@ function insightsBookClientScript() {
         const olm = line.match(/^(\s*)\d+\.\s+(.*)/);
         if (olm) {
           const depth = Math.floor(olm[1].length / 2);
-          while (listStack.length > depth + 1) out.push(`</${listStack.pop()}>`);
-          if (listStack.length === 0 || listStack[listStack.length-1] !== "ol") {
-            out.push("<ol>"); listStack.push("ol");
+          while (listStack.length > depth + 1)
+            out.push(`</${listStack.pop()}>`);
+          if (
+            listStack.length === 0 ||
+            listStack[listStack.length - 1] !== "ol"
+          ) {
+            out.push("<ol>");
+            listStack.push("ol");
           }
           out.push(`<li>${processInline(olm[2])}</li>`);
           continue;
@@ -2259,9 +2385,14 @@ function insightsBookClientScript() {
         const ulm = line.match(/^(\s*)[-*+]\s+(.*)/);
         if (ulm) {
           const depth = Math.floor(ulm[1].length / 2);
-          while (listStack.length > depth + 1) out.push(`</${listStack.pop()}>`);
-          if (listStack.length === 0 || listStack[listStack.length-1] !== "ul") {
-            out.push("<ul>"); listStack.push("ul");
+          while (listStack.length > depth + 1)
+            out.push(`</${listStack.pop()}>`);
+          if (
+            listStack.length === 0 ||
+            listStack[listStack.length - 1] !== "ul"
+          ) {
+            out.push("<ul>");
+            listStack.push("ul");
           }
           out.push(`<li>${processInline(ulm[2])}</li>`);
           continue;
@@ -2284,7 +2415,11 @@ function insightsBookClientScript() {
     }
 
     // ── Annotation highlight injection ────────────────────────────────────
-    function applyDocHighlights(mdBody: any, anns: any[], tooltipEl: any): void {
+    function applyDocHighlights(
+      mdBody: any,
+      anns: any[],
+      tooltipEl: any,
+    ): void {
       if (!anns?.length) return;
 
       // Build normalized text → annotation list lookup
@@ -2300,30 +2435,34 @@ function insightsBookClientScript() {
         el.addEventListener("mouseenter", (evt: any) => {
           // Deduplicate by symbol identity (same name + file + line = same symbol)
           const seen = new Set<string>();
-          const top3 = annsForEl.filter(a => {
-            const key = `${a.symbolName}|${a.symbolFile}|${a.symbolLine}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          }).slice(0, 3);
-          const rows = top3.map(a => {
-            const shortFile = a.symbolFile.split("/").slice(-2).join("/");
-            const conf = Math.round(a.confidence * 100);
-            return `<div style="margin-top:4px;padding-top:4px;border-top:1px solid #334155">
+          const top3 = annsForEl
+            .filter((a) => {
+              const key = `${a.symbolName}|${a.symbolFile}|${a.symbolLine}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .slice(0, 3);
+          const rows = top3
+            .map((a) => {
+              const shortFile = a.symbolFile.split("/").slice(-2).join("/");
+              const conf = Math.round(a.confidence * 100);
+              return `<div style="margin-top:4px;padding-top:4px;border-top:1px solid #334155">
               <span style="font-family:ui-monospace,monospace;font-size:11px;color:#93c5fd">${escHtml(a.symbolName)}</span>
               <span style="color:#64748b;font-size:10px"> ${escHtml(a.symbolKind)}</span><br>
               <span style="color:#94a3b8;font-size:10px">${escHtml(shortFile)}:${a.symbolLine}</span>
-              <span style="float:right;color:${conf>=90?"#4ade80":conf>=70?"#fbbf24":"#94a3b8"};font-size:10px">${conf}%</span>
+              <span style="float:right;color:${conf >= 90 ? "#4ade80" : conf >= 70 ? "#fbbf24" : "#94a3b8"};font-size:10px">${conf}%</span>
             </div>`;
-          }).join("");
+            })
+            .join("");
           tooltipEl.innerHTML = `<div style="font-weight:700;color:#e2e8f0">${escHtml(annsForEl[0].text)}</div>${rows}`;
           tooltipEl.style.display = "block";
-          tooltipEl.style.left = (evt.clientX + 14) + "px";
-          tooltipEl.style.top = (evt.clientY + 14) + "px";
+          tooltipEl.style.left = evt.clientX + 14 + "px";
+          tooltipEl.style.top = evt.clientY + 14 + "px";
         });
         el.addEventListener("mousemove", (evt: any) => {
-          tooltipEl.style.left = (evt.clientX + 14) + "px";
-          tooltipEl.style.top = (evt.clientY + 14) + "px";
+          tooltipEl.style.left = evt.clientX + 14 + "px";
+          tooltipEl.style.top = evt.clientY + 14 + "px";
         });
         el.addEventListener("mouseleave", () => {
           tooltipEl.style.display = "none";
@@ -2331,47 +2470,56 @@ function insightsBookClientScript() {
       }
 
       // Highlight inline <code> spans (single-token, not inside <pre>)
-      mdBody.querySelectorAll("p code, li code, td code, th code, blockquote code").forEach((el: any) => {
-        const norm = el.textContent.toLowerCase().replace(/[^a-z0-9]/g, "");
+      mdBody
+        .querySelectorAll("p code, li code, td code, th code, blockquote code")
+        .forEach((el: any) => {
+          const norm = el.textContent.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-        // 1) Exact full-text match (e.g. `isInSkg ? -20` ↔ annotation text "isinskg ? -20")
-        let lookupKey: string | null = byText.has(norm) ? norm : null;
+          // 1) Exact full-text match (e.g. `isInSkg ? -20` ↔ annotation text "isinskg ? -20")
+          let lookupKey: string | null = byText.has(norm) ? norm : null;
 
-        // 2) Leading-identifier match: `coOccurrenceDegree × 2.0` → extract "coOccurrenceDegree"
-        if (lookupKey === null) {
-          const leadIdent = el.textContent.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/)?.[0];
-          if (leadIdent) {
-            const leadKey = leadIdent.toLowerCase().replace(/[^a-z0-9]/g, "");
-            if (leadKey.length >= 4 && byText.has(leadKey)) lookupKey = leadKey;
+          // 2) Leading-identifier match: `coOccurrenceDegree × 2.0` → extract "coOccurrenceDegree"
+          if (lookupKey === null) {
+            const leadIdent = el.textContent.match(
+              /^[a-zA-Z_$][a-zA-Z0-9_$]*/,
+            )?.[0];
+            if (leadIdent) {
+              const leadKey = leadIdent.toLowerCase().replace(/[^a-z0-9]/g, "");
+              if (leadKey.length >= 4 && byText.has(leadKey))
+                lookupKey = leadKey;
+            }
           }
-        }
 
-        if (lookupKey !== null) {
-          const matching = byText.get(lookupKey)!;
-          const isCodeSpan = matching.some(a => a.source === "code-span");
-          el.classList.add("ann-mark");
-          if (isCodeSpan) el.classList.add("cs");
-          attachTooltip(el, matching);
-        }
-      });
+          if (lookupKey !== null) {
+            const matching = byText.get(lookupKey)!;
+            const isCodeSpan = matching.some((a) => a.source === "code-span");
+            el.classList.add("ann-mark");
+            if (isCodeSpan) el.classList.add("cs");
+            attachTooltip(el, matching);
+          }
+        });
 
       // Highlight identifier tokens inside fenced code blocks (<pre><code>)
       // Tokenize by identifier boundaries; wrap annotated tokens in <span> highlights
       mdBody.querySelectorAll("pre code").forEach((el: any) => {
         // Split into (identifier | non-identifier) alternating parts
-        const parts: string[] = el.textContent.split(/(\b[a-zA-Z_$][a-zA-Z0-9_$]*\b)/);
+        const parts: string[] = el.textContent.split(
+          /(\b[a-zA-Z_$][a-zA-Z0-9_$]*\b)/,
+        );
         let changed = false;
-        const html = parts.map((part: string, i: number) => {
-          // Odd-index parts are the captured identifier groups
-          if (i % 2 === 1 && part.length >= 4) {
-            const key = part.toLowerCase();
-            if (byText.has(key)) {
-              changed = true;
-              return `<span class="ann-mark cs ann-code-token" data-ak="${escHtml(key)}">${escHtml(part)}</span>`;
+        const html = parts
+          .map((part: string, i: number) => {
+            // Odd-index parts are the captured identifier groups
+            if (i % 2 === 1 && part.length >= 4) {
+              const key = part.toLowerCase();
+              if (byText.has(key)) {
+                changed = true;
+                return `<span class="ann-mark cs ann-code-token" data-ak="${escHtml(key)}">${escHtml(part)}</span>`;
+              }
             }
-          }
-          return escHtml(part);
-        }).join("");
+            return escHtml(part);
+          })
+          .join("");
         if (changed) {
           el.innerHTML = html;
           el.querySelectorAll(".ann-code-token").forEach((span: any) => {
@@ -2406,7 +2554,12 @@ function insightsBookClientScript() {
               let p = node.parentElement;
               while (p && p !== mdBody) {
                 const tag = p.tagName.toLowerCase();
-                if (tag === "code" || tag === "pre" || tag === "strong" || tag === "a") {
+                if (
+                  tag === "code" ||
+                  tag === "pre" ||
+                  tag === "strong" ||
+                  tag === "a"
+                ) {
                   return 2; // NodeFilter.FILTER_REJECT
                 }
                 if (p.classList && p.classList.contains("ann-mark")) {
@@ -2415,7 +2568,7 @@ function insightsBookClientScript() {
                 p = p.parentElement;
               }
               return node.textContent && node.textContent.trim().length >= 4
-                ? 1  // NodeFilter.FILTER_ACCEPT
+                ? 1 // NodeFilter.FILTER_ACCEPT
                 : 3; // NodeFilter.FILTER_SKIP
             },
           },
@@ -2424,7 +2577,9 @@ function insightsBookClientScript() {
         while ((tn = walker.nextNode())) textNodes.push(tn);
 
         textNodes.forEach((textNode: any) => {
-          const parts = textNode.textContent.split(/(\b[a-zA-Z_$][a-zA-Z0-9_$]*\b)/);
+          const parts = textNode.textContent.split(
+            /(\b[a-zA-Z_$][a-zA-Z0-9_$]*\b)/,
+          );
           let changed = false;
           const html = parts
             .map((part: string, i: number) => {
@@ -2456,13 +2611,23 @@ function insightsBookClientScript() {
 
     // ── Render a doc page into the viewer ─────────────────────────────────
     function renderDocPage(doc: any): void {
-      const pkgPills = doc.referencedPackages.slice(0, 10).map((pkg: string) =>
-        `<span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:10px;font-weight:600;margin:1px;${pkgColor(pkg)}">${escHtml(shortPkg(pkg))}</span>`
-      ).join("");
-      const morePkgs = doc.referencedPackages.length > 10
-        ? `<span style="font-size:10px;color:#9ca3af"> +${doc.referencedPackages.length - 10}</span>` : "";
-      const codeSpanCount = doc.topAnnotations.filter((a: any) => a.source === "code-span").length;
-      const boldCount = doc.topAnnotations.filter((a: any) => a.source === "bold").length;
+      const pkgPills = doc.referencedPackages
+        .slice(0, 10)
+        .map(
+          (pkg: string) =>
+            `<span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:10px;font-weight:600;margin:1px;${pkgColor(pkg)}">${escHtml(shortPkg(pkg))}</span>`,
+        )
+        .join("");
+      const morePkgs =
+        doc.referencedPackages.length > 10
+          ? `<span style="font-size:10px;color:#9ca3af"> +${doc.referencedPackages.length - 10}</span>`
+          : "";
+      const codeSpanCount = doc.topAnnotations.filter(
+        (a: any) => a.source === "code-span",
+      ).length;
+      const boldCount = doc.topAnnotations.filter(
+        (a: any) => a.source === "bold",
+      ).length;
 
       const header = `<div class="dm-doc-header">
         <div style="display:flex;align-items:flex-start;gap:12px">
@@ -2478,15 +2643,23 @@ function insightsBookClientScript() {
             <span style="font-size:11px;background:#f3e8ff;color:#7c3aed;padding:2px 8px;border-radius:999px;font-weight:600">${doc.uniqueSourceFiles} src files</span>
           </div>
         </div>
-        ${doc.topAnnotations.length > 0 ? `<div style="margin-top:8px;font-size:10px;color:#64748b">
+        ${
+          doc.topAnnotations.length > 0
+            ? `<div style="margin-top:8px;font-size:10px;color:#64748b">
           <span style="margin-right:8px">🔵 ${codeSpanCount} code-span highlights</span>
           <span>🟡 ${boldCount} bold highlights</span>
-        </div>` : ""}
+        </div>`
+            : ""
+        }
       </div>`;
 
       const mdHtml = renderMarkdown(doc.content || "");
       viewer.innerHTML = header + `<div class="dm-md">${mdHtml}</div>`;
-      applyDocHighlights(viewer.querySelector(".dm-md"), doc.topAnnotations, annTooltip);
+      applyDocHighlights(
+        viewer.querySelector(".dm-md"),
+        doc.topAnnotations,
+        annTooltip,
+      );
 
       // Internal doc-link click handler: navigate to the target doc in the sidebar
       viewer.querySelectorAll(".dm-doc-link").forEach((a: any) => {
@@ -2494,15 +2667,20 @@ function insightsBookClientScript() {
           e.preventDefault();
           const rawHref = a.dataset.doc ?? "";
           // Normalise: strip leading ./ and resolve relative to current doc directory
-          const base = doc.path.includes("/") ? doc.path.replace(/\/[^/]+$/, "/") : "";
+          const base = doc.path.includes("/")
+            ? doc.path.replace(/\/[^/]+$/, "/")
+            : "";
           const candidates = [
             rawHref,
             base + rawHref,
-            rawHref.replace(/^\.\//,  ""),
-            (base + rawHref).replace(/^\.\//,  ""),
+            rawHref.replace(/^\.\//, ""),
+            (base + rawHref).replace(/^\.\//, ""),
           ];
           const target = dm.docs.find((d: any) =>
-            candidates.some((c) => d.path === c || d.path.endsWith("/" + c) || c.endsWith(d.path))
+            candidates.some(
+              (c) =>
+                d.path === c || d.path.endsWith("/" + c) || c.endsWith(d.path),
+            ),
           );
           if (!target) return;
           // Click the matching nav item to trigger full navigation + highlight
@@ -2517,15 +2695,17 @@ function insightsBookClientScript() {
         a.addEventListener("click", (e: any) => {
           e.preventDefault();
           const rawHref = a.dataset.src ?? "";
-          const base = doc.path.includes("/") ? doc.path.replace(/\/[^/]+$/, "/") : "";
+          const base = doc.path.includes("/")
+            ? doc.path.replace(/\/[^/]+$/, "/")
+            : "";
           const candidates = [
             rawHref,
             (base + rawHref).replace(/\/\.\//, "/"),
-            rawHref.replace(/^\.\//,  ""),
-            (base + rawHref.replace(/^\.\//,  "")),
+            rawHref.replace(/^\.\//, ""),
+            base + rawHref.replace(/^\.\//, ""),
           ];
           const key = Object.keys(dm.sourceFiles ?? {}).find((k: string) =>
-            candidates.some((c) => k === c || c.endsWith(k) || k.endsWith(c))
+            candidates.some((c) => k === c || c.endsWith(k) || k.endsWith(c)),
           );
           if (!key) return;
           openSourceFile(key, undefined);
@@ -2543,8 +2723,9 @@ function insightsBookClientScript() {
       // Make highlighted code symbols clickable if their source file is loaded
       viewer.querySelectorAll(".ann-mark").forEach((el: any) => {
         // Key stored in data-ak (code-token / prose-token) or derive from text
-        const key = el.dataset.ak
-          ?? el.textContent.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const key =
+          el.dataset.ak ??
+          el.textContent.toLowerCase().replace(/[^a-z0-9]/g, "");
         const ann = annByKey.get(key);
         if (!ann || !ann.symbolFile) return;
         if (!dm.sourceFiles || !(ann.symbolFile in dm.sourceFiles)) return;
@@ -2557,34 +2738,57 @@ function insightsBookClientScript() {
       });
 
       // Source file pills below the doc header
-      const uniqueSrcFiles = [...new Set(
-        doc.topAnnotations
-          .filter((a: any) => a.symbolFile && dm.sourceFiles && (a.symbolFile in dm.sourceFiles))
-          .map((a: any) => a.symbolFile as string)
-      )].slice(0, 12) as string[];
+      const uniqueSrcFiles = [
+        ...new Set(
+          doc.topAnnotations
+            .filter(
+              (a: any) =>
+                a.symbolFile &&
+                dm.sourceFiles &&
+                a.symbolFile in dm.sourceFiles,
+            )
+            .map((a: any) => a.symbolFile as string),
+        ),
+      ].slice(0, 12) as string[];
       if (uniqueSrcFiles.length > 0) {
         const pillsRow = document.createElement("div");
-        pillsRow.style.cssText = "padding:6px 20px 4px;display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #f1f5f9";
-        pillsRow.innerHTML = `<span style="font-size:10px;color:#94a3b8;margin-right:2px;line-height:20px">📄 src:</span>` +
-          uniqueSrcFiles.map((f: string) =>
-            `<button class="dm-srcfile-pill" data-file="${escHtml(f)}" style="font-size:10px;font-family:ui-monospace,monospace;background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1;border-radius:4px;padding:1px 7px;cursor:pointer;white-space:nowrap">${escHtml(f.split("/").pop() ?? f)}</button>`
-          ).join("");
+        pillsRow.style.cssText =
+          "padding:6px 20px 4px;display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #f1f5f9";
+        pillsRow.innerHTML =
+          `<span style="font-size:10px;color:#94a3b8;margin-right:2px;line-height:20px">📄 src:</span>` +
+          uniqueSrcFiles
+            .map(
+              (f: string) =>
+                `<button class="dm-srcfile-pill" data-file="${escHtml(f)}" style="font-size:10px;font-family:ui-monospace,monospace;background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1;border-radius:4px;padding:1px 7px;cursor:pointer;white-space:nowrap">${escHtml(f.split("/").pop() ?? f)}</button>`,
+            )
+            .join("");
         const header = viewer.querySelector(".dm-doc-header");
-        if (header && header.parentNode) header.parentNode.insertBefore(pillsRow, header.nextSibling);
+        if (header && header.parentNode)
+          header.parentNode.insertBefore(pillsRow, header.nextSibling);
         pillsRow.querySelectorAll(".dm-srcfile-pill").forEach((btn: any) => {
-          btn.addEventListener("click", () => openSourceFile(btn.dataset.file, undefined));
+          btn.addEventListener("click", () =>
+            openSourceFile(btn.dataset.file, undefined),
+          );
         });
       }
 
       // ── Open a source file in the viewer (AR split view) ────────────────
-      function openSourceFile(srcPath: string, targetLine: number | undefined): void {
+      function openSourceFile(
+        srcPath: string,
+        targetLine: number | undefined,
+      ): void {
         const srcContent: string = (dm as any).sourceFiles[srcPath] ?? "";
         const ext = (srcPath.split(".").pop() ?? "").toLowerCase();
-        const lang = ext === "ts" || ext === "tsx" ? "typescript"
-          : ext === "js" || ext === "jsx" ? "javascript"
-          : ext === "py" ? "python"
-          : ext === "swift" ? "swift"
-          : ext;
+        const lang =
+          ext === "ts" || ext === "tsx"
+            ? "typescript"
+            : ext === "js" || ext === "jsx"
+              ? "javascript"
+              : ext === "py"
+                ? "python"
+                : ext === "swift"
+                  ? "swift"
+                  : ext;
         const lines = srcContent.split("\n");
         const lineCount = lines.length;
 
@@ -2601,7 +2805,10 @@ function insightsBookClientScript() {
         }
 
         // ── lineToAnns: line number → [{docPath, ann}] ────────────────────
-        const lineToAnns = new Map<number, Array<{docPath: string; ann: any}>>();
+        const lineToAnns = new Map<
+          number,
+          Array<{ docPath: string; ann: any }>
+        >();
         for (const [docPath, anns] of backLinksByDoc.entries()) {
           for (const ann of anns) {
             if (!ann.symbolLine) continue;
@@ -2614,7 +2821,9 @@ function insightsBookClientScript() {
         // ── lineToSymbols: line number → symbol names (for injection) ────
         const lineToSymbols = new Map<number, string[]>();
         for (const [lineNo, entries] of lineToAnns.entries()) {
-          const syms = [...new Set(entries.map(e => e.ann.symbolName).filter(Boolean))];
+          const syms = [
+            ...new Set(entries.map((e) => e.ann.symbolName).filter(Boolean)),
+          ];
           if (syms.length) lineToSymbols.set(lineNo, syms);
         }
 
@@ -2624,12 +2833,12 @@ function insightsBookClientScript() {
         // ── Violations touching this file ─────────────────────────────────
         const DATA_global = (globalThis as any).DATA;
         const allViolations: any[] = DATA_global?.violations ?? [];
-        const fileViolations = allViolations.filter((v: any) =>
-          v.filePath && (
-            v.filePath === srcPath ||
-            srcPath.startsWith(v.filePath + "/") ||
-            v.filePath.startsWith(srcPath.replace(/\/[^/]+$/, ""))
-          )
+        const fileViolations = allViolations.filter(
+          (v: any) =>
+            v.filePath &&
+            (v.filePath === srcPath ||
+              srcPath.startsWith(v.filePath + "/") ||
+              v.filePath.startsWith(srcPath.replace(/\/[^/]+$/, ""))),
         );
 
         // ── Rules whose 'in' patterns match this file ─────────────────────
@@ -2639,33 +2848,41 @@ function insightsBookClientScript() {
             if (!f.in) return false;
             const prefix = f.in.replace(/\/\*\*$/, "");
             return srcPath.startsWith(prefix + "/") || srcPath === prefix;
-          })
+          }),
         );
 
         // ── Helper: render refs panel content (all or filtered to a line) ─
         function renderRefsContent(filterLine: number | null): string {
           let html = "";
-          const filteredByDoc = filterLine !== null
-            ? (() => {
-                const m = new Map<string, any[]>();
-                const entries = lineToAnns.get(filterLine) ?? [];
-                for (const { docPath, ann } of entries) {
-                  const arr = m.get(docPath) ?? [];
-                  arr.push(ann);
-                  m.set(docPath, arr);
-                }
-                return m;
-              })()
-            : backLinksByDoc;
+          const filteredByDoc =
+            filterLine !== null
+              ? (() => {
+                  const m = new Map<string, any[]>();
+                  const entries = lineToAnns.get(filterLine) ?? [];
+                  for (const { docPath, ann } of entries) {
+                    const arr = m.get(docPath) ?? [];
+                    arr.push(ann);
+                    m.set(docPath, arr);
+                  }
+                  return m;
+                })()
+              : backLinksByDoc;
 
           if (filteredByDoc.size > 0) {
-            const label = filterLine !== null
-              ? `📄 ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""} — line ${filterLine}`
-              : `📄 Referenced by ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""}`;
+            const label =
+              filterLine !== null
+                ? `📄 ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""} — line ${filterLine}`
+                : `📄 Referenced by ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""}`;
             html += `<div class="src-refs-section">${label}</div>`;
             for (const [docPath, anns] of filteredByDoc.entries()) {
-              const uniqueSymbols = [...new Set(anns.map((a: any) => a.symbolName))].slice(0, 4);
-              const docLines = [...new Set(anns.map((a: any) => a.symbolLine).filter(Boolean))].sort((a: any, b: any) => a - b).slice(0, 4);
+              const uniqueSymbols = [
+                ...new Set(anns.map((a: any) => a.symbolName)),
+              ].slice(0, 4);
+              const docLines = [
+                ...new Set(anns.map((a: any) => a.symbolLine).filter(Boolean)),
+              ]
+                .sort((a: any, b: any) => a - b)
+                .slice(0, 4);
               html += `<div class="src-ref-doc-item" data-doc="${escHtml(docPath)}">
                 <div class="src-ref-doc-name">${escHtml(docTitle(docPath))}</div>
                 <div class="src-ref-doc-path">${escHtml(docPath)}</div>
@@ -2683,9 +2900,12 @@ function insightsBookClientScript() {
           if (fileViolations.length > 0) {
             html += `<div class="src-refs-section">⚠ ${fileViolations.length} violation${fileViolations.length !== 1 ? "s" : ""}</div>`;
             for (const v of fileViolations.slice(0, 8)) {
-              const domainColor = v.ruleDomain === "structural" ? "#7c3aed"
-                : v.ruleDomain === "behavioral" ? "#0369a1"
-                : "#374151";
+              const domainColor =
+                v.ruleDomain === "structural"
+                  ? "#7c3aed"
+                  : v.ruleDomain === "behavioral"
+                    ? "#0369a1"
+                    : "#374151";
               html += `<div class="src-ref-violation">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
                   <code style="font-size:10px;color:${escHtml(domainColor)}">${escHtml(v.ruleId)}</code>
@@ -2731,16 +2951,20 @@ function insightsBookClientScript() {
         </div>`;
 
         // ── Code with clickable gutter dots ───────────────────────────────
-        const linesHtml = lines.map((ln, i) => {
-          const lineNo = i + 1;
-          const isTarget = targetLine !== undefined && lineNo === targetLine;
-          const isAnnotated = annotatedLines.has(lineNo);
-          const nDocs = isAnnotated ? (lineToAnns.get(lineNo)?.length ?? 0) : 0;
-          const dot = isAnnotated
-            ? `<span class="src-gutter-dot" data-line="${lineNo}" title="Click to filter: ${nDocs} reference${nDocs !== 1 ? "s" : ""} on this line">●</span>`
-            : `<span class="src-gutter-empty"></span>`;
-          return `${dot}<span class="src-ln${isTarget ? " src-ln-hi" : ""}" id="src-line-${lineNo}">${lineNo}</span>${highlightLine(ln, lang)}`;
-        }).join("\n");
+        const linesHtml = lines
+          .map((ln, i) => {
+            const lineNo = i + 1;
+            const isTarget = targetLine !== undefined && lineNo === targetLine;
+            const isAnnotated = annotatedLines.has(lineNo);
+            const nDocs = isAnnotated
+              ? (lineToAnns.get(lineNo)?.length ?? 0)
+              : 0;
+            const dot = isAnnotated
+              ? `<span class="src-gutter-dot" data-line="${lineNo}" title="Click to filter: ${nDocs} reference${nDocs !== 1 ? "s" : ""} on this line">●</span>`
+              : `<span class="src-gutter-empty"></span>`;
+            return `${dot}<span class="src-ln${isTarget ? " src-ln-hi" : ""}" id="src-line-${lineNo}">${lineNo}</span>${highlightLine(ln, lang)}`;
+          })
+          .join("\n");
 
         // ── Refs panel HTML ───────────────────────────────────────────────
         const refsHtml = `<div class="src-refs-panel" id="src-refs-panel">
@@ -2774,7 +2998,13 @@ function insightsBookClientScript() {
             for (const sym of sorted) {
               if (sym.length < 2) continue;
               // Word-boundary aware: find sym as a token (preceded/followed by non-word char)
-              const idx = raw.search(new RegExp("(?<![\\w$])" + sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w$])"));
+              const idx = raw.search(
+                new RegExp(
+                  "(?<![\\w$])" +
+                    sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+                    "(?![\\w$])",
+                ),
+              );
               if (idx < 0) continue;
               // Split text node: [before][span][after]
               const before = raw.slice(0, idx);
@@ -2808,53 +3038,70 @@ function insightsBookClientScript() {
         function applyLineFilter(lineNo: number | null): void {
           activeFilterLine = lineNo;
           if (refsBody) refsBody.innerHTML = renderRefsContent(lineNo);
-          if (refsReset) (refsReset as any).style.display = lineNo !== null ? "inline" : "none";
+          if (refsReset)
+            (refsReset as any).style.display =
+              lineNo !== null ? "inline" : "none";
           // Highlight the active gutter dot
           viewer.querySelectorAll(".src-gutter-dot").forEach((d: any) => {
-            d.classList.toggle("src-gutter-dot-active", lineNo !== null && parseInt(d.dataset.line, 10) === lineNo);
+            d.classList.toggle(
+              "src-gutter-dot-active",
+              lineNo !== null && parseInt(d.dataset.line, 10) === lineNo,
+            );
           });
           // Highlight the active symbol link
           viewer.querySelectorAll(".src-sym-link").forEach((s: any) => {
-            s.classList.toggle("src-sym-link-active", lineNo !== null && parseInt(s.dataset.line, 10) === lineNo);
+            s.classList.toggle(
+              "src-sym-link-active",
+              lineNo !== null && parseInt(s.dataset.line, 10) === lineNo,
+            );
           });
           wireRefsPanel();
         }
 
         function wireRefsPanel(): void {
           // Doc item click → navigate to doc
-          (refsBody ?? viewer).querySelectorAll(".src-ref-doc-item").forEach((item: any) => {
-            item.addEventListener("click", (e: any) => {
-              if (e.target.classList.contains("src-ln-ref")) return;
-              const targetDoc = (dm as any).docs.find((d: any) => d.path === item.dataset.doc);
-              if (!targetDoc) return;
-              const idx = (dm as any).docs.indexOf(targetDoc);
-              const navItem = navList.querySelector(`[data-idx="${idx}"]`);
-              if (navItem) (navItem as any).click();
+          (refsBody ?? viewer)
+            .querySelectorAll(".src-ref-doc-item")
+            .forEach((item: any) => {
+              item.addEventListener("click", (e: any) => {
+                if (e.target.classList.contains("src-ln-ref")) return;
+                const targetDoc = (dm as any).docs.find(
+                  (d: any) => d.path === item.dataset.doc,
+                );
+                if (!targetDoc) return;
+                const idx = (dm as any).docs.indexOf(targetDoc);
+                const navItem = navList.querySelector(`[data-idx="${idx}"]`);
+                if (navItem) (navItem as any).click();
+              });
             });
-          });
           // Line-ref links → scroll code
-          (refsBody ?? viewer).querySelectorAll(".src-ln-ref").forEach((a: any) => {
-            a.addEventListener("click", (e: any) => {
-              e.stopPropagation();
-              const ln = parseInt(a.dataset.line, 10);
-              const el = viewer.querySelector(`#src-line-${ln}`);
-              if (el) (el as any).scrollIntoView({ block: "center" });
+          (refsBody ?? viewer)
+            .querySelectorAll(".src-ln-ref")
+            .forEach((a: any) => {
+              a.addEventListener("click", (e: any) => {
+                e.stopPropagation();
+                const ln = parseInt(a.dataset.line, 10);
+                const el = viewer.querySelector(`#src-line-${ln}`);
+                if (el) (el as any).scrollIntoView({ block: "center" });
+              });
             });
-          });
         }
 
         // Wire back button
         const backBtn = viewer.querySelector("#src-back-btn");
-        if (backBtn) backBtn.addEventListener("click", () => renderDocPage(doc));
+        if (backBtn)
+          backBtn.addEventListener("click", () => renderDocPage(doc));
 
         // Wire reset button
-        if (refsReset) refsReset.addEventListener("click", () => applyLineFilter(null));
+        if (refsReset)
+          refsReset.addEventListener("click", () => applyLineFilter(null));
 
         // Wire gutter dots → filter
         viewer.querySelectorAll(".src-gutter-dot").forEach((dot: any) => {
           dot.addEventListener("click", () => {
             const lineNo = parseInt(dot.dataset.line, 10);
-            if (activeFilterLine === lineNo) applyLineFilter(null); // toggle off
+            if (activeFilterLine === lineNo)
+              applyLineFilter(null); // toggle off
             else applyLineFilter(lineNo);
           });
         });
@@ -2874,7 +3121,11 @@ function insightsBookClientScript() {
         // Scroll to the target line after render
         if (targetLine !== undefined) {
           const targetEl = viewer.querySelector(`#src-line-${targetLine}`);
-          if (targetEl) setTimeout(() => (targetEl as any).scrollIntoView({ block: "center" }), 50);
+          if (targetEl)
+            setTimeout(
+              () => (targetEl as any).scrollIntoView({ block: "center" }),
+              50,
+            );
         }
       }
     }
@@ -2903,10 +3154,12 @@ function insightsBookClientScript() {
           <div class="dm-nav-badges">
             <span style="font-size:9px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:999px;font-weight:600">${doc.uniqueSymbols}↗</span>
             <span style="font-size:9px;background:#f3e8ff;color:#7c3aed;padding:1px 5px;border-radius:999px;font-weight:600">${doc.uniqueSourceFiles} src</span>
-            <span style="font-size:9px;background:${doc.topAnnotations?.length>0?"#fef3c7":"#f1f5f9"};color:${doc.topAnnotations?.length>0?"#92400e":"#6b7280"};padding:1px 5px;border-radius:999px;font-weight:600">${doc.topAnnotations?.length||0} hl</span>
+            <span style="font-size:9px;background:${doc.topAnnotations?.length > 0 ? "#fef3c7" : "#f1f5f9"};color:${doc.topAnnotations?.length > 0 ? "#92400e" : "#6b7280"};padding:1px 5px;border-radius:999px;font-weight:600">${doc.topAnnotations?.length || 0} hl</span>
           </div>`;
         item.addEventListener("click", () => {
-          navList.querySelectorAll(".dm-nav-item").forEach((el: any) => el.classList.remove("active"));
+          navList
+            .querySelectorAll(".dm-nav-item")
+            .forEach((el: any) => el.classList.remove("active"));
           item.classList.add("active");
           renderDocPage(doc);
         });
@@ -2918,7 +3171,8 @@ function insightsBookClientScript() {
     }
 
     // Source-file extensions that belong in the Source section, not the Docs section
-    const SRC_DOC_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|py|swift|go|java|kt|cs|rs|rb|c|cpp|h)$/i;
+    const SRC_DOC_EXT =
+      /\.(ts|tsx|js|jsx|mjs|cjs|py|swift|go|java|kt|cs|rs|rb|c|cpp|h)$/i;
     const docsOnly = dm.docs.filter((d: any) => !SRC_DOC_EXT.test(d.path));
 
     buildNavItems(docsOnly);
@@ -2927,9 +3181,13 @@ function insightsBookClientScript() {
     // Filter docs
     filterInput.addEventListener("input", () => {
       const q = filterInput.value.toLowerCase();
-      const filtered = q ? docsOnly.filter((d: any) =>
-        d.path.toLowerCase().includes(q) || docTitle(d.path).toLowerCase().includes(q)
-      ) : docsOnly;
+      const filtered = q
+        ? docsOnly.filter(
+            (d: any) =>
+              d.path.toLowerCase().includes(q) ||
+              docTitle(d.path).toLowerCase().includes(q),
+          )
+        : docsOnly;
       buildNavItems(filtered);
       if (filtered.length > 0) renderDocPage(filtered[0]);
     });
@@ -3016,17 +3274,27 @@ function insightsBookClientScript() {
     }
 
     function escHtml(t: string): string {
-      return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      return t
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     }
     function docTitle(p: string): string {
-      return (p.split("/").pop() ?? p).replace(/\.md$/i, "").replace(/[-_]/g, " ");
+      return (p.split("/").pop() ?? p)
+        .replace(/\.md$/i, "")
+        .replace(/[-_]/g, " ");
     }
 
     // ── Build allBackLinks: srcPath → [{docPath, ann}] ────────────────────
-    const allBackLinks = new Map<string, Array<{docPath: string; ann: any}>>();
+    const allBackLinks = new Map<
+      string,
+      Array<{ docPath: string; ann: any }>
+    >();
     for (const d of dm.docs) {
       for (const ann of d.topAnnotations) {
-        if (!ann.symbolFile || !(ann.symbolFile in (dm.sourceFiles as any))) continue;
+        if (!ann.symbolFile || !(ann.symbolFile in (dm.sourceFiles as any)))
+          continue;
         const bucket = allBackLinks.get(ann.symbolFile) ?? [];
         bucket.push({ docPath: d.path, ann });
         allBackLinks.set(ann.symbolFile, bucket);
@@ -3037,7 +3305,8 @@ function insightsBookClientScript() {
     // Source files processed by the source-comment KWX pass appear in dm.docs with
     // doc_path = the source file itself. Keyed by docLine so we can place gutter dots
     // on comment lines that matched symbols.
-    const _srcExtRe = /\.(ts|tsx|js|jsx|mjs|cjs|py|swift|go|java|kt|cs|rs|rb|c|cpp|h)$/i;
+    const _srcExtRe =
+      /\.(ts|tsx|js|jsx|mjs|cjs|py|swift|go|java|kt|cs|rs|rb|c|cpp|h)$/i;
     const selfAnnotations = new Map<string, Map<number, any[]>>();
     for (const d of dm.docs) {
       if (!_srcExtRe.test(d.path)) continue;
@@ -3062,9 +3331,14 @@ function insightsBookClientScript() {
     for (const srcPath of allFiles) {
       const links = allBackLinks.get(srcPath) ?? [];
       fileDocCount.set(srcPath, new Set(links.map((l: any) => l.docPath)).size);
-      fileViolCount.set(srcPath, allViolations.filter((v: any) =>
-        v.filePath && (v.filePath === srcPath || srcPath.startsWith(v.filePath + "/"))
-      ).length);
+      fileViolCount.set(
+        srcPath,
+        allViolations.filter(
+          (v: any) =>
+            v.filePath &&
+            (v.filePath === srcPath || srcPath.startsWith(v.filePath + "/")),
+        ).length,
+      );
     }
 
     // Sort: by doc count desc, then name
@@ -3078,13 +3352,15 @@ function insightsBookClientScript() {
     // Group by package (top 2 path segments)
     function getGroup(p: string): string {
       const parts = p.split("/");
-      if (parts[0] === "packages" || parts[0] === "apps") return parts.slice(0, 2).join("/");
+      if (parts[0] === "packages" || parts[0] === "apps")
+        return parts.slice(0, 2).join("/");
       return parts[0];
     }
 
     // Search bar
     const searchBar = document.createElement("div");
-    searchBar.style.cssText = "padding:8px 10px;border-bottom:1px solid #e2e8f0;background:#fff;flex-shrink:0";
+    searchBar.style.cssText =
+      "padding:8px 10px;border-bottom:1px solid #e2e8f0;background:#fff;flex-shrink:0";
     searchBar.innerHTML = `<input id="ar-search-input" type="text" placeholder="Filter ${allFiles.length} source files…" style="width:100%;padding:4px 8px;font-size:11px;border:1px solid #d1d5db;border-radius:6px;outline:none;box-sizing:border-box">`;
     sidebar.appendChild(searchBar);
 
@@ -3114,19 +3390,24 @@ function insightsBookClientScript() {
           const filename = srcPath.split("/").pop() ?? srcPath;
           const subPath = srcPath.slice(group.length + 1);
           const item = document.createElement("div");
-          item.className = "ar-file-item" + (srcPath === activeFilePath ? " active" : "");
+          item.className =
+            "ar-file-item" + (srcPath === activeFilePath ? " active" : "");
           item.dataset.path = srcPath;
           item.innerHTML = `
             <div class="ar-file-name">${escHtml(filename)}</div>
             <div class="ar-file-path">${escHtml(subPath)}</div>
             <div class="ar-file-badges">
-              ${dc > 0
-                ? `<span style="font-size:9px;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:999px;font-weight:600">↑ ${dc} doc${dc !== 1 ? "s" : ""}</span>`
-                : `<span style="font-size:9px;background:#f1f5f9;color:#94a3b8;padding:1px 4px;border-radius:999px">no refs</span>`}
+              ${
+                dc > 0
+                  ? `<span style="font-size:9px;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:999px;font-weight:600">↑ ${dc} doc${dc !== 1 ? "s" : ""}</span>`
+                  : `<span style="font-size:9px;background:#f1f5f9;color:#94a3b8;padding:1px 4px;border-radius:999px">no refs</span>`
+              }
               ${vc > 0 ? `<span style="font-size:9px;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:999px;font-weight:600">⚠ ${vc}</span>` : ""}
             </div>`;
           item.addEventListener("click", () => {
-            fileList.querySelectorAll(".ar-file-item").forEach((el: any) => el.classList.remove("active"));
+            fileList
+              .querySelectorAll(".ar-file-item")
+              .forEach((el: any) => el.classList.remove("active"));
             item.classList.add("active");
             openARSourceFile(srcPath);
           });
@@ -3142,7 +3423,9 @@ function insightsBookClientScript() {
     if (searchInput) {
       (searchInput as any).addEventListener("input", () => {
         const q = (searchInput as any).value.toLowerCase();
-        const filtered = q ? sortedFiles.filter((f: string) => f.toLowerCase().includes(q)) : sortedFiles;
+        const filtered = q
+          ? sortedFiles.filter((f: string) => f.toLowerCase().includes(q))
+          : sortedFiles;
         buildFileList(filtered);
         const first = fileList.querySelector(".ar-file-item");
         if (first) {
@@ -3171,25 +3454,33 @@ function insightsBookClientScript() {
         return;
       }
       const ext = (srcPath.split(".").pop() ?? "").toLowerCase();
-      const lang = ext === "ts" || ext === "tsx" ? "typescript"
-        : ext === "js" || ext === "jsx" ? "javascript"
-        : ext === "py" ? "python"
-        : ext === "swift" ? "swift"
-        : ext;
+      const lang =
+        ext === "ts" || ext === "tsx"
+          ? "typescript"
+          : ext === "js" || ext === "jsx"
+            ? "javascript"
+            : ext === "py"
+              ? "python"
+              : ext === "swift"
+                ? "swift"
+                : ext;
       const lines = srcContent.split("\n");
       const lineCount = lines.length;
 
       // Back-links for this file
       const backLinksByDoc = new Map<string, any[]>();
-      for (const { docPath, ann } of (allBackLinks.get(srcPath) ?? [])) {
+      for (const { docPath, ann } of allBackLinks.get(srcPath) ?? []) {
         const arr = backLinksByDoc.get(docPath) ?? [];
         arr.push(ann);
         backLinksByDoc.set(docPath, arr);
       }
 
       // lineToAnns — symbol definition lines referenced by docs
-      const lineToAnns = new Map<number, Array<{docPath: string; ann: any}>>();
-      for (const { docPath, ann } of (allBackLinks.get(srcPath) ?? [])) {
+      const lineToAnns = new Map<
+        number,
+        Array<{ docPath: string; ann: any }>
+      >();
+      for (const { docPath, ann } of allBackLinks.get(srcPath) ?? []) {
         if (!ann.symbolLine) continue;
         const bucket = lineToAnns.get(ann.symbolLine) ?? [];
         bucket.push({ docPath, ann });
@@ -3204,8 +3495,11 @@ function insightsBookClientScript() {
       const selfCommentLines = selfAnnotations.get(srcPath);
       if (selfCommentLines) {
         // Index cross-doc backlinks by symbolName for fast lookup
-        const backLinksBySymName = new Map<string, Array<{docPath: string; ann: any}>>();
-        for (const ref of (allBackLinks.get(srcPath) ?? [])) {
+        const backLinksBySymName = new Map<
+          string,
+          Array<{ docPath: string; ann: any }>
+        >();
+        for (const ref of allBackLinks.get(srcPath) ?? []) {
           if (!ref.ann.symbolName) continue;
           const arr = backLinksBySymName.get(ref.ann.symbolName) ?? [];
           arr.push(ref);
@@ -3213,7 +3507,10 @@ function insightsBookClientScript() {
         }
         for (const [docLine, anns] of selfCommentLines.entries()) {
           let targetLine = docLine;
-          while (targetLine <= lines.length && _structuralLine.test(lines[targetLine - 1] ?? "")) {
+          while (
+            targetLine <= lines.length &&
+            _structuralLine.test(lines[targetLine - 1] ?? "")
+          ) {
             targetLine++;
           }
           if (targetLine > lines.length) targetLine = docLine; // fallback
@@ -3232,50 +3529,61 @@ function insightsBookClientScript() {
       // lineToSymbols
       const lineToSymbols = new Map<number, string[]>();
       for (const [lineNo, entries] of lineToAnns.entries()) {
-        const syms = [...new Set(entries.map(e => e.ann.symbolName).filter(Boolean))];
+        const syms = [
+          ...new Set(entries.map((e) => e.ann.symbolName).filter(Boolean)),
+        ];
         if (syms.length) lineToSymbols.set(lineNo, syms);
       }
       const annotatedLines = new Set<number>(lineToAnns.keys());
 
       // Violations + rules
-      const fileViolations = allViolations.filter((v: any) =>
-        v.filePath && (
-          v.filePath === srcPath ||
-          srcPath.startsWith(v.filePath + "/") ||
-          v.filePath.startsWith(srcPath.replace(/\/[^/]+$/, ""))
-        )
+      const fileViolations = allViolations.filter(
+        (v: any) =>
+          v.filePath &&
+          (v.filePath === srcPath ||
+            srcPath.startsWith(v.filePath + "/") ||
+            v.filePath.startsWith(srcPath.replace(/\/[^/]+$/, ""))),
       );
       const governingRules = allRules.filter((r: any) =>
         (r.forbidden ?? []).some((f: any) => {
           if (!f.in) return false;
           const prefix = f.in.replace(/\/\*\*$/, "");
           return srcPath.startsWith(prefix + "/") || srcPath === prefix;
-        })
+        }),
       );
 
       // Refs panel content renderer
       function renderRefsContent(filterLine: number | null): string {
         let html = "";
-        const filteredByDoc = filterLine !== null
-          ? (() => {
-              const m = new Map<string, any[]>();
-              for (const { docPath, ann } of (lineToAnns.get(filterLine) ?? [])) {
-                const arr = m.get(docPath) ?? [];
-                arr.push(ann);
-                m.set(docPath, arr);
-              }
-              return m;
-            })()
-          : backLinksByDoc;
+        const filteredByDoc =
+          filterLine !== null
+            ? (() => {
+                const m = new Map<string, any[]>();
+                for (const { docPath, ann } of lineToAnns.get(filterLine) ??
+                  []) {
+                  const arr = m.get(docPath) ?? [];
+                  arr.push(ann);
+                  m.set(docPath, arr);
+                }
+                return m;
+              })()
+            : backLinksByDoc;
 
         if (filteredByDoc.size > 0) {
-          const label = filterLine !== null
-            ? `📄 ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""} — line ${filterLine}`
-            : `📄 Referenced by ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""}`;
+          const label =
+            filterLine !== null
+              ? `📄 ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""} — line ${filterLine}`
+              : `📄 Referenced by ${filteredByDoc.size} doc${filteredByDoc.size !== 1 ? "s" : ""}`;
           html += `<div class="src-refs-section">${label}</div>`;
           for (const [docPath, anns] of filteredByDoc.entries()) {
-            const uniqueSymbols = [...new Set(anns.map((a: any) => a.symbolName))].slice(0, 4);
-            const docLines = [...new Set(anns.map((a: any) => a.symbolLine).filter(Boolean))].sort((a: any, b: any) => a - b).slice(0, 4);
+            const uniqueSymbols = [
+              ...new Set(anns.map((a: any) => a.symbolName)),
+            ].slice(0, 4);
+            const docLines = [
+              ...new Set(anns.map((a: any) => a.symbolLine).filter(Boolean)),
+            ]
+              .sort((a: any, b: any) => a - b)
+              .slice(0, 4);
             const primarySym = uniqueSymbols[0] ?? "";
             html += `<div class="src-ref-doc-item" data-doc="${escHtml(docPath)}" data-sym="${escHtml(primarySym)}">
               <div class="src-ref-doc-name">${escHtml(docTitle(docPath))}</div>
@@ -3292,7 +3600,12 @@ function insightsBookClientScript() {
         if (fileViolations.length > 0) {
           html += `<div class="src-refs-section">⚠ ${fileViolations.length} violation${fileViolations.length !== 1 ? "s" : ""}</div>`;
           for (const v of fileViolations.slice(0, 8)) {
-            const dc = v.ruleDomain === "structural" ? "#7c3aed" : v.ruleDomain === "behavioral" ? "#0369a1" : "#374151";
+            const dc =
+              v.ruleDomain === "structural"
+                ? "#7c3aed"
+                : v.ruleDomain === "behavioral"
+                  ? "#0369a1"
+                  : "#374151";
             html += `<div class="src-ref-violation">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
                 <code style="font-size:10px;color:${escHtml(dc)}">${escHtml(v.ruleId)}</code>
@@ -3333,15 +3646,17 @@ function insightsBookClientScript() {
       </div>`;
 
       // Code lines
-      const linesHtml = lines.map((ln, i) => {
-        const lineNo = i + 1;
-        const isAnnotated = annotatedLines.has(lineNo);
-        const nDocs = isAnnotated ? (lineToAnns.get(lineNo)?.length ?? 0) : 0;
-        const dot = isAnnotated
-          ? `<span class="src-gutter-dot" data-line="${lineNo}" title="Click to filter: ${nDocs} ref${nDocs !== 1 ? "s" : ""} on line ${lineNo}">●</span>`
-          : `<span class="src-gutter-empty"></span>`;
-        return `${dot}<span class="src-ln" id="ar-ln-${lineNo}">${lineNo}</span>${highlightLine(ln, lang)}`;
-      }).join("\n");
+      const linesHtml = lines
+        .map((ln, i) => {
+          const lineNo = i + 1;
+          const isAnnotated = annotatedLines.has(lineNo);
+          const nDocs = isAnnotated ? (lineToAnns.get(lineNo)?.length ?? 0) : 0;
+          const dot = isAnnotated
+            ? `<span class="src-gutter-dot" data-line="${lineNo}" title="Click to filter: ${nDocs} ref${nDocs !== 1 ? "s" : ""} on line ${lineNo}">●</span>`
+            : `<span class="src-gutter-empty"></span>`;
+          return `${dot}<span class="src-ln" id="ar-ln-${lineNo}">${lineNo}</span>${highlightLine(ln, lang)}`;
+        })
+        .join("\n");
 
       const refsHtml = `<div class="src-refs-panel" id="ar-refs-panel">
         <div class="src-refs-title">
@@ -3366,7 +3681,8 @@ function insightsBookClientScript() {
           const next = lineSpan.nextSibling as any;
           if (!next) continue;
 
-          const isCommentSpan = next.nodeType === 1 &&
+          const isCommentSpan =
+            next.nodeType === 1 &&
             (next as any).classList.contains("src-comment");
 
           if (isCommentSpan) {
@@ -3381,8 +3697,16 @@ function insightsBookClientScript() {
               // word boundary: not preceded/followed by word char or $
               const re = new RegExp("(?<![\\w$])(" + esc + ")(?![\\w$])", "gi");
               if (re.test(html)) {
-                html = html.replace(re,
-                  '<mark class="src-ann-highlight" data-line="' + lineNo + '" data-sym="' + sym + '" title="Click to show references for: ' + sym + '" style="cursor:pointer">$1</mark>');
+                html = html.replace(
+                  re,
+                  '<mark class="src-ann-highlight" data-line="' +
+                    lineNo +
+                    '" data-sym="' +
+                    sym +
+                    '" title="Click to show references for: ' +
+                    sym +
+                    '" style="cursor:pointer">$1</mark>',
+                );
               }
             }
             commentEl.innerHTML = html;
@@ -3394,7 +3718,9 @@ function insightsBookClientScript() {
             for (const sym of sorted) {
               if (sym.length < 2) continue;
               const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-              const idx = raw.search(new RegExp("(?<![\\w$])" + esc + "(?![\\w$])"));
+              const idx = raw.search(
+                new RegExp("(?<![\\w$])" + esc + "(?![\\w$])"),
+              );
               if (idx < 0) continue;
               const symSpan = document.createElement("span");
               symSpan.className = "src-sym-link";
@@ -3404,9 +3730,15 @@ function insightsBookClientScript() {
               symSpan.textContent = sym;
               const parent = lineSpan.parentNode;
               if (!parent) break;
-              parent.insertBefore(document.createTextNode(raw.slice(0, idx)), textNode);
+              parent.insertBefore(
+                document.createTextNode(raw.slice(0, idx)),
+                textNode,
+              );
               parent.insertBefore(symSpan, textNode);
-              parent.insertBefore(document.createTextNode(raw.slice(idx + sym.length)), textNode);
+              parent.insertBefore(
+                document.createTextNode(raw.slice(idx + sym.length)),
+                textNode,
+              );
               parent.removeChild(textNode);
               break;
             }
@@ -3422,50 +3754,76 @@ function insightsBookClientScript() {
       function applyLineFilter(lineNo: number | null): void {
         activeFilterLine = lineNo;
         if (refsBody) refsBody.innerHTML = renderRefsContent(lineNo);
-        if (refsReset) (refsReset as any).style.display = lineNo !== null ? "inline" : "none";
+        if (refsReset)
+          (refsReset as any).style.display =
+            lineNo !== null ? "inline" : "none";
         viewer.querySelectorAll(".src-gutter-dot").forEach((d: any) => {
-          d.classList.toggle("src-gutter-dot-active", lineNo !== null && parseInt(d.dataset.line, 10) === lineNo);
+          d.classList.toggle(
+            "src-gutter-dot-active",
+            lineNo !== null && parseInt(d.dataset.line, 10) === lineNo,
+          );
         });
         viewer.querySelectorAll(".src-sym-link").forEach((s: any) => {
-          s.classList.toggle("src-sym-link-active", lineNo !== null && parseInt(s.dataset.line, 10) === lineNo);
+          s.classList.toggle(
+            "src-sym-link-active",
+            lineNo !== null && parseInt(s.dataset.line, 10) === lineNo,
+          );
         });
         viewer.querySelectorAll(".src-ann-highlight").forEach((m: any) => {
-          m.classList.toggle("src-ann-highlight-active", lineNo !== null && parseInt(m.dataset.line, 10) === lineNo);
+          m.classList.toggle(
+            "src-ann-highlight-active",
+            lineNo !== null && parseInt(m.dataset.line, 10) === lineNo,
+          );
         });
         wireRefsPanel();
       }
 
       function wireRefsPanel(): void {
-        (refsBody ?? viewer).querySelectorAll(".src-ref-doc-item").forEach((item: any) => {
-          item.addEventListener("click", (e: any) => {
-            if (e.target.classList.contains("src-ln-ref")) return;
-            // Navigate to the doc in the Docs sidebar section (same chapter)
-            const idx = dm.docs.findIndex((d: any) => d.path === item.dataset.doc);
-            if (idx < 0) return;
-            const navItem = document.querySelector(`#docmap-docs-section .dm-nav-item[data-idx="${idx}"]`);
-            if (navItem) {
-              (navItem as any).click();
-              // Scroll to the first ann-mark matching the primary symbol
-              const sym = item.dataset.sym ?? "";
-              if (sym) {
-                const key = sym.toLowerCase().replace(/[^a-z0-9]/g, "");
-                const mark = viewer.querySelector(`.ann-mark[data-ak="${key}"]`);
-                if (mark) (mark as any).scrollIntoView({ block: "center", behavior: "smooth" });
+        (refsBody ?? viewer)
+          .querySelectorAll(".src-ref-doc-item")
+          .forEach((item: any) => {
+            item.addEventListener("click", (e: any) => {
+              if (e.target.classList.contains("src-ln-ref")) return;
+              // Navigate to the doc in the Docs sidebar section (same chapter)
+              const idx = dm.docs.findIndex(
+                (d: any) => d.path === item.dataset.doc,
+              );
+              if (idx < 0) return;
+              const navItem = document.querySelector(
+                `#docmap-docs-section .dm-nav-item[data-idx="${idx}"]`,
+              );
+              if (navItem) {
+                (navItem as any).click();
+                // Scroll to the first ann-mark matching the primary symbol
+                const sym = item.dataset.sym ?? "";
+                if (sym) {
+                  const key = sym.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  const mark = viewer.querySelector(
+                    `.ann-mark[data-ak="${key}"]`,
+                  );
+                  if (mark)
+                    (mark as any).scrollIntoView({
+                      block: "center",
+                      behavior: "smooth",
+                    });
+                }
               }
-            }
+            });
           });
-        });
-        (refsBody ?? viewer).querySelectorAll(".src-ln-ref").forEach((a: any) => {
-          a.addEventListener("click", (e: any) => {
-            e.stopPropagation();
-            const ln = parseInt(a.dataset.line, 10);
-            const el = viewer.querySelector(`#ar-ln-${ln}`);
-            if (el) (el as any).scrollIntoView({ block: "center" });
+        (refsBody ?? viewer)
+          .querySelectorAll(".src-ln-ref")
+          .forEach((a: any) => {
+            a.addEventListener("click", (e: any) => {
+              e.stopPropagation();
+              const ln = parseInt(a.dataset.line, 10);
+              const el = viewer.querySelector(`#ar-ln-${ln}`);
+              if (el) (el as any).scrollIntoView({ block: "center" });
+            });
           });
-        });
       }
 
-      if (refsReset) refsReset.addEventListener("click", () => applyLineFilter(null));
+      if (refsReset)
+        refsReset.addEventListener("click", () => applyLineFilter(null));
       viewer.querySelectorAll(".src-gutter-dot").forEach((dot: any) => {
         dot.addEventListener("click", () => {
           const lineNo = parseInt(dot.dataset.line, 10);
@@ -4079,10 +4437,13 @@ function insightsBookClientScript() {
     h += `<div style="margin-bottom:20px">
       <div style="font-size:14px;font-weight:700;color:#1f2937;margin-bottom:8px">📄 Document Completeness</div>`;
     // Aggregate coverage banner
-    const agg = doc.docCoverageAggregate as { coveredSymbols: number; totalSymbols: number } | undefined;
+    const agg = doc.docCoverageAggregate as
+      | { coveredSymbols: number; totalSymbols: number }
+      | undefined;
     if (agg && agg.totalSymbols > 0) {
-      const aggPct = Math.round(agg.coveredSymbols / agg.totalSymbols * 100);
-      const aggColor = aggPct >= 50 ? "#22c55e" : aggPct >= 25 ? "#f59e0b" : "#ef4444";
+      const aggPct = Math.round((agg.coveredSymbols / agg.totalSymbols) * 100);
+      const aggColor =
+        aggPct >= 50 ? "#22c55e" : aggPct >= 25 ? "#f59e0b" : "#ef4444";
       h += `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px">
         <div style="flex:1">
           <div style="font-size:12px;font-weight:600;color:#374151">Overall codebase coverage</div>
@@ -4354,7 +4715,10 @@ function insightsBookClientScript() {
 
     // Code health: if codeHealth data exists, pick most impactful
     const ch = (data as any).codeHealth;
-    if (ch && (ch.circularCycles.length > 0 || ch.boundaryViolations.length > 0)) {
+    if (
+      ch &&
+      (ch.circularCycles.length > 0 || ch.boundaryViolations.length > 0)
+    ) {
       const isCirc = ch.circularCycles.length > 0;
       topItems.push({
         icon: "🩺",
@@ -4364,7 +4728,10 @@ function insightsBookClientScript() {
           : `${ch.boundaryViolations.length} package boundary violation(s)`,
         detail: isCirc
           ? `Shortest cycle: ${ch.circularCycles[0].files.map((f: string) => shortPath(f, 18)).join(" → ")}`
-          : `${ch.byPackagePair.slice(0, 2).map((p: any) => `${p.sourcePackage}→${p.targetPackage}`).join(", ")}`,
+          : `${ch.byPackagePair
+              .slice(0, 2)
+              .map((p: any) => `${p.sourcePackage}→${p.targetPackage}`)
+              .join(", ")}`,
         chapterId: "chapter-code-health",
         sev: "medium",
       });
@@ -4380,9 +4747,17 @@ function insightsBookClientScript() {
     if (ls) {
       const dims = [
         { label: "Spec Coverage", icon: "📋", dim: ls.specCoverage },
-        { label: "Constraint Consistency", icon: "🔒", dim: ls.constraintConsistency },
+        {
+          label: "Constraint Consistency",
+          icon: "🔒",
+          dim: ls.constraintConsistency,
+        },
         { label: "Documentation Freshness", icon: "📅", dim: ls.docFreshness },
-        { label: "Architecture Conformance", icon: "🏛", dim: ls.archConformance },
+        {
+          label: "Architecture Conformance",
+          icon: "🏛",
+          dim: ls.archConformance,
+        },
       ];
       h += `<div style="margin-bottom:20px">
         <div style="display:flex;align-items:center;gap:24px;margin-bottom:16px;padding:20px 24px;background:#fff;border:1px solid #e2e8f0;border-radius:12px">
@@ -4399,7 +4774,13 @@ function insightsBookClientScript() {
       dims.forEach(({ label, icon, dim }) => {
         const sc = dim.available ? Math.round(dim.score) : null;
         const barColor =
-          sc === null ? "#d1d5db" : sc >= 75 ? "#22c55e" : sc >= 50 ? "#f59e0b" : "#ef4444";
+          sc === null
+            ? "#d1d5db"
+            : sc >= 75
+              ? "#22c55e"
+              : sc >= 50
+                ? "#f59e0b"
+                : "#ef4444";
         const dimBg = dim.available ? "#fff" : "#f9fafb";
         h += `<div style="background:${dimBg};border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -4514,7 +4895,12 @@ function insightsBookClientScript() {
         id: "chapter-violations",
         badge: structTotal + behavViols.length,
       },
-      { icon: "📝", label: "Documentation", id: "chapter-documentation", badge: docTotal },
+      {
+        icon: "📝",
+        label: "Documentation",
+        id: "chapter-documentation",
+        badge: docTotal,
+      },
       { icon: "🏛", label: "Layer Architecture", id: "chapter-layers" },
       { icon: "🔬", label: "Arch Graph", id: "chapter-arch-graph" },
       { icon: "🩺", label: "Code Health", id: "chapter-code-health" },
@@ -4570,8 +4956,7 @@ function insightsBookClientScript() {
         filePath: v.filePath,
         detail: v.detail.slice(0, 100),
         hint: `Fix the import/call pattern in this file to satisfy rule ${v.ruleId}.`,
-        chapterId:
-          "chapter-" + v.ruleId.replace(/[^a-z0-9]/gi, "-"),
+        chapterId: "chapter-" + v.ruleId.replace(/[^a-z0-9]/gi, "-"),
       });
     });
 
@@ -4639,7 +5024,10 @@ function insightsBookClientScript() {
           domainIcon: "🩺",
           ruleId: "circular-import",
           filePath: cycle.files[0] ?? "(unknown)",
-          detail: `Cycle of ${cycle.length} files: ${cycle.files.slice(0, 3).map((f: string) => shortPath(f, 20)).join(" → ")}${cycle.length > 3 ? " …" : ""}`,
+          detail: `Cycle of ${cycle.length} files: ${cycle.files
+            .slice(0, 3)
+            .map((f: string) => shortPath(f, 20))
+            .join(" → ")}${cycle.length > 3 ? " …" : ""}`,
           hint: "Break the cycle by extracting shared code to a lower-level module.",
           chapterId: "chapter-code-health",
         });

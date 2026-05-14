@@ -106,8 +106,7 @@ export function rulesCheckFromDb(
   // Determine which domains to run
   const runStructural = !domain || domain === "structural" || domain === "all";
   const runBehavioral = !domain || domain === "behavioral" || domain === "all";
-  const runDocumentary =
-    domain === "documentary" || domain === "all";
+  const runDocumentary = domain === "documentary" || domain === "all";
 
   const activeRules = config.rules.filter((r) => {
     if (ruleId && r.id !== ruleId) return false;

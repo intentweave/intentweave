@@ -121,17 +121,18 @@ iw guardrails check                       # → iw index rules-check (structural
 When `--domain documentary` (or `all`) is passed to `iw intent check`, the engine runs four
 built-in CARI-backed checks in addition to any `rules.yaml` documentary rules:
 
-| Rule ID                | Source                    | Default Mode | Confidence |
-|------------------------|---------------------------|--------------|------------|
-| `doc.coverage.low`     | `moduleCoverageFromDb()`  | warn         | 0.97       |
-| `doc.terminology`      | `terminologyInconsistency()` | warn      | 0.80       |
-| `doc.orphaned-section` | `orphanedSectionsFromDb()` | warn        | 0.90       |
-| `doc.completeness.low` | `docCompletenessFromDb()` | warn         | 0.97       |
+| Rule ID                | Source                       | Default Mode | Confidence |
+| ---------------------- | ---------------------------- | ------------ | ---------- |
+| `doc.coverage.low`     | `moduleCoverageFromDb()`     | warn         | 0.97       |
+| `doc.terminology`      | `terminologyInconsistency()` | warn         | 0.80       |
+| `doc.orphaned-section` | `orphanedSectionsFromDb()`   | warn         | 0.90       |
+| `doc.completeness.low` | `docCompletenessFromDb()`    | warn         | 0.97       |
 
 All documentary violations carry `ruleMode: "warn"` — they show in the output but
 **do not set exit code 1** (warn-only exit). Thresholds: coverage < 50%, completeness < 40%.
 
 Key implementation files:
+
 - `packages/index/src/queries/documentaryCheck.ts` — documentary domain runner
 - `packages/index/src/queries/rulesCheck.ts` — `domain` filter + `iwConfig` in `RulesCheckOptions`
 - `packages/index/src/types.ts` — `confidence?: number` on `RulesViolation`; `IwConfig` type
@@ -144,14 +145,15 @@ at check time and derives violations from the CARI import graph. No LLM, no call
 
 **Supported diagram types:**
 
-| Diagram type     | Check type                          | Confidence | Default mode |
-|------------------|-------------------------------------|------------|--------------|
-| `sequenceDiagram`| `must_call` (import presence)       | 0.70       | warn         |
-| `sequenceDiagram`| `must_not_call` (import absence)    | 0.85       | error        |
-| `stateDiagram-v2`| `valid_transition` (symbol naming)  | 0.50       | warn         |
-| `flowchart`      | `must_precede` (shared importer)    | 0.30       | warn         |
+| Diagram type      | Check type                         | Confidence | Default mode |
+| ----------------- | ---------------------------------- | ---------- | ------------ |
+| `sequenceDiagram` | `must_call` (import presence)      | 0.70       | warn         |
+| `sequenceDiagram` | `must_not_call` (import absence)   | 0.85       | error        |
+| `stateDiagram-v2` | `valid_transition` (symbol naming) | 0.50       | warn         |
+| `flowchart`       | `must_precede` (shared importer)   | 0.30       | warn         |
 
 **Example `rules.yaml` entry:**
+
 ```yaml
 - id: bdd-auth-sequence
   domain: behavioral
@@ -169,6 +171,7 @@ at check time and derives violations from the CARI import graph. No LLM, no call
 ```
 
 **Or load from an ADR file:**
+
 ```yaml
 - id: bdd-auth-sequence
   domain: behavioral
@@ -176,7 +179,7 @@ at check time and derives violations from the CARI import graph. No LLM, no call
   source:
     type: mermaid_file
     file: docs/ADR-001-auth.md
-    block_id: auth-login-flow   # optional: named block, else first mermaid block
+    block_id: auth-login-flow # optional: named block, else first mermaid block
   forbidden: []
 ```
 
@@ -185,11 +188,13 @@ at check time and derives violations from the CARI import graph. No LLM, no call
 support `sequenceDiagram` (the most critical type), so the custom parser was chosen.
 
 Key implementation files:
+
 - `packages/index/src/queries/mermaidCheck.ts` — Mermaid parser + behavioral check engine
 - `packages/index/src/queries/rulesCheck.ts` — routes `domain: behavioral` + Mermaid source rules to `checkMermaidRule()`
 - `packages/index/src/types.ts` — `source?`, `mermaid?` fields on `RuleDefinition`; `ruleDomain` + `confidence` on `PrescriptiveViolation`
 
 Behavioral violations surface in:
+
 - `iw intent check --domain behavioral` (or `--domain all`)
 - Insights Book → All Violations → Behavioral section (real violations, with confidence badge + WARN mode indicator)
 - Insights Book → Executive Summary → domain pills + Top Issues
@@ -202,22 +207,23 @@ the **Executive Summary** chapter by default (Phase 2).
 
 **Insights Book chapter order (Phase 2+3):**
 
-| Nav Section  | Chapter | Content |
-|---|---|---|
-| Summary | Executive Summary | Living Score badge · violations by domain (structural/behavioral/documentary) · top-3 action items · quick links |
-| Summary | Recommendations | Cross-domain ranked violations list (top 20, sorted by severity then domain, with Behavioral in purple) |
-| Architecture | Layer Architecture | §17 prescriptive SVG (iframe) |
-| Architecture | Control & Data Flow | Rule table with per-ADR flow links |
-| Architecture | Arch Graph | §10.1 D3 interactive arch report (iframe) |
-| Architecture | Per-ADR chapters | Cytoscape.js flow diagrams + CARI overlays |
-| Reports | All Violations | Domain-grouped: Structural / Behavioral (real Mermaid violations) / Documentary + Dormant Rules |
-| Reports | Coverage | Per-layer doc coverage + hotspot files |
-| Analytics | Living Score | 4-dimension score breakdown |
-| Analytics | Code Health | Clones · circular imports · unused exports · boundary violations |
-| Analytics | Hotspots | High-churn files · dependency depth · hubs · communities |
-| Analytics | Documentation | Orphaned sections · doc completeness · rationale · terminology |
+| Nav Section  | Chapter             | Content                                                                                                          |
+| ------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Summary      | Executive Summary   | Living Score badge · violations by domain (structural/behavioral/documentary) · top-3 action items · quick links |
+| Summary      | Recommendations     | Cross-domain ranked violations list (top 20, sorted by severity then domain, with Behavioral in purple)          |
+| Architecture | Layer Architecture  | §17 prescriptive SVG (iframe)                                                                                    |
+| Architecture | Control & Data Flow | Rule table with per-ADR flow links                                                                               |
+| Architecture | Arch Graph          | §10.1 D3 interactive arch report (iframe)                                                                        |
+| Architecture | Per-ADR chapters    | Cytoscape.js flow diagrams + CARI overlays                                                                       |
+| Reports      | All Violations      | Domain-grouped: Structural / Behavioral (real Mermaid violations) / Documentary + Dormant Rules                  |
+| Reports      | Coverage            | Per-layer doc coverage + hotspot files                                                                           |
+| Analytics    | Living Score        | 4-dimension score breakdown                                                                                      |
+| Analytics    | Code Health         | Clones · circular imports · unused exports · boundary violations                                                 |
+| Analytics    | Hotspots            | High-churn files · dependency depth · hubs · communities                                                         |
+| Analytics    | Documentation       | Orphaned sections · doc completeness · rationale · terminology                                                   |
 
 Key implementation files:
+
 - `packages/index/src/export/insightsBook.ts` — `renderInsightsBookHtml()` + all chapter builders
 - `packages/index/src/export/prescriptiveReport.ts` — `InsightsBookData` type; `PrescriptiveViolation` now has `ruleDomain`, `ruleMode`, `confidence`
 - `packages/cli/src/commands/indexBuild.ts` — `buildPrescriptiveReportData()` collects all analytics; passes `domain: "all"` to `rulesCheck()`
@@ -230,13 +236,13 @@ Optional workspace config file loaded automatically by `iw intent check`.
 version: 1
 thresholds:
   structural:
-    max_violations: 0        # not yet enforced in exit-code (structural rules already block CI)
+    max_violations: 0 # not yet enforced in exit-code (structural rules already block CI)
   documentary:
-    coverage_min: 60         # flag modules with < 60% coverage (default: 50)
-    completeness_min: 50     # flag docs with < 50% completeness (default: 40)
-    mode: error              # promote documentary violations to CI-blocking (default: warn)
+    coverage_min: 60 # flag modules with < 60% coverage (default: 50)
+    completeness_min: 50 # flag docs with < 50% completeness (default: 40)
+    mode: error # promote documentary violations to CI-blocking (default: warn)
   behavioral:
-    mode: warn               # keep behavioral violations as warnings (default)
+    mode: warn # keep behavioral violations as warnings (default)
 ```
 
 When `documentary.mode: error` is set, `iw intent check --domain documentary` will exit 1 on violations.
@@ -355,21 +361,21 @@ iw verify --score -f json                                   # JSON output for CI
 
 ### Key Files
 
-| File                                               | Purpose                               |
-| -------------------------------------------------- | ------------------------------------- |
-| `packages/analyzer/src/stages/fx.ts`               | FX extraction (parallel chunks)       |
-| `packages/analyzer/src/stages/kx.ts`               | KX canonicalization (30 predicates)   |
-| `packages/analyzer/src/stages/gx.ts`               | GX cross-document entity merge        |
-| `packages/analyzer/src/pipeline/openTrack.ts`      | Open track orchestrator               |
-| `packages/cli/src/commands/run.ts`                 | `iw run` CLI command                  |
-| `packages/cli/src/commands/query.ts`               | `iw query` CLI command                |
-| `packages/cli/src/commands/context.ts`             | `iw context` CLI command              |
-| `packages/cli/src/impact/impactAnalyzer.ts`        | Impact analysis engine                |
-| `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer (Neo4j) |
-| `packages/cli/src/doc-health/cariDocHealth.ts`     | Documentation health analyzer (CARI)  |
-| `packages/index/src/queries/livingScore.ts`        | Living Documentation Score (12.3)     |
-| `packages/index/src/queries/calls.ts`              | Call graph query (Phase 4)            |
-| `packages/index/src/queries/trace.ts`              | BFS call-path tracer (Phase 4)        |
+| File                                               | Purpose                                    |
+| -------------------------------------------------- | ------------------------------------------ |
+| `packages/analyzer/src/stages/fx.ts`               | FX extraction (parallel chunks)            |
+| `packages/analyzer/src/stages/kx.ts`               | KX canonicalization (30 predicates)        |
+| `packages/analyzer/src/stages/gx.ts`               | GX cross-document entity merge             |
+| `packages/analyzer/src/pipeline/openTrack.ts`      | Open track orchestrator                    |
+| `packages/cli/src/commands/run.ts`                 | `iw run` CLI command                       |
+| `packages/cli/src/commands/query.ts`               | `iw query` CLI command                     |
+| `packages/cli/src/commands/context.ts`             | `iw context` CLI command                   |
+| `packages/cli/src/impact/impactAnalyzer.ts`        | Impact analysis engine                     |
+| `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer (Neo4j)      |
+| `packages/cli/src/doc-health/cariDocHealth.ts`     | Documentation health analyzer (CARI)       |
+| `packages/index/src/queries/livingScore.ts`        | Living Documentation Score (12.3)          |
+| `packages/index/src/queries/calls.ts`              | Call graph query (Phase 4)                 |
+| `packages/index/src/queries/trace.ts`              | BFS call-path tracer (Phase 4)             |
 | `packages/index/src/queries/ruleCoverage.ts`       | Behavioral rule coverage monitor (Phase 4) |
 
 ## MCP Tools
@@ -393,41 +399,41 @@ programmatic API.
 
 ### CARI Tools (local SQLite, no Neo4j or LLM)
 
-| Tool                       | Purpose                                               | Key Parameters                         |
-| -------------------------- | ----------------------------------------------------- | -------------------------------------- |
-| `intent_check`             | Check all intent domains (Phase 1 preferred tool)     | `domain?`, `severity?`, `changed?`, `limit?` |
-| `cari_retrieve`            | Ranked file retrieval                                 | `query`, `scope?`, `limit?`            |
-| `cari_connections`         | Connection discovery + gaps                           | `entity`, `include?`, `limit?`         |
-| `cari_check`               | CI drift detection                                    | `changed`, `severity?`                 |
-| `cari_clones`              | Exact clone detection                                 | _(none)_                               |
-| `cari_structural_clones`   | Type 2 clone detection                                | _(none)_                               |
-| `cari_circular_imports`    | Import cycle detection                                | _(none)_                               |
-| `cari_unused_exports`      | Unused exported symbols                               | `limit?`                               |
-| `cari_hotspot_priority`    | High-churn low-doc files                              | `limit?`                               |
-| `cari_todos`               | TODO/FIXME/HACK/XXX list                              | `kind?`, `limit?`                      |
-| `cari_module_coverage`     | Coverage % per directory                              | _(none)_                               |
-| `cari_orphaned_sections`   | Ungrounded doc sections                               | _(none)_                               |
-| `cari_doc_completeness`    | Per-doc completeness                                  | _(none)_                               |
-| `cari_cross_group_drift`   | Cross-group conflicts                                 | _(none)_                               |
-| `cari_mentions_of`         | Entity → doc mentions                                 | `entityId`, `minConfidence?`, `limit?` |
-| `cari_annotations_for`     | File → all annotations                                | `filePath`, `minConfidence?`, `limit?` |
-| `cari_test_coverage`       | Test→source mapping + gaps                            | `limit?`                               |
-| `cari_hubs`                | God-node / hub analysis                               | `limit?`                               |
-| `cari_communities`         | Community detection                                   | _(none)_                               |
-| `cari_surprises`           | Surprising connections                                | `limit?`                               |
-| `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN                             | `kind?`, `limit?`                      |
-| `cari_terminology`         | Terminology inconsistency                             | `limit?`                               |
-| `cari_dep_depth`           | Transitive import depth                               | `limit?`                               |
-| `cari_boundary_violations` | Package boundary violations                           | _(none)_                               |
-| `cari_layers_infer`        | Auto-infer architectural layers                       | _(none)_                               |
-| `cari_layers_check`        | Validate imports vs. layer config                     | `allowSkipLayer?`                      |
-| `cari_focus`               | Focused architecture view                             | `target`, `hops?`, `maxNodes?`         |
-| `cari_resolve`             | Resolve diagram component to code symbols + docs      | `name`, `limitSymbols?`, `limitDocs?`  |
-| `cari_arch_diff`           | Validate diagram entities/flows against CARI evidence | `paths?`, `provider?`, `refresh?`      |
-| `cari_component_evidence`  | All CARI evidence for one architecture component      | `name`, `limit?`                       |
-| `cari_living_score`        | Composite living documentation score (12.3)           | `minConfidence?`, `allowSkipLayer?`    |
+| Tool                       | Purpose                                               | Key Parameters                                                       |
+| -------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
+| `intent_check`             | Check all intent domains (Phase 1 preferred tool)     | `domain?`, `severity?`, `changed?`, `limit?`                         |
+| `cari_retrieve`            | Ranked file retrieval                                 | `query`, `scope?`, `limit?`                                          |
+| `cari_connections`         | Connection discovery + gaps                           | `entity`, `include?`, `limit?`                                       |
+| `cari_check`               | CI drift detection                                    | `changed`, `severity?`                                               |
+| `cari_clones`              | Exact clone detection                                 | _(none)_                                                             |
+| `cari_structural_clones`   | Type 2 clone detection                                | _(none)_                                                             |
+| `cari_circular_imports`    | Import cycle detection                                | _(none)_                                                             |
+| `cari_unused_exports`      | Unused exported symbols                               | `limit?`                                                             |
+| `cari_hotspot_priority`    | High-churn low-doc files                              | `limit?`                                                             |
+| `cari_todos`               | TODO/FIXME/HACK/XXX list                              | `kind?`, `limit?`                                                    |
+| `cari_module_coverage`     | Coverage % per directory                              | _(none)_                                                             |
+| `cari_orphaned_sections`   | Ungrounded doc sections                               | _(none)_                                                             |
+| `cari_doc_completeness`    | Per-doc completeness                                  | _(none)_                                                             |
+| `cari_cross_group_drift`   | Cross-group conflicts                                 | _(none)_                                                             |
+| `cari_mentions_of`         | Entity → doc mentions                                 | `entityId`, `minConfidence?`, `limit?`                               |
+| `cari_annotations_for`     | File → all annotations                                | `filePath`, `minConfidence?`, `limit?`                               |
+| `cari_test_coverage`       | Test→source mapping + gaps                            | `limit?`                                                             |
+| `cari_hubs`                | God-node / hub analysis                               | `limit?`                                                             |
+| `cari_communities`         | Community detection                                   | _(none)_                                                             |
+| `cari_surprises`           | Surprising connections                                | `limit?`                                                             |
+| `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN                             | `kind?`, `limit?`                                                    |
+| `cari_terminology`         | Terminology inconsistency                             | `limit?`                                                             |
+| `cari_dep_depth`           | Transitive import depth                               | `limit?`                                                             |
+| `cari_boundary_violations` | Package boundary violations                           | _(none)_                                                             |
+| `cari_layers_infer`        | Auto-infer architectural layers                       | _(none)_                                                             |
+| `cari_layers_check`        | Validate imports vs. layer config                     | `allowSkipLayer?`                                                    |
+| `cari_focus`               | Focused architecture view                             | `target`, `hops?`, `maxNodes?`                                       |
+| `cari_resolve`             | Resolve diagram component to code symbols + docs      | `name`, `limitSymbols?`, `limitDocs?`                                |
+| `cari_arch_diff`           | Validate diagram entities/flows against CARI evidence | `paths?`, `provider?`, `refresh?`                                    |
+| `cari_component_evidence`  | All CARI evidence for one architecture component      | `name`, `limit?`                                                     |
+| `cari_living_score`        | Composite living documentation score (12.3)           | `minConfidence?`, `allowSkipLayer?`                                  |
 | `cari_calls`               | Query the symbol_calls call graph (Phase 4)           | `callerFile?`, `calleeName?`, `callerName?`, `methodOnly?`, `limit?` |
-| `cari_trace`               | Trace call paths from entry-point file (Phase 4)      | `entry` (required), `hops?`, `maxNodes?`, `direction?` |
+| `cari_trace`               | Trace call paths from entry-point file (Phase 4)      | `entry` (required), `hops?`, `maxNodes?`, `direction?`               |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 

@@ -2676,4 +2676,3 @@ export interface RuleCoverageResult {
   uncovered: PackageCoverage[];
   topUncovered: PackageCoverage[];
 }
-
