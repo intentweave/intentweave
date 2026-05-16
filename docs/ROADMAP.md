@@ -26,15 +26,15 @@ CARI Evidence Engine  ──evidence──►  Intent Engine  ──violations�
 _Goal: make the product legible. Users should understand what they have and how to
 use it from the README alone._
 
-| Task                                                                                  | Effort | Value  | Status |
-| ------------------------------------------------------------------------------------- | ------ | ------ | ------ |
-| `iw intent` CLI namespace (alias layer over `iw index rules-*` and `iw guardrails *`) | S      | High   | ✅     |
-| `domain` field in `rules.yaml` schema + violations output, grouped by domain          | S      | High   | ✅     |
-| README rewrite: two products, three commands, one deliverable                         | S      | High   | ✅     |
-| Homepage rewrite: two product cards, Insights Book as primary output                  | S      | High   | ✅     |
-| Getting Started: three commands → open the book                                       | S      | High   | ✅     |
-| Rename "CARI Index" → "CARI Evidence Engine" in all user-facing docs                  | XS     | Medium | ✅     |
-| Sidebar restructure: CARI / Intent Engine sections                                    | XS     | Medium | ✅     |
+| Task                                                                                         | Effort | Value  | Status |
+| -------------------------------------------------------------------------------------------- | ------ | ------ | ------ |
+| `iw intent` CLI namespace (canonical interface, `iw guardrails`/`iw living` aliases removed) | S      | High   | ✅     |
+| `domain` field in `rules.yaml` schema + violations output, grouped by domain                 | S      | High   | ✅     |
+| README rewrite: two products, three commands, one deliverable                                | S      | High   | ✅     |
+| Homepage rewrite: two product cards, Insights Book as primary output                         | S      | High   | ✅     |
+| Getting Started: three commands → open the book                                              | S      | High   | ✅     |
+| Rename "CARI Index" → "CARI Evidence Engine" in all user-facing docs                         | XS     | Medium | ✅     |
+| Sidebar restructure: CARI / Intent Engine sections                                           | XS     | Medium | ✅     |
 
 **Exit criteria:** a new user reads the README in 2 minutes, runs three commands,
 opens the Insights Book, and understands what all three sections mean. ✅
@@ -48,14 +48,13 @@ opens the Insights Book, and understands what all three sections mean. ✅
 _Goal: unify the enforcement model. Documentary intent becomes enforceable in CI,
 not just queryable. All three domains report into one violations table._
 
-| Task                                                                    | Effort | Value  | Status |
-| ----------------------------------------------------------------------- | ------ | ------ | ------ |
-| Documentary domain check types wired to existing CARI queries           | M      | High   | ✅     |
-| `iw intent check --domain documentary` (= `iw living verify`)           | S      | High   | ✅     |
-| Violation `confidence` + `mode: warn\|error` fields on every violation  | M      | High   | ✅     |
-| Per-domain CI threshold config in `.iw/config.yaml`                     | S      | High   | ✅     |
-| `iw living verify` as convenience alias for documentary domain          | XS     | Medium | ✅     |
-| Update MCP tools: `cari_rules_check` → `intent_check` with domain param | S      | Medium | ✅     |
+| Task                                                                          | Effort | Value  | Status |
+| ----------------------------------------------------------------------------- | ------ | ------ | ------ |
+| Documentary domain check types wired to existing CARI queries                 | M      | High   | ✅     |
+| `iw intent check --domain documentary` (supersedes `iw living verify`)        | S      | High   | ✅     |
+| Per-domain CI threshold config in `.iw/config.yaml`                           | S      | High   | ✅     |
+| `iw living verify` alias removed — use `iw intent check --domain documentary` | XS     | Medium | ✅     |
+| Update MCP tools: `cari_rules_check` → `intent_check` with domain param       | S      | Medium | ✅     |
 
 **Exit criteria:** a team can add documentary rules to `rules.yaml` and get CI failures
 when coverage drops or docs go stale — using the same `iw intent check` command as

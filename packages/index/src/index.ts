@@ -10,6 +10,20 @@
 
 // Phase 1: Core index
 export { initSchema } from "./schema.js";
+
+// CypherLite CARI graph projection + query runner
+export {
+  runCypherQuery,
+  runCypherQueryFromDb,
+  injectCariGraphCtes,
+  looksLikeSql,
+  CARI_GRAPH_SCHEMA,
+  CARI_QUERY_TEMPLATES,
+} from "./queries/cypherGraph.js";
+export type {
+  CypherQueryResult,
+  QueryTemplate,
+} from "./queries/cypherGraph.js";
 export {
   buildIndex,
   registerExternalEntities,
@@ -376,4 +390,25 @@ export type {
   RuleCoverageOptions,
   RuleCoverageResult,
   PackageCoverage,
+  // Semantic Capsule Layer (14.0)
+  SemanticCapsule,
+  CapsuleKind,
+  CapsuleStatus,
 } from "./types.js";
+
+// Semantic Capsule Writer (14.0)
+export {
+  collectSymbolEvidence,
+  generateSymbolSummary,
+  generateCallSemantics,
+  generatePathSummary,
+  markStaleForChangedSymbols,
+  listCapsules,
+  getCapsule,
+} from "./queries/capsuleWriter.js";
+export type {
+  SymbolEvidence,
+  CapsuleWriteOptions,
+  CapsuleLLM,
+  CapsuleWriteResult,
+} from "./queries/capsuleWriter.js";

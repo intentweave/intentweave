@@ -147,10 +147,55 @@ export function layersCheckFromDb(
     return { name: layer.name, index, fileCount: files.length };
   });
 
+  // Aggregate layer-to-layer import flows for Sankey visualization
+  const flowMap = new Map<
+    string,
+    {
+      fromLayer: string;
+      toLayer: string;
+      fromLayerIndex: number;
+      toLayerIndex: number;
+      importCount: number;
+      violationCount: number;
+    }
+  >();
+  for (const [source, targets] of forward) {
+    const sourceLayer = fileToLayer.get(source);
+    if (!sourceLayer) continue;
+    for (const target of targets) {
+      const targetLayer = fileToLayer.get(target);
+      if (!targetLayer || sourceLayer.index === targetLayer.index) continue;
+      const key = `${sourceLayer.name}\u2192${targetLayer.name}`;
+      const existing = flowMap.get(key);
+      if (existing) {
+        existing.importCount++;
+      } else {
+        flowMap.set(key, {
+          fromLayer: sourceLayer.name,
+          toLayer: targetLayer.name,
+          fromLayerIndex: sourceLayer.index,
+          toLayerIndex: targetLayer.index,
+          importCount: 1,
+          violationCount: 0,
+        });
+      }
+    }
+  }
+  // Tally violation counts per layer pair
+  for (const v of violations) {
+    const key = `${v.sourceLayer}\u2192${v.targetLayer}`;
+    const flow = flowMap.get(key);
+    if (flow) flow.violationCount++;
+  }
+  const layerFlows = [...flowMap.values()]
+    .map((f) => ({ ...f, isViolation: f.violationCount > 0 }))
+    .sort((a, b) => b.importCount - a.importCount);
+
   return {
     violations,
     totalViolations: violations.length,
     byType: { reverse, skipLayer },
     layerSummary,
+    layerFlows,
   };
 }

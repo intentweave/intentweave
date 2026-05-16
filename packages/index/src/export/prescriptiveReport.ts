@@ -197,6 +197,27 @@ export interface InsightsHotspots {
     size: number;
     members: Array<{ name: string; kind: string }>;
   }>;
+  /** 19.7 Surprising Connections */
+  surprises?: Array<{
+    entityA: string;
+    entityB: string;
+    score: number;
+    crossLayerWeight: number;
+    communityDistance: number;
+    inverseFrequency: number;
+    reason: string;
+  }>;
+  /** 19.8b TODOs / Technical Debt */
+  todos?: {
+    items: Array<{
+      filePath: string;
+      line: number;
+      kind: string;
+      text: string;
+    }>;
+    totalCount: number;
+    byKind: Record<string, number>;
+  };
 }
 
 export interface InsightsDocumentation {
@@ -315,6 +336,57 @@ export interface InsightsDocMap {
   sourceFiles: Record<string, string>;
 }
 
+/** 19.1 Call Graph — single pre-computed butterfly trace for one entry file. */
+export interface InsightsCallGraphTrace {
+  nodes: Array<{ file: string; symbols: string[]; depth: number }>;
+  edges: Array<{
+    fromFile: string;
+    fromSymbol: string | null;
+    toFile: string;
+    toCalleeName: string;
+    callerLine: number | null;
+  }>;
+  truncated: boolean;
+}
+
+export interface InsightsCallGraphEntry {
+  entryFile: string;
+  forward: InsightsCallGraphTrace;
+  backward: InsightsCallGraphTrace;
+}
+
+export interface InsightsCallGraph {
+  total: number;
+  topCallees: Array<{ calleeName: string; count: number }>;
+  traces: InsightsCallGraphEntry[];
+  callsTableActive: boolean;
+}
+
+/** 19.8c Test Coverage chapter data. */
+export interface InsightsTestCoverage {
+  totalExported: number;
+  covered: number;
+  coveragePercent: number;
+  untested: Array<{
+    name: string;
+    filePath: string;
+    kind: string;
+    line: number;
+  }>;
+  mappings: Array<{
+    testFile: string;
+    sourceFile: string;
+    strategy: string;
+    importedNames: string[];
+  }>;
+  byDirectory: Array<{
+    directory: string;
+    totalExported: number;
+    covered: number;
+    coveragePercent: number;
+  }>;
+}
+
 /** Extended data type for the Insights Book — superset of PrescriptiveReportData. */
 export interface InsightsBookData extends PrescriptiveReportData {
   codeHealth?: InsightsCodeHealth;
@@ -324,6 +396,42 @@ export interface InsightsBookData extends PrescriptiveReportData {
   rulesCatalog?: InsightsRulesCatalog;
   /** CARI-powered doc→code interconnection map (Documentation Map chapter) */
   docMap?: InsightsDocMap;
+  /** 19.6 Rule Coverage — packages without behavioral rules */
+  ruleCoverage?: {
+    totalBehavioralRules: number;
+    covered: Array<{
+      dir: string;
+      fileCount: number;
+      behavioralRuleCount: number;
+      coveredByRules: string[];
+    }>;
+    uncovered: Array<{
+      dir: string;
+      fileCount: number;
+      behavioralRuleCount: number;
+      coveredByRules: string[];
+    }>;
+    topUncovered: Array<{
+      dir: string;
+      fileCount: number;
+      behavioralRuleCount: number;
+      coveredByRules: string[];
+    }>;
+  };
+  /** 19.8c Test Coverage chapter data */
+  testCoverage?: InsightsTestCoverage;
+  /** 19.1 Call Graph — butterfly trace visualizer */
+  callGraph?: InsightsCallGraph;
+  /** Layer-to-layer import flow data for Sankey visualization. */
+  layerFlows?: Array<{
+    fromLayer: string;
+    toLayer: string;
+    fromLayerIndex: number;
+    toLayerIndex: number;
+    importCount: number;
+    violationCount: number;
+    isViolation: boolean;
+  }>;
 }
 
 declare const DATA: PrescriptiveReportData;

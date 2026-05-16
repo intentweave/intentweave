@@ -7,13 +7,12 @@
  * Generates a self-contained HTML file with:
  *   - Chapter 0: Overview — §17 layer-band SVG (full interactive, via iframe)
  *                            + stats bar
- *   - Chapters 1..N: Per-ADR — Cytoscape.js flow diagram (dagre LR layout)
+ *   - Chapters 1..N: Per-ADR — pure-SVG LR flow diagram (Sugiyama-style layout)
  *                              + CARI overlay toggles + rule panel + YAML snippet
  *   - Chapter N+1: Violations — severity-sorted table with ADR back-links
  *   - Chapter N+2: Coverage — per-layer doc coverage + hotspot files
  *
- * Cytoscape.js + dagre layout are loaded from CDN (unpkg.com).
- * TODO (18.4): inline the minified bundles for fully offline-capable export.
+ * Zero external CDN dependencies — all rendering uses inline SVG.
  */
 
 import type {
@@ -23,6 +22,22 @@ import type {
   PrescriptiveElementNode,
 } from "./prescriptiveReport.js";
 import { renderPrescriptiveReportHtml } from "./prescriptiveReport.js";
+import { readFileSync } from "fs";
+
+/** Load a vendor JS bundle and return an inline `<script>` tag, or a CDN fallback. */
+function vendorScriptTag(filename: string, cdnUrl: string): string {
+  try {
+    // Works both with tsx (src/) and compiled dist/ via postbuild copy
+    const vendorUrl = new URL(`./vendor/${filename}`, import.meta.url);
+    const content = readFileSync(vendorUrl, "utf-8").replace(
+      /<\/script>/gi,
+      "<\\/script>",
+    );
+    return `<script>${content}</script>`;
+  } catch {
+    return `<script src="${cdnUrl}"></script>`;
+  }
+}
 
 export function renderInsightsBookHtml(
   data: InsightsBookData,
@@ -51,10 +66,6 @@ export function renderInsightsBookHtml(
 <style>
 ${INSIGHTS_CSS}
 </style>
-<!-- Cytoscape.js + dagre layout — TODO: inline for fully offline export (18.4) -->
-<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
-<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
-<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 </head>
 <body>
 <div id="app">
@@ -96,6 +107,11 @@ ${INSIGHTS_CSS}
       </div>
     </div>
     <nav id="nav"></nav>
+    <!-- 19.2 Global Search button -->
+    <button id="gs-btn" aria-label="Search (Cmd+K)">
+      <span>🔍</span> Search
+      <span class="gs-kbd">⌘K</span>
+    </button>
     <div class="sidebar-footer">
       <div class="sidebar-footer-tagline">From code graph to intent graph</div>
       <div class="sidebar-meta" id="sidebar-meta"></div>
@@ -110,6 +126,15 @@ const ARCH_REPORT_HTML = ${archJson};
 ${insightsBookClientScript.toString()}
 insightsBookClientScript();
 </script>
+<!-- 19.2 Global Search overlay -->
+<dialog id="gs-overlay" aria-label="Search">
+  <div id="gs-input-wrap">
+    <span style="font-size:16px">🔍</span>
+    <input id="gs-input" type="text" placeholder="Search chapters, violations, rules, files…" autocomplete="off" spellcheck="false">
+    <kbd style="font-size:10px;color:#9ca3af;cursor:pointer" id="gs-close">Esc</kbd>
+  </div>
+  <div id="gs-results"><div class="gs-empty">Start typing to search…</div></div>
+</dialog>
 </body>
 </html>`;
 }
@@ -183,6 +208,28 @@ body {
   font-size: 9px;
   color: #475569;
 }
+/* ── Global Search overlay (19.2) ── */
+#gs-btn {
+  display:flex; align-items:center; gap:6px;
+  width:calc(100% - 24px); margin:8px 12px 4px; padding:6px 10px;
+  background:rgba(255,255,255,0.05); border:1px solid #334155; border-radius:6px;
+  color:#94a3b8; font-size:11px; cursor:pointer; text-align:left;
+  transition:background 0.15s,border-color 0.15s;
+}
+#gs-btn:hover { background:rgba(74,222,128,0.08); border-color:#4ade80; color:#bbf7d0; }
+#gs-btn .gs-kbd { margin-left:auto; font-size:9px; background:#1e293b; border:1px solid #334155; border-radius:3px; padding:1px 5px; }
+#gs-overlay { padding:0; border:none; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.35); width:min(600px,92vw); max-height:70vh; overflow:hidden; }
+#gs-overlay::backdrop { background:rgba(0,0,0,0.55); backdrop-filter:blur(2px); }
+#gs-input-wrap { padding:12px 14px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:8px; }
+#gs-input { flex:1; border:none; outline:none; font-size:14px; color:#1f2937; background:transparent; }
+#gs-results { overflow-y:auto; max-height:calc(70vh - 56px); }
+.gs-empty { padding:24px; text-align:center; color:#9ca3af; font-size:13px; }
+.gs-group { padding:8px 14px 2px; font-size:9px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#9ca3af; }
+.gs-item { display:flex; align-items:baseline; gap:10px; padding:8px 14px; cursor:pointer; border-left:3px solid transparent; }
+.gs-item:hover { background:#f0f9ff; border-left-color:#3b82f6; }
+.gs-item .gs-icon { font-size:12px; flex-shrink:0; }
+.gs-item .gs-title { font-size:12px; font-weight:600; color:#1f2937; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gs-item .gs-sub { font-size:10px; color:#6b7280; flex-shrink:0; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #nav {
   flex: 1;
   overflow-y: auto;
@@ -406,6 +453,8 @@ body {
   font-family: ui-monospace, monospace; font-size: 10px; color: #1e40af;
   max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.violations-table .td-file.viol-src-link { cursor: pointer; border-bottom: 1px dashed #7dd3fc; }
+.violations-table .td-file.viol-src-link:hover { color: #1d4ed8; background: #eff6ff; border-radius: 3px; }
 .violations-table .td-detail { color: #6b7280; font-size: 11px; }
 .viol-section { margin-bottom: 24px; }
 .viol-section h3 {
@@ -573,7 +622,6 @@ body {
 declare const DATA: InsightsBookData;
 declare const PRESCRIPTIVE_HTML: string;
 declare const ARCH_REPORT_HTML: string | null;
-declare const cytoscape: any;
 declare const document: any;
 
 function insightsBookClientScript() {
@@ -890,9 +938,13 @@ function insightsBookClientScript() {
       .querySelectorAll(".chapter")
       .forEach((c: any) => c.classList.toggle("active", c.id === id));
     const ch = document.getElementById(id);
-    if (ch && ch.dataset.cyPending) {
-      delete ch.dataset.cyPending;
-      initCytoscape(id);
+    if (ch && ch.dataset.flowPending) {
+      delete ch.dataset.flowPending;
+      initFlowDiagram(id);
+    }
+    if (ch && ch.dataset.cgPending) {
+      delete ch.dataset.cgPending;
+      initCallGraph(id);
     }
   }
   // Expose activateChapter globally for inline onclick handlers
@@ -908,6 +960,8 @@ function insightsBookClientScript() {
   ) {
     const el = document.createElement("div");
     el.className = "nav-item";
+    el.dataset.chapter = chapterId;
+    el.dataset.label = label;
     el.innerHTML =
       `<span class="nav-icon">${icon}</span>` +
       `<span>${esc(label)}</span>` +
@@ -1122,7 +1176,7 @@ function insightsBookClientScript() {
     chDiv.id = chapterId;
     chDiv.className = "chapter";
     chDiv.dataset.ruleId = ruleId;
-    chDiv.dataset.cyPending = "1";
+    chDiv.dataset.flowPending = "1";
     chDiv.innerHTML = buildAdrChapterHtml(ruleId);
     content.appendChild(chDiv);
 
@@ -1278,7 +1332,301 @@ function insightsBookClientScript() {
     );
   }
 
+  // ── Living Score chapter ───────────────────────────────────────────────────
+  if ((data as any).livingScore) {
+    const lsDiv = document.createElement("div");
+    lsDiv.id = "chapter-living-score";
+    lsDiv.className = "chapter";
+    lsDiv.innerHTML = buildLivingScoreHtml();
+    content.appendChild(lsDiv);
+    const ls = (data as any).livingScore as { grade: string; score: number };
+    addNavItem(
+      "Living Score",
+      "📈",
+      "chapter-living-score",
+      `${ls.grade} · ${Math.round(ls.score)}`,
+    );
+  }
+
+  // ── Tech Debt chapter (19.8b) ──────────────────────────────────────────────
+  if ((data as any).hotspots?.todos) {
+    const tdDiv = document.createElement("div");
+    tdDiv.id = "chapter-tech-debt";
+    tdDiv.className = "chapter";
+    tdDiv.innerHTML = buildTechDebtHtml();
+    content.appendChild(tdDiv);
+    const tdCount = ((data as any).hotspots.todos as { totalCount: number })
+      .totalCount;
+    addNavItem(
+      "Tech Debt",
+      "🔧",
+      "chapter-tech-debt",
+      tdCount > 0 ? String(tdCount) : undefined,
+    );
+  }
+
+  // ── Surprising Links chapter (19.7) ────────────────────────────────────────
+  if ((data as any).hotspots?.surprises?.length) {
+    const srpDiv = document.createElement("div");
+    srpDiv.id = "chapter-surprises";
+    srpDiv.className = "chapter";
+    srpDiv.innerHTML = buildSurprisesHtml();
+    content.appendChild(srpDiv);
+    const srpCount = ((data as any).hotspots.surprises as any[]).length;
+    addNavItem("Surprising Links", "🔗", "chapter-surprises", String(srpCount));
+  }
+
+  // ── Rule Coverage chapter (19.6) ───────────────────────────────────────────
+  if ((data as any).ruleCoverage) {
+    const rcDiv = document.createElement("div");
+    rcDiv.id = "chapter-rule-coverage";
+    rcDiv.className = "chapter";
+    rcDiv.innerHTML = buildRuleCoverageHtml();
+    content.appendChild(rcDiv);
+    const rcData = (data as any).ruleCoverage as { uncovered: any[] };
+    addNavItem(
+      "Rule Coverage",
+      "🎯",
+      "chapter-rule-coverage",
+      rcData.uncovered.length > 0 ? String(rcData.uncovered.length) : undefined,
+    );
+  }
+
+  // ── Design Rationale chapter (19.8a) ───────────────────────────────────────
+  if ((data as any).documentation?.rationale?.length) {
+    const drDiv = document.createElement("div");
+    drDiv.id = "chapter-rationale";
+    drDiv.className = "chapter";
+    drDiv.innerHTML = buildDesignRationaleHtml();
+    content.appendChild(drDiv);
+    const rationaleCount = ((data as any).documentation.rationale as any[])
+      .length;
+    addNavItem(
+      "Design Rationale",
+      "💡",
+      "chapter-rationale",
+      String(rationaleCount),
+    );
+  }
+
+  // ── Test Coverage chapter (19.8c) ───────────────────────────────────────────
+  if ((data as any).testCoverage) {
+    const tcDiv = document.createElement("div");
+    tcDiv.id = "chapter-test-coverage";
+    tcDiv.className = "chapter";
+    tcDiv.innerHTML = buildTestCoverageHtml();
+    content.appendChild(tcDiv);
+    const tc = (data as any).testCoverage as {
+      coveragePercent: number;
+      untested: any[];
+    };
+    const tcBadge =
+      tc.untested.length > 0 ? String(tc.untested.length) : undefined;
+    addNavItem("Test Coverage", "🧪", "chapter-test-coverage", tcBadge);
+  }
+
+  // ── Call Graph chapter (19.1) ──────────────────────────────────────────────
+  if ((data as any).callGraph?.callsTableActive) {
+    const cgDiv = document.createElement("div");
+    cgDiv.id = "chapter-call-graph";
+    cgDiv.className = "chapter";
+    cgDiv.dataset.cgPending = "1";
+    cgDiv.innerHTML = buildCallGraphHtml();
+    content.appendChild(cgDiv);
+    const cgTotal: number = (data as any).callGraph?.total ?? 0;
+    addNavItem(
+      "Call Graph",
+      "📞",
+      "chapter-call-graph",
+      cgTotal > 0 ? cgTotal.toLocaleString() : undefined,
+    );
+  }
+
   activateChapter("chapter-executive-summary");
+
+  // ── Wire violation file-cell clicks → AR source viewer (19.3) ────────────
+  // Delegated: all .viol-src-link cells across all violation tables
+  document.addEventListener("click", (e: any) => {
+    const cell = e.target.closest(".viol-src-link[data-src]");
+    if (!cell) return;
+    const srcPath: string = cell.dataset.src ?? "";
+    if (!srcPath) return;
+    // Navigate to the Documentation chapter (which hosts the AR source viewer)
+    activateChapter("chapter-doc-map");
+    // Open in AR source viewer if available
+    const openFn = (globalThis as any).__openARSourceFile;
+    if (typeof openFn === "function") {
+      // Brief delay to allow chapter activation to render
+      setTimeout(() => openFn(srcPath), 30);
+    }
+  });
+
+  // ── Global Search (19.2) ─────────────────────────────────────────────────
+  (function setupGlobalSearch() {
+    const overlay = document.getElementById("gs-overlay") as any;
+    const input = document.getElementById("gs-input") as any;
+    const results = document.getElementById("gs-results") as any;
+    const btn = document.getElementById("gs-btn") as any;
+    const closeBtn = document.getElementById("gs-close") as any;
+    if (!overlay || !input || !results) return;
+
+    // Build in-memory search index at setup time
+    type SearchItem = {
+      icon: string;
+      title: string;
+      sub: string;
+      chapterId: string;
+      group: string;
+    };
+    const idx: SearchItem[] = [];
+
+    // Nav chapters from DOM
+    document.querySelectorAll(".nav-item[data-chapter]").forEach((el: any) => {
+      idx.push({
+        icon: el.querySelector(".nav-icon")?.textContent ?? "📄",
+        title: el.dataset.label ?? el.textContent.trim(),
+        sub: "Chapter",
+        chapterId: el.dataset.chapter,
+        group: "Chapters",
+      });
+    });
+    // Violations
+    if ((DATA as any).violations) {
+      for (const v of (DATA as any).violations as any[]) {
+        idx.push({
+          icon: "⚠️",
+          title: v.ruleId ?? "Violation",
+          sub: (v.filePath ?? "").split("/").pop() ?? "",
+          chapterId: "chapter-violations",
+          group: "Violations",
+        });
+      }
+    }
+    // Rules catalog
+    if ((DATA as any).rulesCatalog?.rules) {
+      for (const r of (DATA as any).rulesCatalog.rules as any[]) {
+        idx.push({
+          icon: "📐",
+          title: r.id,
+          sub: r.description ?? "",
+          chapterId: "chapter-rules-catalog",
+          group: "Rules",
+        });
+      }
+    }
+    // Source files
+    if ((DATA as any).docMap?.sourceFiles) {
+      for (const fp of Object.keys((DATA as any).docMap.sourceFiles)) {
+        idx.push({
+          icon: "📁",
+          title: fp.split("/").pop() ?? fp,
+          sub: fp,
+          chapterId: "chapter-doc-map",
+          group: "Files",
+        });
+      }
+    }
+
+    function openOverlay() {
+      overlay.showModal();
+      input.value = "";
+      results.innerHTML = `<div class="gs-empty">Start typing to search…</div>`;
+      setTimeout(() => input.focus(), 20);
+    }
+    function closeOverlay() {
+      overlay.close();
+    }
+
+    btn?.addEventListener("click", openOverlay);
+    closeBtn?.addEventListener("click", closeOverlay);
+    overlay.addEventListener("click", (e: any) => {
+      if (e.target === overlay) closeOverlay();
+    });
+
+    // Cmd+K / Ctrl+K
+    document.addEventListener("keydown", (e: any) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        openOverlay();
+      }
+      if (e.key === "Escape" && overlay.open) closeOverlay();
+    });
+
+    input.addEventListener("input", () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) {
+        results.innerHTML = `<div class="gs-empty">Start typing to search…</div>`;
+        return;
+      }
+      const matches = idx
+        .filter(
+          (i) =>
+            i.title.toLowerCase().includes(q) ||
+            i.sub.toLowerCase().includes(q),
+        )
+        .slice(0, 40);
+      if (!matches.length) {
+        results.innerHTML = `<div class="gs-empty">No results for "${q}"</div>`;
+        return;
+      }
+
+      // Group results
+      const grouped = new Map<string, SearchItem[]>();
+      for (const m of matches) {
+        const arr = grouped.get(m.group) ?? [];
+        arr.push(m);
+        grouped.set(m.group, arr);
+      }
+      let html = "";
+      for (const [grp, items] of grouped) {
+        html += `<div class="gs-group">${grp}</div>`;
+        for (const item of items.slice(0, 8)) {
+          html += `<div class="gs-item" data-chapter="${item.chapterId}">
+            <span class="gs-icon">${item.icon}</span>
+            <span class="gs-title">${item.title}</span>
+            <span class="gs-sub">${item.sub}</span>
+          </div>`;
+        }
+      }
+      results.innerHTML = html;
+
+      // Click navigates
+      results.querySelectorAll(".gs-item[data-chapter]").forEach((el: any) => {
+        el.addEventListener("click", () => {
+          activateChapter(el.dataset.chapter);
+          closeOverlay();
+        });
+      });
+
+      // Arrow key navigation
+      results
+        .querySelectorAll(".gs-item")
+        .forEach((el: any, i: number, all: any) => {
+          el.addEventListener("keydown", (e: any) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              all[i + 1]?.focus();
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              (i > 0 ? all[i - 1] : input).focus();
+            }
+            if (e.key === "Enter") {
+              el.click();
+            }
+          });
+          el.tabIndex = 0;
+        });
+    });
+
+    // Arrow down from input into first result
+    input.addEventListener("keydown", (e: any) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        (results.querySelector(".gs-item") as any)?.focus();
+      }
+    });
+  })();
 
   // ── Overview HTML builder ─────────────────────────────────────────────────
   function buildOverviewHtml(): string {
@@ -1357,7 +1705,7 @@ function insightsBookClientScript() {
         </tr></thead>
         <tbody>${ruleRows}</tbody>
       </table>
-      <p style="font-size:11px;color:#6b7280">Click <em>View flow</em> to open the interactive Cytoscape.js diagram for that rule. Sub-items in the sidebar provide direct access to each flow.</p>
+      <p style="font-size:11px;color:#6b7280">Click <em>View flow</em> to open the interactive flow diagram for that rule. Sub-items in the sidebar provide direct access to each flow.</p>
       `
           : ""
       }
@@ -1602,7 +1950,7 @@ function insightsBookClientScript() {
           </tr></thead><tbody>`;
           ruleViols.forEach((v) => {
             h += `<tr>
-              <td class="td-file" title="${esc(v.filePath)}">${esc(shortPath(v.filePath))}</td>
+              <td class="td-file viol-src-link" data-src="${esc(v.filePath)}" title="${esc(v.filePath)} (click to open in source viewer)">${esc(shortPath(v.filePath))}</td>
               <td style="font-size:10px;white-space:nowrap">${v.line ?? "—"}</td>
               <td style="font-family:ui-monospace,monospace;font-size:10px">${v.symbol ? esc(v.symbol) : "—"}</td>
               <td class="td-detail">${esc(v.detail.slice(0, 120))}${v.detail.length > 120 ? "…" : ""}</td>
@@ -1669,7 +2017,7 @@ function insightsBookClientScript() {
           </tr></thead><tbody>`;
         viols.slice(0, 20).forEach((v) => {
           h += `<tr>
-            <td class="td-file" title="${esc(v.filePath)}">${esc(shortPath(v.filePath))}</td>
+            <td class="td-file viol-src-link" data-src="${esc(v.filePath)}" title="${esc(v.filePath)} (click to open in source viewer)">${esc(shortPath(v.filePath))}</td>
             <td style="font-family:ui-monospace,monospace;font-size:10px">${v.symbol ? esc(v.symbol) : "—"}</td>
             <td class="td-detail">${esc(v.detail.slice(0, 150))}${v.detail.length > 150 ? "…" : ""}</td>
           </tr>`;
@@ -1727,7 +2075,7 @@ function insightsBookClientScript() {
         viols.slice(0, 20).forEach((v) => {
           h += `<tr>
             <td>${sev(v.severity)}</td>
-            <td class="td-file" title="${esc(v.filePath)}">${esc(shortPath(v.filePath))}</td>
+            <td class="td-file viol-src-link" data-src="${esc(v.filePath)}" title="${esc(v.filePath)} (click to open in source viewer)">${esc(shortPath(v.filePath))}</td>
             <td class="td-detail">${esc(v.detail)}</td>
           </tr>`;
         });
@@ -3324,6 +3672,43 @@ function insightsBookClientScript() {
     const allViolations: any[] = DATA_global?.violations ?? [];
     const allRules: any[] = DATA_global?.rulesCatalog?.rules ?? [];
 
+    // ── Build global call-edge index from pre-computed traces (19.5) ──────
+    interface CallEdge {
+      fromFile: string;
+      fromName: string;
+      toFile: string;
+      toName: string;
+      line: number | null;
+    }
+    const cgEdgeSet = new Set<string>();
+    const cgCallersOf = new Map<string, CallEdge[]>(); // file → who calls into it
+    const cgCalleesOf = new Map<string, CallEdge[]>(); // file → what it calls
+    const cgTraces: any[] = DATA_global?.callGraph?.traces ?? [];
+    for (const t of cgTraces) {
+      const edges: any[] = [
+        ...(t.forward?.edges ?? []),
+        ...(t.backward?.edges ?? []),
+      ];
+      for (const e of edges) {
+        const key = `${e.fromFile}:${e.fromCallerName ?? ""}→${e.toFile}:${e.toCalleeName ?? ""}`;
+        if (cgEdgeSet.has(key)) continue;
+        cgEdgeSet.add(key);
+        const edge: CallEdge = {
+          fromFile: e.fromFile,
+          fromName: e.fromCallerName ?? "",
+          toFile: e.toFile,
+          toName: e.toCalleeName ?? "",
+          line: e.callerLine ?? null,
+        };
+        const callers = cgCallersOf.get(e.toFile) ?? [];
+        callers.push(edge);
+        cgCallersOf.set(e.toFile, callers);
+        const callees = cgCalleesOf.get(e.fromFile) ?? [];
+        callees.push(edge);
+        cgCalleesOf.set(e.fromFile, callees);
+      }
+    }
+
     // Per-file stats
     const allFiles = Object.keys(dm.sourceFiles as Record<string, string>);
     const fileDocCount = new Map<string, number>();
@@ -3658,12 +4043,54 @@ function insightsBookClientScript() {
         })
         .join("\n");
 
+      // Build call-graph panel for current file (19.5)
+      function renderCallGraphContent(file: string): string {
+        const callers = cgCallersOf.get(file) ?? [];
+        const callees = cgCalleesOf.get(file) ?? [];
+        if (callers.length === 0 && callees.length === 0) {
+          return `<div class="src-refs-empty">No call graph data for this file.<br><span style="font-size:10px;color:#94a3b8">Run <code>iw index build</code> on a TypeScript codebase to populate.</span></div>`;
+        }
+        let html = "";
+        if (callers.length > 0) {
+          html += `<div class="src-refs-section">▲ Called by (${callers.length})</div>`;
+          const seen = new Set<string>();
+          for (const e of callers.slice(0, 20)) {
+            const k = `${e.fromFile}:${e.fromName}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            html += `<div class="src-ref-doc-item" style="cursor:default">
+              <div class="src-ref-doc-name" style="color:#ec4899">${escHtml(e.fromName || "(anon)")}</div>
+              <div class="src-ref-doc-path">${escHtml(shortPath(e.fromFile, 40))}</div>
+              ${e.line ? `<div class="src-ref-lines">line ${e.line}</div>` : ""}
+            </div>`;
+          }
+        }
+        if (callees.length > 0) {
+          html += `<div class="src-refs-section">▼ Calls into (${callees.length})</div>`;
+          const seen = new Set<string>();
+          for (const e of callees.slice(0, 20)) {
+            const k = `${e.toFile}:${e.toName}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            html += `<div class="src-ref-doc-item" style="cursor:default">
+              <div class="src-ref-doc-name" style="color:#0ea5e9">${escHtml(e.toName || "(anon)")}</div>
+              <div class="src-ref-doc-path">${escHtml(shortPath(e.toFile, 40))}</div>
+            </div>`;
+          }
+        }
+        return html;
+      }
+
       const refsHtml = `<div class="src-refs-panel" id="ar-refs-panel">
-        <div class="src-refs-title">
-          <span>🔗 Evidence Links</span>
-          <button id="ar-refs-reset" style="display:none;font-size:9px;border:none;background:#e2e8f0;color:#374151;border-radius:3px;padding:1px 6px;cursor:pointer;float:right;margin-top:1px">show all</button>
+        <div class="src-refs-title" style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <div style="display:flex;gap:0;flex:1">
+            <button id="ar-tab-ev" class="ar-tab-btn ar-tab-active" style="flex:1;padding:4px 6px;font-size:10px;font-weight:700;border:none;border-bottom:2px solid #3b82f6;background:none;color:#1d4ed8;cursor:pointer">🔗 Evidence</button>
+            <button id="ar-tab-cg" class="ar-tab-btn" style="flex:1;padding:4px 6px;font-size:10px;font-weight:700;border:none;border-bottom:2px solid transparent;background:none;color:#6b7280;cursor:pointer">📞 Call Graph</button>
+          </div>
+          <button id="ar-refs-reset" style="display:none;font-size:9px;border:none;background:#e2e8f0;color:#374151;border-radius:3px;padding:1px 6px;cursor:pointer;flex-shrink:0">show all</button>
         </div>
         <div id="ar-refs-body">${renderRefsContent(null)}</div>
+        <div id="ar-cg-body" style="display:none">${renderCallGraphContent(srcPath)}</div>
       </div>`;
 
       viewer.innerHTML = `<div class="dm-src-view">${srcHeader}<div class="src-split"><pre class="dm-src-body lang-${escHtml(lang)}" id="ar-src-pre"><code id="ar-src-code">${linesHtml}</code></pre>${refsHtml}</div></div>`;
@@ -3824,6 +4251,35 @@ function insightsBookClientScript() {
 
       if (refsReset)
         refsReset.addEventListener("click", () => applyLineFilter(null));
+
+      // Tab toggle (Evidence Links ↔ Call Graph) — 19.5
+      const tabEv = viewer.querySelector("#ar-tab-ev");
+      const tabCg = viewer.querySelector("#ar-tab-cg");
+      const refsBodyEl = viewer.querySelector("#ar-refs-body");
+      const cgBodyEl = viewer.querySelector("#ar-cg-body");
+      if (tabEv && tabCg) {
+        tabEv.addEventListener("click", () => {
+          (tabEv as any).style.borderBottomColor = "#3b82f6";
+          (tabEv as any).style.color = "#1d4ed8";
+          (tabCg as any).style.borderBottomColor = "transparent";
+          (tabCg as any).style.color = "#6b7280";
+          if (refsBodyEl) (refsBodyEl as any).style.display = "block";
+          if (cgBodyEl) (cgBodyEl as any).style.display = "none";
+          if (refsReset)
+            (refsReset as any).style.display =
+              activeFilterLine !== null ? "inline" : "none";
+        });
+        tabCg.addEventListener("click", () => {
+          (tabCg as any).style.borderBottomColor = "#3b82f6";
+          (tabCg as any).style.color = "#1d4ed8";
+          (tabEv as any).style.borderBottomColor = "transparent";
+          (tabEv as any).style.color = "#6b7280";
+          if (refsBodyEl) (refsBodyEl as any).style.display = "none";
+          if (cgBodyEl) (cgBodyEl as any).style.display = "block";
+          if (refsReset) (refsReset as any).style.display = "none";
+        });
+      }
+
       viewer.querySelectorAll(".src-gutter-dot").forEach((dot: any) => {
         dot.addEventListener("click", () => {
           const lineNo = parseInt(dot.dataset.line, 10);
@@ -3849,6 +4305,168 @@ function insightsBookClientScript() {
 
       wireRefsPanel();
     }
+
+    // Expose globally so other chapters can jump directly into the source viewer
+    (globalThis as any).__openARSourceFile = openARSourceFile;
+  }
+
+  // ── Layer Import Flow Sankey (item 5) ────────────────────────────────────
+  function buildLayerSankeyHtml(): string {
+    type FlowDef = {
+      fromLayer: string;
+      toLayer: string;
+      fromLayerIndex: number;
+      toLayerIndex: number;
+      importCount: number;
+      violationCount: number;
+      isViolation: boolean;
+    };
+    const sankeyFlows = (data as any).layerFlows as FlowDef[] | undefined;
+    if (!sankeyFlows || sankeyFlows.length === 0) return "";
+
+    // Derive unique layers ordered top-to-bottom by index (highest = top)
+    const layerMap = new Map<number, string>();
+    for (const f of sankeyFlows) {
+      layerMap.set(f.fromLayerIndex, f.fromLayer);
+      layerMap.set(f.toLayerIndex, f.toLayer);
+    }
+    const orderedLayers = [...layerMap.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([idx, name]) => ({ idx, name }));
+    const N = orderedLayers.length;
+    if (N < 2) return "";
+
+    // Layout
+    const W = 820,
+      NODE_W = 110,
+      NODE_H = 38,
+      ROW_GAP = 18;
+    const MARGIN_TOP = 14,
+      MARGIN_BOT = 32;
+    const rowH = NODE_H + ROW_GAP;
+    const SVG_H = MARGIN_TOP + N * rowH - ROW_GAP + MARGIN_BOT;
+    const xLeft = 10,
+      xRight = W - 10 - NODE_W;
+    const xBandLeft = xLeft + NODE_W,
+      xBandRight = xRight;
+    const bw = xBandRight - xBandLeft;
+
+    const rowOf = new Map(orderedLayers.map(({ idx }, i) => [idx, i]));
+    const nodeY = (idx: number) => MARGIN_TOP + (rowOf.get(idx) ?? 0) * rowH;
+
+    // Scale: fit sum of outflow bands within NODE_H * 0.82
+    const MAX_BAND_H = NODE_H * 0.82;
+    const totalOut = new Map<number, number>();
+    const totalIn = new Map<number, number>();
+    for (const f of sankeyFlows) {
+      totalOut.set(
+        f.fromLayerIndex,
+        (totalOut.get(f.fromLayerIndex) ?? 0) + f.importCount,
+      );
+      totalIn.set(
+        f.toLayerIndex,
+        (totalIn.get(f.toLayerIndex) ?? 0) + f.importCount,
+      );
+    }
+    const maxTotal = Math.max(
+      ...[...totalOut.values()],
+      ...[...totalIn.values()],
+      1,
+    );
+    const scale = MAX_BAND_H / maxTotal;
+
+    // Sort flows for stable ordering within each node
+    const sortedFlows = [...sankeyFlows].sort(
+      (a, b) =>
+        (rowOf.get(a.fromLayerIndex) ?? 0) -
+          (rowOf.get(b.fromLayerIndex) ?? 0) ||
+        (rowOf.get(a.toLayerIndex) ?? 0) - (rowOf.get(b.toLayerIndex) ?? 0),
+    );
+
+    // Compute starting Y offsets (centered within node)
+    const leftRunning = new Map<number, number>();
+    const rightRunning = new Map<number, number>();
+    for (const { idx } of orderedLayers) {
+      const outH = Math.min((totalOut.get(idx) ?? 0) * scale, MAX_BAND_H);
+      const inH = Math.min((totalIn.get(idx) ?? 0) * scale, MAX_BAND_H);
+      leftRunning.set(idx, (NODE_H - outH) / 2);
+      rightRunning.set(idx, (NODE_H - inH) / 2);
+    }
+
+    type BandDef = {
+      yFrom: number;
+      yTo: number;
+      bandH: number;
+      flow: FlowDef;
+    };
+    const bands: BandDef[] = [];
+    for (const f of sortedFlows) {
+      const bandH = Math.max(2, Math.min(f.importCount * scale, MAX_BAND_H));
+      const lOff = leftRunning.get(f.fromLayerIndex) ?? 0;
+      const rOff = rightRunning.get(f.toLayerIndex) ?? 0;
+      bands.push({
+        yFrom: nodeY(f.fromLayerIndex) + lOff + bandH / 2,
+        yTo: nodeY(f.toLayerIndex) + rOff + bandH / 2,
+        bandH,
+        flow: f,
+      });
+      leftRunning.set(f.fromLayerIndex, lOff + bandH);
+      rightRunning.set(f.toLayerIndex, rOff + bandH);
+    }
+
+    let svg = `<svg viewBox="0 0 ${W} ${SVG_H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">`;
+
+    // Bands (behind nodes)
+    for (const { yFrom, yTo, bandH, flow } of bands) {
+      const cx1 = xBandLeft + bw * 0.4,
+        cx2 = xBandRight - bw * 0.4;
+      const color = flow.isViolation ? "#ef4444" : "#3b82f6";
+      const fillOp = flow.isViolation ? 0.6 : 0.3;
+      const tip = `${esc(flow.fromLayer)} \u2192 ${esc(flow.toLayer)}: ${flow.importCount} import${flow.importCount !== 1 ? "s" : ""}${flow.violationCount > 0 ? ` \u00b7 ${flow.violationCount} violation${flow.violationCount !== 1 ? "s" : ""}` : ""}`;
+      const y0t = (yFrom - bandH / 2).toFixed(1);
+      const y0b = (yFrom + bandH / 2).toFixed(1);
+      const y1t = (yTo - bandH / 2).toFixed(1);
+      const y1b = (yTo + bandH / 2).toFixed(1);
+      svg += `<path d="M ${xBandLeft},${y0t} C ${cx1},${y0t} ${cx2},${y1t} ${xBandRight},${y1t} L ${xBandRight},${y1b} C ${cx2},${y1b} ${cx1},${y0b} ${xBandLeft},${y0b} Z" fill="${color}" fill-opacity="${fillOp}"><title>${tip}</title></path>`;
+    }
+
+    // Nodes
+    for (const { idx, name } of orderedLayers) {
+      const y = nodeY(idx);
+      const short = esc(name.replace(/^(packages|apps)\//, ""));
+      const outCnt = totalOut.get(idx) ?? 0;
+      const inCnt = totalIn.get(idx) ?? 0;
+      // Left (source) node
+      svg += `<rect x="${xLeft}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="5" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/>`;
+      svg += `<text x="${xLeft + NODE_W / 2}" y="${y + NODE_H / 2 - 5}" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" font-weight="600" fill="#1e293b">${short}</text>`;
+      svg += `<text x="${xLeft + NODE_W / 2}" y="${y + NODE_H / 2 + 9}" text-anchor="middle" font-size="9" font-family="ui-sans-serif,sans-serif" fill="#64748b">out: ${outCnt}</text>`;
+      // Right (target) node
+      svg += `<rect x="${xRight}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="5" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/>`;
+      svg += `<text x="${xRight + NODE_W / 2}" y="${y + NODE_H / 2 - 5}" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" font-weight="600" fill="#1e293b">${short}</text>`;
+      svg += `<text x="${xRight + NODE_W / 2}" y="${y + NODE_H / 2 + 9}" text-anchor="middle" font-size="9" font-family="ui-sans-serif,sans-serif" fill="#64748b">in: ${inCnt}</text>`;
+    }
+
+    // Legend
+    const ly = SVG_H - 16;
+    svg += `<circle cx="${W / 2 - 74}" cy="${ly}" r="5" fill="#3b82f6" fill-opacity="0.7"/>`;
+    svg += `<text x="${W / 2 - 66}" y="${ly + 4}" font-size="10" font-family="ui-sans-serif,sans-serif" fill="#64748b">Allowed imports</text>`;
+    svg += `<circle cx="${W / 2 + 36}" cy="${ly}" r="5" fill="#ef4444" fill-opacity="0.8"/>`;
+    svg += `<text x="${W / 2 + 44}" y="${ly + 4}" font-size="10" font-family="ui-sans-serif,sans-serif" fill="#64748b">Violations \u00b7 band width \u221d import count</text>`;
+
+    svg += `</svg>`;
+
+    const totalViol = sankeyFlows.reduce((s, f) => s + f.violationCount, 0);
+    const subtitle =
+      totalViol > 0
+        ? `${sankeyFlows.length} cross-layer flows · <span style="color:#ef4444;font-weight:600">${totalViol} violation${totalViol !== 1 ? "s" : ""}</span>`
+        : `${sankeyFlows.length} cross-layer flows · all allowed`;
+    return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 10px 10px;margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:0 4px">
+        <span style="font-size:12px;font-weight:600;color:#475569">Layer Import Flows</span>
+        <span style="font-size:11px;color:#6b7280">${subtitle}</span>
+      </div>
+      ${svg}
+    </div>`;
   }
 
   // ── Coverage chapter (18.3) ───────────────────────────────────────────────
@@ -3868,6 +4486,138 @@ function insightsBookClientScript() {
         No coverage data available. Run <code>iw index build --depth full</code> first.
       </div>`;
     } else {
+      // ── Package-priority treemap ──────────────────────────────────────────
+      const tmHotData = (data as any).hotspots as
+        | {
+            priorities?: Array<{
+              filePath: string;
+              churn: number;
+              coveragePercent: number;
+              priorityScore: number;
+              totalExportedSymbols: number;
+            }>;
+          }
+        | undefined;
+      const tmFiles = tmHotData?.priorities ?? [];
+      if (tmFiles.length > 0) {
+        type TmNode = {
+          name: string;
+          value: number;
+          avgCoverage: number;
+          count: number;
+        };
+        type TmRect = TmNode & { x: number; y: number; w: number; h: number };
+        const tmPartition = (
+          items: TmNode[],
+          x: number,
+          y: number,
+          w: number,
+          ht: number,
+        ): TmRect[] => {
+          if (items.length === 0) return [];
+          if (items.length === 1) return [{ ...items[0], x, y, w, h: ht }];
+          const total = items.reduce((s, i) => s + i.value, 0);
+          let acc = 0,
+            split = 0;
+          for (let i = 0; i < items.length - 1; i++) {
+            acc += items[i].value;
+            if (acc * 2 >= total) {
+              split = i + 1;
+              break;
+            }
+          }
+          if (!split) split = Math.floor(items.length / 2) || 1;
+          const frac =
+            items.slice(0, split).reduce((s, i) => s + i.value, 0) / total;
+          if (w >= ht) {
+            const lw = Math.max(1, w * frac);
+            return [
+              ...tmPartition(items.slice(0, split), x, y, lw, ht),
+              ...tmPartition(items.slice(split), x + lw, y, w - lw, ht),
+            ];
+          } else {
+            const th = Math.max(1, ht * frac);
+            return [
+              ...tmPartition(items.slice(0, split), x, y, w, th),
+              ...tmPartition(items.slice(split), x, y + th, w, ht - th),
+            ];
+          }
+        };
+        const tmCovColor = (pct: number) => {
+          pct = Math.max(0, Math.min(100, pct));
+          if (pct >= 70) {
+            const t = (pct - 70) / 30;
+            return `rgb(${Math.round(245 - 211 * t)},${Math.round(158 + 39 * t)},${Math.round(11 + 83 * t)})`;
+          }
+          const t = pct / 70;
+          return `rgb(${Math.round(220 + 25 * t)},${Math.round(38 + 120 * t)},${Math.round(38 - 27 * t)})`;
+        };
+        const tmGroupMap = new Map<
+          string,
+          { covSum: number; cnt: number; totalPri: number }
+        >();
+        for (const f of tmFiles) {
+          if (f.priorityScore <= 0) continue;
+          const parts = f.filePath.replace(/\\/g, "/").split("/");
+          const grp = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : parts[0];
+          const g = tmGroupMap.get(grp) ?? { covSum: 0, cnt: 0, totalPri: 0 };
+          g.covSum += f.coveragePercent;
+          g.cnt++;
+          g.totalPri += f.priorityScore;
+          tmGroupMap.set(grp, g);
+        }
+        const tmGroupArr: TmNode[] = [...tmGroupMap.entries()]
+          .filter(([, g]) => g.totalPri > 0)
+          .map(([name, g]) => ({
+            name,
+            value: g.totalPri,
+            avgCoverage: g.cnt > 0 ? g.covSum / g.cnt : 0,
+            count: g.cnt,
+          }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 40);
+        if (tmGroupArr.length > 0) {
+          const TW = 900,
+            TH = 260;
+          const tmCells = tmPartition(tmGroupArr, 0, 0, TW, TH);
+          let tmSvg = `<svg viewBox="0 0 ${TW} ${TH}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;border-radius:6px;overflow:hidden">`;
+          for (const c of tmCells) {
+            const color = tmCovColor(c.avgCoverage);
+            const isDark = c.avgCoverage < 45;
+            const tf = isDark ? "#fff" : "#1a1a1a";
+            const short = c.name.replace(/^(packages|apps)\//, "");
+            const titleTxt = `${esc(c.name)}: ${c.avgCoverage.toFixed(0)}% avg coverage · ${c.count} file${c.count !== 1 ? "s" : ""} · priority ${c.value.toFixed(0)}`;
+            tmSvg += `<g><rect x="${(c.x + 1).toFixed(1)}" y="${(c.y + 1).toFixed(1)}" width="${Math.max(0, c.w - 2).toFixed(1)}" height="${Math.max(0, c.h - 2).toFixed(1)}" rx="3" fill="${color}" fill-opacity="0.9"><title>${titleTxt}</title></rect>`;
+            if (c.w > 55 && c.h > 26) {
+              const fs = Math.min(
+                13,
+                Math.max(8, Math.floor(c.w / (short.length * 0.72))),
+              );
+              const lbl =
+                short.length > 22 ? short.slice(0, 20) + "\u2026" : short;
+              tmSvg += `<text x="${(c.x + c.w / 2).toFixed(1)}" y="${(c.y + c.h / 2 - (c.h > 42 ? 7 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-family="ui-sans-serif,sans-serif" font-weight="600" fill="${tf}" pointer-events="none">${esc(lbl)}</text>`;
+              if (c.h > 42) {
+                tmSvg += `<text x="${(c.x + c.w / 2).toFixed(1)}" y="${(c.y + c.h / 2 + 8).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="10" font-family="ui-sans-serif,sans-serif" fill="${tf}" fill-opacity="0.8" pointer-events="none">${c.avgCoverage.toFixed(0)}%</text>`;
+              }
+            }
+            tmSvg += `</g>`;
+          }
+          tmSvg += `</svg>`;
+          h += `<div style="margin-bottom:18px">
+            <div style="font-size:11px;color:#6b7280;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+              <span>Cell area = churn priority · hover for details · ${tmGroupArr.length} packages</span>
+              <span style="display:flex;gap:8px;align-items:center">
+                <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;background:#22c55e;border-radius:2px;display:inline-block"></span>≥70% covered</span>
+                <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;background:#f59e0b;border-radius:2px;display:inline-block"></span>40–70%</span>
+                <span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;background:#dc2626;border-radius:2px;display:inline-block"></span>&lt;40%</span>
+              </span>
+            </div>
+            ${tmSvg}
+          </div>`;
+        }
+      }
+      h += buildLayerSankeyHtml();
+
       h += `<div class="violations-table-wrap"><table class="coverage-table"><thead><tr>
         <th>Layer</th><th>#</th><th>Files</th><th>Doc Coverage</th><th>Rules</th><th>Top Hotspots</th>
       </tr></thead><tbody>`;
@@ -3965,24 +4715,28 @@ function insightsBookClientScript() {
         key: "specCoverage",
         label: "Spec Coverage",
         icon: "📋",
+        chapter: "chapter-coverage",
         dim: ls.specCoverage,
       },
       {
         key: "constraintConsistency",
         label: "Constraint Consistency",
         icon: "🔒",
+        chapter: "chapter-violations",
         dim: ls.constraintConsistency,
       },
       {
         key: "docFreshness",
         label: "Documentation Freshness",
         icon: "📅",
+        chapter: "chapter-documentation",
         dim: ls.docFreshness,
       },
       {
         key: "archConformance",
         label: "Architecture Conformance",
         icon: "🏛",
+        chapter: "chapter-layers",
         dim: ls.archConformance,
       },
     ];
@@ -4004,7 +4758,7 @@ function insightsBookClientScript() {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">`;
 
-    dims.forEach(({ label, icon, dim }) => {
+    dims.forEach(({ label, icon, chapter, dim }) => {
       const sc = dim.available ? Math.round(dim.score) : null;
       const barColor =
         sc === null
@@ -4033,14 +4787,549 @@ function insightsBookClientScript() {
             : `<div style="font-size:12px;color:#9ca3af;margin-bottom:8px">Not enough data to compute this dimension.</div>`
         }
         <div style="font-size:11px;color:#6b7280;line-height:1.5">${esc(dim.detail)}</div>
+        <div style="margin-top:8px;text-align:right">
+          <button class="btn-goto" onclick="activateChapter('${chapter}')" style="font-size:10px">↗ Details</button>
+        </div>
       </div>`;
     });
 
     h += `</div>
       <div style="margin-top:16px;padding:12px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:12px;color:#0c4a6e">
-        <b>Tip:</b> Run <code>iw verify --score</code> in the CLI for detailed per-dimension breakdowns and improvement suggestions.
+        <b>Tip:</b> Run <code>iw intent score</code> in the CLI for detailed per-dimension breakdowns and improvement suggestions.
       </div>
     </div>`;
+    return h;
+  }
+
+  // ── Tech Debt (TODOs) chapter (19.8b) ────────────────────────────────────
+  function buildTechDebtHtml(): string {
+    const hotspots = (data as any).hotspots as
+      | {
+          todos?: {
+            items: Array<{
+              filePath: string;
+              line: number;
+              kind: string;
+              text: string;
+            }>;
+            totalCount: number;
+            byKind: Record<string, number>;
+          };
+        }
+      | undefined;
+    const todosData = hotspots?.todos;
+    if (!todosData || todosData.totalCount === 0) {
+      return `<div class="empty-state"><span style="font-size:32px">✅</span><p>No TODO/FIXME/HACK/XXX markers found.</p></div>`;
+    }
+    const kindColor: Record<string, string> = {
+      TODO: "#3b82f6",
+      FIXME: "#ef4444",
+      HACK: "#f97316",
+      XXX: "#8b5cf6",
+    };
+    const kindBg: Record<string, string> = {
+      TODO: "#eff6ff",
+      FIXME: "#fef2f2",
+      HACK: "#fff7ed",
+      XXX: "#f5f3ff",
+    };
+    let h = `<div class="chapter-header"><h2>Tech Debt</h2><div class="chapter-sub">Inline markers requiring attention · ${todosData.totalCount} total</div></div>`;
+    // Summary pills
+    h += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">`;
+    for (const [kind, count] of Object.entries(todosData.byKind).sort(
+      ([, a], [, b]) => (b as number) - (a as number),
+    )) {
+      const col = kindColor[kind] ?? "#6b7280";
+      const bg = kindBg[kind] ?? "#f9fafb";
+      h += `<div style="background:${bg};border:1px solid ${col};border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;color:${col}">${esc(kind)} <span style="font-weight:400">${count}</span></div>`;
+    }
+    h += `</div>`;
+    // Group by kind
+    const byKindItems: Record<string, typeof todosData.items> = {};
+    for (const item of todosData.items) {
+      (byKindItems[item.kind] = byKindItems[item.kind] ?? []).push(item);
+    }
+    for (const kind of ["FIXME", "HACK", "XXX", "TODO"]) {
+      const items = byKindItems[kind];
+      if (!items?.length) continue;
+      const col = kindColor[kind] ?? "#6b7280";
+      h += `<div class="viol-section">
+        <h3 style="color:${col}">${esc(kind)} <span style="font-weight:400;color:#6b7280;font-size:12px">${items.length}</span></h3>
+        <table class="violations-table" style="width:100%">
+          <thead><tr><th style="width:38%">File</th><th style="width:50px">Line</th><th>Text</th></tr></thead>
+          <tbody>`;
+      for (const item of items.slice(0, 200)) {
+        h += `<tr>
+          <td class="td-file" title="${esc(item.filePath)}">${esc(shortPath(item.filePath))}</td>
+          <td style="font-size:11px;color:#6b7280;text-align:right;padding-right:8px">${item.line}</td>
+          <td style="font-size:11px;color:#374151;word-break:break-word">${esc(item.text.slice(0, 200))}</td>
+        </tr>`;
+      }
+      if (items.length > 200) {
+        h += `<tr><td colspan="3" style="font-size:11px;color:#9ca3af;padding:6px 8px">…and ${items.length - 200} more</td></tr>`;
+      }
+      h += `</tbody></table></div>`;
+    }
+    return h;
+  }
+
+  // ── Surprising Links chapter (19.7) ──────────────────────────────────────
+  function buildSurprisesHtml(): string {
+    const hotspots = (data as any).hotspots as
+      | {
+          surprises?: Array<{
+            entityA: string;
+            entityB: string;
+            score: number;
+            crossLayerWeight: number;
+            communityDistance: number;
+            inverseFrequency: number;
+            reason: string;
+          }>;
+        }
+      | undefined;
+    const surprisesData = hotspots?.surprises;
+    if (!surprisesData?.length) {
+      return `<div class="empty-state"><span style="font-size:32px">🔗</span><p>No surprising connections found.</p></div>`;
+    }
+    const top20 = surprisesData.slice(0, Math.min(20, surprisesData.length));
+
+    // ── Arc diagram ───────────────────────────────────────────────────────────
+    // Nodes ordered by first appearance in the top surprises (highest-scored pairs first)
+    const nodeOrder = new Map<string, number>();
+    for (const s of top20) {
+      if (!nodeOrder.has(s.entityA)) nodeOrder.set(s.entityA, nodeOrder.size);
+      if (!nodeOrder.has(s.entityB)) nodeOrder.set(s.entityB, nodeOrder.size);
+    }
+    const nodeArr = [...nodeOrder.keys()].sort(
+      (a, b) => nodeOrder.get(a)! - nodeOrder.get(b)!,
+    );
+
+    const W = 900,
+      BASE_Y = 150,
+      MARGIN_L = 24,
+      MARGIN_R = 60,
+      H = 240;
+    const usableW = W - MARGIN_L - MARGIN_R;
+    const nodeX = new Map<string, number>();
+    nodeArr.forEach((n, i) => {
+      nodeX.set(
+        n,
+        MARGIN_L +
+          (nodeArr.length === 1
+            ? usableW / 2
+            : (i / (nodeArr.length - 1)) * usableW),
+      );
+    });
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">`;
+    for (const s of top20) {
+      const x1 = nodeX.get(s.entityA) ?? 0;
+      const x2 = nodeX.get(s.entityB) ?? 0;
+      const midX = (x1 + x2) / 2;
+      const arcH = Math.max(
+        22,
+        Math.min(BASE_Y - 8, s.communityDistance * (BASE_Y * 0.9) + 18),
+      );
+      const color =
+        s.score >= 0.7 ? "#ef4444" : s.score >= 0.4 ? "#f59e0b" : "#94a3b8";
+      const opacity = (0.25 + s.score * 0.65).toFixed(2);
+      const sw = (1.2 + s.score * 3.2).toFixed(1);
+      svg += `<path d="M${x1.toFixed(1)},${BASE_Y} Q${midX.toFixed(1)},${(BASE_Y - arcH).toFixed(1)} ${x2.toFixed(1)},${BASE_Y}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="round"><title>${esc(s.entityA)} ↔ ${esc(s.entityB)} · score ${s.score.toFixed(2)} · ${esc(s.reason)}</title></path>`;
+    }
+    svg += `<line x1="${MARGIN_L}" y1="${BASE_Y}" x2="${W - MARGIN_R}" y2="${BASE_Y}" stroke="#e5e7eb" stroke-width="1"/>`;
+    for (const n of nodeArr) {
+      const x = nodeX.get(n) ?? 0;
+      svg += `<circle cx="${x.toFixed(1)}" cy="${BASE_Y}" r="4.5" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>`;
+      const lbl = n.length > 18 ? n.slice(0, 16) + "\u2026" : n;
+      svg += `<g transform="translate(${x.toFixed(1)},${BASE_Y + 8})"><text transform="rotate(35)" x="0" y="0" dominant-baseline="hanging" text-anchor="start" font-size="8.5" font-family="ui-monospace,monospace" fill="#374151">${esc(lbl)}</text></g>`;
+    }
+    svg += `</svg>`;
+
+    let h = `<div class="chapter-header"><h2>Surprising Links</h2><div class="chapter-sub">Unexpected entity couplings · arc height = community distance · stroke weight = surprise score · top ${top20.length} of ${surprisesData.length}</div></div>`;
+    h += `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px 4px;margin-bottom:16px;overflow-x:hidden">
+      ${svg}
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px;padding:0 2px 6px">
+        <span style="font-size:10px;color:#6b7280;display:inline-flex;align-items:center;gap:5px"><svg width="28" height="10" viewBox="0 0 28 10"><path d="M2,8 Q14,1 26,8" fill="none" stroke="#ef4444" stroke-width="3" stroke-opacity="0.7" stroke-linecap="round"/></svg>score ≥ 0.7 (high)</span>
+        <span style="font-size:10px;color:#6b7280;display:inline-flex;align-items:center;gap:5px"><svg width="28" height="10" viewBox="0 0 28 10"><path d="M2,8 Q14,2 26,8" fill="none" stroke="#f59e0b" stroke-width="2" stroke-opacity="0.65" stroke-linecap="round"/></svg>0.4 – 0.7 (medium)</span>
+        <span style="font-size:10px;color:#6b7280;display:inline-flex;align-items:center;gap:5px"><svg width="28" height="10" viewBox="0 0 28 10"><path d="M2,8 Q14,3 26,8" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-opacity="0.55" stroke-linecap="round"/></svg>&lt; 0.4 (low)</span>
+      </div>
+    </div>`;
+    h += `<details>
+      <summary style="font-size:12px;font-weight:600;color:#374151;cursor:pointer;user-select:none;padding:4px 0 8px">&#9656; Full table (${surprisesData.length} items)</summary>
+      <table class="violations-table" style="width:100%;margin-top:4px">
+        <thead><tr>
+          <th>Entity A</th><th>Entity B</th>
+          <th style="width:70px;text-align:right">Score</th>
+          <th>Why</th>
+        </tr></thead>
+        <tbody>`;
+    for (const s of surprisesData) {
+      const scoreColor =
+        s.score >= 0.7 ? "#dc2626" : s.score >= 0.4 ? "#d97706" : "#6b7280";
+      h += `<tr>
+          <td style="font-family:ui-monospace,monospace;font-size:10px;color:#1e40af">${esc(s.entityA)}</td>
+          <td style="font-family:ui-monospace,monospace;font-size:10px;color:#1e40af">${esc(s.entityB)}</td>
+          <td style="text-align:right;font-weight:700;color:${scoreColor};font-size:12px">${s.score.toFixed(2)}</td>
+          <td style="font-size:11px;color:#6b7280">${esc(s.reason)}</td>
+        </tr>`;
+    }
+    h += `</tbody></table></details>
+    <div style="margin-top:8px;font-size:11px;color:#9ca3af">Score components: cross-layer coupling · community distance · inverse co-occurrence frequency.</div>`;
+    return h;
+  }
+
+  // ── Rule Coverage chapter (19.6) ─────────────────────────────────────────
+  function buildRuleCoverageHtml(): string {
+    const rc = (data as any).ruleCoverage as
+      | {
+          totalBehavioralRules: number;
+          covered: Array<{
+            dir: string;
+            fileCount: number;
+            behavioralRuleCount: number;
+            coveredByRules: string[];
+          }>;
+          uncovered: Array<{
+            dir: string;
+            fileCount: number;
+            behavioralRuleCount: number;
+            coveredByRules: string[];
+          }>;
+          topUncovered: Array<{
+            dir: string;
+            fileCount: number;
+            behavioralRuleCount: number;
+            coveredByRules: string[];
+          }>;
+        }
+      | undefined;
+    if (!rc) {
+      return `<div class="empty-state"><span style="font-size:32px">🎯</span><p>No rule coverage data. Add behavioral rules in rules.yaml to see coverage.</p></div>`;
+    }
+    const totalPkgs = rc.covered.length + rc.uncovered.length;
+    const covPct =
+      totalPkgs > 0 ? Math.round((rc.covered.length / totalPkgs) * 100) : 0;
+    const badgeColor =
+      covPct >= 80 ? "#16a34a" : covPct >= 50 ? "#d97706" : "#dc2626";
+    let h = `<div class="chapter-header"><h2>Rule Coverage</h2><div class="chapter-sub">Packages covered by behavioral rules · ${rc.totalBehavioralRules} rules total</div></div>`;
+    h += `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px">
+      <div class="stat-card" style="min-width:120px">
+        <div class="stat-value" style="color:${badgeColor}">${covPct}%</div>
+        <div class="stat-label">Package Coverage</div>
+      </div>
+      <div class="stat-card" style="min-width:120px">
+        <div class="stat-value">${rc.covered.length}</div>
+        <div class="stat-label">Covered Packages</div>
+      </div>
+      <div class="stat-card" style="min-width:120px">
+        <div class="stat-value" style="color:${rc.uncovered.length > 0 ? "#dc2626" : "#16a34a"}">${rc.uncovered.length}</div>
+        <div class="stat-label">Uncovered Packages</div>
+      </div>
+    </div>`;
+    if (rc.uncovered.length > 0) {
+      h += `<div class="viol-section">
+        <h3 style="color:#dc2626">⚠ Uncovered Packages (${rc.uncovered.length})</h3>
+        <p style="font-size:12px;color:#6b7280;margin:0 0 10px">These directories have no behavioral rules. Consider adding sequence diagrams or flow rules in rules.yaml.</p>
+        <table class="violations-table" style="width:100%">
+          <thead><tr><th>Package / Directory</th><th style="width:80px;text-align:right">Files</th></tr></thead>
+          <tbody>`;
+      for (const pkg of rc.topUncovered.slice(0, 30)) {
+        h += `<tr>
+          <td style="font-family:ui-monospace,monospace;font-size:11px;color:#374151">${esc(pkg.dir)}</td>
+          <td style="text-align:right;font-size:11px;color:#6b7280">${pkg.fileCount}</td>
+        </tr>`;
+      }
+      if (rc.uncovered.length > 30) {
+        h += `<tr><td colspan="2" style="font-size:11px;color:#9ca3af;padding:6px 8px">…and ${rc.uncovered.length - 30} more</td></tr>`;
+      }
+      h += `</tbody></table></div>`;
+    }
+    if (rc.covered.length > 0) {
+      h += `<div class="viol-section">
+        <h3 style="color:#16a34a">✓ Covered Packages (${rc.covered.length})</h3>
+        <table class="violations-table" style="width:100%">
+          <thead><tr><th>Package / Directory</th><th style="width:80px;text-align:right">Files</th><th>Rules</th></tr></thead>
+          <tbody>`;
+      for (const pkg of rc.covered.slice(0, 30)) {
+        h += `<tr>
+          <td style="font-family:ui-monospace,monospace;font-size:11px;color:#374151">${esc(pkg.dir)}</td>
+          <td style="text-align:right;font-size:11px;color:#6b7280">${pkg.fileCount}</td>
+          <td style="font-size:10px;color:#6b7280">${pkg.coveredByRules.map((r) => esc(r)).join(", ")}</td>
+        </tr>`;
+      }
+      if (rc.covered.length > 30) {
+        h += `<tr><td colspan="3" style="font-size:11px;color:#9ca3af;padding:6px 8px">…and ${rc.covered.length - 30} more</td></tr>`;
+      }
+      h += `</tbody></table></div>`;
+    }
+    return h;
+  }
+
+  // ── Design Rationale chapter (19.8a) ─────────────────────────────────────
+  function buildDesignRationaleHtml(): string {
+    const doc = (data as any).documentation as
+      | {
+          rationale?: Array<{
+            filePath: string;
+            line: number;
+            kind: string;
+            text: string;
+            symbol?: string;
+          }>;
+        }
+      | undefined;
+    const entries = doc?.rationale ?? [];
+    if (entries.length === 0) {
+      return `<div class="chapter-header"><h2>Design Rationale</h2><div class="chapter-sub">WHY · NOTE · IMPORTANT · DESIGN comments</div></div>
+        <div class="empty-state"><span style="font-size:32px">💡</span><p>No rationale comments indexed.<br>Add <code>// WHY:</code>, <code>// NOTE:</code>, <code>// DESIGN:</code> or <code>// IMPORTANT:</code> comments to your code.</p></div>`;
+    }
+    const kindMeta: Record<
+      string,
+      { icon: string; color: string; bg: string }
+    > = {
+      WHY: { icon: "❓", color: "#1d4ed8", bg: "#eff6ff" },
+      DESIGN: { icon: "🎯", color: "#7c3aed", bg: "#f5f3ff" },
+      IMPORTANT: { icon: "⚠️", color: "#d97706", bg: "#fffbeb" },
+      NOTE: { icon: "📎", color: "#374151", bg: "#f9fafb" },
+    };
+    const byKind = new Map<string, typeof entries>();
+    entries.forEach((r) => {
+      const arr = byKind.get(r.kind) ?? [];
+      arr.push(r);
+      byKind.set(r.kind, arr);
+    });
+    let h = `<div class="chapter-header"><h2>Design Rationale</h2><div class="chapter-sub">Ambient architectural decisions embedded in code · ${entries.length} entries</div></div>
+      <div class="chapter-scroll-body" style="padding:16px 20px">`;
+    // Summary pills
+    h += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">`;
+    for (const [kind, items] of [...byKind.entries()].sort(
+      ([, a], [, b]) => b.length - a.length,
+    )) {
+      const m = kindMeta[kind] ?? {
+        icon: "💬",
+        color: "#6b7280",
+        bg: "#f9fafb",
+      };
+      h += `<div style="background:${m.bg};border:1px solid ${m.color};border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;color:${m.color}">${m.icon} ${esc(kind)} <span style="font-weight:400">${items.length}</span></div>`;
+    }
+    h += `</div>`;
+    for (const kind of ["WHY", "DESIGN", "IMPORTANT", "NOTE"]) {
+      const items = byKind.get(kind);
+      if (!items?.length) continue;
+      const m = kindMeta[kind] ?? {
+        icon: "💬",
+        color: "#6b7280",
+        bg: "#f9fafb",
+      };
+      h += `<div class="viol-section">
+        <h3 style="color:${m.color}">${m.icon} ${esc(kind)} <span style="font-weight:400;color:#6b7280;font-size:12px">${items.length}</span></h3>
+        <div style="display:flex;flex-direction:column;gap:8px">`;
+      for (const r of items) {
+        h += `<div style="background:${m.bg};border:1px solid ${m.color}22;border-left:3px solid ${m.color};border-radius:6px;padding:10px 12px">
+          <div style="font-size:12px;color:#1f2937;line-height:1.6">${esc(r.text)}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:6px">
+            <span style="font-family:ui-monospace,monospace">${esc(shortPath(r.filePath, 50))}</span>
+            ${r.line ? ` · line ${r.line}` : ""}
+            ${r.symbol ? ` · <code style="background:#f1f5f9;padding:0 3px;border-radius:2px">${esc(r.symbol)}</code>` : ""}
+          </div>
+        </div>`;
+      }
+      h += `</div></div>`;
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  // ── Test Coverage chapter (19.8c) ─────────────────────────────────────────
+  function buildTestCoverageHtml(): string {
+    const tc = (data as any).testCoverage as
+      | {
+          totalExported: number;
+          covered: number;
+          coveragePercent: number;
+          untested: Array<{
+            name: string;
+            filePath: string;
+            kind: string;
+            line: number;
+          }>;
+          mappings: Array<{
+            testFile: string;
+            sourceFile: string;
+            strategy: string;
+            importedNames: string[];
+          }>;
+          byDirectory: Array<{
+            directory: string;
+            totalExported: number;
+            covered: number;
+            coveragePercent: number;
+          }>;
+        }
+      | undefined;
+    if (!tc)
+      return `<div class="empty-state"><span style="font-size:32px">🧪</span><p>No test coverage data available.</p></div>`;
+    const pctColor =
+      tc.coveragePercent >= 80
+        ? "#16a34a"
+        : tc.coveragePercent >= 50
+          ? "#d97706"
+          : "#dc2626";
+    let h = `<div class="chapter-header"><h2>Test Coverage</h2><div class="chapter-sub">Test→source mapping via naming convention + imports · ${tc.totalExported} exported symbols</div></div>
+      <div class="chapter-scroll-body" style="padding:16px 20px">`;
+    // Top stats
+    h += `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px">
+      <div class="stat-card" style="min-width:120px">
+        <div class="stat-value" style="color:${pctColor}">${Math.round(tc.coveragePercent)}%</div>
+        <div class="stat-label">Symbol Coverage</div>
+      </div>
+      <div class="stat-card" style="min-width:120px">
+        <div class="stat-value">${tc.covered}</div>
+        <div class="stat-label">Covered Symbols</div>
+      </div>
+      <div class="stat-card" style="min-width:120px">
+        <div class="stat-value" style="color:${tc.untested.length > 0 ? "#dc2626" : "#16a34a"}">${tc.untested.length}</div>
+        <div class="stat-label">Untested Exports</div>
+      </div>
+      <div class="stat-card" style="min-width:120px">
+        <div class="stat-value">${tc.mappings.length}</div>
+        <div class="stat-label">Test Mappings</div>
+      </div>
+    </div>`;
+    // Per-directory table
+    if (tc.byDirectory.length > 0) {
+      h += `<div class="viol-section">
+        <h3>Coverage by Directory</h3>
+        <table class="violations-table" style="width:100%">
+          <thead><tr><th>Directory</th><th style="width:80px;text-align:right">Exported</th><th style="width:80px;text-align:right">Covered</th><th style="width:80px;text-align:right">%</th></tr></thead>
+          <tbody>`;
+      const sorted = [...tc.byDirectory].sort(
+        (a, b) => a.coveragePercent - b.coveragePercent,
+      );
+      for (const dir of sorted) {
+        const col =
+          dir.coveragePercent >= 80
+            ? "#16a34a"
+            : dir.coveragePercent >= 50
+              ? "#d97706"
+              : "#dc2626";
+        h += `<tr>
+          <td style="font-family:ui-monospace,monospace;font-size:11px">${esc(dir.directory || "(root)")}</td>
+          <td style="text-align:right;font-size:11px;color:#6b7280">${dir.totalExported}</td>
+          <td style="text-align:right;font-size:11px;color:#6b7280">${dir.covered}</td>
+          <td style="text-align:right;font-weight:700;font-size:11px;color:${col}">${Math.round(dir.coveragePercent)}%</td>
+        </tr>`;
+      }
+      h += `</tbody></table></div>`;
+    }
+    // Untested exports
+    if (tc.untested.length > 0) {
+      h += `<div class="viol-section">
+        <h3 style="color:#dc2626">⚠ Untested Exported Symbols (${tc.untested.length})</h3>
+        <table class="violations-table" style="width:100%">
+          <thead><tr><th>Symbol</th><th>Kind</th><th style="width:38%">File</th><th style="width:50px">Line</th></tr></thead>
+          <tbody>`;
+      for (const u of tc.untested.slice(0, 150)) {
+        h += `<tr>
+          <td style="font-family:ui-monospace,monospace;font-size:11px;font-weight:600">${esc(u.name)}</td>
+          <td style="font-size:11px;color:#6b7280">${esc(u.kind)}</td>
+          <td class="td-file" title="${esc(u.filePath)}">${esc(shortPath(u.filePath))}</td>
+          <td style="font-size:11px;color:#6b7280;text-align:right;padding-right:8px">${u.line}</td>
+        </tr>`;
+      }
+      if (tc.untested.length > 150) {
+        h += `<tr><td colspan="4" style="font-size:11px;color:#9ca3af;padding:6px 8px">…and ${tc.untested.length - 150} more</td></tr>`;
+      }
+      h += `</tbody></table></div>`;
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  // ── Call Graph chapter builder (19.1) ────────────────────────────────────
+  function buildCallGraphHtml(): string {
+    const cg = (data as any).callGraph as
+      | {
+          total: number;
+          topCallees: Array<{ calleeName: string; count: number }>;
+          traces: Array<{ entryFile: string }>;
+          callsTableActive: boolean;
+        }
+      | undefined;
+    if (!cg?.callsTableActive || !cg.traces.length) {
+      return `<div class="chapter-header"><h2>Call Graph</h2><div class="chapter-sub">Symbol-level call relationships (Phase 4)</div></div>
+        <div class="chapter-scroll-body" style="padding:16px 20px">
+          <div class="empty-state"><span style="font-size:32px">📞</span>
+            <p>No call graph data. Run <code>iw index build</code> on a TypeScript/JavaScript codebase.</p>
+          </div>
+        </div>`;
+    }
+    const entryOptions = cg.traces
+      .map(
+        (t) =>
+          `<option value="${esc(t.entryFile)}">${esc(shortPath(t.entryFile, 55))}</option>`,
+      )
+      .join("");
+    let h = `<div class="chapter-header"><h2>Call Graph</h2>
+      <div class="chapter-sub">Butterfly trace visualizer · ${cg.total.toLocaleString()} call edges · ${cg.traces.length} entry files pre-computed</div>
+    </div>
+    <div class="chapter-scroll-body" style="padding:16px 20px">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:11px;color:#6b7280;font-weight:600">Entry</label>
+          <select id="cg-entry" style="font-size:11px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:4px;background:#fff;max-width:260px">${entryOptions}</select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:11px;color:#6b7280;font-weight:600">Mode</label>
+          <select id="cg-mode" style="font-size:11px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:4px;background:#fff">
+            <option value="both">Both (Butterfly)</option>
+            <option value="forward">Forward only (callees)</option>
+            <option value="backward">Backward only (callers)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:11px;color:#6b7280;font-weight:600">Depth</label>
+          <input type="range" id="cg-depth" min="1" max="4" value="3" style="width:80px">
+          <span id="cg-depth-val" style="font-size:11px;font-weight:700;color:#374151;min-width:12px">3</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:11px;color:#6b7280;font-weight:600">Level</label>
+          <select id="cg-level" style="font-size:11px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:4px;background:#fff">
+            <option value="file">Files</option>
+            <option value="fn">Functions</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;margin-left:4px">
+          <label style="font-size:11px;color:#6b7280;font-weight:600">Viz</label>
+          <button data-cg-viz="butterfly" style="font-size:10px;padding:2px 8px;border:1px solid #93c5fd;border-radius:4px;background:#1d4ed8;color:#fff;cursor:pointer;font-family:inherit">&#127987;&#65039; Butterfly</button>
+          <button data-cg-viz="flame" style="font-size:10px;padding:2px 8px;border:1px solid #e5e7eb;border-radius:4px;background:#f3f4f6;color:#374151;cursor:pointer;font-family:inherit">&#128293; Flame</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:0 4px;margin-bottom:4px">
+        <span style="font-size:10px;color:#ec4899;font-weight:600">◀ Callers (who calls in)</span>
+        <span style="font-size:10px;color:#0ea5e9;font-weight:600">Callees (what it calls) ▶</span>
+      </div>
+      <div id="cg-wrap" style="border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;overflow:hidden;position:relative">
+        <svg id="cg-svg" style="width:100%;display:block" height="500"></svg>
+        <div id="cg-tooltip" style="display:none;position:absolute;background:rgba(15,23,42,0.92);color:#f1f5f9;font-size:11px;padding:6px 9px;border-radius:6px;pointer-events:none;max-width:300px;line-height:1.5;z-index:10;word-break:break-all"></div>
+        <div id="cg-truncated" style="display:none;position:absolute;bottom:6px;right:8px;font-size:10px;color:#9ca3af;background:rgba(255,255,255,0.9);padding:2px 6px;border-radius:4px">⚠ result truncated — increase index depth for full graph</div>
+      </div>`;
+    if (cg.topCallees.length > 0) {
+      h += `<div class="viol-section" style="margin-top:16px">
+        <h3>Top Called Functions</h3>
+        <table class="violations-table" style="width:100%">
+          <thead><tr><th>Function</th><th style="width:90px;text-align:right">Call Count</th></tr></thead>
+          <tbody>`;
+      for (const tc of cg.topCallees.slice(0, 20)) {
+        h += `<tr>
+          <td style="font-family:ui-monospace,monospace;font-size:11px;font-weight:600">${esc(tc.calleeName)}</td>
+          <td style="text-align:right;font-size:11px;color:#6b7280">${tc.count}</td>
+        </tr>`;
+      }
+      h += `</tbody></table></div>`;
+    }
+    h += `</div>`;
     return h;
   }
 
@@ -4761,13 +6050,14 @@ function insightsBookClientScript() {
       ];
       h += `<div style="margin-bottom:20px">
         <div style="display:flex;align-items:center;gap:24px;margin-bottom:16px;padding:20px 24px;background:#fff;border:1px solid #e2e8f0;border-radius:12px">
-          <div style="flex-shrink:0;width:88px;height:88px;border-radius:50%;background:${gradeBg};border:4px solid ${gradeColor};display:flex;align-items:center;justify-content:center">
+          <div onclick="activateChapter('chapter-living-score')" style="flex-shrink:0;width:88px;height:88px;border-radius:50%;background:${gradeBg};border:4px solid ${gradeColor};display:flex;align-items:center;justify-content:center;cursor:pointer" title="View Living Score breakdown">
             <span style="font-size:40px;font-weight:900;color:${gradeColor};line-height:1">${esc(ls.grade)}</span>
           </div>
           <div>
             <div style="font-size:32px;font-weight:800;color:#1f2937;line-height:1">${Math.round(ls.score)}<span style="font-size:16px;font-weight:400;color:#6b7280"> / 100</span></div>
             <div style="font-size:12px;color:#6b7280;margin-top:4px">Living Documentation Score</div>
             <div style="font-size:11px;color:#9ca3af;margin-top:4px">A ≥ 90 · B ≥ 75 · C ≥ 60 · D ≥ 45 · F &lt; 45</div>
+            <button class="btn-goto" onclick="activateChapter('chapter-living-score')" style="margin-top:8px;font-size:10px">↗ Full Breakdown</button>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">`;
@@ -4804,7 +6094,7 @@ function insightsBookClientScript() {
       h += `</div></div>`;
     } else {
       h += `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 18px;margin-bottom:20px;font-size:12px;color:#6b7280">
-        Living Score not available. Run <code>iw index build --depth full</code> then <code>iw verify --score</code>.
+        Living Score not available. Run <code>iw index build --depth full</code> then <code>iw intent score</code>.
       </div>`;
     }
 
@@ -5114,13 +6404,602 @@ function insightsBookClientScript() {
     return h;
   }
 
-  // ── Cytoscape initializer ─────────────────────────────────────────────────
-  const cyInstances = new Map<string, any>();
-  // Track which overlay checkbox states are active per cyId
-  const overlayState = new Map<string, Set<string>>();
+  // ── Call Graph butterfly visualizer (19.1) ───────────────────────────────
+  function initCallGraph(chapterId: string) {
+    type TraceN = { file: string; symbols: string[]; depth: number };
+    type TraceE = {
+      fromFile: string;
+      fromSymbol: string | null;
+      toFile: string;
+      toCalleeName: string;
+      callerLine: number | null;
+    };
+    type CGTrace = { nodes: TraceN[]; edges: TraceE[]; truncated: boolean };
+    type CGEntry = { entryFile: string; forward: CGTrace; backward: CGTrace };
+    type CGData = {
+      total: number;
+      topCallees: Array<{ calleeName: string; count: number }>;
+      traces: CGEntry[];
+      callsTableActive: boolean;
+    };
+    const cgData = (DATA as any).callGraph as CGData | undefined;
+    if (!cgData?.callsTableActive || !cgData.traces.length) return;
+    const ch = document.getElementById(chapterId) as any;
+    if (!ch) return;
 
-  function initCytoscape(chapterId: string) {
-    if (typeof cytoscape === "undefined") return;
+    const entrySelect = ch.querySelector("#cg-entry") as any;
+    const modeSelect = ch.querySelector("#cg-mode") as any;
+    const depthSlider = ch.querySelector("#cg-depth") as any;
+    const depthValEl = ch.querySelector("#cg-depth-val") as any;
+    const levelSelect = ch.querySelector("#cg-level") as any;
+    const svgEl = ch.querySelector("#cg-svg") as any;
+    const tooltipEl = ch.querySelector("#cg-tooltip") as any;
+    const truncBadge = ch.querySelector("#cg-truncated") as any;
+    if (!svgEl) return;
+
+    const NS = "http://www.w3.org/2000/svg";
+    const ROOT_ID = "__root__";
+    let currentEntry: CGEntry = cgData.traces[0];
+    let maxDepth = 3;
+    let mode: "both" | "forward" | "backward" = "both";
+    let level: "file" | "fn" = "file";
+    let vizMode: "butterfly" | "flame" = "butterfly";
+
+    // A unified display node used for both file and function level
+    type DNode = {
+      id: string;
+      label: string;
+      sub: string | null;
+      file: string;
+      depth: number;
+      symbols: string[];
+      hasTrace: boolean;
+    };
+    type DEdge = { fromId: string; toId: string };
+
+    function dedupEdges(edges: DEdge[]): DEdge[] {
+      const seen = new Set<string>();
+      return edges.filter((e) => {
+        const k = `${e.fromId}→${e.toId}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    }
+
+    // ── FILE-LEVEL ────────────────────────────────────────────────────────────
+    function buildFileLevel(
+      trace: CGTrace,
+      side: "fwd" | "bwd",
+      md: number,
+    ): { nodes: DNode[]; edges: DEdge[] } {
+      const visible = new Set(
+        trace.nodes
+          .filter((n) => n.depth > 0 && n.depth <= md)
+          .map((n) => n.file),
+      );
+      const nodes: DNode[] = trace.nodes
+        .filter((n) => n.depth > 0 && n.depth <= md)
+        .map((n) => ({
+          id: n.file,
+          label: (() => {
+            const b = n.file.split("/").pop() ?? n.file;
+            return b.length > 20 ? b.slice(0, 18) + "…" : b;
+          })(),
+          sub: null,
+          file: n.file,
+          depth: n.depth,
+          symbols: n.symbols,
+          hasTrace: cgData!.traces.some((t) => t.entryFile === n.file),
+        }));
+      let raw: DEdge[];
+      if (side === "fwd") {
+        // fromFile → toFile; entry is the source root
+        raw = trace.edges
+          .filter(
+            (e) =>
+              visible.has(e.toFile) &&
+              (e.fromFile === currentEntry.entryFile ||
+                visible.has(e.fromFile)),
+          )
+          .map((e) => ({
+            fromId:
+              e.fromFile === currentEntry.entryFile ? ROOT_ID : e.fromFile,
+            toId: e.toFile,
+          }));
+      } else {
+        // backward: fromFile = caller (further left), toFile = callee (toward center)
+        // Arrow direction: caller → callee (pointing right/toward root)
+        raw = trace.edges
+          .filter(
+            (e) =>
+              visible.has(e.fromFile) &&
+              (e.toFile === currentEntry.entryFile || visible.has(e.toFile)),
+          )
+          .map((e) => ({
+            fromId: e.fromFile,
+            toId: e.toFile === currentEntry.entryFile ? ROOT_ID : e.toFile,
+          }));
+      }
+      return { nodes, edges: dedupEdges(raw) };
+    }
+
+    // ── FUNCTION-LEVEL ────────────────────────────────────────────────────────
+    function buildFnLevel(
+      trace: CGTrace,
+      side: "fwd" | "bwd",
+      md: number,
+    ): { nodes: DNode[]; edges: DEdge[] } {
+      const fileDepth = new Map<string, number>(
+        trace.nodes.map((n) => [n.file, n.depth]),
+      );
+      const nodeMap = new Map<string, DNode>();
+      const rawEdges: DEdge[] = [];
+
+      if (side === "fwd") {
+        // Each edge: fromFile/fromSymbol calls toCalleeName in toFile
+        for (const e of trace.edges) {
+          const d = fileDepth.get(e.toFile) ?? 1;
+          if (d > md) continue;
+          const nodeId = `fn:${e.toCalleeName}::${e.toFile}`;
+          if (!nodeMap.has(nodeId)) {
+            const lbl =
+              e.toCalleeName.length > 22
+                ? e.toCalleeName.slice(0, 20) + "…"
+                : e.toCalleeName;
+            const sub = (() => {
+              const b = e.toFile.split("/").pop() ?? "";
+              return b.length > 18 ? b.slice(0, 16) + "…" : b;
+            })();
+            nodeMap.set(nodeId, {
+              id: nodeId,
+              label: lbl,
+              sub,
+              file: e.toFile,
+              depth: d,
+              symbols: [],
+              hasTrace: false,
+            });
+          }
+          // Connect: previous fn node (or root) → this fn node
+          const fromId =
+            e.fromFile === currentEntry.entryFile
+              ? ROOT_ID
+              : e.fromSymbol
+                ? `fn:${e.fromSymbol}::${e.fromFile}`
+                : ROOT_ID;
+          rawEdges.push({ fromId, toId: nodeId });
+        }
+      } else {
+        // backward: fromFile=caller, fromSymbol=calling fn, toFile=callee (toward center)
+        for (const e of trace.edges) {
+          const d = fileDepth.get(e.fromFile) ?? 1;
+          if (d > md) continue;
+          const fnLabel =
+            e.fromSymbol ?? e.fromFile.split("/").pop() ?? e.fromFile;
+          const nodeId = `fn:${fnLabel}::${e.fromFile}`;
+          if (!nodeMap.has(nodeId)) {
+            const lbl =
+              fnLabel.length > 22 ? fnLabel.slice(0, 20) + "…" : fnLabel;
+            const sub = (() => {
+              const b = e.fromFile.split("/").pop() ?? "";
+              return b.length > 18 ? b.slice(0, 16) + "…" : b;
+            })();
+            nodeMap.set(nodeId, {
+              id: nodeId,
+              label: lbl,
+              sub,
+              file: e.fromFile,
+              depth: d,
+              symbols: [],
+              hasTrace: false,
+            });
+          }
+          // Arrow: caller fn node → callee (ROOT or closer node)
+          const toId =
+            e.toFile === currentEntry.entryFile
+              ? ROOT_ID
+              : `fn:${e.toCalleeName}::${e.toFile}`;
+          rawEdges.push({ fromId: nodeId, toId });
+        }
+      }
+      return { nodes: [...nodeMap.values()], edges: dedupEdges(rawEdges) };
+    }
+
+    // ── Shared Y layout ───────────────────────────────────────────────────────
+    function buildYMap(nodes: DNode[], H: number): Map<string, number> {
+      const byDepth = new Map<number, DNode[]>();
+      for (const n of nodes) {
+        const arr = byDepth.get(n.depth) ?? [];
+        arr.push(n);
+        byDepth.set(n.depth, arr);
+      }
+      const yMap = new Map<string, number>();
+      for (const [, group] of byDepth) {
+        const step = H / (group.length + 1);
+        group.forEach((n, i) => yMap.set(n.id, (i + 1) * step));
+      }
+      return yMap;
+    }
+
+    // ── Main render ───────────────────────────────────────────────────────────
+    function renderButterfly() {
+      svgEl.innerHTML = "";
+      const W = Math.max((svgEl.parentElement?.clientWidth ?? 800) - 4, 400);
+      const H = 500;
+      svgEl.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svgEl.setAttribute("height", String(H));
+      const cx = W / 2;
+      const rootY = H / 2;
+      const md = Math.min(maxDepth, 4);
+      const depthStep = Math.min(170, (W / 2 - 90) / Math.max(md, 1));
+
+      const build = level === "file" ? buildFileLevel : buildFnLevel;
+      const fwdData =
+        mode !== "backward"
+          ? build(currentEntry.forward, "fwd", md)
+          : { nodes: [] as DNode[], edges: [] as DEdge[] };
+      const bwdData =
+        mode !== "forward"
+          ? build(currentEntry.backward, "bwd", md)
+          : { nodes: [] as DNode[], edges: [] as DEdge[] };
+
+      const fwdY = buildYMap(fwdData.nodes, H);
+      const bwdY = buildYMap(bwdData.nodes, H);
+
+      function sideX(side: "fwd" | "bwd", depth: number) {
+        return side === "fwd" ? cx + depth * depthStep : cx - depth * depthStep;
+      }
+      function resolveX(id: string, side: "fwd" | "bwd", nodes: DNode[]) {
+        if (id === ROOT_ID) return cx;
+        return sideX(side, nodes.find((n) => n.id === id)?.depth ?? 1);
+      }
+      function resolveY(id: string, yMap: Map<string, number>) {
+        return id === ROOT_ID ? rootY : (yMap.get(id) ?? rootY);
+      }
+
+      // Defs
+      const defs = document.createElementNS(NS, "defs");
+      defs.innerHTML = `
+        <marker id="cg-af" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <path d="M1,1 L1,6 L7,3.5 z" fill="#93c5fd"/>
+        </marker>
+        <marker id="cg-ab" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <path d="M1,1 L1,6 L7,3.5 z" fill="#f9a8d4"/>
+        </marker>`;
+      svgEl.appendChild(defs);
+
+      const edgeG = document.createElementNS(NS, "g");
+      svgEl.appendChild(edgeG);
+
+      function drawEdge(
+        x1: number,
+        y1: number,
+        x2: number,
+        y2: number,
+        color: string,
+        marker: string,
+      ) {
+        const p = document.createElementNS(NS, "path");
+        const mx = (x1 + x2) / 2;
+        p.setAttribute(
+          "d",
+          `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`,
+        );
+        p.setAttribute("fill", "none");
+        p.setAttribute("stroke", color);
+        p.setAttribute("stroke-width", "1.5");
+        p.setAttribute("stroke-opacity", "0.6");
+        p.setAttribute("marker-end", `url(#${marker})`);
+        edgeG.appendChild(p);
+      }
+
+      // Forward (right) edges: arrow points right (caller → callee)
+      for (const e of fwdData.edges) {
+        drawEdge(
+          resolveX(e.fromId, "fwd", fwdData.nodes),
+          resolveY(e.fromId, fwdY),
+          resolveX(e.toId, "fwd", fwdData.nodes),
+          resolveY(e.toId, fwdY),
+          "#93c5fd",
+          "cg-af",
+        );
+      }
+      // Backward (left) edges: fromId = caller (further left), toId = callee (toward center)
+      // Arrow points right → toward center, showing "X calls Y" direction
+      for (const e of bwdData.edges) {
+        drawEdge(
+          resolveX(e.fromId, "bwd", bwdData.nodes),
+          resolveY(e.fromId, bwdY),
+          resolveX(e.toId, "bwd", bwdData.nodes),
+          resolveY(e.toId, bwdY),
+          "#f9a8d4",
+          "cg-ab",
+        );
+      }
+
+      const nodeG = document.createElementNS(NS, "g");
+      svgEl.appendChild(nodeG);
+
+      function drawNode(
+        x: number,
+        y: number,
+        node: DNode | null,
+        isRoot: boolean,
+      ) {
+        const lbl = isRoot
+          ? (() => {
+              const b =
+                currentEntry.entryFile.split("/").pop() ??
+                currentEntry.entryFile;
+              return b.length > 20 ? b.slice(0, 18) + "…" : b;
+            })()
+          : (node?.label ?? "");
+        const showSub =
+          !isRoot && level === "fn" && node?.sub && node.sub !== lbl;
+        const nw = isRoot ? 140 : 116;
+        const nh = showSub ? 36 : 28;
+        const g = document.createElementNS(NS, "g") as any;
+        g.setAttribute("transform", `translate(${x},${y})`);
+        if (!isRoot && node?.hasTrace) g.style.cursor = "pointer";
+
+        const rect = document.createElementNS(NS, "rect");
+        rect.setAttribute("x", String(-nw / 2));
+        rect.setAttribute("y", String(-nh / 2));
+        rect.setAttribute("width", String(nw));
+        rect.setAttribute("height", String(nh));
+        rect.setAttribute("rx", "5");
+        rect.setAttribute("fill", isRoot ? "#1d4ed8" : "#f0f9ff");
+        rect.setAttribute("stroke", isRoot ? "#1e40af" : "#7dd3fc");
+        rect.setAttribute("stroke-width", isRoot ? "2" : "1.5");
+        g.appendChild(rect);
+
+        const txt = document.createElementNS(NS, "text");
+        txt.setAttribute("text-anchor", "middle");
+        txt.setAttribute("dominant-baseline", showSub ? "auto" : "middle");
+        txt.setAttribute("y", showSub ? "-5" : "0");
+        txt.setAttribute("font-size", "10");
+        txt.setAttribute("font-weight", isRoot ? "700" : "500");
+        txt.setAttribute("fill", isRoot ? "#fff" : "#1e40af");
+        txt.setAttribute("font-family", "ui-monospace,monospace");
+        txt.textContent = lbl;
+        g.appendChild(txt);
+
+        if (showSub) {
+          const sub = document.createElementNS(NS, "text");
+          sub.setAttribute("text-anchor", "middle");
+          sub.setAttribute("dominant-baseline", "hanging");
+          sub.setAttribute("y", "6");
+          sub.setAttribute("font-size", "9");
+          sub.setAttribute("fill", "#64748b");
+          sub.setAttribute("font-family", "ui-sans-serif,sans-serif");
+          sub.textContent = node!.sub!;
+          g.appendChild(sub);
+        }
+
+        const fullLabel = isRoot ? currentEntry.entryFile : (node?.file ?? "");
+        const syms = node?.symbols ?? [];
+        g.addEventListener("mouseenter", (evt: any) => {
+          const r = svgEl.getBoundingClientRect();
+          const symLine = syms.length
+            ? `<br><span style="color:#94a3b8">${syms.slice(0, 6).join(", ")}${syms.length > 6 ? " …" : ""}</span>`
+            : "";
+          tooltipEl.innerHTML = `<strong>${fullLabel}</strong>${symLine}`;
+          tooltipEl.style.display = "block";
+          tooltipEl.style.left = `${Math.min(evt.clientX - r.left + 12, W - 220)}px`;
+          tooltipEl.style.top = `${Math.max(evt.clientY - r.top - 44, 4)}px`;
+        });
+        g.addEventListener("mousemove", (evt: any) => {
+          const r = svgEl.getBoundingClientRect();
+          tooltipEl.style.left = `${Math.min(evt.clientX - r.left + 12, W - 220)}px`;
+          tooltipEl.style.top = `${Math.max(evt.clientY - r.top - 44, 4)}px`;
+        });
+        g.addEventListener("mouseleave", () => {
+          tooltipEl.style.display = "none";
+        });
+
+        if (!isRoot && node?.hasTrace) {
+          g.addEventListener("click", () => {
+            const t = cgData!.traces.find((tr) => tr.entryFile === node!.file);
+            if (t) {
+              currentEntry = t;
+              if (entrySelect) entrySelect.value = node!.file;
+              renderButterfly();
+            }
+          });
+        }
+        nodeG.appendChild(g);
+      }
+
+      for (const n of fwdData.nodes)
+        drawNode(sideX("fwd", n.depth), fwdY.get(n.id) ?? rootY, n, false);
+      for (const n of bwdData.nodes)
+        drawNode(sideX("bwd", n.depth), bwdY.get(n.id) ?? rootY, n, false);
+      drawNode(cx, rootY, null, true); // root on top
+
+      const trunc =
+        (mode !== "backward" && currentEntry.forward.truncated) ||
+        (mode !== "forward" && currentEntry.backward.truncated);
+      if (truncBadge) truncBadge.style.display = trunc ? "block" : "none";
+    }
+
+    function renderFlame() {
+      svgEl.innerHTML = "";
+      const W = Math.max((svgEl.parentElement?.clientWidth ?? 800) - 4, 400);
+      const trace = currentEntry.forward;
+      const md = Math.min(maxDepth, 4);
+      const byDepth = new Map<number, TraceN[]>();
+      byDepth.set(0, [{ file: currentEntry.entryFile, symbols: [], depth: 0 }]);
+      for (const n of trace.nodes) {
+        if (n.depth > 0 && n.depth <= md) {
+          const arr = byDepth.get(n.depth) ?? [];
+          arr.push(n);
+          byDepth.set(n.depth, arr);
+        }
+      }
+      const ROW_H = 34,
+        ROW_GAP = 3,
+        LABEL_W = 48,
+        PAD = 2;
+      const maxD = byDepth.size > 0 ? Math.max(...byDepth.keys()) : 0;
+      const fH = (maxD + 1) * (ROW_H + ROW_GAP) + 12;
+      svgEl.setAttribute("viewBox", `0 0 ${W} ${fH}`);
+      svgEl.setAttribute("height", String(fH));
+      const palette = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd"];
+      const topCalleeSet = new Set<string>(
+        cgData!.topCallees.slice(0, 5).map((tc) => tc.calleeName),
+      );
+      for (const [depth, nodes] of byDepth) {
+        const y = depth * (ROW_H + ROW_GAP) + 4;
+        const availW = W - LABEL_W - 4;
+        const nodeW = Math.max(4, availW / nodes.length - PAD);
+        const fill0 = palette[Math.min(depth, palette.length - 1)];
+        nodes.forEach((n, i) => {
+          const x = 2 + i * (nodeW + PAD);
+          const isHot = n.symbols.some((s) => topCalleeSet.has(s));
+          const fill = isHot ? "#f97316" : fill0;
+          const g = document.createElementNS(NS, "g") as any;
+          const rect = document.createElementNS(NS, "rect");
+          rect.setAttribute("x", String(x));
+          rect.setAttribute("y", String(y));
+          rect.setAttribute("width", String(nodeW));
+          rect.setAttribute("height", String(ROW_H));
+          rect.setAttribute("rx", "3");
+          rect.setAttribute("fill", fill);
+          rect.setAttribute("stroke", "#fff");
+          rect.setAttribute("stroke-width", "1");
+          g.appendChild(rect);
+          if (nodeW > 35) {
+            const maxChars = Math.max(4, Math.floor(nodeW / 6.5));
+            const base = n.file.split("/").pop() ?? n.file;
+            const lbl =
+              base.length > maxChars
+                ? base.slice(0, maxChars - 1) + "\u2026"
+                : base;
+            const txt = document.createElementNS(NS, "text");
+            txt.setAttribute("x", String(x + nodeW / 2));
+            txt.setAttribute("y", String(y + ROW_H / 2));
+            txt.setAttribute("text-anchor", "middle");
+            txt.setAttribute("dominant-baseline", "middle");
+            txt.setAttribute("font-size", "9");
+            txt.setAttribute("fill", "#fff");
+            txt.setAttribute("font-family", "ui-monospace,monospace");
+            txt.setAttribute("pointer-events", "none");
+            txt.textContent = lbl;
+            g.appendChild(txt);
+          }
+          g.addEventListener("mouseenter", (evt: any) => {
+            const r = svgEl.getBoundingClientRect();
+            const syms = n.symbols.length
+              ? `<br><span style="color:#94a3b8">${n.symbols.slice(0, 6).join(", ")}${n.symbols.length > 6 ? " \u2026" : ""}</span>`
+              : "";
+            tooltipEl.innerHTML = `<strong>${n.file}</strong>${syms}`;
+            tooltipEl.style.display = "block";
+            tooltipEl.style.left = `${Math.min(evt.clientX - r.left + 12, W - 220)}px`;
+            tooltipEl.style.top = `${Math.max(evt.clientY - r.top - 44, 4)}px`;
+          });
+          g.addEventListener("mousemove", (evt: any) => {
+            const r = svgEl.getBoundingClientRect();
+            tooltipEl.style.left = `${Math.min(evt.clientX - r.left + 12, W - 220)}px`;
+            tooltipEl.style.top = `${Math.max(evt.clientY - r.top - 44, 4)}px`;
+          });
+          g.addEventListener("mouseleave", () => {
+            tooltipEl.style.display = "none";
+          });
+          if (depth > 0 && cgData!.traces.some((t) => t.entryFile === n.file)) {
+            g.style.cursor = "pointer";
+            g.addEventListener("click", () => {
+              const t = cgData!.traces.find((tr) => tr.entryFile === n.file);
+              if (t) {
+                currentEntry = t;
+                if (entrySelect) entrySelect.value = n.file;
+                renderFlame();
+              }
+            });
+          }
+          svgEl.appendChild(g);
+        });
+        const dlbl = document.createElementNS(NS, "text");
+        dlbl.setAttribute("x", String(W - 2));
+        dlbl.setAttribute("y", String(y + ROW_H / 2));
+        dlbl.setAttribute("text-anchor", "end");
+        dlbl.setAttribute("dominant-baseline", "middle");
+        dlbl.setAttribute("font-size", "9");
+        dlbl.setAttribute("fill", "#9ca3af");
+        dlbl.setAttribute("font-family", "ui-sans-serif,sans-serif");
+        dlbl.textContent = depth === 0 ? "entry" : `d=${depth}`;
+        svgEl.appendChild(dlbl);
+      }
+      if (truncBadge)
+        truncBadge.style.display = currentEntry.forward.truncated
+          ? "block"
+          : "none";
+    }
+
+    function render() {
+      if (vizMode === "butterfly") renderButterfly();
+      else renderFlame();
+    }
+    const vizBtns = Array.from(ch.querySelectorAll("[data-cg-viz]")) as any[];
+    vizBtns.forEach((btn: any) => {
+      btn.addEventListener("click", () => {
+        vizMode = btn.dataset.cgViz as "butterfly" | "flame";
+        vizBtns.forEach((b: any) => {
+          const active = b.dataset.cgViz === vizMode;
+          b.style.background = active ? "#1d4ed8" : "#f3f4f6";
+          b.style.color = active ? "#fff" : "#374151";
+          b.style.borderColor = active ? "#93c5fd" : "#e5e7eb";
+        });
+        render();
+      });
+    });
+
+    entrySelect?.addEventListener("change", () => {
+      const t = cgData!.traces.find((tr) => tr.entryFile === entrySelect.value);
+      if (t) {
+        currentEntry = t;
+        render();
+      }
+    });
+    modeSelect?.addEventListener("change", () => {
+      mode = modeSelect.value;
+      render();
+    });
+    levelSelect?.addEventListener("change", () => {
+      level = levelSelect.value as "file" | "fn";
+      render();
+    });
+    depthSlider?.addEventListener("input", () => {
+      maxDepth = parseInt(depthSlider.value, 10);
+      if (depthValEl) depthValEl.textContent = String(maxDepth);
+      render();
+    });
+
+    render();
+
+    if ((globalThis as any).ResizeObserver) {
+      const ro = new (globalThis as any).ResizeObserver(() => render());
+      ro.observe(svgEl.parentElement);
+    }
+  }
+
+  // ── Pure-SVG LR flow diagram (Sugiyama-style, zero external deps) ────────
+  // Track which overlay checkbox states are active per diagram id
+  const overlayState = new Map<string, Set<string>>();
+  // Per-diagram: Map from node-name → <g> element (rect + text), for overlay updates
+  const flowNodeEls = new Map<string, Map<string, any>>();
+  // Per-diagram: import edge group element (for toggle)
+  const flowImportGroups = new Map<string, any>();
+
+  // SVG namespace helper
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag: string, attrs: Record<string, string | number>) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+    return el;
+  }
+
+  function initFlowDiagram(chapterId: string) {
     const ch = document.getElementById(chapterId);
     if (!ch) return;
     const ruleId = ch.dataset.ruleId;
@@ -5134,16 +7013,36 @@ function insightsBookClientScript() {
       .sort((a: any, b: any) => (a.flowSeq ?? 999) - (b.flowSeq ?? 999));
     if (els.length === 0) return;
 
-    const nodes = els.map((el: any) => ({
-      data: {
+    // ── Build node + edge data ─────────────────────────────────────────────
+    interface FDNode {
+      id: string;
+      label: string;
+      isStep: boolean;
+      rank: number;
+      posInRank: number;
+      x: number;
+      y: number;
+    }
+    interface FDEdge {
+      source: string;
+      target: string;
+      edgeType: string;
+      flowKind: string;
+      isImport: boolean;
+    }
+
+    const nodeMap = new Map<string, FDNode>();
+    els.forEach((el: any) => {
+      nodeMap.set(el.name, {
         id: el.name,
         label: el.name,
-        step: el.flowSeq != null && el.flowSeq < 999 ? el.flowSeq + 1 : null,
-        kind: el.kind,
-        layerName: (el.layerName ?? "").replace(/^(packages|apps)\//, ""),
-        layerIndex: el.layerIndex,
-      },
-    }));
+        isStep: el.flowSeq != null && el.flowSeq < 999,
+        rank: 0,
+        posInRank: 0,
+        x: 0,
+        y: 0,
+      });
+    });
 
     const ruleEdges = data.edges.filter(
       (e: PrescriptiveEdge) =>
@@ -5154,65 +7053,258 @@ function insightsBookClientScript() {
         !isGlob(String(e.toElementName)),
     );
     const seenEdge = new Set<string>();
-    const edges = ruleEdges
-      .map((e: PrescriptiveEdge, i: number) => {
+    const fdEdges: FDEdge[] = ruleEdges
+      .filter((e: PrescriptiveEdge) => {
         const k = `${e.fromElementName}->${e.toElementName}`;
-        if (seenEdge.has(k)) return null;
+        if (seenEdge.has(k)) return false;
         seenEdge.add(k);
-        return {
-          data: {
-            id: "e" + i,
-            source: e.fromElementName,
-            target: e.toElementName,
-            edgeType: e.type,
-            flowKind: e.flowKind ?? "",
-            overlayType: "intent",
-          },
-        };
+        return (
+          nodeMap.has(String(e.fromElementName)) &&
+          nodeMap.has(String(e.toElementName))
+        );
       })
-      .filter(Boolean);
+      .map((e: PrescriptiveEdge) => ({
+        source: String(e.fromElementName),
+        target: String(e.toElementName),
+        edgeType: e.type ?? "allowed",
+        flowKind: (e as any).flowKind ?? "",
+        isImport: false,
+      }));
 
-    if (edges.length === 0 && els.length > 1) {
+    if (fdEdges.length === 0 && els.length > 1) {
       for (let i = 0; i < els.length - 1; i++) {
-        edges.push({
-          data: {
-            id: "seq" + i,
-            source: els[i].name,
-            target: els[i + 1].name,
-            edgeType: "allowed",
-            flowKind: "flow",
-            overlayType: "intent",
-          },
+        fdEdges.push({
+          source: els[i].name,
+          target: els[i + 1].name,
+          edgeType: "allowed",
+          flowKind: "flow",
+          isImport: false,
         });
       }
     }
 
-    try {
-      if ((globalThis as any).cytoscapeDagre) {
-        cytoscape.use((globalThis as any).cytoscapeDagre);
+    // ── Rank assignment (BFS from sources) ─────────────────────────────────
+    const inEdges = new Map<string, string[]>();
+    nodeMap.forEach((_, id) => inEdges.set(id, []));
+    fdEdges
+      .filter((e) => !e.isImport)
+      .forEach((e) => inEdges.get(e.target)?.push(e.source));
+
+    const rank = new Map<string, number>();
+    nodeMap.forEach((_, id) => rank.set(id, 0));
+    const sources = [...nodeMap.keys()].filter(
+      (id) => (inEdges.get(id) ?? []).length === 0,
+    );
+    const queue = sources.length > 0 ? [...sources] : [[...nodeMap.keys()][0]];
+    queue.forEach((id) => rank.set(id, 0));
+    const outAdj = new Map<string, string[]>();
+    nodeMap.forEach((_, id) => outAdj.set(id, []));
+    fdEdges
+      .filter((e) => !e.isImport)
+      .forEach((e) => outAdj.get(e.source)?.push(e.target));
+    let qi = 0;
+    while (qi < queue.length) {
+      const cur = queue[qi++];
+      const r = rank.get(cur) ?? 0;
+      (outAdj.get(cur) ?? []).forEach((next) => {
+        const nr = r + 1;
+        if ((rank.get(next) ?? 0) < nr) {
+          rank.set(next, nr);
+          queue.push(next);
+        }
+      });
+    }
+    const maxRank = Math.max(0, ...[...rank.values()]);
+
+    // ── Rank → nodes; compute Y positions ──────────────────────────────────
+    const rankNodes = new Map<number, string[]>();
+    for (let r = 0; r <= maxRank; r++) rankNodes.set(r, []);
+    nodeMap.forEach((_, id) => rankNodes.get(rank.get(id) ?? 0)?.push(id));
+
+    const NW = 120,
+      NH = 36,
+      RANK_SEP = 160,
+      NODE_SEP = 60,
+      PAD = 32;
+    rankNodes.forEach((ids, r) => {
+      const totalH = ids.length * NH + (ids.length - 1) * NODE_SEP;
+      ids.forEach((id, i) => {
+        const node = nodeMap.get(id)!;
+        node.rank = r;
+        node.posInRank = i;
+        node.x = PAD + r * RANK_SEP;
+        node.y =
+          PAD + i * (NH + NODE_SEP) + (rankNodes.get(r)!.length > 1 ? 0 : 0);
+        // Vertically center the entire column
+        const maxColH = Math.max(
+          ...[...rankNodes.values()].map(
+            (ns) => ns.length * NH + (ns.length - 1) * NODE_SEP,
+          ),
+        );
+        node.y = PAD + (maxColH - totalH) / 2 + i * (NH + NODE_SEP);
+      });
+    });
+
+    const svgW = PAD * 2 + (maxRank + 1) * RANK_SEP;
+    const svgH =
+      PAD * 2 +
+      Math.max(
+        ...[...rankNodes.values()].map(
+          (ns) => ns.length * NH + Math.max(0, ns.length - 1) * NODE_SEP,
+        ),
+      );
+
+    // ── Build SVG ──────────────────────────────────────────────────────────
+    const svg = svgEl("svg", {
+      width: "100%",
+      height: svgH,
+      viewBox: `0 0 ${svgW} ${svgH}`,
+      style: "display:block;overflow:visible",
+    });
+
+    // Arrow marker defs
+    const defs = svgEl("defs", {});
+    const mkMarker = (id: string, color: string, dashed: boolean) => {
+      const marker = svgEl("marker", {
+        id,
+        markerWidth: "8",
+        markerHeight: "8",
+        refX: "7",
+        refY: "3.5",
+        orient: "auto",
+      });
+      const poly = svgEl("polygon", {
+        points: "0 0, 8 3.5, 0 7",
+        fill: color,
+        opacity: dashed ? "0.8" : "1",
+      });
+      marker.appendChild(poly);
+      defs.appendChild(marker);
+    };
+    mkMarker("fd-arr-allowed", "#0284c7", false);
+    mkMarker("fd-arr-forbidden", "#dc2626", true);
+    mkMarker("fd-arr-import", "#9ca3af", true);
+    svg.appendChild(defs);
+
+    // Edge layer (below nodes)
+    const edgeGroup = svgEl("g", { class: "fd-edges" });
+    const importGroup = svgEl("g", {
+      class: "fd-imports",
+      style: "display:none",
+    });
+    flowImportGroups.set(cyId, importGroup);
+
+    fdEdges.forEach((e) => {
+      const src = nodeMap.get(e.source);
+      const tgt = nodeMap.get(e.target);
+      if (!src || !tgt) return;
+      const x1 = src.x + NW,
+        y1 = src.y + NH / 2;
+      const x2 = tgt.x,
+        y2 = tgt.y + NH / 2;
+      const dx = (x2 - x1) * 0.45;
+      const path = svgEl("path", {
+        d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`,
+        fill: "none",
+        stroke: e.edgeType === "forbidden" ? "#dc2626" : "#0284c7",
+        "stroke-width": "2",
+        "stroke-dasharray": e.edgeType === "forbidden" ? "6 3" : "none",
+        "marker-end": `url(#fd-arr-${e.edgeType === "forbidden" ? "forbidden" : "allowed"})`,
+      });
+      edgeGroup.appendChild(path);
+
+      if (e.flowKind && e.flowKind !== "flow") {
+        const mx = (x1 + x2) / 2,
+          my = (y1 + y2) / 2 - 8;
+        const lbl = svgEl("text", {
+          x: mx,
+          y: my,
+          "text-anchor": "middle",
+          "font-size": "9",
+          fill: "#64748b",
+        });
+        lbl.textContent = e.flowKind;
+        edgeGroup.appendChild(lbl);
       }
-    } catch {
-      /* already registered */
+    });
+
+    // Import edges (overlay)
+    if (overlay && overlay.actualImports.length > 0) {
+      overlay.actualImports
+        .filter((imp: any) => nodeMap.has(imp.from) && nodeMap.has(imp.to))
+        .forEach((imp: any, i: number) => {
+          const src = nodeMap.get(imp.from)!;
+          const tgt = nodeMap.get(imp.to)!;
+          const x1 = src.x + NW,
+            y1 = src.y + NH / 2;
+          const x2 = tgt.x,
+            y2 = tgt.y + NH / 2;
+          const dx = (x2 - x1) * 0.45;
+          const path = svgEl("path", {
+            d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`,
+            fill: "none",
+            stroke: "#9ca3af",
+            "stroke-width": "1.5",
+            "stroke-dasharray": "4 4",
+            "marker-end": "url(#fd-arr-import)",
+          });
+          importGroup.appendChild(path);
+        });
     }
 
-    const cy = cytoscape({
-      container,
-      elements: [...nodes, ...edges],
-      style: buildCyStyle(false),
-      layout: {
-        name:
-          typeof (globalThis as any).cytoscapeDagre !== "undefined" ||
-          typeof (globalThis as any).dagre !== "undefined"
-            ? "dagre"
-            : "grid",
-        rankDir: "LR",
-        nodeSep: 60,
-        rankSep: 80,
-        padding: 24,
-      },
+    svg.appendChild(edgeGroup);
+    svg.appendChild(importGroup);
+
+    // Node layer
+    const nodeGroup = svgEl("g", { class: "fd-nodes" });
+    const nodeElMap = new Map<string, any>();
+
+    nodeMap.forEach((node) => {
+      const g = svgEl("g", {
+        "data-fd-node": node.id,
+        transform: `translate(${node.x},${node.y})`,
+        style: "cursor:default",
+      });
+      const rect = svgEl("rect", {
+        width: NW,
+        height: NH,
+        rx: "6",
+        ry: "6",
+        fill: node.isStep ? "#0284c7" : "#f0f9ff",
+        stroke: node.isStep ? "#0369a1" : "#7dd3fc",
+        "stroke-width": "2",
+        class: "fd-node-rect",
+      });
+      // Truncate label to fit
+      const maxChars = 16;
+      const label =
+        node.label.length > maxChars
+          ? node.label.slice(0, maxChars - 1) + "…"
+          : node.label;
+      const txt = svgEl("text", {
+        x: NW / 2,
+        y: NH / 2 + 4,
+        "text-anchor": "middle",
+        "font-size": "10",
+        "font-weight": "600",
+        fill: node.isStep ? "#fff" : "#0c4a6e",
+        "pointer-events": "none",
+      });
+      txt.textContent = label;
+
+      const title = svgEl("title", {});
+      title.textContent = node.id;
+
+      g.appendChild(rect);
+      g.appendChild(txt);
+      g.appendChild(title);
+      nodeGroup.appendChild(g);
+      nodeElMap.set(node.id, { g, rect });
     });
-    cy.fit(undefined, 24);
-    cyInstances.set(chapterId, cy);
+
+    svg.appendChild(nodeGroup);
+    container.appendChild(svg);
+    flowNodeEls.set(cyId, nodeElMap);
     overlayState.set(cyId, new Set());
 
     // Wire overlay checkboxes
@@ -5222,178 +7314,70 @@ function insightsBookClientScript() {
         if (cb.checked) state.add(cb.dataset.overlay);
         else state.delete(cb.dataset.overlay);
         overlayState.set(cyId, state);
-        applyOverlays(cy, cyId, ruleId, state);
+        applyFlowOverlays(cyId, ruleId, state);
       });
     });
   }
 
-  // Build Cytoscape style array; base styles only.
-  function buildCyStyle(_hasImports: boolean) {
-    return [
-      {
-        selector: "node",
-        style: {
-          "background-color": "#f0f9ff",
-          "border-color": "#7dd3fc",
-          "border-width": 2,
-          label: "data(label)",
-          "text-valign": "bottom",
-          "text-halign": "center",
-          "font-size": "10px",
-          "font-weight": "600",
-          color: "#0c4a6e",
-          width: 40,
-          height: 40,
-          shape: "roundrectangle",
-          padding: "6px",
-          "text-margin-y": 4,
-        },
-      },
-      {
-        selector: "node[step]",
-        style: {
-          "background-color": "#0284c7",
-          "border-color": "#0369a1",
-          color: "#fff",
-        },
-      },
-      {
-        selector: 'edge[overlayType = "import"]',
-        style: {
-          "line-color": "#9ca3af",
-          "target-arrow-color": "#9ca3af",
-          "line-style": "dashed",
-          "line-dash-pattern": [4, 4],
-          width: 1.5,
-          "z-index": 1,
-          label: "",
-        },
-      },
-      {
-        selector: 'edge[edgeType = "forbidden"][overlayType != "import"]',
-        style: {
-          "line-color": "#dc2626",
-          "target-arrow-color": "#dc2626",
-          "line-style": "dashed",
-          "line-dash-pattern": [6, 3],
-          width: 2,
-        },
-      },
-      {
-        selector: 'edge[edgeType = "allowed"][overlayType != "import"]',
-        style: {
-          "line-color": "#0284c7",
-          "target-arrow-color": "#0284c7",
-          width: 2,
-        },
-      },
-      {
-        selector: "edge",
-        style: {
-          "target-arrow-shape": "triangle",
-          "curve-style": "bezier",
-          "font-size": "9px",
-          color: "#64748b",
-          label: "data(flowKind)",
-          "text-rotation": "autorotate",
-          "z-index": 5,
-        },
-      },
-    ];
-  }
-
-  // Apply/remove CARI overlays on a live Cytoscape instance.
-  function applyOverlays(
-    cy: any,
+  // Apply/remove CARI overlays on a live SVG flow diagram.
+  function applyFlowOverlays(
     cyId: string,
     ruleId: string,
     active: Set<string>,
   ) {
-    const nodeNames = new Set(cy.nodes().map((n: any) => n.id()));
+    const nodeElMap = flowNodeEls.get(cyId);
+    if (!nodeElMap) return;
 
-    // ── hotspot overlay (node background: white→orange→red) ──
-    cy.nodes().forEach((n: any) => {
-      const name = n.id();
+    nodeElMap.forEach(({ rect }, name) => {
+      // Determine fill/stroke from overlays (priority: violations > hotspot > community > default)
+      let fill = "#f0f9ff",
+        stroke = "#7dd3fc",
+        sw = "2";
+
       const hot = active.has("hotspot") ? overlay?.hotspot[name] : undefined;
+      const hub = active.has("hubs") ? overlay?.hubs[name] : undefined;
+      const comm = active.has("communities")
+        ? overlay?.communities[name]
+        : undefined;
+
       if (hot) {
-        const r = Math.round(255);
         const g = Math.round(255 * (1 - hot.score) * 0.6);
         const b = Math.round(255 * (1 - hot.score) * 0.4);
-        n.style("background-color", `rgb(${r},${g},${b})`);
-        n.style("border-color", hot.score > 0.7 ? "#dc2626" : "#f97316");
-      } else if (!active.has("communities") && !active.has("violations")) {
-        n.style(
-          "background-color",
-          active.has("violations") ? n.style("background-color") : "#f0f9ff",
+        fill = `rgb(255,${g},${b})`;
+        stroke = hot.score > 0.7 ? "#dc2626" : "#f97316";
+      } else if (comm && !active.has("violations")) {
+        fill = COMM_PALETTE[comm.id % COMM_PALETTE.length];
+        stroke = "#a78bfa";
+      }
+
+      if (hub) sw = String(2 + hub.degree * 4);
+
+      if (active.has("violations")) {
+        const ruleViols = (data.violations ?? []).filter(
+          (v: any) => v.ruleId === ruleId,
         );
-        n.style("border-color", "#7dd3fc");
-      }
-    });
-
-    // ── hub overlay (border width 2–6px) ──
-    cy.nodes().forEach((n: any) => {
-      const hub = active.has("hubs") ? overlay?.hubs[n.id()] : undefined;
-      if (hub) {
-        n.style("border-width", 2 + hub.degree * 4);
-      } else if (!active.has("hotspot")) {
-        n.style("border-width", 2);
-      }
-    });
-
-    // ── community overlay (node background colour) ──
-    cy.nodes().forEach((n: any) => {
-      const comm = active.has("communities")
-        ? overlay?.communities[n.id()]
-        : undefined;
-      if (comm && !active.has("hotspot") && !active.has("violations")) {
-        n.style(
-          "background-color",
-          COMM_PALETTE[comm.id % COMM_PALETTE.length],
-        );
-        n.style("border-color", "#a78bfa");
-      }
-    });
-
-    // ── violations overlay (node badge-like red tint, violating edges solid red) ──
-    if (active.has("violations")) {
-      const ruleViols = (data.violations ?? []).filter(
-        (v) => v.ruleId === ruleId,
-      );
-      const violFiles = new Set(ruleViols.map((v) => v.filePath));
-      cy.nodes().forEach((n: any) => {
-        // crude match: node name appears in any violation file path
         const isViol = ruleViols.some(
-          (v) =>
-            v.filePath.includes(n.id()) ||
-            (v.symbol && v.symbol.includes(n.id())),
+          (v: any) =>
+            v.filePath.includes(name) || (v.symbol && v.symbol.includes(name)),
         );
         if (isViol) {
-          n.style("background-color", "#fee2e2");
-          n.style("border-color", "#dc2626");
-          n.style("border-width", 3);
+          fill = "#fee2e2";
+          stroke = "#dc2626";
+          sw = "3";
         }
-      });
-    }
-
-    // ── actual imports overlay ──
-    // Remove any existing import edges first
-    cy.edges('[overlayType = "import"]').remove();
-    if (active.has("imports") && overlay && overlay.actualImports.length > 0) {
-      const importEdges = overlay.actualImports
-        .filter((imp) => nodeNames.has(imp.from) && nodeNames.has(imp.to))
-        .map((imp, i) => ({
-          data: {
-            id: "imp" + i,
-            source: imp.from,
-            target: imp.to,
-            edgeType: "allowed",
-            overlayType: "import",
-            flowKind: "",
-          },
-        }));
-      if (importEdges.length > 0) {
-        cy.add(importEdges);
       }
-    }
+
+      rect.setAttribute("fill", fill);
+      rect.setAttribute("stroke", stroke);
+      rect.setAttribute("stroke-width", sw);
+    });
+
+    // Toggle import overlay group visibility
+    const importGroup = flowImportGroups.get(cyId);
+    if (importGroup)
+      importGroup.setAttribute(
+        "style",
+        active.has("imports") ? "display:block" : "display:none",
+      );
   }
 }

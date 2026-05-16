@@ -477,27 +477,32 @@ export class CypherLiteTranspiler {
     const fromCol = rel.direction === "incoming" ? "to_id" : "from_id";
     const toCol = rel.direction === "incoming" ? "from_id" : "to_id";
 
-    // Relationship type filter
-    let typeFilter = "";
-    if (rel.relTypes.length > 0) {
-      const placeholders = rel.relTypes.map(() => "?").join(", ");
-      typeFilter = ` AND r.predicate IN (${placeholders})`;
-      // We need params twice (base + recursive)
+    // Relationship type filter — params appear twice (base case + recursive case)
+    const typeFilter = rel.relTypes.length > 0;
+    if (typeFilter) {
       ctx.cteParams.push(...rel.relTypes);
       ctx.cteParams.push(...rel.relTypes);
     }
 
-    // Build recursive CTE
+    // Build recursive CTE.
+    // We carry start_id through the recursion so the CTE is self-contained
+    // and does not reference the outer query alias (which SQLite forbids).
+    // The outer JOIN then filters by start_id = fromBinding.tableAlias.id.
     const cte =
-      `${cteName}(node_id, depth) AS (` +
-      // Base case: from the start node
-      `SELECT r.${toCol}, 1 FROM kg_relationships r ` +
-      `WHERE r.${fromCol} = ${fromBinding.tableAlias}.id${typeFilter} ` +
-      `UNION ALL ` +
+      `${cteName}(node_id, start_id, depth) AS (` +
+      // Base case: all 1-hop edges of the requested type (start_id tracked)
+      `SELECT r.${toCol}, r.${fromCol}, 1 FROM kg_relationships r` +
+      (typeFilter
+        ? ` WHERE r.predicate IN (${rel.relTypes.map(() => "?").join(", ")})`
+        : "") +
+      ` UNION ALL ` +
       // Recursive case
-      `SELECT r.${toCol}, ${cteName}.depth + 1 FROM ${cteName} ` +
-      `JOIN kg_relationships r ON r.${fromCol} = ${cteName}.node_id${typeFilter} ` +
-      `WHERE ${cteName}.depth < ${maxDepth}` +
+      `SELECT r.${toCol}, ${cteName}.start_id, ${cteName}.depth + 1 FROM ${cteName} ` +
+      `JOIN kg_relationships r ON r.${fromCol} = ${cteName}.node_id` +
+      (typeFilter
+        ? ` AND r.predicate IN (${rel.relTypes.map(() => "?").join(", ")})`
+        : "") +
+      ` WHERE ${cteName}.depth < ${maxDepth}` +
       `)`;
 
     ctx.ctes.push(cte);
@@ -508,8 +513,9 @@ export class CypherLiteTranspiler {
       ctx.nodeBindings.set(toVar, { tableAlias: toAlias, variable: toVar });
     }
 
+    // Filter by start node via start_id so the CTE stays self-contained
     ctx.joinParts.push(
-      `${joinType} ${cteName} ON ${cteName}.depth >= ${minDepth}`,
+      `${joinType} ${cteName} ON ${cteName}.depth >= ${minDepth} AND ${cteName}.start_id = ${fromBinding.tableAlias}.id`,
     );
     ctx.joinParts.push(
       `${joinType} kg_entities ${toAlias} ON ${toAlias}.id = ${cteName}.node_id`,
@@ -1082,6 +1088,9 @@ export class CypherLiteTranspiler {
       objectCanonId: "object_canon_id",
       createdAt: "created_at",
       updatedAt: "updated_at",
+      // CARI CALLS relationship properties
+      callerLine: "caller_line",
+      isMethod: "is_method",
     };
     return map[prop] ?? prop;
   }

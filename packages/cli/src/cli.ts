@@ -74,11 +74,10 @@ import { CLI_NAME, PRODUCT_NAME } from "./constants.js";
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
 
-// ─── Phase 0: iw intent / iw living argv translation ─────────────────────────
-// Translate `iw intent <sub>` to its canonical command before Commander parses.
-// This is the Phase 0 alias layer — zero code duplication, all option/help
-// handling falls through to the original subcommand implementation.
-// Phase 1 will promote these to first-class subcommands under iw intent.
+// ─── iw intent argv translation ──────────────────────────────────────────────
+// Translate `iw intent <sub>` to its canonical subcommand before Commander
+// parses. Zero code duplication — all option/help handling falls through to the
+// original subcommand implementation.
 (function translateIntentArgs(): void {
   const intentMap: Record<string, string[]> = {
     check: ["index", "rules-check"],
@@ -94,32 +93,6 @@ const { version } = require("../package.json");
     // iw intent check [--domain X] [...] → iw index rules-check [--domain X] [...]
     process.argv = [node, bin, ...intentMap[sub], ...rest];
     return;
-  }
-
-  if (cmd === "living") {
-    if (sub === "verify") {
-      // iw living verify [...] → iw index rules-check --domain documentary [...]
-      process.argv = [
-        node,
-        bin,
-        "index",
-        "rules-check",
-        "--domain",
-        "documentary",
-        ...rest,
-      ];
-      return;
-    }
-    // iw living [...] → iw doc-health [...]
-    process.argv = [node, bin, "doc-health", sub ?? "", ...rest].filter(
-      Boolean,
-    );
-    return;
-  }
-
-  if (cmd === "guardrails" && sub && intentMap[sub]) {
-    // iw guardrails check [...] → iw index rules-check [...]
-    process.argv = [node, bin, ...intentMap[sub], ...rest];
   }
 })();
 

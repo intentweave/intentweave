@@ -86,7 +86,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("13");
+    expect(row?.value).toBe("14");
   });
 
   it("sets WAL journal mode", () => {

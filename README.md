@@ -264,20 +264,20 @@ features. Here's what's already shipped and what's next:
 
 ### Shipped (40+ features)
 
-| Area                      | Features                                                                                                                                                                                                             |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Document Intelligence** | doc-group classification, cross-group drift, orphaned sections, module coverage, terminology inconsistency, doc completeness scoring                                                                                 |
-| **Code Duplication**      | exact clone detection, structural (Type 2) clone detection                                                                                                                                                           |
-| **Dependencies**          | circular imports, unused exports, dependency depth, boundary violations                                                                                                                                              |
-| **Architecture**          | layer inference, layer validation, as-is vs as-should comparison, hierarchical sub-layering, vertical slice detection, interface conformance, dead feature detection, API surface changelog                          |
-| **Git Intelligence**      | hotspot priority, co-change coupling, ownership tracking                                                                                                                                                             |
-| **Graph Topology**        | community detection (3 modes), hub analysis, surprising connections, rationale extraction                                                                                                                            |
-| **Visualisation**         | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports                                                                                                                    |
-| **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                                            |
-| **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                                              |
-| **Intent Verification**   | living documentation score (`iw verify --score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`), semantic rules checking (`iw index rules-check`), internal/deprecated enforcement |
-| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API v1.0.0 ([`docs/API.md`](docs/API.md))                                                                                                                        |
-| **CI & Automation**       | watch mode (`iw index watch`), doc-health GitHub Action (`intentweave/doc-health-action@v1`), git hooks (`iw hook install/uninstall/status`)                                                                         |
+| Area                      | Features                                                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Document Intelligence** | doc-group classification, cross-group drift, orphaned sections, module coverage, terminology inconsistency, doc completeness scoring                                                                          |
+| **Code Duplication**      | exact clone detection, structural (Type 2) clone detection                                                                                                                                                    |
+| **Dependencies**          | circular imports, unused exports, dependency depth, boundary violations                                                                                                                                       |
+| **Architecture**          | layer inference, layer validation, as-is vs as-should comparison, hierarchical sub-layering, vertical slice detection, interface conformance, dead feature detection, API surface changelog                   |
+| **Git Intelligence**      | hotspot priority, co-change coupling, ownership tracking                                                                                                                                                      |
+| **Graph Topology**        | community detection (3 modes), hub analysis, surprising connections, rationale extraction                                                                                                                     |
+| **Visualisation**         | interactive HTML architecture report (layers/communities/dependencies views), focused SVG reports                                                                                                             |
+| **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                                     |
+| **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                                       |
+| **Intent Verification**   | living documentation score (`iw intent score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`), semantic rules checking (`iw intent check`), internal/deprecated enforcement |
+| **Integration**           | CariIndex facade, entity bridge, 35 MCP tools, REST API v1.0.0 ([`docs/API.md`](docs/API.md))                                                                                                                 |
+| **CI & Automation**       | watch mode (`iw index watch`), doc-health GitHub Action (`intentweave/doc-health-action@v1`), git hooks (`iw hook install/uninstall/status`)                                                                  |
 
 ### Next Up
 
@@ -452,12 +452,12 @@ iw context -e "React" --hops 3 -s my-project
 iw impact src/auth.ts -s my-project
 
 # Documentation health check (CARI default — no Neo4j needed)
-iw doc-health
-iw doc-health --neo4j -s my-project   # full KG mode
+iw intent living
+iw intent living --neo4j -s my-project   # full KG mode
 
 # Living Documentation Score (no Neo4j needed)
-iw verify --score                       # composite 0-100/A-F: freshness + arch conformance
-iw verify --score -f json               # JSON output for CI integration
+iw intent score                       # composite 0-100/A-F: freshness + arch conformance
+iw intent score -f json               # JSON output for CI integration
 
 # Cross-layer code linking
 iw xlink . --session my-project --persist
@@ -517,7 +517,7 @@ Additional CARI queries are available as CLI subcommands, MCP tools, and via the
 | —                                          | `cari_resolve`             | Ground a diagram component name to code symbols + doc files      |
 | —                                          | `cari_arch_diff`           | Validate diagram entity flows against CARI evidence              |
 | —                                          | `cari_component_evidence`  | All CARI evidence for a single architecture component            |
-| `iw verify --score`                        | `cari_living_score`        | Composite living documentation score (A-F grade)                 |
+| `iw intent score`                          | `cari_living_score`        | Composite living documentation score (A-F grade)                 |
 | `iw index export --html`                   | —                          | Generate standalone interactive architecture report              |
 | `iw index export --html --provider openai` | `cari_layers_name`         | LLM-generated layer & directory names for the report             |
 | `iw index export --focus <target>`         | —                          | Focused Graphviz SVG architecture report                         |

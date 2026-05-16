@@ -229,10 +229,10 @@ Traces what entities, decisions, and risks are affected when you change a file.
 | `-f, --format`  | `text`  | Output format       |
 | `-o, --output`  | —       | Write to file       |
 
-### `iw doc-health` — Documentation freshness
+### `iw intent living` — Documentation freshness
 
 ```bash
-iw doc-health [files...] [options]
+iw intent living [files...] [options]
 ```
 
 Detects stale references, structural drift, contradictions, and undocumented entities.
@@ -256,15 +256,15 @@ Three modes (least → most infrastructure):
 
 ```bash
 # Default: CARI mode (reads .iw/index.db, no Neo4j)
-iw doc-health
-iw doc-health -v -f json -o report.json
+iw intent living
+iw intent living -v -f json -o report.json
 
 # Lightweight preflight (no index needed)
-iw doc-health --lite docs/
+iw intent living --lite docs/
 
 # Full KG mode (requires Neo4j)
-iw doc-health --neo4j -s my-project
-iw doc-health --neo4j -s my-project --only doc-code,deps
+iw intent living --neo4j -s my-project
+iw intent living --neo4j -s my-project --only doc-code,deps
 ```
 
 ### `iw hook` — Git hooks integration
@@ -672,7 +672,7 @@ iw run docs/**/*.md --track open --provider openai -i --persist -v
 iw impact src/auth.ts -s my-project
 
 # Check if docs are stale
-iw doc-health -s my-project
+iw intent living -s my-project
 ```
 
 ### Swift project analysis

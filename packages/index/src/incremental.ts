@@ -358,6 +358,36 @@ export function applyChanges(
         "last_updated",
         new Date().toISOString(),
       );
+
+      // ── 10. Mark stale capsules ──────────────────────────────
+      // Any symbol_summary capsule whose source_revision no longer matches the
+      // current body_hash is marked possibly_stale so the next cari_capsule call
+      // will regenerate it.
+      try {
+        const staleCount = db
+          .prepare(
+            `
+          UPDATE semantic_capsules
+          SET status = 'possibly_stale', updated_at = ?
+          WHERE capsule_kind = 'symbol_summary'
+            AND status = 'fresh'
+            AND target_id LIKE 'symbol:%'
+            AND source_revision != (
+              SELECT COALESCE(body_hash, '') FROM symbols
+              WHERE 'symbol:' || id = semantic_capsules.target_id
+              LIMIT 1
+            )
+            AND EXISTS (
+              SELECT 1 FROM symbols WHERE 'symbol:' || id = semantic_capsules.target_id
+            )
+        `,
+          )
+          .run(new Date().toISOString()).changes;
+        if (staleCount > 0)
+          log(`  Marked ${staleCount} capsule(s) as possibly_stale`);
+      } catch {
+        // semantic_capsules may not exist on older indexes — non-fatal
+      }
     });
 
     tx();

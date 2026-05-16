@@ -2,14 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * iw intent — Intent Engine namespace (Phase 0 alias layer)
+ * iw intent — Intent Engine namespace
  *
- * This command is a top-level namespace for the Intent Engine. In Phase 0,
- * every subcommand is translated at the argv level (before Commander parses)
- * to its canonical `iw index *` or `iw doc-health` equivalent — so all option
- * validation, help text, and error handling is preserved with zero duplication.
- *
- * Canonical mapping:
+ * Canonical subcommands:
  *   iw intent check [--domain X] → iw index rules-check [--domain X]
  *   iw intent extract             → iw index rules-extract
  *   iw intent scan                → iw index scan-diagrams
@@ -17,13 +12,10 @@
  *   iw intent score               → iw verify --score
  *
  * Domain shortcuts:
- *   iw living verify              → iw intent check --domain documentary
- *
- * Phase 1: --domain flag enables documentary built-in checks (CARI-backed):
- *   structural  — rules.yaml structural rules (default)
- *   behavioral  — rules.yaml behavioral rules
- *   documentary — built-in: coverage, terminology, orphaned sections, completeness
- *   all         — all domains combined
+ *   iw intent check --domain structural    — import-graph rules (default)
+ *   iw intent check --domain behavioral    — Mermaid diagram rules
+ *   iw intent check --domain documentary   — built-in CARI coverage/completeness checks
+ *   iw intent check --domain all           — all domains combined
  */
 
 import { Command } from "commander";
@@ -45,13 +37,10 @@ Subcommands:
 Run 'iw intent <subcommand> --help' for options.
 
 Domain-specific shortcuts:
-  iw intent check --domain documentary  → run built-in documentary checks (CARI-backed)
-  iw living verify                      → same as above
-
-Backward-compatible aliases:
-  iw guardrails *  →  iw intent * (structural/behavioral domain)
-  iw living        →  iw doc-health (documentary health overview)
-  iw doc-health    →  unchanged (also maps to iw intent living)
+  iw intent check --domain structural    → import-graph rules only (default)
+  iw intent check --domain behavioral    → Mermaid diagram rules only
+  iw intent check --domain documentary   → built-in CARI coverage + completeness checks
+  iw intent check --domain all           → all domains combined
 `,
   )
   .action(function () {

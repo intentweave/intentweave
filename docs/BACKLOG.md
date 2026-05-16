@@ -3082,3 +3082,345 @@ npm build output, no network dependency at runtime).
 | 18.2  | Violations chapter              | CARI | S    | High   | 18.1a, 13.2         |        |
 | 18.3  | Coverage chapter                | CARI | S    | Medium | 18.2, 1.4, 4.3      |        |
 | 18.4  | `--book` CLI flag + wiring      | CARI | S    | High   | 18.1b               |        |
+
+---
+
+## 19. Insights Book Enhancements
+
+> Features and chapters that are **missing from the current Insights Book** despite
+> the underlying CARI data already existing in the index. Every item here has data
+> in `.iw/index.db` — the gap is presentation only (except 19.9 and 19.11).
+
+### 19.1 Call Graph Chapter — Butterfly Trace Visualizer _(CARI, M)_
+
+Phase 4 shipped `symbol_calls` and the `calls()` / `trace()` query functions — the
+book gets nothing from them today. Add a dedicated **Call Graph** chapter that exposes
+both forward (callee) and backward (caller) traces through an interactive
+**butterfly layout**.
+
+#### Layout: Double Tidy Tree (D3)
+
+The [D3 tidy tree](https://observablehq.com/@d3/tree/2) algorithm gives compact,
+readable hierarchies for one direction. For calls, you have two directions:
+
+```
+  callers (who calls IN)   ◀──  focused file / function  ──▶   callees (what it calls OUT)
+```
+
+The butterfly layout renders two tidy trees sharing the same root, mirrored:
+
+```
+                    ┌──── auth.ts ────┐
+                    │                 │
+        routes.ts ◀─┤                 ├─▶ TokenStore
+                    │                 │
+        server.ts ◀─┤                 ├─▶ hashPassword()
+                    │                 │
+         tests/ ◀───┤                 ├─▶ db.query()
+                    │                 │      └─▶ pg.connect()
+```
+
+**Implementation in D3:**
+
+```
+Left subtree (callers):
+  d3.tree().size([height, -depthSpacing])   ← negative x mirrors to the left
+  root = focused node; children = files/functions that call it (depth-limited BFS)
+
+Right subtree (callees):
+  d3.tree().size([height, +depthSpacing])
+  root = focused node; children = what it calls (forward trace)
+
+Both trees share the same root SVG node at cx = svgWidth / 2.
+```
+
+**Cycle handling:** When a callee has already appeared on the path (recursive cycle),
+render it as a `↩ <name>` leaf node with a dashed border and a link to its first
+occurrence. No infinite expansion.
+
+**DAG fan-in:** When a node is called from multiple parents (natural for utilities),
+show it once in the dominant branch and add a badge `+N callers` on the node. Clicking
+the badge opens a secondary panel listing all callers.
+
+**Controls:**
+
+| Control   | Default               | Purpose                                         |
+| --------- | --------------------- | ----------------------------------------------- |
+| Entry     | (first file in index) | File or function to center on                   |
+| Mode      | Both                  | Forward-only / Backward-only / Both (butterfly) |
+| Depth     | 3                     | Max hops to expand                              |
+| Max nodes | 30                    | Cap before truncation                           |
+| Filter    | ""                    | Highlight nodes matching text                   |
+
+**Node styling (CARI data overlays):**
+
+| Property     | Source              | Visual                                     |
+| ------------ | ------------------- | ------------------------------------------ |
+| Churn score  | `hotspotPriority()` | Background: white → orange → red           |
+| Hub degree   | `hubs()`            | Border thickness 1–4 px                    |
+| Violation    | `rulesCheck()`      | Red badge on node                          |
+| Doc coverage | `moduleCoverage()`  | Green dot (covered) / grey dot (uncovered) |
+
+**CLI data path:** `iw index calls` + `iw index trace` already produce the required
+data. `buildPrescriptiveReportData()` in `indexBuild.ts` passes `calls` and `trace`
+results into the book's `InsightsBookData`.
+
+**Chapter location:** Analytics → Call Graph (after Hotspots).
+
+CLI: existing `iw index calls` / `iw index trace`. No new queries needed.
+
+Depends on: 13.1 (`symbol_calls` table ✅), `calls()` + `trace()` queries (✅ Phase 4).
+
+### 19.2 Global Search _(CARI, S)_
+
+No way to type a name and find everything about it across all book chapters —
+violations, docs, source files, rules, annotations. Add a `Cmd+K` search overlay
+that searches across:
+
+- Violation `ruleId`, `filePath`, `detail`
+- Doc titles and paths (Documentation chapter)
+- Rule IDs and descriptions (Rules Catalog)
+- Symbol names (source files loaded in the doc-map)
+
+Results are grouped by chapter, clicking navigates and highlights the match.
+
+Implementation: a single `<dialog>` overlay with a `<input>` that queries an
+in-memory index built at book load time from `DATA.violations`, `DATA.docMap`,
+`DATA.rulesCatalog`. No server, no indexing library — plain `includes()` over
+JSON arrays is fast enough for book-scale data.
+
+Trigger: `Cmd+K` / `Ctrl+K` keyboard shortcut + a search icon in the top nav bar.
+
+Depends on: existing `DATA` global in the book client script.
+
+### 19.3 Clickable Violations → AR Source Viewer _(CARI, XS)_
+
+In the Violations chapter, each violation shows `filePath:line` as plain text.
+When the file exists in `DATA.docMap.sourceFiles`, wrap it in a clickable element
+that opens AR Evidence Glasses at that exact line.
+
+The `openSourceFile(path, line)` function already exists inside the doc-map chapter's
+closure. The fix is exposing it as a `globalThis.__openSourceFile` handle at setup time,
+then wiring it in `buildViolationsHtml()`.
+
+This is a one-liner wire-up with a massive UX payoff — the most direct path from
+"there's a violation" to "here's the code causing it".
+
+Depends on: AR Evidence Glasses (`setupARGlassesChapter` ✅), Violations chapter (✅).
+
+### 19.4 Living Score Breakdown Chapter _(CARI, S)_
+
+The Executive Summary shows the aggregate score (e.g., "82 / B") but clicking it
+leads nowhere. Add a dedicated **Living Score** chapter (Analytics → Living Score)
+that breaks down the four dimensions:
+
+```
+Living Score:  82 / 100  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░  B
+
+  Spec coverage          91 / 100  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░  A
+    17 / 20 requirements grounded in code symbols.
+    ⚠ 3 ungrounded: "rate limiting", "PKCE flow", "audit log"
+
+  Constraint consistency  88 / 100  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░  B
+    15 / 17 constraints internally consistent.
+    ⚠ 2 conflicts: AUTH-SPEC vs ARCH-SPEC on session strategy
+
+  Documentation freshness 74 / 100  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  C
+    18 / 25 docs current. 7 stale (code changed, doc unchanged).
+
+  Architecture conformance 72 / 100  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  C
+    3 layer violations, 2 boundary violations.
+    Drag: no-direct-ui-to-data (3 violations, HIGH severity)
+```
+
+Each dimension links to the relevant book chapter (Violations → structural, Doc Quality,
+Coverage) so engineers know exactly where to go.
+
+Depends on: `livingScore()` query (✅ Phase 1), Executive Summary (✅ Phase 2).
+
+### 19.5 Callees / Callers in AR Source Viewer _(CARI, S)_
+
+When reading a source file in AR Evidence Glasses, the right Evidence Links panel shows
+"which docs reference this file". Extend it with a **Call Graph tab** alongside the
+existing Evidence Links tab:
+
+```
+  ┌─ Evidence Links ─────────────────────────┐
+  │ [Evidence Links]  [Call Graph]            │
+  ├───────────────────────────────────────────┤
+  │ ▲ Called by (2 files)                     │
+  │   routes/auth.ts → validateToken()        │
+  │   server.ts → tokenMiddleware()           │
+  │                                           │
+  │ ▼ Calls into (5 symbols)                  │
+  │   db.query()    → packages/db/client.ts   │
+  │   hashPassword()→ packages/crypto/...     │
+  │   jwt.sign()    → (external: jsonwebtoken)│
+  └───────────────────────────────────────────┘
+```
+
+Data source: `DATA.calls` (already in the book if 19.1 is built, or loaded on demand
+via the `symbol_calls` JSON in `InsightsBookData`).
+
+Depends on: 19.1 (call data in `InsightsBookData`), AR Evidence Glasses (✅).
+
+### 19.6 Rule Coverage Chapter _(CARI, S)_
+
+`ruleCoverage()` identifies packages/directories with **zero behavioral rules** — the
+most structurally important code that no ADR governs. This data is computed but has no
+book chapter.
+
+Add a **Rule Coverage** chapter (Weave → Rule Coverage) showing:
+
+```
+Package                    Files   Rules Governing   Risk
+packages/analyzer/           64         3             low
+packages/index/              89         2             low
+packages/cli/                41         0          ⚠ HIGH  ← zero behavioral rules
+apps/server/                 12         0          ⚠ HIGH
+apps/ui/src/views/           28         5             low
+```
+
+Sort by risk (zero-rule packages first). Each row links to the Rules Catalog filtered
+to that package. A "Suggest a rule" link pre-fills a `rules.yaml` template for the package.
+
+Depends on: `ruleCoverage()` query (✅ Phase 4).
+
+### 19.7 Surprising Connections Chapter _(CARI, S)_
+
+`surprises()` is the most intellectually novel CARI query — files with no declared
+relationship (different layers, different communities, no documented connection) that
+nevertheless co-change and co-appear in docs. Hidden architectural coupling detector.
+It is currently completely invisible in the book.
+
+Add a **Surprising Connections** chapter (Analytics → Surprising Connections):
+
+```
+  Rank 1  ★★★  (score 0.87)
+  packages/analyzer/src/kwg/heuristicExtractor.ts
+       ↔  packages/index/src/annotator.ts
+  No import. Different communities. Co-change Jaccard: 0.71.
+  They co-appear in 4 docs: ARCHITECTURE.md, PIPELINE.md, …
+  Why surprising: These two files act as if they are coupled
+  but no code dependency was ever declared.
+
+  Rank 2  ★★☆  (score 0.62)
+  ...
+```
+
+Each entry links to AR Evidence Glasses for both files, with the "show all" filter
+pre-set to the shared doc paths.
+
+Depends on: `surprises()` query (✅).
+
+### 19.8 Missing Data Chapters: Rationale, TODOs, Test Coverage _(CARI, S each)_
+
+Three query functions are fully implemented, wired in `indexBuild.ts`, have MCP tools
+and CLI commands — but no book chapter:
+
+**Rationale** (`rationale()` → `cari_rationale` → `iw index rationale`)  
+`// WHY:`, `// NOTE:`, `// IMPORTANT:`, `// DESIGN:` comments extracted from source.
+Chapter: Analytics → Design Rationale. Shows a table of rationale entries by kind,
+file, and symbol. Clicking an entry opens AR Evidence Glasses at that line. This is
+the "ambient ADR" embedded in code — invaluable for onboarding.
+
+**TODOs** (`todos()` → `cari_todos` → `iw index todos`)  
+All TODO/FIXME/HACK/XXX markers with file, line, age (git blame). Chapter: Weave →
+Technical Debt. Group by kind, sort by age (oldest first). Highlight TODOs in
+high-churn files or near violation hotspots as highest-priority debt.
+
+**Test Coverage** (`testCoverage()` → `cari_test_coverage` → `iw index test-coverage`)  
+Test-to-source file mapping + untested exported symbols. Chapter: Reports → Test
+Coverage. Table: source file | tested? | test file | untested exports. Sort by
+untested exports count descending.
+
+Depends on: respective query functions (all ✅).
+
+### 19.9 Impact Analysis Chapter _(CARI, M)_
+
+"If I change `auth.ts`, what else is affected?" AR Evidence Glasses shows the reverse
+direction (docs → source). This chapter shows the forward direction: source → what breaks.
+
+**Composite impact score per file:**
+
+```
+impact(file) = w₁ · fan_in           (from dep-depth: how many files import it)
+             + w₂ · doc_annotations  (how many doc spans reference it — stale risk)
+             + w₃ · violation_count  (already flagged = more fragile)
+             + w₄ · churn_rate       (high churn = being actively modified)
+```
+
+Chapter: Analytics → Impact Analysis. Shows a ranked file list with an interactive
+"simulate change" selector: pick any file, see its impact blast radius rendered as a
+Cytoscape mini-graph (using the same Cytoscape instance already loaded for ADR chapters).
+
+Depends on: `depthDependency()` (✅), `hotspotPriority()` (✅), `rulesCheck()` (✅),
+`annotationsForFile()` (✅). New: composite scoring + blast-radius subgraph query.
+
+### 19.10 Offline-Capable Export — Inline CDN Bundles _(CARI, S)_ _(TODO 18.4)_
+
+The book currently loads Cytoscape.js, cytoscape-dagre, and D3 from CDN (unpkg /
+jsdelivr). On air-gapped networks or intranets without internet access, the book
+is non-functional.
+
+Inline the minified bundles into the generated HTML at export time — same approach
+as the existing inline CSS and inline client script. One-time copy of the minified
+builds from npm output into the source, then embed via template literal.
+
+Approximate size increase: +440 KB (Cytoscape 400 KB, dagre 40 KB). Acceptable for
+a deliverable artifact. D3 is already used in the arch-graph iframe which is also
+self-contained.
+
+CLI: transparent — `iw index export --book` produces an offline-capable file.
+
+Depends on: Architecture Book (18.x), `iw index export --book` pipeline.
+
+### 19.11 Snapshot Delta / Trend View _(CARI, M)_
+
+The book is a snapshot. Teams cannot tell: is this better or worse than last week?
+Add optional delta display when a previous snapshot exists in `.iw/history/`.
+
+**Mechanism:**
+
+```bash
+# First run: no delta (no previous snapshot to compare against)
+iw index export --book
+
+# Subsequent runs: delta is computed against the most recent archived snapshot
+iw index export --book   # auto-detects .iw/history/latest.json
+```
+
+On each `iw index export --book`, archive a small `InsightsBookSnapshot` JSON (~5 KB)
+to `.iw/history/<timestamp>.json` containing: living score per dimension, violation
+counts per domain/severity, coverage % per layer. Compare current run against the
+most recent snapshot to compute deltas.
+
+**In the book:**
+
+- Executive Summary: `▲ +3 / B` or `▼ -7 / C` delta pill next to the Living Score badge
+- Each metric in the Living Score Breakdown (19.4): inline `+2` / `-1` delta badge
+- Violations chapter: `3 new` / `5 resolved` summary row
+
+No server required — the delta data is embedded in the exported HTML at build time.
+
+Depends on: `livingScore()` (✅), `rulesCheck()` (✅), `moduleCoverage()` (✅).
+
+---
+
+### Priority Matrix — Insights Book Enhancements
+
+| #     | Feature                                 | Tier | Size | Value     | Dependencies          | Status |
+| ----- | --------------------------------------- | ---- | ---- | --------- | --------------------- | ------ |
+| 19.1  | Call Graph chapter (butterfly trace D3) | CARI | M    | Very High | 13.1 ✅, calls ✅     |        |
+| 19.2  | Global search (Cmd+K overlay)           | CARI | S    | High      | DATA global ✅        |        |
+| 19.3  | Clickable violations → AR source viewer | CARI | XS   | High      | AR viewer ✅          |        |
+| 19.4  | Living Score breakdown chapter          | CARI | S    | High      | livingScore() ✅      |        |
+| 19.5  | Call-graph tab in AR Evidence Glasses   | CARI | S    | High      | 19.1, AR viewer ✅    |        |
+| 19.6  | Rule Coverage chapter                   | CARI | S    | High      | ruleCoverage() ✅     |        |
+| 19.7  | Surprising Connections chapter          | CARI | S    | High      | surprises() ✅        |        |
+| 19.8a | Design Rationale chapter                | CARI | S    | High      | rationale() ✅        |        |
+| 19.8b | Technical Debt / TODOs chapter          | CARI | S    | Medium    | todos() ✅            |        |
+| 19.8c | Test Coverage chapter                   | CARI | S    | Medium    | testCoverage() ✅     |        |
+| 19.9  | Impact Analysis chapter (blast-radius)  | CARI | M    | High      | depDepth ✅, hots. ✅ |        |
+| 19.10 | Offline export — inline CDN bundles     | CARI | S    | Medium    | Architecture Book ✅  |        |
+| 19.11 | Snapshot delta / trend view             | CARI | M    | High      | livingScore ✅, 19.4  |        |

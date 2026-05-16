@@ -51,6 +51,11 @@ import {
   annotate,
 } from "@intentweave/index";
 import { detectChanges, applyChanges, hashFile } from "@intentweave/index";
+import {
+  runCypherQueryFromDb,
+  CARI_GRAPH_SCHEMA,
+  CARI_QUERY_TEMPLATES,
+} from "@intentweave/index";
 
 // Import facade utilities for local use + re-export for test access
 import {
@@ -979,6 +984,9 @@ async function buildPrescriptiveReportData(
   let analyticsDocumentation: InsightsBookData["documentation"] | undefined;
   let analyticsLivingScore: InsightsBookData["livingScore"] | undefined;
   let analyticsDocMap: InsightsDocMap | undefined;
+  let analyticsRuleCoverage: InsightsBookData["ruleCoverage"] | undefined;
+  let analyticsTestCoverage: InsightsBookData["testCoverage"] | undefined;
+  let analyticsCallGraph: InsightsBookData["callGraph"] | undefined;
 
   let layerCoverageData:
     | Array<{
@@ -1173,6 +1181,8 @@ async function buildPrescriptiveReportData(
 
     try {
       const depResult = dependencyDepth(dbPath);
+      const surprisesResult = surprises(dbPath);
+      const todosResult = todos(dbPath);
       analyticsHotspots = {
         priorities: hotspotResult.priorities.map((p) => ({
           filePath: p.filePath,
@@ -1203,6 +1213,20 @@ async function buildPrescriptiveReportData(
           size: c.size,
           members: c.members.map((m) => ({ name: m.name, kind: m.kind })),
         })),
+        surprises: surprisesResult.surprises.slice(0, 40).map((s) => ({
+          entityA: s.entityA,
+          entityB: s.entityB,
+          score: s.score,
+          crossLayerWeight: s.crossLayerWeight,
+          communityDistance: s.communityDistance,
+          inverseFrequency: s.inverseFrequency,
+          reason: s.reason,
+        })),
+        todos: {
+          items: todosResult.todos,
+          totalCount: todosResult.totalCount,
+          byKind: todosResult.byKind,
+        },
       };
     } catch {
       /* best-effort */
@@ -1299,6 +1323,140 @@ async function buildPrescriptiveReportData(
           detail: lsResult.archConformance.detail,
         },
       };
+    } catch {
+      /* best-effort */
+    }
+
+    // ── Rule Coverage (19.6) ───────────────────────────────────────────────
+    if (rulesConfig?.rules?.length) {
+      try {
+        const rcResult = ruleCoverage(dbPath, { rulesConfig });
+        analyticsRuleCoverage = {
+          totalBehavioralRules: rcResult.totalBehavioralRules,
+          covered: rcResult.covered.map((p) => ({
+            dir: p.dir,
+            fileCount: p.fileCount,
+            behavioralRuleCount: p.behavioralRuleCount,
+            coveredByRules: p.coveredByRules,
+          })),
+          uncovered: rcResult.uncovered.map((p) => ({
+            dir: p.dir,
+            fileCount: p.fileCount,
+            behavioralRuleCount: p.behavioralRuleCount,
+            coveredByRules: p.coveredByRules,
+          })),
+          topUncovered: rcResult.topUncovered.map((p) => ({
+            dir: p.dir,
+            fileCount: p.fileCount,
+            behavioralRuleCount: p.behavioralRuleCount,
+            coveredByRules: p.coveredByRules,
+          })),
+        };
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    // ── Test Coverage (19.8c) ──────────────────────────────────────────────
+    try {
+      const tcResult = testCoverage(dbPath);
+      analyticsTestCoverage = {
+        totalExported: tcResult.totalExported,
+        covered: tcResult.covered,
+        coveragePercent: tcResult.coveragePercent,
+        untested: tcResult.untested.slice(0, 200),
+        mappings: tcResult.mappings.slice(0, 200).map((m) => ({
+          testFile: m.testFile,
+          sourceFile: m.sourceFile,
+          strategy: m.strategy,
+          importedNames: m.importedNames,
+        })),
+        byDirectory: tcResult.byDirectory,
+      };
+    } catch {
+      /* best-effort */
+    }
+
+    // ── Call Graph (19.1) ───────────────────────────────────────────────────
+    try {
+      const callsResult = calls(dbPath, { limit: 5000 });
+      if (callsResult.total > 0 && callsResult.edges.length > 0) {
+        // Rank caller files by outgoing call volume
+        const fileCallCounts = new Map<string, number>();
+        for (const e of callsResult.edges) {
+          fileCallCounts.set(
+            e.callerFile,
+            (fileCallCounts.get(e.callerFile) ?? 0) + 1,
+          );
+        }
+        const topFiles = [...fileCallCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 20)
+          .map(([f]) => f);
+
+        const cgTraces: NonNullable<InsightsBookData["callGraph"]>["traces"] =
+          [];
+        let cgActive = false;
+        for (const entryFile of topFiles) {
+          try {
+            const fwd = trace(dbPath, {
+              entry: entryFile,
+              direction: "forward",
+              hops: 4,
+              maxNodes: 30,
+            });
+            const bwd = trace(dbPath, {
+              entry: entryFile,
+              direction: "backward",
+              hops: 4,
+              maxNodes: 30,
+            });
+            if (!fwd.callsTableActive) break;
+            cgActive = true;
+            cgTraces.push({
+              entryFile,
+              forward: {
+                nodes: fwd.nodes.map((n) => ({
+                  file: n.file,
+                  symbols: n.symbols,
+                  depth: n.depth,
+                })),
+                edges: fwd.edges.map((e) => ({
+                  fromFile: e.fromFile,
+                  fromSymbol: e.fromSymbol ?? null,
+                  toFile: e.toFile,
+                  toCalleeName: e.toCalleeName,
+                  callerLine: e.callerLine ?? null,
+                })),
+                truncated: fwd.truncated,
+              },
+              backward: {
+                nodes: bwd.nodes.map((n) => ({
+                  file: n.file,
+                  symbols: n.symbols,
+                  depth: n.depth,
+                })),
+                edges: bwd.edges.map((e) => ({
+                  fromFile: e.fromFile,
+                  fromSymbol: e.fromSymbol ?? null,
+                  toFile: e.toFile,
+                  toCalleeName: e.toCalleeName,
+                  callerLine: e.callerLine ?? null,
+                })),
+                truncated: bwd.truncated,
+              },
+            });
+          } catch {
+            /* skip this file */
+          }
+        }
+        analyticsCallGraph = {
+          total: callsResult.total,
+          topCallees: callsResult.topCallees,
+          traces: cgTraces,
+          callsTableActive: cgActive,
+        };
+      }
     } catch {
       /* best-effort */
     }
@@ -1624,12 +1782,16 @@ async function buildPrescriptiveReportData(
     violations: violationsForBook,
     cariOverlay,
     layerCoverage: layerCoverageData,
+    layerFlows: layerCheckResult.layerFlows,
     codeHealth: analyticsCodeHealth,
     hotspots: analyticsHotspots,
     documentation: analyticsDocumentation,
     livingScore: analyticsLivingScore,
     rulesCatalog,
     docMap: analyticsDocMap,
+    ruleCoverage: analyticsRuleCoverage,
+    testCoverage: analyticsTestCoverage,
+    callGraph: analyticsCallGraph,
     options: {
       showRuleElements: opts.showRuleElements,
     },
@@ -2639,9 +2801,69 @@ const indexTodosSubcommand = new Command("todos")
   .description("List TODO/FIXME/HACK/XXX comments")
   .option("--db <path>", "Path to index.db")
   .option("--kind <kind>", "Filter by kind: TODO, FIXME, HACK, XXX")
+  .option(
+    "--preset <id>",
+    "Named filter preset: fixme-only | hacks-only | blocking | all-kinds",
+  )
+  .option("--list-presets", "Show all available presets and exit")
   .option("-n, --limit <n>", "Maximum results", "50")
   .option("-f, --format <format>", "Output format: text or json", "text")
   .action((opts) => {
+    // ── preset list ──────────────────────────────────────────────────────────
+    const TODO_PRESETS: Record<string, { kind?: string; description: string }> =
+      {
+        "fixme-only": {
+          kind: "FIXME",
+          description: "Only FIXME markers (bugs, broken code, must-fix items)",
+        },
+        "hacks-only": {
+          kind: "HACK",
+          description: "Only HACK markers (workarounds, temporary code)",
+        },
+        "xxx-only": {
+          kind: "XXX",
+          description: "Only XXX markers (dangerous or suspicious code)",
+        },
+        blocking: {
+          kind: "FIXME",
+          description:
+            "Alias for fixme-only — FIXME comments are the most CI-blocking by convention",
+        },
+        "all-kinds": {
+          kind: undefined,
+          description:
+            "All TODO/FIXME/HACK/XXX markers (same as omitting --kind)",
+        },
+      };
+
+    if (opts.listPresets) {
+      console.log(chalk.blue("\n  TODO filter presets\n"));
+      for (const [id, p] of Object.entries(TODO_PRESETS)) {
+        console.log(
+          `  ${chalk.cyan(id.padEnd(14))} ${chalk.white(p.description)}`,
+        );
+        if (p.kind)
+          console.log(chalk.gray(`    ${"".padEnd(14)} kind: ${p.kind}`));
+      }
+      console.log();
+      return;
+    }
+
+    // ── resolve kind from --preset ────────────────────────────────────────
+    let kind = opts.kind as string | undefined;
+    if (opts.preset) {
+      const preset = TODO_PRESETS[opts.preset as string];
+      if (!preset) {
+        console.error(
+          chalk.red(
+            `Unknown preset "${opts.preset}". Run with --list-presets to see available presets.`,
+          ),
+        );
+        process.exit(1);
+      }
+      kind = preset.kind;
+    }
+
     const dbPath = resolveDbPath(opts.db);
     const result = todos(dbPath);
 
@@ -2651,17 +2873,15 @@ const indexTodosSubcommand = new Command("todos")
     }
 
     let items = result.todos;
-    if (opts.kind) {
-      items = items.filter(
-        (t) => t.kind.toLowerCase() === opts.kind.toLowerCase(),
-      );
+    if (kind) {
+      items = items.filter((t) => t.kind.toLowerCase() === kind!.toLowerCase());
     }
 
     if (items.length === 0) {
       console.log(
         chalk.green(
-          opts.kind
-            ? `\n  ✓ No ${opts.kind} comments found.\n`
+          kind
+            ? `\n  ✓ No ${kind} comments found.\n`
             : "\n  ✓ No TODO/FIXME/HACK/XXX comments found.\n",
         ),
       );
@@ -3690,6 +3910,52 @@ const SEVERITY_COLOR: Record<string, (s: string) => string> = {
   low: chalk.gray,
 };
 
+// ── Intent check presets ───────────────────────────────────────────────────
+
+const INTENT_CHECK_PRESETS: Record<
+  string,
+  {
+    domain: string;
+    severity: string;
+    description: string;
+    note?: string;
+  }
+> = {
+  "ci-gate": {
+    domain: "all",
+    severity: "high",
+    description:
+      "CI gate: all domains, high-severity only. Exits 1 on any error-mode violation.",
+    note: "Recommended for pull-request CI checks.",
+  },
+  "doc-review": {
+    domain: "documentary",
+    severity: "low",
+    description:
+      "Documentary domain only: coverage, completeness, terminology, orphaned sections.",
+    note: "Use during documentation sprints or PR reviews.",
+  },
+  "full-audit": {
+    domain: "all",
+    severity: "low",
+    description:
+      "All domains, all severities — full picture including warnings.",
+    note: "Use for periodic audits; not recommended in CI (may produce many warnings).",
+  },
+  "structural-only": {
+    domain: "structural",
+    severity: "low",
+    description:
+      "Structural rules only (rules.yaml: forbidden imports, naming, call patterns).",
+  },
+  "behavioral-only": {
+    domain: "behavioral",
+    severity: "low",
+    description:
+      "Behavioral rules only (rules.yaml: Mermaid sequence/state/flowchart diagrams).",
+  },
+};
+
 const indexRulesCheckSubcommand = new Command("rules-check")
   .description(
     "Check codebase against semantic architectural rules from .iw/rules.yaml (13.2/13.3/13.5)",
@@ -3713,6 +3979,11 @@ const indexRulesCheckSubcommand = new Command("rules-check")
     "Intent domain to check: structural | behavioral | documentary | all",
   )
   .option(
+    "--preset <id>",
+    "Named check preset: ci-gate | doc-review | full-audit | structural-only | behavioral-only",
+  )
+  .option("--list-presets", "Show all available check presets and exit")
+  .option(
     "--save-baseline <file>",
     "Save current violation counts as baseline JSON (13.5)",
   )
@@ -3733,6 +4004,43 @@ const indexRulesCheckSubcommand = new Command("rules-check")
     "Suppress the ASCII conformance diagram in text output (17.4)",
   )
   .action(async (opts) => {
+    // ── --list-presets ────────────────────────────────────────────────────
+    if (opts.listPresets) {
+      console.log(chalk.blue("\n  Intent check presets\n"));
+      for (const [id, p] of Object.entries(INTENT_CHECK_PRESETS)) {
+        console.log(
+          `  ${chalk.cyan(id.padEnd(18))} ${chalk.white(p.description)}`,
+        );
+        console.log(
+          chalk.gray(
+            `    ${"".padEnd(18)} domain: ${p.domain}  severity: ${p.severity}${p.note ? "  · " + p.note : ""}`,
+          ),
+        );
+      }
+      console.log(
+        chalk.gray(
+          "\n  Usage: iw intent check --preset ci-gate\n         iw index rules-check --preset doc-review\n",
+        ),
+      );
+      return;
+    }
+
+    // ── resolve domain + severity from --preset ───────────────────────────
+    if (opts.preset) {
+      const preset = INTENT_CHECK_PRESETS[opts.preset as string];
+      if (!preset) {
+        console.error(
+          chalk.red(
+            `Unknown preset "${opts.preset}". Run with --list-presets to see available presets.`,
+          ),
+        );
+        process.exit(1);
+      }
+      // preset values are overridden by explicit flags
+      if (!opts.domain) opts.domain = preset.domain;
+      if (opts.severity === "low") opts.severity = preset.severity; // only override default
+    }
+
     const dbPath = resolveDbPath(opts.db);
     const configPath = path.resolve(opts.config);
 
@@ -6625,6 +6933,526 @@ const indexRuleCoverageSubcommand = new Command("rule-coverage")
     }
   });
 
+// ── iw index cypher ────────────────────────────────────────────────────────
+
+const indexCypherSubcommand = new Command("cypher")
+  .description(
+    "Run a CypherLite query over the CARI graph projection (FILE/SYMBOL/DOCSPAN nodes, IMPORTS/DEFINES/CALLS/ANNOTATED_BY/CO_CHANGES/CO_OCCURS edges)",
+  )
+  .argument(
+    "[query]",
+    "CypherLite query string, or a template id prefixed with @: (e.g. @:callers-of). Omit to use --list-templates.",
+  )
+  .option("--db <path>", "Path to index.db")
+  .option(
+    "-p, --param <kv...>",
+    "Query parameters as key=value pairs (e.g. --param calleeName=validateToken)",
+  )
+  .option(
+    "--template <id>",
+    "Run a named built-in template by id (alternative to @: prefix)",
+  )
+  .option("--list-templates", "List all available query templates and exit")
+  .option(
+    "-f, --format <format>",
+    "Output format: table, json, or csv",
+    "table",
+  )
+  .option("--limit <n>", "Max rows to display", "50")
+  .option("--show-sql", "Print the generated SQL before results")
+  .action(async (queryArg: string | undefined, opts) => {
+    if (opts.listTemplates || (queryArg === undefined && !opts.template)) {
+      console.log(chalk.blue("\n  CARI built-in query templates\n"));
+      for (const t of CARI_QUERY_TEMPLATES) {
+        console.log(`  ${chalk.cyan(t.id.padEnd(24))} ${chalk.white(t.name)}`);
+        console.log(`    ${chalk.gray(t.description)}`);
+        if (t.params.length) {
+          console.log(
+            `    Params: ${chalk.yellow(t.params.map((p) => `$${p}`).join(", "))}`,
+          );
+        }
+        console.log();
+      }
+      return;
+    }
+
+    const dbPath = resolveDbPath(opts.db);
+
+    // Resolve template id: @:id prefix or --template flag
+    let queryStr = queryArg ?? "";
+    const templateId =
+      opts.template ??
+      (queryArg?.startsWith("@:") ? queryArg.slice(2) : undefined);
+    if (templateId) {
+      const tpl = CARI_QUERY_TEMPLATES.find((t) => t.id === templateId);
+      if (!tpl) {
+        console.error(
+          chalk.red(
+            `Unknown template "${templateId}". Run with --list-templates to see available templates.`,
+          ),
+        );
+        process.exit(1);
+      }
+      queryStr = tpl.query;
+      // Apply defaults
+      if (tpl.defaults && !opts.param?.length) {
+        opts.param = Object.entries(tpl.defaults).map(([k, v]) => `${k}=${v}`);
+      }
+    }
+
+    // Parse --param key=value pairs
+    const params: Record<string, unknown> = {};
+    for (const kv of opts.param ?? []) {
+      const eq = kv.indexOf("=");
+      if (eq === -1) {
+        console.error(chalk.red(`Invalid param "${kv}" — expected key=value`));
+        process.exit(1);
+      }
+      const k = kv.slice(0, eq);
+      const v = kv.slice(eq + 1);
+      // Coerce numeric strings
+      params[k] = /^\d+$/.test(v) ? parseInt(v, 10) : v;
+    }
+
+    const limit = parseInt(opts.limit, 10);
+
+    try {
+      const result = runCypherQueryFromDb(dbPath, queryStr, params);
+
+      if (opts.showSql) {
+        console.log(chalk.gray("\n  Generated SQL:\n"));
+        console.log(chalk.gray(result.sql));
+        console.log();
+      }
+
+      const rows = result.rows.slice(0, limit);
+      const truncated = result.rows.length > limit;
+
+      if (opts.format === "json") {
+        console.log(JSON.stringify(result.rows, null, 2));
+        return;
+      }
+
+      if (opts.format === "csv") {
+        if (result.columns.length) {
+          console.log(result.columns.join(","));
+          for (const row of result.rows) {
+            console.log(
+              result.columns
+                .map((c) => {
+                  const v = String(row[c] ?? "");
+                  return v.includes(",") || v.includes('"')
+                    ? `"${v.replace(/"/g, '""')}"`
+                    : v;
+                })
+                .join(","),
+            );
+          }
+        }
+        return;
+      }
+
+      // Table format
+      if (rows.length === 0) {
+        console.log(chalk.gray("\n  No results.\n"));
+        return;
+      }
+
+      const cols = result.columns;
+      const widths = cols.map((c) =>
+        Math.min(
+          60,
+          Math.max(c.length, ...rows.map((r) => String(r[c] ?? "").length)),
+        ),
+      );
+      const header = cols.map((c, i) => c.padEnd(widths[i])).join("  ");
+      const sep = widths.map((w) => "─".repeat(w)).join("  ");
+
+      console.log();
+      console.log(`  ${chalk.bold(header)}`);
+      console.log(`  ${chalk.gray(sep)}`);
+      for (const row of rows) {
+        const line = cols
+          .map((c, i) => {
+            const v = String(row[c] ?? "");
+            const truncV =
+              v.length > widths[i] ? v.slice(0, widths[i] - 1) + "…" : v;
+            return truncV.padEnd(widths[i]);
+          })
+          .join("  ");
+        console.log(`  ${line}`);
+      }
+      if (truncated) {
+        console.log(
+          chalk.gray(
+            `\n  … ${result.rows.length - limit} more rows (use --limit to increase)`,
+          ),
+        );
+      }
+      console.log(chalk.gray(`\n  ${result.rows.length} row(s) total\n`));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`\n  Query error: ${msg}\n`));
+      process.exit(1);
+    }
+  });
+
+// ── iw index schema ────────────────────────────────────────────────────────
+
+const indexSchemaSubcommand = new Command("schema")
+  .description(
+    "Show the CARI graph projection schema: node labels, relationship types, and built-in query templates",
+  )
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .action(async (opts) => {
+    if (opts.format === "json") {
+      console.log(
+        JSON.stringify(
+          { schema: CARI_GRAPH_SCHEMA, templates: CARI_QUERY_TEMPLATES },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    console.log(chalk.blue("\n  CARI Graph Projection Schema\n"));
+    console.log(chalk.bold("  Node labels:"));
+    for (const [label, info] of Object.entries(CARI_GRAPH_SCHEMA.nodes)) {
+      console.log(
+        `    ${chalk.cyan(label.padEnd(10))} table: ${chalk.gray(info.table)}`,
+      );
+      for (const [prop, desc] of Object.entries(info.properties)) {
+        console.log(
+          `      ${chalk.white(("." + prop).padEnd(12))} ${chalk.gray(String(desc))}`,
+        );
+      }
+    }
+
+    console.log();
+    console.log(chalk.bold("  Relationship types:"));
+    for (const [rel, desc] of Object.entries(CARI_GRAPH_SCHEMA.relationships)) {
+      const lines = Array.isArray(desc) ? desc : [desc];
+      for (const line of lines) {
+        console.log(
+          `    ${chalk.yellow((":" + rel).padEnd(18))} ${chalk.gray(line)}`,
+        );
+      }
+    }
+
+    console.log();
+    console.log(chalk.bold("  Notes:"));
+    for (const note of CARI_GRAPH_SCHEMA.notes) {
+      console.log(`    ${chalk.gray("• " + note)}`);
+    }
+
+    console.log();
+    console.log(chalk.bold("  Built-in query templates:"));
+    for (const t of CARI_QUERY_TEMPLATES) {
+      const params = t.params.length
+        ? ` [${t.params.map((p) => `$${p}`).join(", ")}]`
+        : "";
+      console.log(
+        `    ${chalk.cyan(t.id.padEnd(24))} ${chalk.white(t.name)}${chalk.gray(params)}`,
+      );
+    }
+
+    console.log(
+      chalk.gray(
+        "\n  Run `iw index cypher --list-templates` for full template details.",
+      ),
+    );
+    console.log(
+      chalk.gray('  Run `iw index cypher "<query>"` to execute a query.'),
+    );
+    console.log();
+  });
+
+// ── iw index capsule ──────────────────────────────────────────────────────────
+//
+// Generate or retrieve semantic capsule summaries for symbols, call edges,
+// and call paths using an LLM.
+//
+// Usage:
+//   iw index capsule --symbol <symbolId> --provider openai
+//   iw index capsule --symbol <name>     --provider openai   # by name
+//   iw index capsule --list              # list cached capsules
+//   iw index capsule --list --status stale
+//   iw index capsule --stale-check       # mark stale based on body_hash changes
+// ─────────────────────────────────────────────────────────────────────────────
+
+const indexCapsuleSubcommand = new Command("capsule")
+  .description(
+    "Generate or retrieve LLM-derived semantic capsule summaries for symbols and call paths.",
+  )
+  .option("--symbol <idOrName>", "Symbol to summarize (numeric ID or name)")
+  .option(
+    "--call <callerId:calleeId>",
+    "Generate call_semantics capsule for a caller→callee edge (numeric IDs)",
+  )
+  .option(
+    "--path <id1,id2,...>",
+    "Generate path_summary for an ordered list of symbol IDs",
+  )
+  .option("--provider <name>", "LLM provider: openai or mock", "openai")
+  .option("--model <name>", "LLM model name", "gpt-4o-mini")
+  .option("--api-key <key>", "OpenAI API key (or set OPENAI_API_KEY)")
+  .option("--force", "Regenerate even if a fresh capsule exists")
+  .option("--list", "List all cached capsules")
+  .option(
+    "--status <status>",
+    "Filter list by status: fresh, possibly_stale, stale",
+  )
+  .option("--kind <kind>", "Filter list by capsule kind")
+  .option(
+    "--stale-check",
+    "Mark symbol_summary capsules as possibly_stale when source has changed",
+  )
+  .option("-f, --format <format>", "Output format: text or json", "text")
+  .option("-o, --output <path>", "Index DB path", "")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.output || undefined);
+    const {
+      generateSymbolSummary,
+      generateCallSemantics,
+      generatePathSummary,
+      listCapsules,
+      markStaleForChangedSymbols,
+    } = await import("@intentweave/index");
+
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+
+    try {
+      // ── --stale-check ─────────────────────────────────────────────
+      if (opts.staleCheck) {
+        const count = markStaleForChangedSymbols(db);
+        console.log(
+          chalk.yellow(`\n  Marked ${count} capsule(s) as possibly_stale.\n`),
+        );
+        return;
+      }
+
+      // ── --list ────────────────────────────────────────────────────
+      if (opts.list) {
+        const capsules = listCapsules(db, {
+          status: opts.status,
+          kind: opts.kind,
+          limit: 50,
+        });
+        if (capsules.length === 0) {
+          console.log(chalk.gray("\n  No capsules found.\n"));
+          return;
+        }
+        if (opts.format === "json") {
+          console.log(JSON.stringify(capsules, null, 2));
+          return;
+        }
+        console.log(chalk.blue(`\n  Semantic Capsules (${capsules.length})\n`));
+        for (const c of capsules) {
+          const statusColor =
+            c.status === "fresh"
+              ? chalk.green
+              : c.status === "stale"
+                ? chalk.red
+                : chalk.yellow;
+          console.log(
+            `  ${statusColor(c.status.padEnd(14))} ${chalk.cyan(c.capsuleKind.padEnd(18))} ${chalk.white(c.targetId)}`,
+          );
+          if (c.content.summary) {
+            const summary = String(c.content.summary);
+            console.log(
+              chalk.gray(
+                `    ${summary.slice(0, 100)}${summary.length > 100 ? "…" : ""}`,
+              ),
+            );
+          }
+        }
+        console.log();
+        return;
+      }
+
+      // ── Resolve LLM provider ──────────────────────────────────────
+      const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
+      const { OpenAILLMProvider, SmartMockLLMProvider } =
+        await import("@intentweave/analyzer/llm");
+      const llm =
+        opts.provider === "mock" || !apiKey
+          ? new SmartMockLLMProvider({ workspaceKey: "capsule" })
+          : new OpenAILLMProvider({ apiKey, model: opts.model });
+      const capsuleOpts = { model: opts.model, force: !!opts.force };
+
+      // ── --symbol ──────────────────────────────────────────────────
+      if (opts.symbol) {
+        // Resolve name → ID if needed
+        let symbolId = opts.symbol;
+        if (!/^\d+$/.test(symbolId)) {
+          const row = db
+            .prepare(`SELECT id FROM symbols WHERE name = ? LIMIT 1`)
+            .get(symbolId) as { id: string } | undefined;
+          if (!row) {
+            console.error(chalk.red(`\n  Symbol not found: ${symbolId}\n`));
+            process.exit(1);
+          }
+          symbolId = String(row.id);
+        }
+
+        console.log(
+          chalk.blue(`\n  Generating symbol_summary for symbol:${symbolId}…\n`),
+        );
+        const result = await generateSymbolSummary(
+          db,
+          symbolId,
+          llm,
+          capsuleOpts,
+        );
+
+        if (opts.format === "json") {
+          console.log(JSON.stringify(result.capsule, null, 2));
+          return;
+        }
+
+        const c = result.capsule;
+        console.log(
+          result.fromCache
+            ? chalk.gray("  (from cache)")
+            : chalk.green("  ✓ Generated"),
+        );
+        console.log(
+          chalk.bold(`\n  ${c.targetId}`) + chalk.gray(` — ${c.capsuleKind}`),
+        );
+        console.log(
+          chalk.gray(
+            `  Status: ${c.status}  |  Model: ${c.model}  |  Confidence: ${c.confidence}`,
+          ),
+        );
+        console.log();
+        for (const [key, val] of Object.entries(c.content)) {
+          if (!val || (Array.isArray(val) && val.length === 0)) continue;
+          if (Array.isArray(val)) {
+            console.log(chalk.cyan(`  ${key}:`));
+            for (const item of val) console.log(chalk.white(`    • ${item}`));
+          } else {
+            console.log(chalk.cyan(`  ${key}:`));
+            console.log(chalk.white(`    ${String(val)}`));
+          }
+        }
+        if (result.tokensUsed) {
+          console.log(
+            chalk.gray(
+              `\n  Tokens: ${result.tokensUsed.prompt} prompt + ${result.tokensUsed.completion} completion`,
+            ),
+          );
+        }
+        console.log();
+        return;
+      }
+
+      // ── --call <callerId:calleeId> ────────────────────────────────
+      if (opts.call) {
+        const [callerId, calleeId] = String(opts.call).split(":");
+        if (!callerId || !calleeId) {
+          console.error(
+            chalk.red(
+              "\n  --call requires format: callerId:calleeId (numeric IDs)\n",
+            ),
+          );
+          process.exit(1);
+        }
+        console.log(
+          chalk.blue(
+            `\n  Generating call_semantics for ${callerId}→${calleeId}…\n`,
+          ),
+        );
+        const result = await generateCallSemantics(
+          db,
+          callerId,
+          calleeId,
+          llm,
+          capsuleOpts,
+        );
+
+        if (opts.format === "json") {
+          console.log(JSON.stringify(result.capsule, null, 2));
+          return;
+        }
+        const c = result.capsule;
+        console.log(
+          result.fromCache
+            ? chalk.gray("  (from cache)")
+            : chalk.green("  ✓ Generated"),
+        );
+        console.log(chalk.bold(`\n  ${c.targetId}`));
+        for (const [key, val] of Object.entries(c.content)) {
+          if (!val) continue;
+          console.log(chalk.cyan(`  ${key}:`) + " " + chalk.white(String(val)));
+        }
+        console.log();
+        return;
+      }
+
+      // ── --path <id1,id2,...> ─────────────────────────────────────
+      if (opts.path) {
+        const ids = String(opts.path)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (ids.length < 2) {
+          console.error(
+            chalk.red(
+              "\n  --path requires at least 2 comma-separated symbol IDs\n",
+            ),
+          );
+          process.exit(1);
+        }
+        console.log(
+          chalk.blue(
+            `\n  Generating path_summary for ${ids.length}-step path…\n`,
+          ),
+        );
+        const result = await generatePathSummary(db, ids, llm, capsuleOpts);
+
+        if (opts.format === "json") {
+          console.log(JSON.stringify(result.capsule, null, 2));
+          return;
+        }
+        const c = result.capsule;
+        console.log(
+          result.fromCache
+            ? chalk.gray("  (from cache)")
+            : chalk.green("  ✓ Generated"),
+        );
+        console.log(chalk.bold(`\n  ${c.targetId}`));
+        for (const [key, val] of Object.entries(c.content)) {
+          if (!val || (Array.isArray(val) && val.length === 0)) continue;
+          if (Array.isArray(val)) {
+            console.log(
+              chalk.cyan(`  ${key}:`) +
+                " " +
+                chalk.white((val as string[]).join(", ")),
+            );
+          } else {
+            console.log(
+              chalk.cyan(`  ${key}:`) + " " + chalk.white(String(val)),
+            );
+          }
+        }
+        console.log();
+        return;
+      }
+
+      console.log(
+        chalk.gray(
+          "\n  Specify --symbol, --call, --path, --list, or --stale-check.\n",
+        ),
+      );
+      indexCapsuleSubcommand.help();
+    } finally {
+      db.close();
+    }
+  });
+
 export const indexCommand = new Command("index")
   .description("CARI Evidence Engine commands")
   .addCommand(indexBuildSubcommand)
@@ -6679,7 +7507,10 @@ export const indexCommand = new Command("index")
   .addCommand(indexScanDiagramsSubcommand)
   .addCommand(indexCallsSubcommand)
   .addCommand(indexTraceSubcommand)
-  .addCommand(indexRuleCoverageSubcommand);
+  .addCommand(indexRuleCoverageSubcommand)
+  .addCommand(indexCypherSubcommand)
+  .addCommand(indexSchemaSubcommand)
+  .addCommand(indexCapsuleSubcommand);
 
 // ── LLM narrative generation for --explain ──────────────────────
 

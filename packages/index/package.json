@@ -20,6 +20,7 @@
   "scripts": {
     "prepublishOnly": "npm run build",
     "build": "tsc",
+    "postbuild": "cp -r src/export/vendor dist/export/vendor",
     "test": "vitest run",
     "test:unit": "vitest run",
     "typecheck": "tsc --noEmit",

@@ -22,6 +22,7 @@ import {
   parse as parseCypher,
   transpile as transpileCypher,
 } from "../../../cypher-lite/dist/index.js";
+import { injectCariGraphCtes, looksLikeSql } from "./cypherGraph.js";
 import type {
   RulesConfig,
   RuleDefinition,
@@ -762,99 +763,7 @@ function checkCypherRule(
   return violations;
 }
 
-function looksLikeSql(query: string): boolean {
-  return /^\s*(select|with|pragma|explain)\b/i.test(query);
-}
-
-function injectCariGraphCtes(sql: string): string {
-  const entitiesCte = `
-kg_entities AS (
-  SELECT
-    'file:' || path AS id,
-    'FILE' AS type,
-    path AS name,
-    path,
-    path AS file,
-    NULL AS line,
-    COALESCE(doc_group, '') AS layer,
-    NULL AS fan_in
-  FROM files
-  UNION ALL
-  SELECT
-    'symbol:' || id AS id,
-    'SYMBOL' AS type,
-    name,
-    file_path AS path,
-    file_path AS file,
-    line,
-    NULL AS layer,
-    (
-      SELECT COUNT(*)
-      FROM symbol_calls sc
-      WHERE sc.callee_id = symbols.id
-         OR (sc.callee_id IS NULL AND sc.callee_name = symbols.name)
-    ) AS fan_in
-  FROM symbols
-  UNION ALL
-  SELECT
-    'doc:' || id AS id,
-    'DOCSPAN' AS type,
-    text AS name,
-    doc_path AS path,
-    doc_path AS file,
-    line,
-    NULL AS layer,
-    NULL AS fan_in
-  FROM annotations
-)`.trim();
-
-  const relsCte = `
-kg_relationships AS (
-  SELECT
-    'imp:' || id AS id,
-    'file:' || source_file AS from_id,
-    'file:' || target_file AS to_id,
-    'IMPORTS' AS predicate
-  FROM imports
-  WHERE target_file IS NOT NULL
-  UNION ALL
-  SELECT
-    'ann:' || id AS id,
-    'symbol:' || symbol_id AS from_id,
-    'doc:' || id AS to_id,
-    'ANNOTATED_BY' AS predicate
-  FROM annotations
-  WHERE symbol_id IS NOT NULL
-  UNION ALL
-  SELECT
-    'cooc:' || entity_a || '|' || entity_b || '|' || source AS id,
-    CASE
-      WHEN EXISTS (SELECT 1 FROM files f WHERE f.path = co.entity_a) THEN 'file:' || co.entity_a
-      WHEN EXISTS (SELECT 1 FROM symbols s WHERE s.id = co.entity_a) THEN 'symbol:' || co.entity_a
-      ELSE 'term:' || co.entity_a
-    END AS from_id,
-    CASE
-      WHEN EXISTS (SELECT 1 FROM files f WHERE f.path = co.entity_b) THEN 'file:' || co.entity_b
-      WHEN EXISTS (SELECT 1 FROM symbols s WHERE s.id = co.entity_b) THEN 'symbol:' || co.entity_b
-      ELSE 'term:' || co.entity_b
-    END AS to_id,
-    'CO_OCCURS' AS predicate
-  FROM co_occurrences co
-  UNION ALL
-  SELECT
-    'coc:' || file_a || '|' || file_b AS id,
-    'file:' || file_a AS from_id,
-    'file:' || file_b AS to_id,
-    'CO_CHANGES' AS predicate
-  FROM co_changes
-)`.trim();
-
-  if (/^\s*WITH\b/i.test(sql)) {
-    return sql.replace(/^\s*WITH\s+/i, `WITH ${entitiesCte}, ${relsCte}, `);
-  }
-
-  return `WITH ${entitiesCte}, ${relsCte} ${sql}`;
-}
+// looksLikeSql and injectCariGraphCtes live in cypherGraph.ts
 
 function hasTableColumn(
   db: Database.Database,

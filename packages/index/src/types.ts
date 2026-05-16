@@ -1218,6 +1218,17 @@ export interface LayersCheckResult {
     index: number;
     fileCount: number;
   }>;
+
+  /** Per-layer-pair import flow aggregation for Sankey visualization. */
+  layerFlows?: Array<{
+    fromLayer: string;
+    toLayer: string;
+    fromLayerIndex: number;
+    toLayerIndex: number;
+    importCount: number;
+    violationCount: number;
+    isViolation: boolean;
+  }>;
 }
 
 // ─── 5.2 Interface Conformance Drift ────────────────────────────────────────
@@ -1647,6 +1658,73 @@ export interface EnrichOptions {
   verbose?: boolean;
   /** Custom weights for impact scoring. */
   weights?: Partial<EnrichmentWeights>;
+}
+
+// =============================================================================
+// Semantic Capsule Layer (14.0)
+// =============================================================================
+
+/** The kind of interpretation a SemanticCapsule holds. */
+export type CapsuleKind =
+  | "symbol_summary"
+  | "call_semantics"
+  | "path_summary"
+  | "subgraph_summary";
+
+/** Staleness status of a cached SemanticCapsule. */
+export type CapsuleStatus = "fresh" | "possibly_stale" | "stale";
+
+/**
+ * A SemanticCapsule is an LLM-derived, evidence-grounded interpretation of
+ * a CARI entity (symbol, call edge, call path, or component subgraph).
+ *
+ * It is a *derived* artifact — not a raw CARI fact — and must be invalidated
+ * when its source evidence changes (body_hash, linked docs, call graph edges).
+ */
+export interface SemanticCapsule {
+  /** Capsule ID: 'capsule:<kind>:<target_id>@<rev>' */
+  id: string;
+  /** CARI entity ID this capsule describes (e.g. 'symbol:42'). */
+  targetId: string;
+  /** What kind of interpretation this is. */
+  capsuleKind: CapsuleKind;
+  /**
+   * Structured content. Always has { summary: string }.
+   * symbol_summary may add: purpose, inputs, outputs, sideEffects, keyConcepts, failureModes.
+   * call_semantics adds: role.
+   * path_summary/subgraph_summary add: path[], domains[].
+   */
+  content: {
+    summary: string;
+    purpose?: string;
+    inputs?: string[];
+    outputs?: string[];
+    sideEffects?: string[];
+    keyConcepts?: string[];
+    failureModes?: string[];
+    role?: string;
+    path?: string[];
+    domains?: string[];
+    invariants?: string[];
+    [key: string]: unknown;
+  };
+  /** CARI entity IDs fed to the LLM as evidence. */
+  evidenceIds: string[];
+  /** LLM model used (e.g. 'gpt-4o', 'claude-sonnet-4-5'). */
+  model: string;
+  /** Versioned prompt identifier — bump to invalidate cached capsules. */
+  promptVersion: string;
+  /**
+   * body_hash (or git SHA) of the primary target at generation time.
+   * Used to detect staleness: if the symbol's body_hash changes, mark possibly_stale.
+   */
+  sourceRevision: string;
+  /** Confidence score 0–1. */
+  confidence: number;
+  /** Freshness status. */
+  status: CapsuleStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Result of running semantic enrichment. */

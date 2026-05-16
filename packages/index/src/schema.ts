@@ -307,6 +307,46 @@ CREATE TABLE IF NOT EXISTS enrichment_meta (
   impact_score REAL
 );
 
+-- Semantic Capsule Layer (14.0)
+-- Stores LLM-derived, evidence-grounded interpretations of symbols, call edges,
+-- call paths, and component subgraphs.  Conceptually separate from raw CARI
+-- evidence: these are *derived* artifacts, not facts.
+--
+-- capsule_kind:
+--   symbol_summary   — purpose/inputs/outputs/concepts for one symbol
+--   call_semantics   — why does A call B (role of the call edge)
+--   path_summary     — narrative for a complete call path
+--   subgraph_summary — component-level summary for a 2–N hop neighborhood
+--
+-- status: fresh | possibly_stale | stale
+--   stale is set automatically when the target symbol's body_hash changes.
+--
+-- evidence_ids: JSON array of CARI entity IDs that were fed to the LLM.
+-- content: JSON object with at minimum { "summary": string }.
+--   For symbol_summary it may additionally carry:
+--     purpose, inputs[], outputs[], sideEffects[], keyConcepts[], failureModes[]
+--   For call_semantics: role
+--   For path/subgraph summaries: path[], domains[]
+
+CREATE TABLE IF NOT EXISTS semantic_capsules (
+  id              TEXT PRIMARY KEY,  -- 'capsule:<kind>:<target_id>@<rev>'
+  target_id       TEXT NOT NULL,     -- CARI entity ID this describes
+  capsule_kind    TEXT NOT NULL,     -- symbol_summary | call_semantics | path_summary | subgraph_summary
+  content         TEXT NOT NULL,     -- JSON: at minimum { summary: string }
+  evidence_ids    TEXT NOT NULL,     -- JSON array of CARI entity IDs used as evidence
+  model           TEXT NOT NULL,     -- e.g. 'gpt-4o', 'claude-sonnet-4-5'
+  prompt_version  TEXT NOT NULL,     -- versioned prompt identifier for cache busting
+  source_revision TEXT NOT NULL,     -- body_hash or git-sha of primary target at generation time
+  confidence      REAL NOT NULL DEFAULT 1.0,
+  status          TEXT NOT NULL DEFAULT 'fresh',  -- fresh | possibly_stale | stale
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_capsules_target ON semantic_capsules(target_id);
+CREATE INDEX IF NOT EXISTS idx_capsules_kind   ON semantic_capsules(capsule_kind);
+CREATE INDEX IF NOT EXISTS idx_capsules_status ON semantic_capsules(status);
+
 CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name);
 CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(type);
 CREATE INDEX IF NOT EXISTS idx_kg_entities_canon_id ON kg_entities(canon_id);
@@ -342,8 +382,35 @@ export function initSchema(db: Database.Database): void {
     db.exec(`ALTER TABLE imports ADD COLUMN line INTEGER`);
   }
 
+  // Migration 14.0: add semantic_capsules table to existing indexes
+  const tables = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
+    .all() as Array<{ name: string }>;
+  const tableNames = new Set(tables.map((t) => t.name));
+  if (!tableNames.has("semantic_capsules")) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS semantic_capsules (
+        id              TEXT PRIMARY KEY,
+        target_id       TEXT NOT NULL,
+        capsule_kind    TEXT NOT NULL,
+        content         TEXT NOT NULL,
+        evidence_ids    TEXT NOT NULL,
+        model           TEXT NOT NULL,
+        prompt_version  TEXT NOT NULL,
+        source_revision TEXT NOT NULL,
+        confidence      REAL NOT NULL DEFAULT 1.0,
+        status          TEXT NOT NULL DEFAULT 'fresh',
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_capsules_target ON semantic_capsules(target_id);
+      CREATE INDEX IF NOT EXISTS idx_capsules_kind   ON semantic_capsules(capsule_kind);
+      CREATE INDEX IF NOT EXISTS idx_capsules_status ON semantic_capsules(status);
+    `);
+  }
+
   // Store schema version
   db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '13')`,
+    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '14')`,
   ).run();
 }

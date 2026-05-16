@@ -43,6 +43,8 @@
  *   - cari_arch_diff:        Validate diagram flows against entity evidence (annotations + co-occurrences)
  *   - cari_component_evidence: All CARI evidence for a single architecture component
  *   - cari_living_score:     Composite living documentation score (12.3): spec + consistency + freshness + arch
+ *   - cari_cypher:           CypherLite query over the full CARI graph projection (FILE/SYMBOL/DOCSPAN + CALLS/DEFINES/CO_CHANGES/…)
+ *   - cari_graph_schema:     Return node labels, relationship types, property names + all built-in templates
  *
  * Usage:
  *   iw mcp --session <id>             # start stdio MCP server
@@ -1278,6 +1280,12 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         .string()
         .optional()
         .describe("Filter by kind: TODO, FIXME, HACK, or XXX (omit for all)"),
+      preset: z
+        .enum(["fixme-only", "hacks-only", "xxx-only", "blocking", "all-kinds"])
+        .optional()
+        .describe(
+          "Named filter preset: fixme-only | hacks-only | xxx-only | blocking | all-kinds. Overrides kind.",
+        ),
       limit: z
         .number()
         .optional()
@@ -1285,16 +1293,26 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         .describe("Maximum results to return"),
     },
     async (args) => {
-      log(`cari_todos: kind=${args.kind ?? "all"} limit=${args.limit}`);
+      const TODO_PRESET_KINDS: Record<string, string | undefined> = {
+        "fixme-only": "FIXME",
+        "hacks-only": "HACK",
+        "xxx-only": "XXX",
+        blocking: "FIXME",
+        "all-kinds": undefined,
+      };
+      const resolvedKind = args.preset
+        ? TODO_PRESET_KINDS[args.preset]
+        : args.kind;
+      log(`cari_todos: kind=${resolvedKind ?? "all"} limit=${args.limit}`);
       try {
         const { todos } = await loadIndex();
         const dbPath = resolveIndexDb();
         const result = todos(dbPath);
 
         let items = result.todos;
-        if (args.kind) {
+        if (resolvedKind) {
           items = items.filter(
-            (t) => t.kind.toLowerCase() === args.kind!.toLowerCase(),
+            (t) => t.kind.toLowerCase() === resolvedKind.toLowerCase(),
           );
         }
         const limited = items.slice(0, args.limit ?? 50);
@@ -1304,8 +1322,8 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
             content: [
               {
                 type: "text",
-                text: args.kind
-                  ? `No ${args.kind} comments found.`
+                text: resolvedKind
+                  ? `No ${resolvedKind} comments found.`
                   : "No TODO/FIXME/HACK/XXX comments found.",
               },
             ],
@@ -1692,11 +1710,23 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         .describe(
           "Intent domain: structural | behavioral | documentary | all (default: all)",
         ),
+      preset: z
+        .enum([
+          "ci-gate",
+          "doc-review",
+          "full-audit",
+          "structural-only",
+          "behavioral-only",
+        ])
+        .optional()
+        .describe(
+          "Named check preset — sets domain+severity: ci-gate | doc-review | full-audit | structural-only | behavioral-only",
+        ),
       severity: z
         .enum(["high", "medium", "low"])
         .optional()
         .default("low")
-        .describe("Minimum severity to report"),
+        .describe("Minimum severity to report (overrides preset)"),
       ruleId: z
         .string()
         .optional()
@@ -1712,8 +1742,28 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         .describe("Maximum violations to return"),
     },
     async (args) => {
+      // Resolve preset → domain + severity
+      const INTENT_PRESET_MAP: Record<
+        string,
+        { domain: string; severity: string }
+      > = {
+        "ci-gate": { domain: "all", severity: "high" },
+        "doc-review": { domain: "documentary", severity: "low" },
+        "full-audit": { domain: "all", severity: "low" },
+        "structural-only": { domain: "structural", severity: "low" },
+        "behavioral-only": { domain: "behavioral", severity: "low" },
+      };
+      const presetVals = args.preset
+        ? INTENT_PRESET_MAP[args.preset]
+        : undefined;
+      const resolvedDomain =
+        args.domain !== "all" ? args.domain : (presetVals?.domain ?? "all");
+      const resolvedSeverity =
+        args.severity !== "low"
+          ? args.severity
+          : (presetVals?.severity ?? "low");
       log(
-        `intent_check: domain=${args.domain} severity=${args.severity} ruleId=${args.ruleId ?? "all"}`,
+        `intent_check: domain=${resolvedDomain} severity=${resolvedSeverity} preset=${args.preset ?? "none"} ruleId=${args.ruleId ?? "all"}`,
       );
       try {
         const { rulesCheck } = await loadIndex();
@@ -1755,11 +1805,11 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
         }
 
         const result = rulesCheck(dbPath, config, {
-          severity: args.severity as "high" | "medium" | "low",
+          severity: resolvedSeverity as "high" | "medium" | "low",
           ruleId: args.ruleId,
           changed: args.changed,
           limit: args.limit ?? 50,
-          domain: (args.domain ?? "all") as
+          domain: resolvedDomain as
             | "structural"
             | "behavioral"
             | "documentary"
@@ -1773,7 +1823,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
             content: [
               {
                 type: "text",
-                text: `No intent violations found. (${result.rulesChecked} rule(s) checked, domain: ${args.domain ?? "all"})`,
+                text: `No intent violations found. (${result.rulesChecked} rule(s) checked, domain: ${resolvedDomain}${args.preset ? ", preset: " + args.preset : ""})`,
               },
             ],
           };
@@ -1784,7 +1834,8 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           .map(([sev, n]) => `${sev}: ${n}`)
           .join(", ");
 
-        const domainLabel = args.domain ?? "all";
+        const domainLabel =
+          resolvedDomain + (args.preset ? ` (preset: ${args.preset})` : "");
         const hasErrors = result.violations.some((v) => v.ruleMode === "error");
         const lines = [
           `## Intent Check Violations [domain: ${domainLabel}] — ${result.totalViolations} total (${severityCounts})`,
@@ -4981,6 +5032,388 @@ Returns: entryFile, nodes[] (each with file + symbols + depth), edges[] (fromFil
       } catch (err: unknown) {
         const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_cypher ────────────────────────────────────────────────
+  server.tool(
+    "cari_cypher",
+    `Run a CypherLite query over the CARI graph projection, or use a built-in named template.
+
+The CARI graph exposes these node labels:
+  - FILE     (source + doc files)
+  - SYMBOL   (exported functions, classes, interfaces, variables)
+  - DOCSPAN  (documentation annotation spans)
+  - TODO     (inline TODO/FIXME/HACK/XXX comments)
+
+And these relationship types:
+  - IMPORTS        FILE  → FILE
+  - DEFINES        FILE  → SYMBOL
+  - CALLS          FILE  → SYMBOL  (and SYMBOL → SYMBOL at function level)
+                   Properties: r.callerLine (source line), r.isMethod (1=method)
+  - ANNOTATED_BY   SYMBOL → DOCSPAN
+  - HAS_TODO       FILE  → TODO
+  - CO_OCCURS      FILE|SYMBOL ↔ FILE|SYMBOL
+  - CO_CHANGES     FILE  → FILE  (git co-change)
+
+Variable-length paths are supported: (a)-[:CALLS*1..5]->(b)
+
+Each node has: id, name, file, line, layer, fan_in.
+
+Use cari_graph_schema to get the full schema + all template parameters before writing queries.
+
+Built-in templates (pass id to templateId):
+  callers-of, callees-of, docs-for-callees, co-changed-with,
+  undocumented-hubs, symbol-docs, import-chain, calls-with-cochange,
+  files-per-layer, docs-per-layer, missing-docs, all-importers,
+  cross-layer-connections, todos-in-hotspots, todos-by-kind,
+  reachable-from, entrypoints-to`,
+    {
+      query: z
+        .string()
+        .optional()
+        .describe("CypherLite query string. Omit when using templateId."),
+      templateId: z
+        .string()
+        .optional()
+        .describe(
+          "Built-in template id (e.g. 'callers-of'). Use instead of or together with query.",
+        ),
+      params: z
+        .record(z.union([z.string(), z.number()]))
+        .optional()
+        .default({})
+        .describe(
+          "Query parameters matching $param placeholders (e.g. { calleeName: 'validateToken' })",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe("Maximum number of rows to return"),
+      showSql: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Include the generated SQL in the response for debugging"),
+    },
+    async (args) => {
+      try {
+        const {
+          runCypherQueryFromDb,
+          CARI_QUERY_TEMPLATES,
+          CARI_GRAPH_SCHEMA,
+        } = await import("@intentweave/index");
+        const dbPath = path.join(process.cwd(), ".iw", "index.db");
+
+        // Resolve template
+        let queryStr = args.query ?? "";
+        if (args.templateId) {
+          const tpl = CARI_QUERY_TEMPLATES.find(
+            (t: { id: string }) => t.id === args.templateId,
+          );
+          if (!tpl) {
+            const ids = CARI_QUERY_TEMPLATES.map(
+              (t: { id: string }) => t.id,
+            ).join(", ");
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Unknown template "${args.templateId}". Available: ${ids}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          queryStr = tpl.query;
+        }
+
+        if (!queryStr.trim()) {
+          // List templates
+          const lines = [
+            "## CARI Built-in Query Templates",
+            "",
+            ...CARI_QUERY_TEMPLATES.map(
+              (t: {
+                id: string;
+                name: string;
+                description: string;
+                params: string[];
+              }) =>
+                `**${t.id}** — ${t.name}\n${t.description}\nParams: ${t.params.map((p: string) => `$${p}`).join(", ") || "none"}`,
+            ),
+            "",
+            "## Graph Schema",
+            "```",
+            JSON.stringify(CARI_GRAPH_SCHEMA, null, 2),
+            "```",
+          ];
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        }
+
+        const result = runCypherQueryFromDb(
+          dbPath,
+          queryStr,
+          args.params as Record<string, unknown>,
+        );
+        const rows = result.rows.slice(0, args.limit);
+        const truncated = result.rows.length > args.limit;
+
+        const lines: string[] = [];
+        if (args.showSql) {
+          lines.push("## Generated SQL", "```sql", result.sql, "```", "");
+        }
+
+        if (rows.length === 0) {
+          lines.push("No results.");
+        } else {
+          const cols = result.columns;
+          lines.push(
+            `## Results (${result.rows.length} row${result.rows.length !== 1 ? "s" : ""})${truncated ? ` — showing first ${args.limit}` : ""}`,
+            "",
+            `| ${cols.join(" | ")} |`,
+            `| ${cols.map(() => "---").join(" | ")} |`,
+            ...rows.map(
+              (row) =>
+                `| ${cols
+                  .map((c) => {
+                    const v = String(row[c] ?? "");
+                    return v.length > 80 ? v.slice(0, 78) + "…" : v;
+                  })
+                  .join(" | ")} |`,
+            ),
+          );
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: unknown) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_graph_schema ──────────────────────────────────────────
+  server.tool(
+    "cari_graph_schema",
+    `Return the complete CARI graph schema — node types, relationship types, property names,
+and all built-in query templates with their parameters.
+
+Use this before writing a cari_cypher query to understand what node labels, relationship
+types, and property names are available. Also useful to discover built-in templates
+so you can pass them directly to cari_cypher as templateId.`,
+    {},
+    async () => {
+      try {
+        const { CARI_GRAPH_SCHEMA, CARI_QUERY_TEMPLATES } =
+          await import("@intentweave/index");
+        const lines: string[] = [
+          "## CARI Graph Schema",
+          "",
+          "### Node Labels",
+          "",
+        ];
+        for (const [label, info] of Object.entries(
+          CARI_GRAPH_SCHEMA.nodes as Record<string, Record<string, unknown>>,
+        )) {
+          lines.push(`**${label}** (table: \`${String(info.table)}\`)`);
+          lines.push(`  ID format: \`${String(info.idFormat)}\``);
+          lines.push("  Properties:");
+          for (const [prop, desc] of Object.entries(
+            info.properties as Record<string, string>,
+          )) {
+            lines.push(`    - \`${prop}\`: ${desc}`);
+          }
+          lines.push("");
+        }
+        lines.push("### Relationship Types", "");
+        for (const [rel, desc] of Object.entries(
+          CARI_GRAPH_SCHEMA.relationships as Record<string, unknown>,
+        )) {
+          const descStr = Array.isArray(desc) ? desc.join("; ") : String(desc);
+          lines.push(`**${rel}** — ${descStr}`);
+        }
+        lines.push("", "### Notes", "");
+        for (const note of CARI_GRAPH_SCHEMA.notes as unknown as string[]) {
+          lines.push(`- ${note}`);
+        }
+        lines.push("", "---", "", "## Built-in Query Templates", "");
+        for (const tpl of CARI_QUERY_TEMPLATES as Array<{
+          id: string;
+          name: string;
+          description: string;
+          params: string[];
+          defaults?: Record<string, unknown>;
+        }>) {
+          lines.push(`### \`${tpl.id}\``);
+          lines.push(`**${tpl.name}**`);
+          lines.push(tpl.description);
+          if (tpl.params.length > 0) {
+            lines.push(
+              `Parameters: ${tpl.params.map((p) => `\`$${p}\``).join(", ")}`,
+            );
+          }
+          if (tpl.defaults && Object.keys(tpl.defaults).length > 0) {
+            lines.push(`Defaults: ${JSON.stringify(tpl.defaults)}`);
+          }
+          lines.push("");
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: unknown) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
+  // ── Tool: cari_capsule ───────────────────────────────────────────────────
+  server.tool(
+    "cari_capsule",
+    `Generate or retrieve an LLM-derived semantic capsule for a CARI entity.
+
+Capsules are cached in \`semantic_capsules\` and re-used if the underlying
+symbol has not changed (body_hash comparison). Pass \`refresh: true\` to
+force regeneration.
+
+**capsuleKind values:**
+  - \`symbol_summary\`   — purpose, inputs, outputs, concepts for a single symbol
+  - \`call_semantics\`   — why caller A calls callee B and what role the edge plays
+  - \`path_summary\`     — narrative for a full CALLS*N path (ordered list of symbol IDs)
+
+**provider:** Use \`openai\` (requires OPENAI_API_KEY) or \`mock\` for dry-run.
+
+**Tip:** Run \`cari_calls\` or \`cari_trace\` first to get symbol IDs / call edges, then
+pass them to \`cari_capsule\` for natural-language explanations.`,
+    {
+      symbolId: z
+        .string()
+        .optional()
+        .describe(
+          "Numeric symbol ID (from symbols table) for symbol_summary capsule",
+        ),
+      callEdge: z
+        .object({
+          callerSymbolId: z.string(),
+          calleeSymbolId: z.string(),
+        })
+        .optional()
+        .describe(
+          "Caller + callee numeric symbol IDs for call_semantics capsule",
+        ),
+      pathSymbolIds: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Ordered list of numeric symbol IDs for path_summary capsule (min 2)",
+        ),
+      provider: z
+        .enum(["openai", "mock"])
+        .optional()
+        .default("openai")
+        .describe("LLM provider"),
+      model: z
+        .string()
+        .optional()
+        .default("gpt-4o-mini")
+        .describe("LLM model name"),
+      refresh: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Force regeneration even if a fresh capsule is cached"),
+    },
+    async (args) => {
+      try {
+        const dbPath = path.join(process.cwd(), ".iw", "index.db");
+        const Database = (await import("better-sqlite3")).default;
+        const db = new Database(dbPath);
+        db.pragma("journal_mode = WAL");
+        try {
+          const {
+            generateSymbolSummary,
+            generateCallSemantics,
+            generatePathSummary,
+          } = await import("@intentweave/index");
+
+          const { OpenAILLMProvider, SmartMockLLMProvider } =
+            await import("@intentweave/analyzer/llm");
+          const apiKey = process.env.OPENAI_API_KEY;
+          const llm =
+            args.provider === "mock" || !apiKey
+              ? new SmartMockLLMProvider({ workspaceKey: "capsule" })
+              : new OpenAILLMProvider({
+                  apiKey,
+                  model: args.model ?? "gpt-4o-mini",
+                });
+          const opts = {
+            model: args.model ?? "gpt-4o-mini",
+            force: args.refresh ?? false,
+          };
+
+          let result;
+          if (args.symbolId) {
+            result = await generateSymbolSummary(db, args.symbolId, llm, opts);
+          } else if (args.callEdge) {
+            result = await generateCallSemantics(
+              db,
+              args.callEdge.callerSymbolId,
+              args.callEdge.calleeSymbolId,
+              llm,
+              opts,
+            );
+          } else if (args.pathSymbolIds && args.pathSymbolIds.length >= 2) {
+            result = await generatePathSummary(
+              db,
+              args.pathSymbolIds,
+              llm,
+              opts,
+            );
+          } else {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Provide symbolId, callEdge, or pathSymbolIds (≥ 2 elements).",
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const c = result.capsule;
+          const lines: string[] = [
+            `## Semantic Capsule: ${c.targetId}`,
+            `Kind: ${c.capsuleKind}  |  Status: ${c.status}  |  Model: ${c.model}${result.fromCache ? "  |  (from cache)" : ""}`,
+            "",
+          ];
+          for (const [key, val] of Object.entries(c.content)) {
+            if (!val || (Array.isArray(val) && val.length === 0)) continue;
+            if (Array.isArray(val)) {
+              lines.push(`**${key}:** ${(val as string[]).join(", ")}`);
+            } else {
+              lines.push(`**${key}:** ${String(val)}`);
+            }
+          }
+          if (result.tokensUsed) {
+            lines.push(
+              "",
+              `*Tokens used: ${result.tokensUsed.prompt} prompt, ${result.tokensUsed.completion} completion*`,
+            );
+          }
+          return {
+            content: [{ type: "text" as const, text: lines.join("\n") }],
+          };
+        } finally {
+          db.close();
+        }
+      } catch (err: unknown) {
+        const msg = handleCariError(err);
+        return {
+          content: [{ type: "text" as const, text: msg }],
+          isError: true,
+        };
       }
     },
   );

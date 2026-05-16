@@ -279,18 +279,18 @@ before promotion to `mode: error`. The LLM is never invoked during CI enforcemen
 
 ## CLI Migration Plan
 
-| Current command          | Target command                         | Notes                          |
-| ------------------------ | -------------------------------------- | ------------------------------ |
-| `iw index rules-check`   | `iw intent check`                      | Alias kept for backward compat |
-| `iw index rules-extract` | `iw intent extract`                    | Alias kept                     |
-| `iw guardrails check`    | `iw intent check`                      | Alias kept                     |
-| `iw guardrails extract`  | `iw intent extract`                    | Alias kept                     |
-| `iw living verify`       | `iw intent check --domain documentary` | Alias kept                     |
-| _(new)_                  | `iw intent check --domain behavioral`  | Mermaid + BDD rules            |
-| _(new)_                  | `iw intent review --rule <id>`         | LLM-assisted rule review       |
-| _(future)_               | `iw intent chat`                       | Conversational rule authoring  |
+| Current command          | Target command                         | Notes                         |
+| ------------------------ | -------------------------------------- | ----------------------------- |
+| `iw index rules-check`   | `iw intent check`                      | Underlying implementation     |
+| `iw index rules-extract` | `iw intent extract`                    | Underlying implementation     |
+| `iw guardrails check`    | `iw intent check`                      | Alias **removed**             |
+| `iw guardrails extract`  | `iw intent extract`                    | Alias **removed**             |
+| `iw living verify`       | `iw intent check --domain documentary` | Alias **removed**             |
+| _(new)_                  | `iw intent check --domain behavioral`  | Mermaid + BDD rules           |
+| _(new)_                  | `iw intent review --rule <id>`         | LLM-assisted rule review      |
+| _(future)_               | `iw intent chat`                       | Conversational rule authoring |
 
-All existing commands remain functional. No breaking changes in v0.x.
+`iw intent *` is the canonical namespace. The `iw guardrails` and `iw living` alias layers have been removed.
 
 ---
 

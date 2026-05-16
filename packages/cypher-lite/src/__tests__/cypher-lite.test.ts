@@ -621,3 +621,75 @@ describe("CypherLiteEngine", () => {
     expect(results[0]).toHaveProperty("n.canonId");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Variable-length path transpiler (regression for recursive CTE fix)
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Variable-length path transpiler", () => {
+  it("generates a WITH CTE for [:TYPE*1..4]", () => {
+    const ast = parse(
+      "MATCH (a)-[:CALLS*1..4]->(b) WHERE a.name = $name RETURN b.name",
+    );
+    const [result] = transpile(ast, { name: "login" });
+    expect(result.sql).toContain("WITH _cte_0");
+    expect(result.sql).toContain("kg_relationships");
+    expect(result.sql).toContain("UNION ALL");
+  });
+
+  it("CTE uses (node_id, start_id, depth) columns — no outer alias reference in base case", () => {
+    const ast = parse(
+      "MATCH (a)-[:CALLS*1..4]->(b) WHERE a.name = $name RETURN b.name",
+    );
+    const [result] = transpile(ast, { name: "login" });
+    // The fix: base case must NOT reference the outer _t0 alias (that caused SQLite error)
+    // It should produce start_id in the CTE base case so the outer JOIN can filter it.
+    expect(result.sql).toContain("start_id");
+    expect(result.sql).toContain("node_id");
+    expect(result.sql).toContain("depth");
+  });
+
+  it("CTE base case does not contain outer alias reference like _t0.id", () => {
+    const ast = parse(
+      "MATCH (a)-[:CALLS*1..4]->(b) WHERE a.name = $name RETURN b.name",
+    );
+    const [result] = transpile(ast, { name: "login" });
+    // The outer WHERE clause should filter via a JOIN, not inside the recursive CTE base case
+    const cteSection = result.sql.slice(
+      0,
+      result.sql.indexOf("SELECT DISTINCT") + 1,
+    );
+    // The base case of the CTE should not reference _t0 (causes "no such column" in SQLite)
+    expect(cteSection).not.toMatch(/_t0\.id/);
+  });
+
+  it("maps callerLine property to caller_line column", () => {
+    const ast = parse("MATCH (a)-[r:CALLS]->(b) RETURN r.callerLine");
+    const [result] = transpile(ast);
+    expect(result.sql).toContain("caller_line");
+  });
+
+  it("maps isMethod property to is_method column", () => {
+    const ast = parse("MATCH (a)-[r:CALLS]->(b) RETURN r.isMethod");
+    const [result] = transpile(ast);
+    expect(result.sql).toContain("is_method");
+  });
+
+  it("respects min-depth (hops >= minHops)", () => {
+    const ast = parse(
+      "MATCH (a)-[:CALLS*2..4]->(b) WHERE a.name = $n RETURN b.name",
+    );
+    const [result] = transpile(ast, { n: "x" });
+    // Should filter depth >= 2 in outer query
+    expect(result.sql).toMatch(/depth\s*>=\s*2/);
+  });
+
+  it("respects max-depth (hops <= maxHops)", () => {
+    const ast = parse(
+      "MATCH (a)-[:CALLS*1..3]->(b) WHERE a.name = $n RETURN b.name",
+    );
+    const [result] = transpile(ast, { n: "x" });
+    // Max depth enforced inside the recursive CTE union
+    expect(result.sql).toMatch(/depth\s*<\s*3|depth\s*<=\s*[23]/);
+  });
+});
