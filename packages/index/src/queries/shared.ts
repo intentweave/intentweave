@@ -12,6 +12,8 @@ import * as fs from "fs";
  * Open the index database in read-only mode.
  * Throws if the file doesn't exist.
  */
+const EXPECTED_SCHEMA_VERSION = "14";
+
 export function openIndex(dbPath: string): Database.Database {
   if (!fs.existsSync(dbPath)) {
     throw new Error(
@@ -20,6 +22,27 @@ export function openIndex(dbPath: string): Database.Database {
   }
   const db = new Database(dbPath, { readonly: true });
   db.pragma("journal_mode = WAL");
+
+  // Validate schema version — catches indexes built by an incompatible version
+  // of cari-native or a very old `iw index build` run.
+  try {
+    const row = db
+      .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+      .get() as { value: string } | undefined;
+    if (row && row.value !== EXPECTED_SCHEMA_VERSION) {
+      db.close();
+      throw new Error(
+        `Index at ${dbPath} has schema version ${row.value} but this version of ` +
+          `@intentweave/index requires version ${EXPECTED_SCHEMA_VERSION}. ` +
+          `Run \`iw index build\` to rebuild.`,
+      );
+    }
+  } catch (e) {
+    // If the _meta table doesn't exist yet (very old index), continue — the
+    // caller will see missing tables and surface its own errors.
+    if (e instanceof Error && e.message.includes("schema version")) throw e;
+  }
+
   return db;
 }
 

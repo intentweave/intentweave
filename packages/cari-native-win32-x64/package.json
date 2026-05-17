@@ -1,0 +1,13 @@
+{
+  "name": "@intentweave/cari-native-win32-x64",
+  "version": "0.1.0",
+  "description": "cari-build native binary — Windows x64",
+  "license": "Apache-2.0",
+  "cpu": ["x64"],
+  "os": ["win32"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intentweave/intentweave.git",
+    "directory": "packages/cari-native-win32-x64"
+  }
+}

@@ -71,6 +71,7 @@
     "zod": "^3.23.8"
   },
   "optionalDependencies": {
+    "@intentweave/cari-native": "workspace:*",
     "@intentweave/plugin-kg": "workspace:*",
     "@intentweave/plugin-kg-lite": "workspace:*",
     "@intentweave/plugin-llm": "workspace:*",
