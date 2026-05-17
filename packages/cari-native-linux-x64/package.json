@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "description": "cari-build native binary — Linux x86_64",
   "license": "Apache-2.0",
-  "cpu": ["x64"],
-  "os": ["linux"],
+  "cpu": [
+    "x64"
+  ],
+  "os": [
+    "linux"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/intentweave/intentweave.git",

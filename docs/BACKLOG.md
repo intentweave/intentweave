@@ -3696,7 +3696,7 @@ _Annotate (0.1 s) and Write (1.2 s) are not worth porting in isolation — they 
 ### Optional extension: Multi-word phrase dictionary matching _(CARI, S)_
 
 **Current state (Rust, 84% of TS baseline):** `extract_dictionary_mentions` tokenizes body
-text word-by-word.  Multi-word symbol names in the dictionary (e.g. a heading "Token Store"
+text word-by-word. Multi-word symbol names in the dictionary (e.g. a heading "Token Store"
 normalized to `"token store"`) are never matched since the tokenizer only yields contiguous
 `[A-Za-z0-9_]` tokens.
 
@@ -3704,11 +3704,12 @@ normalized to `"token store"`) are never matched since the tokenizer only yields
 allowing phrase matches spanning spaces.
 
 **Estimate:** The remaining ~11k annotation gap between Rust and TS is concentrated in the
-`dictionary` source and is largely explained by this single difference.  Multi-word terms are
+`dictionary` source and is largely explained by this single difference. Multi-word terms are
 rare in typical codebases (most symbol names are single identifiers), so IDF already handles
-the impact.  Only worth implementing if the grounding rate gap matters for a specific use-case.
+the impact. Only worth implementing if the grounding rate gap matters for a specific use-case.
 
 **Implementation sketch:**
+
 1. Build a sorted list of multi-word terms from the dictionary (terms containing a space after normalization).
 2. In `extract_dictionary_mentions`, after the per-section word-token pass, run a secondary
    phrase scan using a `memchr`-based sliding window over the stripped section text.

@@ -64,6 +64,12 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
+      # --no-frozen-lockfile: platform packages whose os/cpu don't match the
+      # current runner are skipped by pnpm and won't be in the lockfile for
+      # that platform — that's expected behaviour for optional native packages.
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
       - name: Build cari-build binary
         run: ./scripts/package-native.sh
 
@@ -94,6 +100,9 @@ jobs:
           node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
       - name: Publish @intentweave/cari-native
         if: ${{ github.event.inputs.dry_run != 'true' }}

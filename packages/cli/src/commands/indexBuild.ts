@@ -125,10 +125,10 @@ function resolveCariNativeBinary(): string | null {
     const exeSuffix = process.platform === "win32" ? ".exe" : "";
     const platformPkgs: Record<string, string> = {
       "darwin-arm64": "@intentweave/cari-native-darwin-arm64",
-      "darwin-x64":   "@intentweave/cari-native-darwin-x64",
-      "linux-x64":    "@intentweave/cari-native-linux-x64",
-      "linux-arm64":  "@intentweave/cari-native-linux-arm64",
-      "win32-x64":    "@intentweave/cari-native-win32-x64",
+      "darwin-x64": "@intentweave/cari-native-darwin-x64",
+      "linux-x64": "@intentweave/cari-native-linux-x64",
+      "linux-arm64": "@intentweave/cari-native-linux-arm64",
+      "win32-x64": "@intentweave/cari-native-win32-x64",
     };
     const pkgName = platformPkgs[`${process.platform}-${process.arch}`];
     if (pkgName) {
@@ -147,8 +147,22 @@ function resolveCariNativeBinary(): string | null {
   const monoRoot = path.resolve(path.dirname(thisFile), "..", "..", "..", "..");
 
   const candidates = [
-    path.join(monoRoot, "packages", "cari-native", "target", "release", "cari-build"),
-    path.join(monoRoot, "packages", "cari-native", "target", "debug",   "cari-build"),
+    path.join(
+      monoRoot,
+      "packages",
+      "cari-native",
+      "target",
+      "release",
+      "cari-build",
+    ),
+    path.join(
+      monoRoot,
+      "packages",
+      "cari-native",
+      "target",
+      "debug",
+      "cari-build",
+    ),
   ];
 
   for (const candidate of candidates) {
@@ -179,9 +193,12 @@ async function runCariBuild(opts: {
   verbose: boolean;
 }): Promise<void> {
   const args: string[] = [
-    "--root", opts.root,
-    "--output", opts.output,
-    "--depth", opts.depth,
+    "--root",
+    opts.root,
+    "--output",
+    opts.output,
+    "--depth",
+    opts.depth,
   ];
 
   for (const p of opts.paths) {
@@ -196,22 +213,28 @@ async function runCariBuild(opts: {
 
   return new Promise((resolve, reject) => {
     const child = spawn(opts.binaryPath, args, {
-      stdio: opts.verbose ? ["ignore", "ignore", "inherit"] : ["ignore", "ignore", "pipe"],
+      stdio: opts.verbose
+        ? ["ignore", "ignore", "inherit"]
+        : ["ignore", "ignore", "pipe"],
     });
 
     let stderrBuf = "";
     if (!opts.verbose && child.stderr) {
-      child.stderr.on("data", (chunk: Buffer) => { stderrBuf += chunk.toString(); });
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderrBuf += chunk.toString();
+      });
     }
 
     child.on("close", (code: number | null) => {
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(
-          `cari-build exited with code ${code ?? "null"}` +
-          (stderrBuf ? `:\n${stderrBuf.trim()}` : ""),
-        ));
+        reject(
+          new Error(
+            `cari-build exited with code ${code ?? "null"}` +
+              (stderrBuf ? `:\n${stderrBuf.trim()}` : ""),
+          ),
+        );
       }
     });
 
@@ -326,7 +349,9 @@ const indexBuildSubcommand = new Command("build")
             verbose,
           });
           const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-          console.log(`\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`);
+          console.log(
+            `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
+          );
 
           // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
           try {
@@ -335,7 +360,9 @@ const indexBuildSubcommand = new Command("build")
             if (existsSync(rulesYamlPath)) {
               const jsYaml = await import("js-yaml");
               const raw = readFileSync(rulesYamlPath, "utf-8");
-              const config = jsYaml.load(raw) as import("@intentweave/index").RulesConfig;
+              const config = jsYaml.load(
+                raw,
+              ) as import("@intentweave/index").RulesConfig;
               if (config?.rules?.length) {
                 const snapshotId = `build-${Date.now()}`;
                 snapshotConformance(dbPath, config, snapshotId, Date.now());
@@ -346,8 +373,13 @@ const indexBuildSubcommand = new Command("build")
           }
           return;
         } catch (nativeErr: unknown) {
-          const nativeMsg = nativeErr instanceof Error ? nativeErr.message : String(nativeErr);
-          console.log(chalk.yellow(`  ⚠ native build failed, falling back to TypeScript pipeline: ${nativeMsg}`));
+          const nativeMsg =
+            nativeErr instanceof Error ? nativeErr.message : String(nativeErr);
+          console.log(
+            chalk.yellow(
+              `  ⚠ native build failed, falling back to TypeScript pipeline: ${nativeMsg}`,
+            ),
+          );
           // Fall through to the TypeScript pipeline below
         }
       }
