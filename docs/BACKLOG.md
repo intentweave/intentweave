@@ -3424,3 +3424,269 @@ Depends on: `livingScore()` (✅), `rulesCheck()` (✅), `moduleCoverage()` (✅
 | 19.9  | Impact Analysis chapter (blast-radius)  | CARI | M    | High      | depDepth ✅, hots. ✅ |        |
 | 19.10 | Offline export — inline CDN bundles     | CARI | S    | Medium    | Architecture Book ✅  |        |
 | 19.11 | Snapshot delta / trend view             | CARI | M    | High      | livingScore ✅, 19.4  |        |
+
+---
+
+## Rust Indexer Port — Design Analysis
+
+> Goal: replace the CARI **build path** with a native Rust binary that writes the same
+> SQLite schema. The **query path** (57 TS files that read the DB) stays in TypeScript —
+> those are SQL-bound, already fast, and carry no meaningful CPU cost.
+
+### What is "the indexer"?
+
+The build pipeline has six sequential stages, all running at `iw index build`:
+
+| Stage        | Package / file                         | What it does                                           | Measured (595 files) |
+| ------------ | -------------------------------------- | ------------------------------------------------------ | -------------------- |
+| **AX**       | `packages/ast-extractor` (1 894 lines) | tree-sitter AST → symbols, imports, calls, TODOs       | **10.8 s** (23%)     |
+| **KWG**      | `packages/analyzer` KWX + COX stages   | Markdown → mentions → co-occurrence scoring            | **32.4 s** (69%)     |
+| **TCG**      | `packages/core/src/types/tcg.ts`       | `git log` subprocess → co-changes, hotspots, ownership | 1.4 s (3%)           |
+| **Annotate** | `packages/index/src/annotator.ts`      | Match 68 850 mentions → 8 264 symbols                  | 0.1 s (<1%)          |
+| **Write**    | `packages/index/src/writer.ts`         | Batch INSERT into SQLite (500/tx via better-sqlite3)   | 1.2 s (3%)           |
+
+> **Key finding:** KWG (KWX + COX combined) is the primary bottleneck at 69% of total
+> wall time. The Annotate step is fast (0.1 s) — the earlier assumption that it was
+> expensive was wrong. Rust effort should be prioritised on **KWG first, then AX**.
+
+The query path — `packages/index/src/queries/` (57 files, ~18 k lines) — is already SQL-bound
+and adds no meaningful CPU overhead. It does not need to be rewritten.
+
+---
+
+### Measured baselines
+
+**Run 1 — local dev machine (2026-05-16, intentweave monorepo)**
+
+```
+iw index build --depth full
+
+  AX      10.8s  →  359 files,  8 264 symbols, 3 skipped
+  KWG     32.4s  →  31 440 entities,  68 850 mentions, 19 749 co-occ edges
+  TCG      1.4s  →  81 commits,  716 co-change edges
+  ANNOTATE  0.1s  →  68 850 annotations (54 172 grounded)
+  WRITE    1.2s  →  symbols=8 264 annotations=68 850
+
+  Total: 47 s  ·  595 files
+```
+
+**Run 2 — CI machine, larger project (2026-04-30, --max-file-size 200000)**
+
+```
+iw index build --depth full
+
+  AX       8.2s  →  591 files,  8 165 symbols
+  KWG     25.6s  →  40 270 entities,  99 681 mentions, 25 813 co-occ edges
+  TCG      4.6s  →  568 commits,  628 co-change edges
+  ANNOTATE  0.1s  →  99 681 annotations (62 806 grounded)
+  WRITE    9.4s  →  symbols=8 165 annotations=99 681
+
+  Total: 52 s  ·  1 299 files  (CLI reports 48 s; 52 s includes overhead)
+```
+
+**Observations across both runs:**
+
+| Stage    | Run 1 (595 f) | Run 2 (1 299 f) | Notes                                                                                       |
+| -------- | ------------- | --------------- | ------------------------------------------------------------------------------------------- |
+| AX       | 10.8 s        | 8.2 s           | Faster on CI despite 2× files — better CPU                                                  |
+| KWG      | 32.4 s        | 25.6 s          | Also faster on CI — single biggest bottleneck                                               |
+| TCG      | 1.4 s         | 4.6 s           | Scales with commit count (81 vs 568 commits)                                                |
+| ANNOTATE | 0.1 s         | 0.1 s           | Consistently fast — not a target                                                            |
+| WRITE    | 1.2 s         | **9.4 s**       | ⚠ 7.8× slower despite only 1.4× more annotations — likely containerised I/O or FTS5 rebuild |
+
+The WRITE anomaly (1.2 s → 9.4 s) is worth investigating independently: check whether
+FTS5 index population or containerised overlay FS is the cause before attributing it to
+annotation volume. On bare metal WRITE should scale linearly with annotation count.
+
+At this scale the build is already impractical in watch mode. A 3 000-file enterprise
+monorepo would extrapolate to ~4–6 minutes. Rust is clearly warranted.
+
+---
+
+### The three options
+
+#### Option A — NAPI-RS in-process addon
+
+Rewrite the hot path (AX + Annotator + IDF + Writer) as a native Node.js addon using
+[napi-rs](https://napi.rs). The TypeScript API (`createExtractor()`, `buildIndex()`, etc.)
+is preserved unchanged — callers see no difference.
+
+```
+Node.js / TypeScript
+  └─ @intentweave/ast-extractor (napi-rs addon — Rust under the hood)
+       ├─ oxc_parser / tree-sitter-rust  (AST)
+       ├─ rayon parallel file scan
+       ├─ annotation matching (HashMap, parallel)
+       └─ rusqlite (DB write)
+```
+
+- **Pros:** zero subprocess overhead; shared memory; incremental updates stay <2 s
+- **Cons:** per-platform prebuilt binaries required (macOS arm64/x64, linux x64/arm64,
+  win x64); complex CI matrix; N-API version pinning
+- **Estimated speedup:** 10–20× AX; 8–15× KWG (rayon parallel doc processing + fast HashMap co-occ); overall 8–15× for full builds
+- **Effort:** ~3 months (one Rust developer)
+
+---
+
+#### Option B — Standalone Rust binary (recommended)
+
+A self-contained `cari-build` binary that takes source paths + config options, runs the
+full build pipeline, and writes `.iw/index.db`. The TS CLI calls it as a subprocess.
+This is the model used by `esbuild`, `biome`, `oxc`, and `swc`.
+
+```
+iw index build
+  └─ spawn: cari-build --root . --output .iw/index.db --depth full
+       ├─ parallel file scan (rayon walkdir)
+       ├─ AX: oxc (TS/JS) + tree-sitter crate (Python/Swift/Go via plugins)
+       ├─ KWX: pulldown-cmark (Markdown) + custom regex extractor
+       ├─ COX: in-memory HashMap co-occurrence scoring
+       ├─ TCG: gix crate (pure-Rust git, no C dependency)
+       ├─ Annotate: rayon parallel HashMap matching
+       ├─ IDF: single linear pass
+       └─ Write: rusqlite WAL-mode batch inserts
+  └─ iw continues: queries (TS, unchanged), CLI, MCP server
+```
+
+- **Pros:** independently testable, clean interface (files-in / SQLite-out), no N-API
+  complexity, can be used outside Node.js, distributable as a side-binary alongside
+  the npm package (same pattern as `esbuild`)
+- **Cons:** subprocess startup cost per build (~50–100 ms overhead, irrelevant for
+  batch); incremental update requires re-spawning (fine — process is fast)
+- **Estimated speedup:** 10–20× for full builds (47 s → ~3–5 s on the measured baseline)
+- **Effort:** ~3–4 months (one Rust developer familiar with SQLite and tree-sitter)
+
+---
+
+#### Option C — Full port including queries
+
+Everything in Option B plus a `cari-server` long-running process that also answers
+query requests (retrieve, connections, check, etc.) over HTTP or a Unix socket.
+The TS CLI becomes a thin client.
+
+- **Pros:** embeddable without Node.js (VS Code extension, Neovim plugin, IDE daemon);
+  maximum performance; single binary ships the whole CARI evidence engine
+- **Cons:** 57 query files (~18 k lines of SQL + TS) must be ported; the queries are
+  already fast (SQL-bound); very high scope without a clear immediate user-facing win
+- **Effort:** ~8–12 months. Not recommended as a first step.
+
+---
+
+### Recommended approach: Option B in two phases
+
+**Phase R1 — Rust build binary** _(3–4 months)_
+
+1. New `packages/cari-native/` workspace member — a Cargo workspace with `cari-build` binary.
+2. Crate structure:
+   ```
+   cari-native/
+     Cargo.toml
+     src/
+       main.rs            # CLI entry: parse args, orchestrate pipeline
+       ax/                # AX stage: oxc (TS/JS) + tree-sitter (other langs)
+       kwx/               # KWX stage: pulldown-cmark + heuristic extractor
+       cox/               # COX stage: co-occurrence HashMap
+       tcg/               # TCG stage: gix (pure-Rust git)
+       annotate/          # Annotation matching (rayon parallel)
+       idf/               # IDF scoring
+       writer/            # rusqlite batch writer, schema init
+       schema.rs          # SQLite DDL (mirrors schema.ts exactly)
+       types.rs           # Shared structs (mirrors types.ts key interfaces)
+   ```
+3. The TypeScript `indexBuild.ts` becomes a thin shim: resolve binary path → spawn →
+   wait for exit → read DB path from stdout → continue with query layer unchanged.
+4. Schema is the contract: a `schema_version` table row locks the DB format; the TS
+   query layer refuses to run against a mismatched version.
+
+**Phase R2 — NAPI-RS bridge for incremental** _(optional, later)_
+
+If incremental `iw index update` speed becomes a bottleneck, expose the Rust pipeline
+as a long-running NAPI-RS worker thread so the process can be kept warm between calls.
+Phase R1 subprocess is fast enough for batch; this only matters at very high update frequency.
+
+---
+
+### Key library choices
+
+| Need             | Crate                  | Notes                                                                     |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------- |
+| TS/JS AST        | `oxc_parser`           | 10–100× faster than tree-sitter for JS/TS; full CST + semantic info       |
+| Other languages  | `tree-sitter` crate    | Same C grammars as the Node.js bindings; drop-in for Python/Swift plugins |
+| Markdown parsing | `pulldown-cmark`       | Fast, spec-compliant, used by rustdoc                                     |
+| SQLite           | `rusqlite`             | Synchronous, WAL mode, prepared statements, same API shape as sqlite3     |
+| Git analysis     | `gix`                  | Pure-Rust, no libgit2 C dependency; `gix-traverse` for commit walks       |
+| Parallelism      | `rayon`                | Drop-in parallel iterators; auto-scales to CPU core count                 |
+| File walking     | `ignore` crate         | Respects `.gitignore` and `.iwignore`; used by ripgrep                    |
+| Hashing          | `blake3`               | 10× faster than SHA-256 for content hashing                               |
+| JSON I/O         | `serde_json`           | Zero-copy deserialization for config files                                |
+| Binary packaging | `cargo-dist` / napi-rs | Publish prebuilt binaries via GitHub Releases; install via `optionalDeps` |
+
+---
+
+### What does NOT change
+
+- **All 57 query files** (`packages/index/src/queries/`) — stay in TypeScript unchanged.
+  They are SQL-bound; Rust provides no meaningful speedup here.
+- **CLI** (`packages/cli/`) — stays in TypeScript. MCP server, all subcommands unchanged.
+- **LLM pipeline** (`packages/analyzer/` FX/KX/GX stages) — I/O-bound, TS is fine.
+- **Insights Book** (`insightsBook.ts`) — string templating, no benefit from Rust.
+- **The SQLite schema** — unchanged. This is the contract between the two layers.
+- **Language plugins** (`plugin-python`, `plugin-swift`) — migrate to Rust plugin trait
+  in Phase R1, but the grammar assets (tree-sitter .c files) are reused as-is.
+
+---
+
+### Schema compatibility contract
+
+The Rust binary and the TS query layer share one file: `.iw/index.db`. To prevent
+silent breakage as both evolve independently:
+
+```sql
+-- Written by the Rust binary at end of every build:
+CREATE TABLE IF NOT EXISTS cari_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+INSERT OR REPLACE INTO cari_meta VALUES ('schema_version', '2');
+INSERT OR REPLACE INTO cari_meta VALUES ('builder',        'cari-native/0.1.0');
+INSERT OR REPLACE INTO cari_meta VALUES ('built_at',       '<ISO 8601 timestamp>');
+```
+
+The TS facade (`CariIndex.load()`) reads `schema_version` on open and throws a clear
+error if it mismatches the version it knows about. Both the Rust crate and `schema.ts`
+must be bumped together when schema changes.
+
+---
+
+### Rough effort table
+
+Ordered by measured impact (KWG first):
+
+| Phase        | Scope                                              | Effort          | Expected speedup on baseline         |
+| ------------ | -------------------------------------------------- | --------------- | ------------------------------------ |
+| R1-a         | KWG: Markdown parser (pulldown-cmark) + rayon docs | 3–4 weeks       | **8–15× KWG** (32 s → 2–4 s)         |
+| R1-b         | KWG: co-occurrence HashMap (rayon parallel)        | 1–2 weeks       | included in R1-a                     |
+| R1-c         | AX: oxc (TS/JS) + tree-sitter crate (other langs)  | 4–5 weeks       | **10–20× AX** (11 s → 0.5–1 s)       |
+| R1-d         | TCG: gix crate (or keep shell-out — already 1.4 s) | 1–2 weeks       | 1–2× (low priority)                  |
+| R1-e         | Writer + schema init + IDF (already fast in TS)    | 1–2 weeks       | —                                    |
+| R1-f         | CLI shim + binary packaging (cargo-dist)           | 1 week          | —                                    |
+| **R1 total** | Full build binary                                  | **11–16 weeks** | **10–20× full build (47 s → 3–5 s)** |
+| R2           | NAPI-RS bridge for warm incremental daemon         | 3–4 weeks       | <2 s incremental (already fine)      |
+
+_Assumes one developer with solid Rust experience and familiarity with tree-sitter._
+_Annotate (0.1 s) and Write (1.2 s) are not worth porting in isolation — they are absorbed into the R1-e writer step._
+
+---
+
+### Entry criteria for starting R1
+
+- [x] **Benchmark measured:** 47 s on 595 files (intentweave monorepo, full depth).
+      KWG = 32.4 s, AX = 10.8 s. Rust is clearly justified.
+- [ ] Confirm `oxc_parser` covers the symbol kinds IntentWeave needs (classes, functions,
+      imports, calls, property accesses, type assertions, decorators). Current tracking:
+      oxc v0.x exposes all of these. Verify against `packages/ast-extractor/src/types.ts`.
+- [ ] Decision on `gix` vs shell-out for TCG. `gix` removes the C dependency but its
+      `gix-traverse` API is less stable than `git2`. Shell-out to `git log` is simpler
+      and already works; keep it unless profiling shows it's a bottleneck.
+- [ ] Lock the schema version before starting R1 (write `schema_version = 2` to `schema.ts`
+      now so the TS layer already validates it; Rust binary will write the same value).

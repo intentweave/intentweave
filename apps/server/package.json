@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/app-server",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "description": "IntentWeave server — composes server-core + server-open into a runnable application",
   "type": "module",

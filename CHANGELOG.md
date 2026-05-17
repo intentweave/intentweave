@@ -2,6 +2,212 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.13.0] — 2026-05-17
+
+### Added
+
+- **Rust Indexer Port design analysis** — added to BACKLOG.md: full architecture plan for replacing
+  the CARI build pipeline (AX + KWG stages) with a native Rust binary (`packages/cari-native/`).
+  Measured baselines: 47 s on 595 files (KWG = 69% of build time). Phase R1 targets 10–20× speedup
+  (47 s → 3–5 s) using `oxc_parser`, `pulldown-cmark`, `rayon`, `rusqlite`, and `gix`.
+  The 57 TypeScript query files remain unchanged — only the build path moves to Rust.
+
+### Changed
+
+- **TypeScript 5.9** — all packages upgraded from `typescript ^5.6.0` to `^5.9.3`.
+- **Prettier 3.8** — formatter upgraded from `^3.3.0` to `^3.8.3`.
+- **Turbo 2.9** — build orchestrator upgraded from `^2.8.14` to `^2.9.14`.
+- **Vitest 2.1.9** — test runner upgraded from `^2.1.0` to `^2.1.9`.
+- **@types/node** — updated from `^20.19.37` to `^20.19.41`.
+
+### Infrastructure
+
+- All 16 packages bumped to `0.13.0`.
+
+---
+
+## [0.12.0] — 2026-05-17
+
+### Added
+
+- **Insights Book** (`iw index export --book`) — a single self-contained HTML deliverable that
+  answers _"is this project OK?"_ at a glance. 15+ navigable chapters with full cross-chapter
+  navigation, interactive D3 visualizations, domain-filtered violation tables, and a composite
+  living score badge. Chapters cover:
+  - **Executive Summary** — living score badge, violation domain pills (structural / behavioral /
+    documentary), top-3 action items, quick links to other chapters
+  - **Recommendations** — top-20 cross-domain issues ranked by severity, with domain badges
+  - **Rules Catalog** — full `rules.yaml` inventory, filterable by domain / severity, with
+    Mermaid and Cypher indicators per rule
+  - **Layer Architecture** — §17 prescriptive SVG iframe with layer geometry, rule overlays, and
+    allowed/forbidden flow arrows
+  - **Documentation & Source** — three-panel explorer: docs list, source files, per-file
+    annotation evidence
+  - **Architecture** — §10.1 D3 interactive chart (Layers / Violations / Communities /
+    Dependencies tabs)
+  - **Code Structure** — transitive dependency depth table with CRITICAL / HIGH risk indicators
+  - **Code Health** — exact clone groups, structural clones, circular imports
+  - **Violations** — domain-grouped tables (Structural / Behavioral / Documentary) with per-rule
+    expansion and dormant rules section
+  - **Coverage** — per-layer documentation coverage table with low-coverage warning; Layer Sankey
+    SVG (two-column bezier bands, blue = allowed, red = violation, width ∝ import count — rendered
+    when cross-layer flows exist)
+  - **Living Score** — 4-dimension breakdown (spec grounding · consistency · freshness ·
+    architectural conformance)
+  - **Priority Files** — high-churn / low-doc hotspot table with urgency scores
+  - **Tech Debt** — TODO / FIXME / HACK / XXX inventory
+  - **Test Coverage** — symbol-level coverage % and per-directory breakdown
+  - **Call Graph** — butterfly trace around any entry-point file; depth / mode controls;
+    23 000+ edge corpus for large repos
+  - **Per-ADR chapters** — Cytoscape.js + dagre flow diagrams for each ADR rule, with CARI
+    import-graph overlay and per-rule violation panel
+  - Opens on **Executive Summary** by default
+
+- **Intent Engine — domain support** (`--domain structural|behavioral|documentary|all`) on
+  `iw intent check`. All three domains enforced in a single pass; warn-only domains do not
+  set exit code 1 unless promoted via `.iw/config.yaml`.
+
+- **Behavioral Domain — Mermaid Rules** (Phase 3) — express architectural intent as inline
+  or ADR-sourced Mermaid diagrams in `rules.yaml`; CARI validates against the live import graph
+  at $0 / < 100 ms:
+
+  | Diagram type      | Check type         | Confidence | Default mode |
+  | ----------------- | ------------------ | ---------- | ------------ |
+  | `sequenceDiagram` | `must_call`        | 0.70       | warn         |
+  | `sequenceDiagram` | `must_not_call`    | 0.85       | error        |
+  | `stateDiagram-v2` | `valid_transition` | 0.50       | warn         |
+  | `flowchart`       | `must_precede`     | 0.30       | warn         |
+
+  Custom zero-dependency regex parser (no DOM, no `@mermaid-js/parser`). Violations surface in
+  the Insights Book (Behavioral section, confidence badge, WARN mode indicator) and in
+  `iw intent check --domain behavioral`.
+
+- **Documentary Domain — built-in CARI checks** (Phase 1) — four automatic checks run whenever
+  `--domain documentary` (or `all`) is passed; no rules.yaml entry required:
+
+  | Rule ID                | Threshold      | Default mode |
+  | ---------------------- | -------------- | ------------ |
+  | `doc.coverage.low`     | coverage < 50% | warn         |
+  | `doc.terminology`      | any mismatch   | warn         |
+  | `doc.orphaned-section` | any orphan     | warn         |
+  | `doc.completeness.low` | complete < 40% | warn         |
+
+- **`.iw/config.yaml`** — per-domain CI thresholds. Override coverage/completeness floor and
+  promote warn-only domains to CI-blocking (`mode: error`).
+
+- **Call Graph** (Phase 4) — full call-graph pipeline extracted from AST:
+  - `iw index calls` — query `symbol_calls` edges by caller file / callee name
+  - `iw index trace` — BFS call-path tracing from an entry-point file (forward or backward)
+  - `iw index rule-coverage` — flag packages with zero behavioral rules
+  - MCP: `cari_calls`, `cari_trace`
+
+- **Prescriptive Architecture Diagram** (§17 complete) — standalone HTML export of the
+  architectural intent graph:
+  - `allowed:` entries in `rules.yaml` (17.2) with edge-level rationale support
+  - Layer geometry rendering for SVG layout (17.1a)
+  - Rule-expressed element overlay with violation heat-map (17.1b)
+  - ASCII conformance diagram inline in `iw intent check` output (17.4)
+  - LLM-assisted prescriptive spec synthesis from ADR prose — generates `allowed:` entries,
+    `forbidden:` rules, and layer assignment hints in a single LLM call (17.3)
+
+- **Semantic rules — extended rule types and modifiers** (13.5–13.11, 15.1–15.5):
+  - `type: variable_assignment` — flag assignments to forbidden variables (13.10)
+  - `type: cypher` — custom graph queries via CypherLite for domain-specific rules (13.11)
+  - `type: property_chain_length` — limit chained property access depth (15.3)
+  - `--baseline` regression gating — compare violation count against a stored baseline, fail CI
+    only on regressions (13.5)
+  - `import_pattern: "**"` glob matching across path separators (13.6)
+  - Import violation line numbers in output (13.7)
+  - `symbol_name` scope modifier — restrict rule to exports, internals, or tests (13.9)
+  - `context_import` modifier — apply a rule only when a specific import is present (15.1)
+  - `except_symbol` exclusion list (15.2)
+  - `count_mode: per_file` — count violations per file rather than globally (15.4)
+  - Autofix hints in rules output (15.5)
+  - JSON redirect fix for `rules-check` output (13.8)
+
+- **Signal-layer checks** (14.1–14.6):
+  - `iw index deprecated-callers` — detect calls to `@deprecated`-annotated symbols (14.1)
+  - `iw index internal-violations` — enforce `@internal` / `_`-prefixed symbol boundaries (14.2)
+  - `iw index type-assertions` — inventory `as any` and forced type assertions (14.3)
+  - `iw index naming-violations` — configurable naming-convention enforcement (6.1)
+  - `iw index comment-code-ratio` — comment-to-code ratio per file (6.4)
+  - `iw index layers-from-decorators` — derive layer assignment from class decorators
+    (`@Controller`, `@Injectable`, `@Module`, etc.) without manual `layers.yaml` (14.4)
+  - `iw index rules-trend` — ADR conformance trend over git history (14.5)
+  - `iw index test-intent` — detect test descriptions that reference no matching symbol (14.6)
+
+- **Intra-function def-use chains** (16.1) — track variable assignments and reads within a
+  function body to detect shadowed variables, unused assignments, and tainted flows.
+
+- **Cross-layer clone analysis** (5.9) — surface clones that span layer boundaries, indicating
+  accidental duplication across architectural tiers.
+
+- **Selective semantic enrichment** (11.8) — `iw index enrich` targets the highest-value files
+  (hotspots, orphans, hubs) for LLM triple extraction and writes results back into the same
+  `index.db`. Budget-controlled (`--budget N`), incremental.
+
+- **Spec-to-code verification** (12.1) and **constraint consistency check** (12.2) — validate
+  that rules in `rules.yaml` have measurable code grounding; detect conflicting rule pairs.
+
+- **Architecture Book** (§18) — interactive multi-chapter HTML book with per-ADR Cytoscape.js
+  flow diagrams, CARI overlay toggles, rule panel, and violation list per ADR chapter.
+  All vendor bundles (Cytoscape.js + dagre) inlined for offline use.
+
+- **Watch mode** (10.2) — `iw index watch` continuously re-indexes on file change; incremental
+  updates only re-process modified files.
+
+- **CI integration** (8.4) — `intentweave/doc-health-action@v1` GitHub Action runs
+  `iw intent check` in CI with configurable domain, severity, and format flags.
+
+- **Git hooks** (10.3) — `iw hook install / uninstall / status` adds a pre-commit hook
+  that runs `iw intent check --changed` on staged files.
+
+- **REST API v1.0.0** (8.5) — all CARI query functions available over HTTP. New endpoints:
+  `/api/rules-check`, `/api/living-score`, `/api/enrich`, `/api/calls`, `/api/trace`.
+
+- **Diagram validation** (5.8) — `iw index arch-check` / `cari_arch_diff` validates component
+  names and flow edges in ASCII/Mermaid diagrams against CARI import evidence.
+
+- **58 MCP tools total** (up from 35): added `intent_check`, `cari_calls`, `cari_trace`,
+  `cari_rules_check`, `cari_rules_trend`, `cari_deprecated_callers`, `cari_internal_violations`,
+  `cari_type_assertions`, `cari_naming_violations`, `cari_comment_code_ratio`,
+  `cari_layers_from_decorators`, `cari_test_intent`, `cari_skipped_files`, `cari_verify`,
+  `cari_enrich`, `cari_consistency`, `cari_capsule`, `cari_cypher`, `cari_graph_schema`,
+  `cari_slices`, `cari_arch_check`, and others.
+
+### Changed
+
+- `iw intent check` is now the canonical entry-point for all enforcement domains (replaces
+  separate `iw guardrails check` and `iw living verify` aliases; backward-compatible aliases
+  preserved).
+- `iw index export --book` replaces `iw index export --html` as the primary deliverable command;
+  `--html` still generates the standalone §10.1 architecture report.
+- Insights Book opens on the **Executive Summary** chapter by default.
+- `iw index export --focus` focused SVG report now also embeds CARI evidence (hub degree,
+  community label, layer name) in node tooltips.
+- `iw intent score` / `iw verify --score` now outputs 4-dimension breakdown
+  (spec · consistency · freshness · arch).
+
+### Fixed
+
+- Spurious change reports in watch / incremental update cycles when file content was
+  unchanged but mtime differed.
+- Hub analysis crash on projects with null import data.
+- `rules-check` JSON output incorrectly redirected when `--format json` was combined with
+  `--output`; stdout and file output are now independent.
+
+### Infrastructure
+
+- **1532 tests** across 80 test files (up from 1375 / 70)
+- **16 published packages** (`@intentweave/*@0.12.0`)
+- Added `docs/ADR-001-INTENT-ENGINE.md`, `docs/PRODUCT-CONCEPT.md`,
+  `docs/ROADMAP.md`, `docs/SEMANTIC-RULES-SPEC.md`
+- Cytoscape.js + dagre vendor bundles inlined in the `@intentweave/index` package for
+  fully offline per-ADR flow diagrams
+- All packages remain at `0.12.0`; lockstep versioning via `scripts/bump-version.sh`
+
+---
+
 ## [0.9.0] — 2026-04-19
 
 ### Added
