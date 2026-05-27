@@ -92,12 +92,12 @@ export function checkFromDb(
           related: [changedFile],
         });
       } else {
-        // No date data available — assign severity by confidence
-        const severity: CheckFinding["severity"] =
-          ann.confidence >= 0.8 ? "warning" : "info";
-
+        // No date data available — without a timestamp comparison we cannot
+        // determine whether the doc is actually stale, so cap at "info".
+        // This avoids false-positive CI failures when code that docs reference
+        // is touched but its API (and the doc) didn't change.
         findings.push({
-          severity,
+          severity: "info",
           message:
             `${ann.doc_path} references "${ann.text}" (line ${ann.line}, confidence ${ann.confidence.toFixed(2)}) ` +
             `— verify after changes to ${changedFile}`,
@@ -137,7 +137,11 @@ export function checkFromDb(
 
       if (!changedSet.has(otherFile)) {
         findings.push({
-          severity: partner.jaccard >= 0.4 ? "warning" : "info",
+          // Co-change analysis is advisory — it never has enough context to
+          // determine whether the absence of a partner file is a mistake.
+          // Keep it as "info" so it surfaces in PR comments but does not
+          // block CI.
+          severity: "info",
           message:
             `${changedFile} co-changes with ${otherFile} ` +
             `(jaccard=${partner.jaccard.toFixed(2)}, ${partner.count} commits) ` +
