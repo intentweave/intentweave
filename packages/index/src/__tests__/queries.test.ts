@@ -1286,18 +1286,19 @@ describe("check severity", () => {
     }
   });
 
-  it("co-change partner with high jaccard gets warning severity", () => {
+  it("co-change partner with high jaccard gets info severity", () => {
     const result = checkFromDb(db, {
       changed: ["src/auth/service.ts"],
     });
-    // service.ts co-changes with jwt.ts (jaccard=0.68 ≥ 0.6) → "warning"
+    // Co-change analysis is advisory — all co-change findings are "info"
+    // regardless of jaccard score (they surface in PR comments but never block CI).
     const jwtFinding = result.findings.find(
       (f) =>
         f.message.includes("co-changes with") && f.message.includes("jwt.ts"),
     );
     expect(jwtFinding).toBeDefined();
     if (jwtFinding) {
-      expect(jwtFinding.severity).toBe("warning");
+      expect(jwtFinding.severity).toBe("info");
     }
   });
 

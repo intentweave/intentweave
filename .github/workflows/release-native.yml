@@ -1,0 +1,111 @@
+name: Release Native Binary
+
+# Builds cari-build for each supported platform and publishes the
+# platform-specific npm packages, then publishes the @intentweave/cari-native
+# wrapper that consumers depend on.
+#
+# Triggers:
+#   - GitHub Release published (automatic on tag v*)
+#   - Manual workflow_dispatch (for re-publishing or dry runs)
+#
+# Required secrets:
+#   NPM_TOKEN — npm automation token with publish access to the @intentweave scope
+#
+# Supported targets (Windows not included — add win32-x64 / windows-latest
+# to the matrix below if Windows user demand warrants it):
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — build but skip npm publish"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-native-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ─── Build + publish platform-specific packages ──────────────────────────
+  build-native:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-latest       # GitHub: macos-14 (Apple Silicon)
+          - target: darwin-x64
+            runner: macos-13           # GitHub: macos-13 (Intel x64)
+          - target: linux-x64
+            runner: ubuntu-latest      # GitHub: ubuntu-24.04 (x86_64)
+          - target: linux-arm64
+            runner: ubuntu-22.04-arm   # GitHub: Ubuntu 22.04 ARM64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cache Rust toolchain + compiled deps between runs
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/cari-native
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # --no-frozen-lockfile: platform packages whose os/cpu don't match the
+      # current runner are skipped by pnpm and won't be in the lockfile for
+      # that platform — that's expected behaviour for optional native packages.
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build cari-build binary
+        run: ./scripts/package-native.sh
+
+      - name: Verify binary runs
+        run: packages/cari-native-${{ matrix.target }}/bin/cari-build --version
+
+      - name: Publish @intentweave/cari-native-${{ matrix.target }}
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          pnpm --filter @intentweave/cari-native-${{ matrix.target }} \
+            publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ─── Publish the wrapper package once all platform builds succeed ─────────
+  publish-wrapper:
+    name: Publish @intentweave/cari-native wrapper
+    runs-on: ubuntu-latest
+    needs: build-native
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Publish @intentweave/cari-native
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: pnpm --filter @intentweave/cari-native publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

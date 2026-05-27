@@ -126,8 +126,8 @@ runs:
         EXIT_CODE=$?
         set -e
 
-        # Count finding lines (GitHub annotation format: ::warning:: or ::error::)
-        COUNT=$(echo "$OUTPUT" | grep -cE '^::(warning|error)::' || true)
+        # Count finding lines (GitHub annotation format: ::warning file=...:: or ::error file=...::)
+        COUNT=$(echo "$OUTPUT" | grep -cE '^::(warning|error)( [^:]*)?::' || true)
         echo "drift-count=$COUNT" >> "$GITHUB_OUTPUT"
         echo "check-output<<EOF" >> "$GITHUB_OUTPUT"
         echo "$OUTPUT" >> "$GITHUB_OUTPUT"
@@ -182,11 +182,12 @@ runs:
           body += `| ${driftEmoji} Drift findings (≥${threshold}) | **${driftCount}** |\n\n`;
 
           if (driftCount > 0 && checkOutput) {
-            // Strip GitHub annotation prefixes for readable display
+            // Strip GitHub annotation prefixes for readable display.
+            // Format is ::warning file=X,line=N::message or ::error file=X::message
             const findings = checkOutput
               .split('\n')
               .filter(l => l.startsWith('::'))
-              .map(l => l.replace(/^::(warning|error)::/,'').trim())
+              .map(l => l.replace(/^::(warning|error|notice)( [^:]*)?::/,'').trim())
               .filter(Boolean)
               .slice(0, 20)
               .map(l => `- ${l}`)

@@ -1,0 +1,58 @@
+[package]
+name = "cari-build"
+version = "0.1.0"
+edition = "2021"
+description = "Native Rust build binary for the CARI index — replaces the AX + KWG pipeline stages"
+license = "Apache-2.0"
+authors = ["Benjamin Becker"]
+
+[[bin]]
+name = "cari-build"
+path = "src/main.rs"
+
+[dependencies]
+# Error handling
+anyhow = "1"
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# SQLite — synchronous, WAL mode, same API shape as better-sqlite3
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Markdown parsing — fast, spec-compliant, used by rustdoc (KWX stage)
+pulldown-cmark = "0.11"
+
+# Parallelism — drop-in parallel iterators, auto-scales to CPU cores
+rayon = "1"
+
+# File walking — respects .gitignore and .iwignore (same as ripgrep)
+ignore = "0.4"
+
+# Content hashing — 10× faster than SHA-256
+blake3 = "1"
+
+# JSON I/O — zero-copy deserialization for config files
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Date/time for built_at timestamp
+chrono = { version = "0.4", features = ["serde"] }
+
+# TS/JS AST — 10-100× faster than tree-sitter for JS/TS (AX stage, R1-c)
+oxc_allocator = "0.131.0"
+oxc_parser = "0.131.0"
+oxc_ast = "0.131.0"
+oxc_span = "0.131.0"
+
+# Git analysis — pure-Rust, no libgit2 C dependency (TCG stage, R1-d)
+# gix = { version = "0.66", features = ["blocking-http-transport-reqwest"] }  # R1-d
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

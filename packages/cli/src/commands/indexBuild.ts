@@ -22,6 +22,10 @@ import chalk from "chalk";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { performance } from "node:perf_hooks";
+import { spawn } from "node:child_process";
+import { accessSync, constants as fsConstants } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { load as yamlLoad } from "js-yaml";
 import { minimatch } from "minimatch";
 
@@ -87,6 +91,160 @@ export {
 };
 
 // =============================================================================
+// R1-f: cari-native binary shim
+// =============================================================================
+
+/**
+ * Resolve the path to the `cari-build` native binary (Option B subprocess model).
+ *
+ * Priority:
+ *   1. CARI_BUILD_PATH env var — explicit override for CI / custom installs
+ *   2. @intentweave/cari-native npm package (production installs)
+ *   3. <monorepo-root>/packages/cari-native/target/release/cari-build (dev release)
+ *   4. <monorepo-root>/packages/cari-native/target/debug/cari-build   (dev debug)
+ *
+ * Returns `null` when no executable binary is found; the caller falls back to
+ * the TypeScript pipeline in that case.
+ */
+function resolveCariNativeBinary(): string | null {
+  if (process.env.CARI_BUILD_PATH) {
+    try {
+      accessSync(process.env.CARI_BUILD_PATH, fsConstants.X_OK);
+      return process.env.CARI_BUILD_PATH;
+    } catch {
+      return null;
+    }
+  }
+
+  // Priority 2: platform-specific binary installed via npm optional dependency.
+  // In production the matching @intentweave/cari-native-{os}-{arch} package
+  // contains the compiled binary at bin/cari-build.  We resolve it using
+  // createRequire so this function stays synchronous.
+  try {
+    const _require = createRequire(import.meta.url);
+    const exeSuffix = process.platform === "win32" ? ".exe" : "";
+    const platformPkgs: Record<string, string> = {
+      "darwin-arm64": "@intentweave/cari-native-darwin-arm64",
+      "darwin-x64": "@intentweave/cari-native-darwin-x64",
+      "linux-x64": "@intentweave/cari-native-linux-x64",
+      "linux-arm64": "@intentweave/cari-native-linux-arm64",
+      "win32-x64": "@intentweave/cari-native-win32-x64",
+    };
+    const pkgName = platformPkgs[`${process.platform}-${process.arch}`];
+    if (pkgName) {
+      const binPath = _require.resolve(`${pkgName}/bin/cari-build${exeSuffix}`);
+      accessSync(binPath, fsConstants.X_OK);
+      return binPath;
+    }
+  } catch {
+    // package not installed — fall through to dev build paths
+  }
+
+  // Derive the monorepo root from this file's location.
+  // In dev  (tsx):  packages/cli/src/commands/indexBuild.ts  → 4 levels up
+  // In prod (tsc):  packages/cli/dist/commands/indexBuild.js → 4 levels up
+  const thisFile = fileURLToPath(import.meta.url);
+  const monoRoot = path.resolve(path.dirname(thisFile), "..", "..", "..", "..");
+
+  const candidates = [
+    path.join(
+      monoRoot,
+      "packages",
+      "cari-native",
+      "target",
+      "release",
+      "cari-build",
+    ),
+    path.join(
+      monoRoot,
+      "packages",
+      "cari-native",
+      "target",
+      "debug",
+      "cari-build",
+    ),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, fsConstants.X_OK);
+      return candidate;
+    } catch {
+      // not found — try next
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Spawn `cari-build` and wait for completion.
+ *
+ * In verbose mode stderr is inherited (piped to the terminal) so the user sees
+ * the stage timings printed by the binary.  In quiet mode stderr is buffered
+ * and included in the error message if the binary exits non-zero.
+ */
+async function runCariBuild(opts: {
+  binaryPath: string;
+  root: string;
+  output: string;
+  depth: string;
+  paths: string[];
+  verbose: boolean;
+}): Promise<void> {
+  const args: string[] = [
+    "--root",
+    opts.root,
+    "--output",
+    opts.output,
+    "--depth",
+    opts.depth,
+  ];
+
+  for (const p of opts.paths) {
+    // Convert each path to be relative to root (= cwd) for the Rust binary.
+    const rel = path.relative(opts.root, path.resolve(opts.root, p));
+    args.push("--paths", rel || ".");
+  }
+
+  if (opts.verbose) {
+    args.push("--verbose");
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(opts.binaryPath, args, {
+      stdio: opts.verbose
+        ? ["ignore", "ignore", "inherit"]
+        : ["ignore", "ignore", "pipe"],
+    });
+
+    let stderrBuf = "";
+    if (!opts.verbose && child.stderr) {
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderrBuf += chunk.toString();
+      });
+    }
+
+    child.on("close", (code: number | null) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(
+          new Error(
+            `cari-build exited with code ${code ?? "null"}` +
+              (stderrBuf ? `:\n${stderrBuf.trim()}` : ""),
+          ),
+        );
+      }
+    });
+
+    child.on("error", (err: Error) => {
+      reject(new Error(`Failed to spawn cari-build: ${err.message}`));
+    });
+  });
+}
+
+// =============================================================================
 // Subcommand: iw index build
 // =============================================================================
 
@@ -103,8 +261,8 @@ const indexBuildSubcommand = new Command("build")
   .option("-s, --session <name>", "Session name (default: directory name)")
   .option(
     "--depth <depth>",
-    "Annotation depth: structured (default) or full (includes IDF scoring)",
-    "structured",
+    "Annotation depth: full (default) or structured (headings/bold/code spans only)",
+    "full",
   )
   .option("--include <patterns...>", "Only include files matching these globs")
   .option(
@@ -167,6 +325,66 @@ const indexBuildSubcommand = new Command("build")
     }
 
     try {
+      // ── R1-f: native binary fast-path ──────────────────────────────────────
+      // Use the Rust `cari-build` binary when:
+      //   • No multi-root entries with roles (not yet supported by the binary)
+      //   • No --include / --exclude filters (not yet supported by the binary)
+      //   • The binary is found on disk (dev build or CARI_BUILD_PATH override)
+      const canUseNative = roots.length === 0 && !opts.include && !opts.exclude;
+      const nativeBinary = canUseNative ? resolveCariNativeBinary() : null;
+
+      if (nativeBinary) {
+        if (verbose) {
+          console.log(chalk.gray(`  ▸ using native binary: ${nativeBinary}\n`));
+        }
+        const dbPath = resolveDbPath(opts.output);
+        const t0 = performance.now();
+        try {
+          await runCariBuild({
+            binaryPath: nativeBinary,
+            root: cwd,
+            output: dbPath,
+            depth: opts.depth,
+            paths,
+            verbose,
+          });
+          const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+          console.log(
+            `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
+          );
+
+          // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
+          try {
+            const { existsSync, readFileSync } = await import("node:fs");
+            const rulesYamlPath = path.join(cwd, ".iw", "rules.yaml");
+            if (existsSync(rulesYamlPath)) {
+              const jsYaml = await import("js-yaml");
+              const raw = readFileSync(rulesYamlPath, "utf-8");
+              const config = jsYaml.load(
+                raw,
+              ) as import("@intentweave/index").RulesConfig;
+              if (config?.rules?.length) {
+                const snapshotId = `build-${Date.now()}`;
+                snapshotConformance(dbPath, config, snapshotId, Date.now());
+              }
+            }
+          } catch {
+            // Snapshot failure must not fail the build
+          }
+          return;
+        } catch (nativeErr: unknown) {
+          const nativeMsg =
+            nativeErr instanceof Error ? nativeErr.message : String(nativeErr);
+          console.log(
+            chalk.yellow(
+              `  ⚠ native build failed, falling back to TypeScript pipeline: ${nativeMsg}`,
+            ),
+          );
+          // Fall through to the TypeScript pipeline below
+        }
+      }
+      // ── end R1-f ────────────────────────────────────────────────────────────
+
       const result = await buildFromPaths({
         paths,
         workspaceRoot: cwd,

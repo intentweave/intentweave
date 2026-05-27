@@ -30,3 +30,6 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+
+# Rust build artifacts
+packages/cari-native/target/
