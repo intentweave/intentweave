@@ -9,6 +9,9 @@
   "os": [
     "win32"
   ],
+  "files": [
+    "bin/"
+  ],
   "publishConfig": {
     "access": "public"
   },

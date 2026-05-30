@@ -9,6 +9,9 @@
   "os": [
     "darwin"
   ],
+  "files": [
+    "bin/"
+  ],
   "publishConfig": {
     "access": "public"
   },

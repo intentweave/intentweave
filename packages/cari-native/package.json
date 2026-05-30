@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Native Rust binary for CARI index building — platform-specific binary resolver",
   "type": "module",
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
   "main": "index.js",
   "exports": {
     ".": "./index.js"
