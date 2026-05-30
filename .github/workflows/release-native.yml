@@ -28,6 +28,10 @@ concurrency:
   group: release-native-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  # Opt into Node.js 24 for all GitHub Actions (required before June 16 2026)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   # ─── Build + publish platform-specific packages ──────────────────────────
   build-native:
