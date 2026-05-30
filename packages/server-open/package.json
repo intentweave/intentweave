@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/server-open",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "IntentWeave open track routes — pipeline execution, KG query, context, impact analysis, doc-health, xlink",
   "type": "module",
   "main": "./dist/index.js",
