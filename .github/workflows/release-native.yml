@@ -86,9 +86,8 @@ jobs:
 
       - name: Publish @intentweave/cari-native-${{ matrix.target }}
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: |
-          pnpm --filter @intentweave/cari-native-${{ matrix.target }} \
-            publish --access public --no-git-checks --provenance
+        working-directory: packages/cari-native-${{ matrix.target }}
+        run: npm publish --access public --provenance
 
   # ─── Publish the wrapper package once all platform builds succeed ─────────
   publish-wrapper:
@@ -115,4 +114,5 @@ jobs:
 
       - name: Publish @intentweave/cari-native
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: pnpm --filter @intentweave/cari-native publish --access public --no-git-checks --provenance
+        working-directory: packages/cari-native
+        run: npm publish --access public --provenance
