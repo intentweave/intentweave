@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/cari-native-darwin-x64",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "cari-build native binary — macOS Intel (x64)",
   "license": "Apache-2.0",
   "cpu": [
