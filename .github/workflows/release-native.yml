@@ -8,8 +8,9 @@ name: Release Native Binary
 #   - GitHub Release published (automatic on tag v*)
 #   - Manual workflow_dispatch (for re-publishing or dry runs)
 #
-# Required secrets:
-#   NPM_TOKEN — npm automation token with publish access to the @intentweave scope
+# Authentication: uses npm Trusted Publishers (OIDC) — no NPM_TOKEN secret
+# needed. Configure the trusted publisher on npmjs.com for each package,
+# pointing at this repository + workflow file.
 #
 # Supported targets (Windows not included — add win32-x64 / windows-latest
 # to the matrix below if Windows user demand warrants it):
@@ -37,6 +38,9 @@ jobs:
   build-native:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
+    permissions:
+      id-token: write  # Required for npm OIDC (Trusted Publishers)
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -84,15 +88,16 @@ jobs:
         if: ${{ github.event.inputs.dry_run != 'true' }}
         run: |
           pnpm --filter @intentweave/cari-native-${{ matrix.target }} \
-            publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            publish --access public --no-git-checks --provenance
 
   # ─── Publish the wrapper package once all platform builds succeed ─────────
   publish-wrapper:
     name: Publish @intentweave/cari-native wrapper
     runs-on: ubuntu-latest
     needs: build-native
+    permissions:
+      id-token: write  # Required for npm OIDC (Trusted Publishers)
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -110,6 +115,4 @@ jobs:
 
       - name: Publish @intentweave/cari-native
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: pnpm --filter @intentweave/cari-native publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @intentweave/cari-native publish --access public --no-git-checks --provenance
