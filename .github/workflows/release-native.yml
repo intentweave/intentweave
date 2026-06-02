@@ -84,26 +84,17 @@ jobs:
       - name: Verify binary runs
         run: packages/cari-native-${{ matrix.target }}/bin/cari-build --version
 
-      - name: Check if target version already published
-        id: check-target-published
+      - name: Publish @intentweave/cari-native-${{ matrix.target }}
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/cari-native-${{ matrix.target }}
         run: |
-          PKG_NAME="$(node -p "require('./package.json').name")"
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          if npm view "${PKG_NAME}@${PKG_VERSION}" version >/dev/null 2>&1; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "${PKG}@${VER}" version >/dev/null 2>&1; then
+            echo "Already published ${PKG}@${VER} — skipping"
           else
-            echo "published=false" >> "$GITHUB_OUTPUT"
+            npm publish --access public --provenance
           fi
-
-      - name: Publish @intentweave/cari-native-${{ matrix.target }}
-        if: ${{ github.event.inputs.dry_run != 'true' && steps.check-target-published.outputs.published != 'true' }}
-        working-directory: packages/cari-native-${{ matrix.target }}
-        run: npm publish --access public --provenance
-
-      - name: Skip publish (already on npm)
-        if: ${{ github.event.inputs.dry_run != 'true' && steps.check-target-published.outputs.published == 'true' }}
-        run: echo "Skipping publish for ${{ matrix.target }}: version already exists on npm"
 
   # ─── Publish the wrapper package once all platform builds succeed ─────────
   publish-wrapper:
@@ -128,23 +119,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Check if wrapper version already published
-        id: check-wrapper-published
+      - name: Publish @intentweave/cari-native
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/cari-native
         run: |
-          PKG_NAME="$(node -p "require('./package.json').name")"
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          if npm view "${PKG_NAME}@${PKG_VERSION}" version >/dev/null 2>&1; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "${PKG}@${VER}" version >/dev/null 2>&1; then
+            echo "Already published ${PKG}@${VER} — skipping"
           else
-            echo "published=false" >> "$GITHUB_OUTPUT"
+            npm publish --access public --provenance
           fi
-
-      - name: Publish @intentweave/cari-native
-        if: ${{ github.event.inputs.dry_run != 'true' && steps.check-wrapper-published.outputs.published != 'true' }}
-        working-directory: packages/cari-native
-        run: npm publish --access public --provenance
-
-      - name: Skip wrapper publish (already on npm)
-        if: ${{ github.event.inputs.dry_run != 'true' && steps.check-wrapper-published.outputs.published == 'true' }}
-        run: echo "Skipping wrapper publish: version already exists on npm"
