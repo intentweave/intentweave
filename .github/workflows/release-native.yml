@@ -8,9 +8,8 @@ name: Release Native Binary
 #   - GitHub Release published (automatic on tag v*)
 #   - Manual workflow_dispatch (for re-publishing or dry runs)
 #
-# Authentication: uses npm Trusted Publishers (OIDC) — no NPM_TOKEN secret
-# needed. Configure the trusted publisher on npmjs.com for each package,
-# pointing at this repository + workflow file.
+# Authentication: requires NPM_TOKEN repo secret (classic automation token).
+# Set it at: GitHub repo → Settings → Secrets → Actions → NPM_TOKEN.
 #
 # Supported targets (Windows not included — add win32-x64 / windows-latest
 # to the matrix below if Windows user demand warrants it):
@@ -70,6 +69,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          registry-url: https://registry.npmjs.org
 
       # --no-frozen-lockfile: platform packages whose os/cpu don't match the
       # current runner are skipped by pnpm and won't be in the lockfile for
@@ -86,6 +86,8 @@ jobs:
       - name: Publish @intentweave/cari-native-${{ matrix.target }}
         if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/cari-native-${{ matrix.target }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           PKG=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
@@ -113,6 +115,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -120,6 +123,8 @@ jobs:
       - name: Publish @intentweave/cari-native
         if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/cari-native
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           PKG=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
