@@ -70,7 +70,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       # --no-frozen-lockfile: platform packages whose os/cpu don't match the
       # current runner are skipped by pnpm and won't be in the lockfile for
@@ -114,7 +113,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
