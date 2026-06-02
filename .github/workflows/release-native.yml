@@ -47,7 +47,7 @@ jobs:
           - target: darwin-arm64
             runner: macos-latest       # GitHub: macos-14 (Apple Silicon)
           - target: darwin-x64
-            runner: macos-13           # GitHub: macos-13 (Intel x64)
+            runner: macos-15           # GitHub: macos-13 (Intel x64)
           - target: linux-x64
             runner: ubuntu-latest      # GitHub: ubuntu-24.04 (x86_64)
           - target: linux-arm64
