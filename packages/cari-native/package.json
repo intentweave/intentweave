@@ -26,7 +26,6 @@
   },
   "optionalDependencies": {
     "@intentweave/cari-native-darwin-arm64": "workspace:*",
-    "@intentweave/cari-native-darwin-x64": "workspace:*",
     "@intentweave/cari-native-linux-x64": "workspace:*",
     "@intentweave/cari-native-linux-arm64": "workspace:*",
     "@intentweave/cari-native-win32-x64": "workspace:*"
