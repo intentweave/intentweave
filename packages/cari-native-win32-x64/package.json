@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/cari-native-win32-x64",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "cari-build native binary — Windows x64",
   "license": "Apache-2.0",
   "cpu": [

@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/swift-parser",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Tree-sitter based AST extractor for Swift source files",
   "type": "module",
   "main": "./dist/index.js",
