@@ -8,7 +8,6 @@
   "references": [
     { "path": "../core" },
     { "path": "../analyzer" },
-    { "path": "../profiles" }
   ],
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]

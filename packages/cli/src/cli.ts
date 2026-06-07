@@ -35,40 +35,17 @@ process.stderr.on("error", (err: NodeJS.ErrnoException) => {
 import { Command } from "commander";
 import { createRequire } from "node:module";
 import { getPluginRegistry } from "@intentweave/core";
-import { aggregateCommand } from "./commands/aggregate.js";
-import { analyzeCommand } from "./commands/analyze.js";
-import { bundleCommand } from "./commands/bundle.js";
-import { buildCommand } from "./commands/buildKwg.js";
-import { codeCommand } from "./commands/code.js";
-import { contextCommand } from "./commands/context.js";
 import { docHealthCommand } from "./commands/doc-health.js";
-import { intentCommand } from "./commands/intent.js";
 import { driftCommand } from "./commands/drift.js";
-import { embedCommand } from "./commands/embed.js";
-import { evalCommand } from "./commands/eval.js";
-import { evidenceCommand } from "./commands/evidence.js";
 import { hookCommand } from "./commands/hook.js";
-import { impactCommand } from "./commands/impact.js";
-import { importCommand } from "./commands/import.js";
 import { indexCommand } from "./commands/indexBuild.js";
 import { initCommand } from "./commands/init.js";
-import { linkCommand } from "./commands/link.js";
+import { intentCommand } from "./commands/intent.js";
 import { mcpCommand } from "./commands/mcp.js";
-import { openCommand } from "./commands/open.js";
-import { persistCommand } from "./commands/persist.js";
 import { pluginCommand } from "./commands/plugin.js";
-import { queryCommand } from "./commands/query.js";
 import { reportCommand, explainCommand } from "./commands/report.js";
-import { roleCommand } from "./commands/role.js";
-import { runCommand } from "./commands/run.js";
 import { statusCommand } from "./commands/status.js";
-import { triageCommand } from "./commands/triage.js";
-import { validateCommand } from "./commands/validate.js";
 import { verifyCommand } from "./commands/verify.js";
-import { vizCommand } from "./commands/viz.js";
-import { watchCommand } from "./commands/watch.js";
-import { weaveCommand } from "./commands/weave.js";
-import { xlinkCommand } from "./commands/xlink.js";
 import { CLI_NAME, PRODUCT_NAME } from "./constants.js";
 
 const require = createRequire(import.meta.url);
@@ -106,41 +83,18 @@ program
   .version(version);
 
 // Register commands (alphabetical order)
-program.addCommand(aggregateCommand);
-program.addCommand(analyzeCommand);
-program.addCommand(buildCommand);
-program.addCommand(bundleCommand);
-program.addCommand(codeCommand);
-program.addCommand(contextCommand);
 program.addCommand(docHealthCommand);
 program.addCommand(driftCommand);
-program.addCommand(intentCommand);
-program.addCommand(embedCommand);
-program.addCommand(evalCommand);
-program.addCommand(evidenceCommand);
 program.addCommand(explainCommand);
 program.addCommand(hookCommand);
-program.addCommand(impactCommand);
-program.addCommand(importCommand);
 program.addCommand(indexCommand);
 program.addCommand(initCommand);
-program.addCommand(linkCommand);
+program.addCommand(intentCommand);
 program.addCommand(mcpCommand);
-program.addCommand(openCommand);
-program.addCommand(persistCommand);
 program.addCommand(pluginCommand);
-program.addCommand(queryCommand);
 program.addCommand(reportCommand);
-program.addCommand(roleCommand);
-program.addCommand(runCommand);
 program.addCommand(statusCommand);
-program.addCommand(triageCommand);
-program.addCommand(validateCommand);
 program.addCommand(verifyCommand);
-program.addCommand(vizCommand);
-program.addCommand(watchCommand);
-program.addCommand(weaveCommand);
-program.addCommand(xlinkCommand);
 
 // ─── Plugin discovery ────────────────────────────────────────────────────────
 // Auto-discover installed @intentweave/plugin-* packages and register their

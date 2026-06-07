@@ -21,11 +21,7 @@ import type {
   ArtifactMapping,
 } from "../pipeline/context.js";
 import { DEFAULT_PROFILE } from "../pipeline/context.js";
-import {
-  loadProfilePack,
-  type ProfilePack,
-  type LoadPackOptions,
-} from "@intentweave/profiles";
+// Profile pack loading removed (packages/profiles deleted)
 
 // =============================================================================
 // Built-in Profiles
@@ -131,87 +127,10 @@ const BUILTIN_PROFILES: Map<string, Profile> = new Map([
 /**
  * Convert a ProfilePack (YAML-loaded) to the pipeline Profile interface
  */
-export function profilePackToProfile(pack: ProfilePack): Profile {
-  // Convert kind definitions to string array
-  const kinds = pack.kinds.map((k: { id: string }) => k.id);
-
-  // Extract predicates from shapes
-  const predicateSet = new Set<string>();
-  for (const shape of pack.shapes) {
-    for (const pred of shape.predicates) {
-      predicateSet.add(pred.name);
-    }
-  }
-  const predicates = Array.from(predicateSet);
-
-  // Convert shape definitions to ShapeRule format
-  const shapes: ShapeRule[] = [];
-  for (const shape of pack.shapes) {
-    for (const pred of shape.predicates) {
-      // Create shape rule for subject
-      shapes.push({
-        participatesIn: [pred.name],
-        position: "subject",
-        inferredKind: shape.subject,
-      });
-      // Create shape rules for targets
-      for (const target of pred.targets) {
-        shapes.push({
-          participatesIn: [pred.name],
-          position: "object",
-          inferredKind: target,
-        });
-      }
-    }
-  }
-
-  // Convert linking rules to artifact mappings
-  const artifactMappings: ArtifactMapping[] = [];
-  const roleKinds = new Map<string, Set<string>>();
-
-  for (const rule of pack.linkingRules) {
-    // Add source role
-    if (!roleKinds.has(rule.sourceRole)) {
-      roleKinds.set(rule.sourceRole, new Set());
-    }
-    if (rule.sourceKind) {
-      roleKinds.get(rule.sourceRole)!.add(rule.sourceKind);
-    }
-
-    // Add target role
-    if (!roleKinds.has(rule.targetRole)) {
-      roleKinds.set(rule.targetRole, new Set());
-    }
-    if (rule.targetKind) {
-      roleKinds.get(rule.targetRole)!.add(rule.targetKind);
-    }
-  }
-
-  for (const [role, kindsSet] of roleKinds) {
-    artifactMappings.push({
-      role,
-      kinds: Array.from(kindsSet),
-    });
-  }
-
-  // If no artifact mappings from linking rules, use defaults
-  if (artifactMappings.length === 0) {
-    artifactMappings.push(
-      { role: "prompt", kinds: ["requirement", "concept", "question"] },
-      { role: "spec", kinds: ["requirement", "component", "role", "action"] },
-      { role: "impl", kinds: ["function", "class", "module", "interface"] },
-    );
-  }
-
-  return {
-    name: pack.meta.name,
-    version: pack.meta.version,
-    kinds,
-    predicates,
-    shapes,
-    artifactMappings,
-    confidenceThreshold: 0.5,
-  };
+/** @deprecated Profile packs removed. Use built-in profiles only. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function profilePackToProfile(_pack: any): Profile {
+  throw new Error("Profile packs are no longer supported.");
 }
 
 // =============================================================================
@@ -266,33 +185,10 @@ function getProfileSearchPaths(options: ProfileDiscoveryOptions): string[] {
  * Try to load a profile pack from a directory
  */
 async function tryLoadPackFromPath(
-  profileName: string,
-  basePath: string,
-): Promise<ProfilePack | null> {
-  // Try: basePath/<profileName>/v1/profile.yaml
-  const packPath = path.join(basePath, profileName, "v1");
-  const profileYamlPath = path.join(packPath, "profile.yaml");
-
-  if (fs.existsSync(profileYamlPath)) {
-    try {
-      return await loadProfilePack(packPath, { validate: true });
-    } catch {
-      return null;
-    }
-  }
-
-  // Try: basePath/<profileName>/profile.yaml
-  const altPackPath = path.join(basePath, profileName);
-  const altProfileYamlPath = path.join(altPackPath, "profile.yaml");
-
-  if (fs.existsSync(altProfileYamlPath)) {
-    try {
-      return await loadProfilePack(altPackPath, { validate: true });
-    } catch {
-      return null;
-    }
-  }
-
+  _profileName: string,
+  _basePath: string,
+): Promise<null> {
+  // Profile packs (external YAML) removed — only built-in profiles supported.
   return null;
 }
 
@@ -430,11 +326,8 @@ export async function loadProfileAsync(
 
     const pack = await tryLoadPackFromPath(name, basePath);
     if (pack) {
-      return {
-        profile: profilePackToProfile(pack),
-        source: "package",
-        path: pack.packPath,
-      };
+      // Profile packs removed; this branch is unreachable.
+      break;
     }
   }
 

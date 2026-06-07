@@ -4,49 +4,20 @@
 /**
  * @intentweave/analyzer
  *
- * Analysis engine for IntentWeave knowledge extraction.
- *
- * Two-Layer Provider Design:
- * - LLM Providers: Low-level model transport (OpenAI, Mock, Ollama)
- * - Extraction Providers: RX-stage service (uses LLMProvider)
- *
- * Pipeline Stages:
- * - Per-artifact: IN → RX → CX → MX → PX
- * - Per-run (AGG): LX, Coverage, Validation
+ * CARI pipeline stages: AX (AST extraction), KWG (keyword graph), TCG (temporal change graph).
  */
 
-// Providers (two-layer design)
-export * from "./providers/index.js";
-
-// Pipeline stages (per-artifact)
+// Pipeline stages (AX, IN, REF)
 export * from "./stages/index.js";
 
-// Aggregate stages (per-run)
-export * from "./agg/index.js";
-
-// MX (Materialization) utilities
-export * from "./mx/index.js";
-
-// Transition extraction
-export * from "./transitions/index.js";
-
-// Entity extractors (legacy)
+// Entity extractors
 export * from "./extractors/index.js";
 
 // Storage abstractions
 export * from "./stores/index.js";
 
-// Pipeline orchestration
-export * from "./pipeline/index.js";
-
-// Incremental cache
-export * from "./cache/index.js";
-
-// Analysis orchestration
-export * from "./analyzer.js";
-
-// KWG (Keyword Graph) — Phase A evidence graph pipeline
+// KWG (Keyword Graph) — KWX + COX evidence pipeline
 export * from "./kwg/index.js";
 
-// TCG (Temporal Change Graph) — Phase B temporal signals pipeline
+// TCG (Temporal Change Graph) — git co-changes, hotspots, ownership
 export * from "./tcg/index.js";

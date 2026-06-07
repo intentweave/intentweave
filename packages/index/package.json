@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/index",
   "version": "0.15.1",
-  "description": "Code-aware retrieval index — SQLite-based index for agents and CI",
+  "description": "Code-aware retrieval index \u2014 SQLite-based index for agents and CI",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,10 +28,10 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@intentweave/cypher-lite": "workspace:*",
     "@viz-js/viz": "^3.25.0",
     "better-sqlite3": "^11.7.0",
-    "minimatch": "^10.0.1"
+    "minimatch": "^10.0.1",
+    "@intentweave/cypher-lite": "workspace:*"
   },
   "peerDependencies": {
     "@intentweave/analyzer": "workspace:*",
@@ -46,7 +46,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Code-aware retrieval index — lightweight SQLite backend for agents and CI"
+    "description": "Code-aware retrieval index \u2014 lightweight SQLite backend for agents and CI"
   },
   "license": "Apache-2.0",
   "repository": {

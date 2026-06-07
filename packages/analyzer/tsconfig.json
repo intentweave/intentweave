@@ -7,7 +7,6 @@
   },
   "references": [
     { "path": "../core" },
-    { "path": "../profiles" },
     { "path": "../ast-extractor" }
   ],
   "include": ["src/**/*.ts"],
