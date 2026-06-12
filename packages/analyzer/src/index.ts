@@ -21,3 +21,6 @@ export * from "./kwg/index.js";
 
 // TCG (Temporal Change Graph) — git co-changes, hotspots, ownership
 export * from "./tcg/index.js";
+
+// Pipeline context types + loggers
+export * from "./pipeline/context.js";

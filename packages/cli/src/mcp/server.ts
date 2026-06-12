@@ -68,15 +68,6 @@ import {
   type FormatOptions,
 } from "../context/index.js";
 import {
-  analyzeImpact,
-  formatImpactMarkdown,
-  type ImpactOptions,
-} from "../impact/index.js";
-import {
-  analyzeDocHealth,
-  formatDocHealthMarkdown,
-  formatDocHealthForAgent,
-  type DocHealthOptions,
   preflightDocHealth,
   formatPreflightForAgent,
 } from "../doc-health/index.js";
@@ -360,45 +351,18 @@ async function toolDocHealth(args: {
   files?: string[];
   lite?: boolean;
 }): Promise<string> {
-  // Lightweight mode: no Neo4j, no LLM — keyword-only
-  if (args.lite) {
-    const cwd = process.cwd();
-    const targets = args.files && args.files.length > 0 ? args.files : [cwd];
-    const result = await preflightDocHealth({ files: targets, cwd });
-    return formatPreflightForAgent(result);
-  }
-
-  // Full mode: requires Neo4j
-  const runner = createGraphRunner();
-
-  const opts: DocHealthOptions = {
-    runner,
-    sessionId: args.session_id,
-    files: args.files && args.files.length > 0 ? args.files : undefined,
-    minRelCount: 2,
-    cwd: process.cwd(),
-  };
-
-  const result = await analyzeDocHealth(opts);
-  return formatDocHealthForAgent(result);
+  const cwd = process.cwd();
+  const targets = args.files && args.files.length > 0 ? args.files : [cwd];
+  const result = await preflightDocHealth({ files: targets, cwd });
+  return formatPreflightForAgent(result);
 }
 
-async function toolImpact(args: {
+async function toolImpact(_args: {
   files: string[];
   session_id: string;
   hops: number;
 }): Promise<string> {
-  const runner = createGraphRunner();
-
-  const impactOpts: ImpactOptions = {
-    runner,
-    sessionId: args.session_id,
-    hops: args.hops,
-    limit: 100,
-  };
-
-  const result = await analyzeImpact(args.files, impactOpts);
-  return formatImpactMarkdown(result);
+  return "Impact analysis via Neo4j is not available in this build. Use `cari_check` or `cari_connections` for CARI-based impact analysis.";
 }
 
 // =============================================================================
@@ -3783,120 +3747,20 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
           return { content: [{ type: "text", text: lines.join("\n") }] };
         }
 
-        // Actual enrichment (dryRun=false)
-        const { writeKgResults, bridgeKgEntities } =
-          await import("@intentweave/index");
-        const { runInStage, runFxStage, runKxStage, NoopLogger } =
-          await import("@intentweave/analyzer");
-        const { OpenAILLMProvider } = await import("@intentweave/analyzer/llm");
-        const { sumTokenUsage, zeroTokenUsage } =
-          await import("@intentweave/core");
-        const fsSync = await import("node:fs");
-
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "OPENAI_API_KEY required for enrichment. Set the environment variable.",
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const llmProvider = new OpenAILLMProvider({
-          apiKey,
-          model: process.env.IW_LLM_MODEL ?? "gpt-4o-mini",
-        });
-
-        const workspaceRoot = process.cwd();
-        const kgInputs: any[] = [];
-        let totalTokenUsage = zeroTokenUsage();
-
-        for (const candidate of selected) {
-          const absPath = path.resolve(workspaceRoot, candidate.filePath);
-          if (!fsSync.existsSync(absPath)) continue;
-
-          const content = fsSync.readFileSync(absPath, "utf-8");
-          const artifactId = candidate.filePath
-            .replace(/[/\\]/g, ".")
-            .replace(/\.[^.]+$/, "");
-
-          const inResult = await runInStage(
-            {
-              artifactId,
-              filePath: candidate.filePath,
-              content,
-            },
-            { logger: new NoopLogger() } as any,
-          );
-
-          const fxOutput = await runFxStage(
-            {
-              artifactId,
-              filePath: candidate.filePath,
-              chunks: inResult.chunks,
-            },
-            { llmProvider, concurrency: 3 },
-          );
-
-          const kxOutput = await runKxStage(
-            { artifactId, fxOutput },
-            llmProvider,
-          );
-
-          if (fxOutput.tokenUsage) {
-            totalTokenUsage = sumTokenUsage(
-              totalTokenUsage,
-              fxOutput.tokenUsage,
-            );
-          }
-          if (kxOutput.tokenUsage) {
-            totalTokenUsage = sumTokenUsage(
-              totalTokenUsage,
-              kxOutput.tokenUsage,
-            );
-          }
-
-          kgInputs.push({
-            sourceFile: candidate.filePath,
-            artifactId,
-            canonEntities: kxOutput.canonEntities,
-            canonTriples: kxOutput.canonTriples,
-            rawTriples: fxOutput.triples.map((t: any) => ({
-              subject: t.subject,
-              predicate: t.predicate,
-              object: t.object,
-              subjectKind: t.subjectKind,
-              objectKind: t.objectKind,
-              confidence: t.confidence,
-            })),
-          });
-        }
-
-        const writeResult = writeKgResults(resolveIndexDb(), kgInputs);
-        const bridgeResult = bridgeKgEntities(resolveIndexDb());
-
-        const lines: string[] = [
-          "## Enrichment Complete",
-          "",
-          `- **${kgInputs.length}** files enriched`,
-          `- **${writeResult.entityCount}** entities written`,
-          `- **${writeResult.relationshipCount}** relationships written`,
-          `- **${bridgeResult.entitiesWritten}** entities bridged into CARI`,
-          "",
-        ];
-
-        return { content: [{ type: "text", text: lines.join("\n") }] };
+        // KG enrichment (dryRun=false) is not available in this build.
+        return {
+          content: [{
+            type: "text",
+            text: "LLM enrichment (dryRun=false) is not available in this build. Use dryRun=true (default) to see enrichment candidates ranked by CARI signals.",
+          }],
+          isError: true,
+        };
       } catch (err: any) {
         const msg = handleCariError(err);
         return { content: [{ type: "text", text: msg }], isError: true };
       }
     },
   );
-
   // ── Tool: cari_verify ───────────────────────────────────────────────
   server.tool(
     "cari_verify",

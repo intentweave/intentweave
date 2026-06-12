@@ -16,11 +16,6 @@ import type {
   ContextBundle,
 } from "../context/contextBuilder.js";
 import type {
-  ImpactResult,
-  ImpactEntity,
-  ImpactRelationship,
-} from "../impact/impactAnalyzer.js";
-import type {
   CrossLink,
   XLinkResult,
   CodeRef,
@@ -159,56 +154,6 @@ export function createContextBundle(
       totalRelationships: 0,
       entityTypes: {},
       predicateCounts: {},
-    },
-    ...overrides,
-  };
-}
-
-export function createImpactEntity(
-  overrides: Partial<ImpactEntity> = {},
-): ImpactEntity {
-  return {
-    name: "Test Entity",
-    type: "concept",
-    confidence: 0.95,
-    via: "direct",
-    depth: 0,
-    ...overrides,
-  };
-}
-
-export function createImpactRelationship(
-  overrides: Partial<ImpactRelationship> = {},
-): ImpactRelationship {
-  return {
-    sourceName: "Source",
-    sourceType: "concept",
-    predicate: "DEPENDS_ON",
-    targetName: "Target",
-    targetType: "technology",
-    confidence: 0.9,
-    ...overrides,
-  };
-}
-
-export function createImpactResult(
-  overrides: Partial<ImpactResult> = {},
-): ImpactResult {
-  return {
-    files: ["test.ts"],
-    sessionId: "test-session",
-    directEntities: [],
-    rippleEntities: [],
-    relationships: [],
-    decisions: [],
-    risks: [],
-    stats: {
-      filesAnalyzed: 1,
-      directCount: 0,
-      rippleCount: 0,
-      totalRelationships: 0,
-      decisionCount: 0,
-      riskCount: 0,
     },
     ...overrides,
   };

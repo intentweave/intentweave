@@ -23,7 +23,28 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { scanKeywordNames as indexKeywordsInCodebase } from "./keywordScanner.js";
-import { classifyOrphanedEntity } from "./docHealthAnalyzer.js";
+
+// =============================================================================
+// Inline helpers (originally from docHealthAnalyzer.ts)
+// =============================================================================
+
+const PLANNING_DOC_PATTERNS = [
+  /roadmap/i, /plan/i, /implementation[-_]plan/i, /backlog/i, /todo/i,
+  /rfc/i, /proposal/i, /adr/i, /future/i, /next[-_]?steps/i, /strategy/i,
+];
+const PLANNED_ENTITY_TYPES = new Set(["phase", "requirement", "feature", "question", "tradeoff", "risk"]);
+const CONCRETE_ENTITY_TYPES = new Set(["technology", "component", "resource"]);
+
+function classifyOrphanedEntity(entityType: string, sourceDocPath: string): "stale" | "planned" | "unknown" {
+  const isPlannedType = PLANNED_ENTITY_TYPES.has(entityType.toLowerCase());
+  const isConcreteType = CONCRETE_ENTITY_TYPES.has(entityType.toLowerCase());
+  const isFromPlanningDoc = PLANNING_DOC_PATTERNS.some((re) => re.test(sourceDocPath));
+  if (isFromPlanningDoc && isPlannedType) return "planned";
+  if (isFromPlanningDoc) return "planned";
+  if (isConcreteType && !isFromPlanningDoc) return "stale";
+  if (isPlannedType) return "planned";
+  return "unknown";
+}
 
 // =============================================================================
 // Types

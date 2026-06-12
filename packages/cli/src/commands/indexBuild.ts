@@ -70,9 +70,6 @@ import {
   isExcluded,
 } from "@intentweave/index";
 
-// Enrichment subcommand (11.8)
-import { indexEnrichSubcommand } from "./indexEnrich.js";
-
 // Rules extract subcommand (13.4)
 import { indexRulesExtractSubcommand } from "./indexRulesExtract.js";
 
@@ -7720,7 +7717,6 @@ export const indexCommand = new Command("index")
   .addCommand(indexFocusSubcommand)
   .addCommand(indexImpactSubcommand)
   .addCommand(indexExportSubcommand)
-  .addCommand(indexEnrichSubcommand)
   .addCommand(indexRulesExtractSubcommand)
   .addCommand(indexScanDiagramsSubcommand)
   .addCommand(indexCallsSubcommand)

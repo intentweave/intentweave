@@ -15,6 +15,21 @@ export interface PipelineLogger {
   error(msg: string, ...args: unknown[]): void;
 }
 
+export class ConsoleLogger implements PipelineLogger {
+  constructor(private readonly prefix: string = "") {}
+  debug(msg: string, ...args: unknown[]) { console.debug(this.prefix, msg, ...args); }
+  info(msg: string, ...args: unknown[]) { console.info(this.prefix, msg, ...args); }
+  warn(msg: string, ...args: unknown[]) { console.warn(this.prefix, msg, ...args); }
+  error(msg: string, ...args: unknown[]) { console.error(this.prefix, msg, ...args); }
+}
+
+export class NoopLogger implements PipelineLogger {
+  debug() {}
+  info() {}
+  warn() {}
+  error() {}
+}
+
 // ── Profile ───────────────────────────────────────────────────────────────────
 
 export interface ShapeRule {
