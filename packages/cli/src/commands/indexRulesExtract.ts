@@ -114,15 +114,19 @@ Output ONLY a single JSON object — no explanation, no markdown fences. The sch
       "id": "kebab-case-rule-id",
       "description": "Human-readable constraint description",
       "adr": "ADR-NNN",
-      "severity": "high" | "medium" | "low",
+      "domain": "structural",          // structural | behavioral | documentary (default: structural)
+      "severity": "high",              // critical | high | medium | low
+      "mode": "error",                 // error: CI exit code; warn: surfaced in reports only
       "forbidden": [
         {
-          "type": "property_access" | "call" | "symbol_name" | "import_pattern",
-          "chain": "**.some.property",           // for property_access — glob pattern
+          "type": "property_access" | "call" | "symbol_name" | "import_pattern" | "variable_assignment",
+          "chain": "**.some.property",           // for property_access — glob pattern, ** crosses segments
           "callee": "functionName|otherFn",      // for call — pipe-separated names or regex
-          "pattern": "regex-or-glob",            // for symbol_name (regex) or import_pattern (glob)
-          "in": "src/some/layer/**",             // optional — restrict to these files (glob)
-          "except": "src/some/layer/tests/**"    // optional — exclude from scope (glob)
+          "pattern": "regex-or-glob",            // for symbol_name/variable_assignment (regex) or import_pattern (glob)
+          "in": "src/some/layer/**",             // restrict to files matching this glob
+          "except": "src/some/layer/tests/**",   // exclude from scope (glob)
+          "scope": "exported",                   // for symbol_name: "exported" (default) | "top-level" | "any"
+          "context_access": "**.resource.path"   // for call: only flag when co-located with a matching property access
         }
       ]
     }
@@ -130,22 +134,34 @@ Output ONLY a single JSON object — no explanation, no markdown fences. The sch
 }
 
 Rule type guidance:
-- "property_access": Use when the ADR forbids reading/writing a property chain (e.g. do not read entity.source.path directly)
-- "call": Use when the ADR forbids calling specific functions by name
-- "symbol_name": Use when the ADR forbids declaring symbols matching a naming pattern
-- "import_pattern": Use when the ADR forbids importing from a specific package or path pattern
+- "property_access": Use when the ADR forbids reading/writing a property chain (e.g. do not read entity.source.path directly). Use glob "**" for any leading segments.
+- "call": Use when the ADR forbids calling specific functions by name. Pipe-separate alternatives: "match|exec". Use "context_access" to narrow to only calls on forbidden data (e.g. regex on internal fields).
+- "symbol_name": Use when the ADR forbids declaring symbols matching a naming pattern (regex). Use "scope" to restrict to "exported" symbols, "top-level" declarations, or "any".
+- "import_pattern": Use when the ADR forbids importing from a specific package or path pattern (glob).
+- "variable_assignment": Use when the ADR forbids assigning to or creating variables matching a naming pattern (regex), e.g. inline lookup maps built in the wrong layer.
+
+Domain guidance:
+- "structural": Default. Import-graph and AST-level code pattern checks. These are deterministic and CI-blocking by default.
+- "behavioral": Mermaid-derived call-flow checks. Use mode "warn" unless the calls table has been built.
+- "documentary": Documentation coverage and freshness. Use mode "warn".
+
+Mode guidance:
+- "error": Violation causes CI exit code 1. Use for high/critical severity structural rules.
+- "warn": Violation is surfaced in the Insights Book and reports but does not block CI. Use for behavioral and documentary rules, and for medium/low structural rules during adoption.
 
 Severity guidelines:
-- "high"  : Core architectural boundary; violating it would cause errors or security issues
-- "medium": Technical debt or cross-layer inconsistency
-- "low"   : Convention or style guideline
+- "critical": Security boundary or data integrity; must never be violated
+- "high"    : Core architectural boundary; violating it would cause errors or regressions
+- "medium"  : Technical debt or cross-layer inconsistency
+- "low"     : Convention or style guideline
 ${allowedGuidance}${layerHintsGuidance}
 Rules to follow:
 1. Only emit rules for constraints that are clearly and explicitly stated in the ADR.
 2. Do not invent constraints that are not written down.
-3. Each forbidden entry should target the smallest possible scope (use "in:" when the ADR specifies a layer).
+3. Each forbidden entry should target the smallest possible scope (use "in" when the ADR specifies a layer).
 4. Infer reasonable file-scope globs from the ADR context (e.g. "apps/ui/**" for UI-specific rules).
-5. If no machine-enforceable constraints are found, output: {"version": 1, "rules": []}.`;
+5. Default "mode" to "error" for structural rules at severity high/critical, and "warn" for medium/low or any behavioral/documentary rule.
+6. If no machine-enforceable constraints are found, output: {"version": 1, "rules": []}.`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -175,7 +191,7 @@ function createProvider(
 /** Extract JSON from LLM response, tolerating markdown code fences. */
 function extractJson(text: string): string {
   // Strip markdown code fences if present
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const fenceMatch = text.match(new RegExp("```(?:json)?\\s*([\\s\\S]*?)\\s*```"));
   if (fenceMatch) return fenceMatch[1];
   // Find outermost { ... } block
   const start = text.indexOf("{");
@@ -234,10 +250,21 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
         process.exitCode = 1;
         return;
       }
-      contents.push({
-        name: path.basename(f),
-        text: fs.readFileSync(absPath, "utf-8"),
-      });
+      const stat = fs.statSync(absPath);
+      if (stat.isDirectory()) {
+        const dirFiles = fs.readdirSync(absPath)
+          .filter((n) => n.endsWith(".md"))
+          .sort()
+          .map((n) => path.join(absPath, n));
+        for (const fp of dirFiles) {
+          contents.push({ name: path.basename(fp), text: fs.readFileSync(fp, "utf-8") });
+        }
+      } else {
+        contents.push({
+          name: path.basename(f),
+          text: fs.readFileSync(absPath, "utf-8"),
+        });
+      }
     }
 
     console.log(
