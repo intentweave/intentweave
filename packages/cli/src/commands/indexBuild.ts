@@ -642,8 +642,17 @@ async function buildPrescriptiveReportData(
     rulesConfigPath?: string;
   },
 ) {
+  const t0 = performance.now();
+  const step = (label: string) => {
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+    process.stderr.write(`  [book] ${label} (${elapsed}s)\n`);
+  };
+
+  step("loading layers…");
   const layerConfig = await loadLayerConfigOrInfer(dbPath, opts.hierarchical);
+  step(`layers ready (${layerConfig.layers.length} layers)`);
   const layerCheckResult = layersCheck(dbPath, layerConfig);
+  step("layer check done");
 
   let rulesConfig: RulesConfig | undefined;
   let rulesYamlRaw: string | undefined;
@@ -663,6 +672,7 @@ async function buildPrescriptiveReportData(
     }
   }
 
+  step("running rules check…");
   const rulesResult = rulesConfig
     ? rulesCheck(dbPath, rulesConfig, {
         severity: "low",
@@ -1235,6 +1245,7 @@ async function buildPrescriptiveReportData(
     : undefined;
 
   try {
+    step("hotspots…");
     // ── hotspot overlay ──
     const hotspotResult = hotspotPriority(dbPath);
     const maxScore = Math.max(
@@ -1254,6 +1265,7 @@ async function buildPrescriptiveReportData(
       });
     }
 
+    step("hubs…");
     // ── hubs overlay ──
     const hubsResult = hubs(dbPath);
     const maxDegree = Math.max(...hubsResult.hubs.map((h) => h.totalDegree), 1);
@@ -1265,8 +1277,9 @@ async function buildPrescriptiveReportData(
         hubsByName.set(h.filePath, { degree: h.totalDegree / maxDegree });
     }
 
+    step("communities (may be slow on large repos)…");
     // ── communities overlay ──
-    const commResult = communities(dbPath);
+    const commResult = communities(dbPath, { maxSize: 50 });
     // Assign a stable palette index per community id
     const communityById = new Map<number, string>();
     commResult.communities.forEach((c) => communityById.set(c.id, c.label));
@@ -1363,9 +1376,12 @@ async function buildPrescriptiveReportData(
       actualImports,
     };
 
+    step("overlay done");
     // ── §18 Analytics chapters (best-effort) ──────────────────────────────
     try {
+      step("clones…");
       const clonesResult = clones(dbPath);
+      step("structural clones…");
       const structResult = structuralClones(dbPath);
       const circResult = circularImports(dbPath);
       const unusedResult = unusedExports(dbPath);
@@ -1395,8 +1411,11 @@ async function buildPrescriptiveReportData(
     }
 
     try {
+      step("dep depth…");
       const depResult = dependencyDepth(dbPath);
+      step("surprises…");
       const surprisesResult = surprises(dbPath);
+      step("todos…");
       const todosResult = todos(dbPath);
       analyticsHotspots = {
         priorities: hotspotResult.priorities.map((p) => ({
@@ -1448,9 +1467,12 @@ async function buildPrescriptiveReportData(
     }
 
     try {
+      step("orphaned sections…");
       const orphanedResult = orphanedSections(dbPath);
+      step("doc completeness…");
       const docResult = docCompleteness(dbPath);
       const rationaleResult = rationale(dbPath);
+      step("terminology…");
       const termResult = terminologyInconsistency(dbPath);
       // Aggregate: how many exported symbols are covered by at least one doc?
       const AggDatabase = (await import("better-sqlite3")).default;
@@ -1513,6 +1535,7 @@ async function buildPrescriptiveReportData(
     }
 
     try {
+      step("living score…");
       const lsResult = livingScore(dbPath);
       analyticsLivingScore = {
         score: lsResult.score,
@@ -1543,6 +1566,7 @@ async function buildPrescriptiveReportData(
     }
 
     // ── Rule Coverage (19.6) ───────────────────────────────────────────────
+    step("rule coverage…");
     if (rulesConfig?.rules?.length) {
       try {
         const rcResult = ruleCoverage(dbPath, { rulesConfig });
@@ -1573,6 +1597,7 @@ async function buildPrescriptiveReportData(
     }
 
     // ── Test Coverage (19.8c) ──────────────────────────────────────────────
+    step("test coverage…");
     try {
       const tcResult = testCoverage(dbPath);
       analyticsTestCoverage = {
@@ -1593,6 +1618,7 @@ async function buildPrescriptiveReportData(
     }
 
     // ── Call Graph (19.1) ───────────────────────────────────────────────────
+    step("call graph…");
     try {
       const callsResult = calls(dbPath, { limit: 5000 });
       if (callsResult.total > 0 && callsResult.edges.length > 0) {
@@ -1677,6 +1703,7 @@ async function buildPrescriptiveReportData(
     }
 
     // ── 18.3 coverage chapter ──
+    step("coverage chapter…");
     const coverageResult = moduleCoverage(dbPath);
     // Build: module path prefix → coverage data
     const moduleCovMap = new Map<
@@ -1747,6 +1774,7 @@ async function buildPrescriptiveReportData(
   }
 
   // ── Documentation Map: doc→code interconnections via CARI annotations ──
+  step("doc map…");
   try {
     const DocDatabase = (await import("better-sqlite3")).default;
     const docDb = new DocDatabase(dbPath, { readonly: true });
@@ -1756,13 +1784,16 @@ async function buildPrescriptiveReportData(
         docDb.prepare("SELECT COUNT(*) as cnt FROM annotations").get() as any
       ).cnt as number;
 
-      // Per-doc stats: unique symbols and source files
+      step(`doc map: ${totalAnnotations.toLocaleString()} annotations…`);
+
+      // Per-doc stats: top 300 most-annotated docs — caps file-read volume
       const docStats = docDb
         .prepare(
           `SELECT a.doc_path, COUNT(DISTINCT s.id) as unique_symbols, COUNT(DISTINCT s.file_path) as source_files
            FROM annotations a JOIN symbols s ON a.symbol_id = s.id
            GROUP BY a.doc_path
-           ORDER BY unique_symbols DESC`,
+           ORDER BY unique_symbols DESC
+           LIMIT 300`,
         )
         .all() as Array<{
         doc_path: string;
@@ -1770,8 +1801,8 @@ async function buildPrescriptiveReportData(
         source_files: number;
       }>;
 
-      // Quality-filtered annotations for inline highlighting:
-      // include code-span, bold, and high-confidence identifier/dictionary annotations
+      // Quality-filtered annotations for inline highlighting.
+      // Cap at 50 k rows — enough to cover all docs in any repo.
       const highlightAnnRows = docDb
         .prepare(
           `SELECT a.doc_path, a.line, a.text, a.source, a.confidence,
@@ -1781,7 +1812,8 @@ async function buildPrescriptiveReportData(
            WHERE (a.source IN ('code-span', 'bold', 'heading')
                   OR (a.source = 'identifier' AND a.confidence >= 0.55)
                   OR (a.source = 'dictionary' AND a.confidence >= 0.85))
-           ORDER BY a.doc_path, a.line, a.confidence DESC`,
+           ORDER BY a.doc_path, a.line, a.confidence DESC
+           LIMIT 50000`,
         )
         .all() as Array<{
         doc_path: string;
@@ -1807,7 +1839,8 @@ async function buildPrescriptiveReportData(
           `SELECT a.doc_path, a.line, a.text, a.source
            FROM annotations a
            WHERE a.source = 'code-span' AND (a.symbol_id IS NULL OR a.symbol_id = '')
-             AND length(a.text) >= 3`,
+             AND length(a.text) >= 3
+           LIMIT 10000`,
         )
         .all() as Array<{
         doc_path: string;
@@ -1840,16 +1873,20 @@ async function buildPrescriptiveReportData(
         highlightsByDoc.set(row.doc_path, arr);
       }
 
-      // Summary annotations (deduplicated by symbol, for sidebar stats)
+      // Summary annotations (deduplicated by symbol, for sidebar stats).
+      // Use MIN aggregates instead of correlated subqueries — same O(N log N)
+      // pass, avoids O(N²) per-group subquery scans.
       const allAnnRows = docDb
         .prepare(
           `SELECT a.doc_path, s.name, s.kind, s.file_path, s.line, MAX(a.confidence) as confidence,
-                  (SELECT a2.line FROM annotations a2 WHERE a2.symbol_id = s.id AND a2.doc_path = a.doc_path ORDER BY a2.confidence DESC LIMIT 1) as best_line,
-                  (SELECT a2.text FROM annotations a2 WHERE a2.symbol_id = s.id AND a2.doc_path = a.doc_path ORDER BY a2.confidence DESC LIMIT 1) as best_text,
-                  (SELECT a2.source FROM annotations a2 WHERE a2.symbol_id = s.id AND a2.doc_path = a.doc_path ORDER BY a2.confidence DESC LIMIT 1) as best_source
+                  MIN(a.line) as best_line,
+                  MIN(a.text) as best_text,
+                  MIN(a.source) as best_source
            FROM annotations a JOIN symbols s ON a.symbol_id = s.id
+           WHERE a.confidence >= 0.5
            GROUP BY a.doc_path, s.id
-           ORDER BY a.doc_path, confidence DESC`,
+           ORDER BY a.doc_path, confidence DESC
+           LIMIT 30000`,
         )
         .all() as Array<{
         doc_path: string;
@@ -1984,6 +2021,7 @@ async function buildPrescriptiveReportData(
     /* best-effort */
   }
 
+  step("buildPrescriptiveReportData complete");
   return {
     meta: {
       generated: new Date().toISOString(),
@@ -6606,9 +6644,11 @@ const indexExportSubcommand = new Command("export")
             `${adrChapters.length} ADR chapter(s) · ` +
             `${data.meta.totalRuleViolations} violation(s)`,
         );
+        console.log("  [book] book data ready");
 
         // Also collect §10.1 arch report for the interactive D3 "Arch Graph" chapter.
         let archReportHtmlStr: string | undefined;
+        console.log("  [book] arch report…");
         try {
           const archData = archReport(dbPath, {});
           archReportHtmlStr = renderArchReportHtml(archData, {
@@ -6617,8 +6657,9 @@ const indexExportSubcommand = new Command("export")
         } catch {
           // Non-fatal — book still renders without the arch graph chapter.
         }
-
+        console.log("  [book] rendering html…");
         const html = renderInsightsBookHtml(data, archReportHtmlStr);
+        console.log("  [book] writing file…");
         const fsSync = await import("node:fs");
         fsSync.writeFileSync(outputPath, html, "utf-8");
         console.log(`\n✓ Written to ${outputPath}`);

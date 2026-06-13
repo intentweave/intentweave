@@ -27,7 +27,6 @@ import type {
 import { openIndex, buildImportGraph } from "./shared.js";
 import { verifyFromDb } from "./verify.js";
 import { consistencyFromDb } from "./consistency.js";
-import { reportFromDb } from "./report.js";
 import { layersInferFromDb } from "./layersInfer.js";
 import { layersCheckFromDb } from "./layersCheck.js";
 
@@ -60,18 +59,28 @@ export function livingScoreFromDb(
 ): LivingScoreResult {
   const minConfidence = params?.minConfidence ?? 0.5;
   const allowSkipLayer = params?.allowSkipLayer ?? false;
+  const t0 = Date.now();
+  const dim = (label: string) =>
+    process.stderr.write(
+      `    [living] ${label} (${((Date.now() - t0) / 1000).toFixed(1)}s)\n`,
+    );
 
   // ── Dimension 1: Spec coverage (12.1) ─────────────────────────────────────
+  dim("spec coverage…");
   const specCoverage = computeSpecCoverage(db, minConfidence);
 
   // ── Dimension 2: Constraint consistency (12.2) ────────────────────────────
+  dim("constraint consistency…");
   const constraintConsistency = computeConstraintConsistency(db, minConfidence);
 
   // ── Dimension 3: Documentation freshness ──────────────────────────────────
+  dim("doc freshness…");
   const docFreshness = computeDocFreshness(db);
 
   // ── Dimension 4: Architecture conformance ─────────────────────────────────
+  dim("arch conformance…");
   const archConformance = computeArchConformance(db, allowSkipLayer);
+  dim("done");
 
   // ── Composite score ────────────────────────────────────────────────────────
   const available = [
@@ -203,9 +212,39 @@ function computeDocFreshness(db: Database.Database): LivingScoreDimension {
     return unavailable("Doc Freshness", "No documentation files in index");
   }
 
-  const rpt = reportFromDb(db);
+  // Fast path: count annotations. If the table is very large the 4-way join
+  // inside computeStaleness becomes too slow for interactive scoring.
+  const annotationCount = (
+    db
+      .prepare(`SELECT COUNT(*) AS n FROM annotations WHERE confidence >= 0.5`)
+      .get() as { n: number }
+  ).n;
 
-  const staleDocs = rpt.staleness.staleDocCount;
+  if (annotationCount > 100_000) {
+    return unavailable(
+      "Doc Freshness",
+      `Annotation set too large (${annotationCount.toLocaleString()}) for inline freshness scoring — run \`iw index report\` separately`,
+    );
+  }
+
+  // Direct stale-doc count — avoids the full reportFromDb() overhead
+  // (which also runs hidden-coupling N-loop queries we don't need here).
+  const staleDocs = (
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT a.doc_path) AS cnt
+         FROM annotations a
+         JOIN symbols s ON s.id = a.symbol_id
+         JOIN files f_doc ON f_doc.path = a.doc_path
+         JOIN files f_code ON f_code.path = s.file_path
+         WHERE a.confidence >= 0.5
+           AND f_doc.last_modified IS NOT NULL
+           AND f_code.last_modified IS NOT NULL
+           AND f_code.last_modified > f_doc.last_modified`,
+      )
+      .get() as { cnt: number }
+  ).cnt;
+
   const freshDocs = Math.max(0, totalDocs - staleDocs);
   const score = Math.round((freshDocs / totalDocs) * 100);
 
@@ -223,17 +262,25 @@ function computeArchConformance(
   db: Database.Database,
   allowSkipLayer: boolean,
 ): LivingScoreDimension {
-  // Count resolved import edges (same graph layersCheck uses)
-  const { forward } = buildImportGraph(db);
-  let totalImports = 0;
-  for (const deps of forward.values()) {
-    totalImports += deps.size;
-  }
+  // Fast count check BEFORE loading the full graph — buildImportGraph is expensive
+  // on large codebases (50 k+ edges) because it loads and resolves every import row.
+  const { cnt: importCount } = db
+    .prepare(`SELECT COUNT(*) AS cnt FROM imports WHERE is_relative = 1`)
+    .get() as { cnt: number };
 
-  if (totalImports === 0) {
+  if (importCount === 0) {
     return unavailable(
       "Architecture Conformance",
       "No resolved import edges — run `iw index build` first",
+    );
+  }
+
+  // For very large import graphs this analysis is too slow for interactive use.
+  // Above ~20 k edges, skip here and run `iw index layers-check` separately.
+  if (importCount > 20_000) {
+    return unavailable(
+      "Architecture Conformance",
+      `Import graph too large (${importCount.toLocaleString()} edges) — run \`iw index layers-check\` separately`,
     );
   }
 
@@ -277,16 +324,17 @@ function computeArchConformance(
   });
 
   const violations = checkResult.totalViolations;
-  const clean = Math.max(0, totalImports - violations);
-  const score = Math.round((clean / totalImports) * 100);
+  const clean = Math.max(0, importCount - violations);
+  const score = Math.round((clean / importCount) * 100);
 
   const source = fs.existsSync(layersYamlPath) ? ".iw/layers.yaml" : "inferred";
   return {
     label: "Architecture Conformance",
     score,
     numerator: clean,
-    denominator: totalImports,
-    detail: `${violations} layer violation${violations !== 1 ? "s" : ""} across ${totalImports} import edges [${source}] (${checkResult.byType.reverse} reverse, ${checkResult.byType.skipLayer} skip-layer)`,
+    denominator: importCount,
+    detail: `${violations} layer violation${violations !== 1 ? "s" : ""} across ${importCount.toLocaleString()} import edges [${source}] (${checkResult.byType.reverse} reverse, ${checkResult.byType.skipLayer} skip-layer)`,
+
     available: true,
   };
 }
