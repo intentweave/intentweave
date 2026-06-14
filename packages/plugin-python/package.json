@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/plugin-python",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "Python language plugin for IntentWeave — AST extraction via tree-sitter-python",
   "type": "module",
   "main": "./dist/index.js",

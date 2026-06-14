@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/cari-native-linux-arm64",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "cari-build native binary — Linux ARM64",
   "license": "Apache-2.0",
   "cpu": [

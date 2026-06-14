@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/ast-extractor",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "Lightweight tree-sitter based AST extractor for TypeScript/JavaScript",
   "type": "module",
   "main": "./dist/index.js",
