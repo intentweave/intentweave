@@ -212,27 +212,19 @@ Two depth modes:
 - `--depth structured` (default) — headings, bold text, code spans only. Fast and precise.
 - `--depth full` — adds body text scanning with IDF noise filtering. +72% more annotations.
 
-### Knowledge Graph — Full Semantic Extraction (Optional)
+### Knowledge Graph — Neo4j Query (via MCP)
 
-For teams needing full-scale semantic analysis beyond selective enrichment:
+For teams with a running Neo4j instance, the KG MCP tools connect directly:
 
 ```bash
-# Start Neo4j (requires Docker)
-docker run -d --name neo4j \
-  -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/intentweave \
-  neo4j:5
-
-# Run the extraction pipeline on your docs
+# Set credentials, then start the MCP server
 export NEO4J_PASSWORD=intentweave
 export OPENAI_API_KEY=sk-...
-iw run docs/*.md --track open --provider openai -i --persist -v
-
-# Query the knowledge graph
-iw query "What are the main components?"
+iw mcp --session my-project
 ```
 
-> **Full CLI documentation:** [docs/CLI-USAGE.md](docs/CLI-USAGE.md)
+Use `kg_query`, `kg_context`, `kg_entities`, `kg_impact`, `kg_doc_health`, and `kg_schema`
+from GitHub Copilot to query the graph once populated.
 
 ### From source (development)
 
@@ -472,37 +464,13 @@ Returns canonical predicates, entity types, and relationship documentation.
 ## CLI
 
 ```bash
-# Run extraction pipeline
-iw run docs/*.md --track open --provider openai -i -v
-
-# Query the knowledge graph (natural language)
-iw query "What are the main components?"
-
-# Query with raw Cypher
-iw query --cypher "MATCH (n:Canon:Entity) RETURN n.name, n.type LIMIT 20"
-
-# Build RAG context
-iw context "authentication architecture" -s my-project
-
-# Entity-seeded context
-iw context -e "React" --hops 3 -s my-project
-
-# Impact analysis
-iw impact src/auth.ts -s my-project
-
 # Documentation health check (CARI default — no Neo4j needed)
 iw intent living
-iw intent living --neo4j -s my-project   # full KG mode
+iw doc-health --neo4j -s my-project   # full KG mode (requires Neo4j)
 
 # Living Documentation Score (no Neo4j needed)
 iw intent score                       # composite 0-100/A-F: freshness + arch conformance
 iw intent score -f json               # JSON output for CI integration
-
-# Cross-layer code linking
-iw xlink . --session my-project --persist
-
-# Persist to Neo4j
-iw persist --latest -v
 
 # --- CARI (no LLM, no Neo4j) ---
 
@@ -641,7 +609,12 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `cari_test_intent`            | Test descriptions vs. symbol alignment                       | `limit?`                               |
 | `cari_verify`                 | Spec-to-code grounding verification                          | _(none)_                               |
 | `cari_consistency`            | Constraint consistency check                                 | _(none)_                               |
+| `cari_rules_check`            | Rules check (structural domain, direct)                      | `severity?`, `changed?`                |
+| `cari_skipped_files`          | Files excluded from CARI analysis                            | _(none)_                               |
+| `cari_slices`                 | Vertical slice detection (feature cohorts spanning layers)   | `minLayers?`, `limit?`                 |
+| `cari_enrich`                 | Score + optionally trigger selective LLM enrichment          | `budget?`, `dryRun?`, `provider?`      |
 | `cari_cypher`                 | Custom graph queries via CypherLite                          | `query`, `limit?`                      |
+| `cari_graph_schema`           | CARI graph schema — node/rel types, query templates          | _(none)_                               |
 | `cari_capsule`                | Architecture snapshot / capsule export                       | `format?`                              |
 
 Start the MCP server:
@@ -805,9 +778,9 @@ pnpm --filter @intentweave/cli publish --access public
 - **TypeScript 5.6**, ESM, strict mode
 - **Plugin architecture** — registry + auto-discovery, 3 capability types (LLM, persistence, language)
 - **Dual KG backend** — SQLite via CypherLite (zero config) or Neo4j (production)
-- **Fastify 5**, Neo4j 5, SQLite (better-sqlite3), Turbo, pnpm workspaces
+- **Fastify 5**, Neo4j 5, SQLite (`node:sqlite` — zero native compilation), Turbo, pnpm workspaces
 - **30+ CARI query modes** + interactive HTML architecture report with multi-view community modes
-- **35 MCP tools** for GitHub Copilot integration
+- **58 MCP tools** for GitHub Copilot integration
 
 ---
 

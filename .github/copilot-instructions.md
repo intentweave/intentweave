@@ -313,7 +313,7 @@ See `docs/LIBRARY-API.md` for full documentation.
 | `packages/analyzer/src/stages/languageRegistry.ts`       | LanguageAdapter interface + LanguageRegistry class       |
 | `packages/python-parser/src/extractor.ts`                | Python AST extractor (tree-sitter-python)                |
 | `packages/cli/src/commands/indexBuild.ts`                | `iw index build` CLI orchestrator                        |
-| `packages/cli/src/mcp/server.ts`                         | MCP server (6 KG + 25 CARI tools)                        |
+| `packages/cli/src/mcp/server.ts`                         | MCP server (6 KG + 52 CARI tools)                        |
 
 ### SQLite Schema (`.iw/index.db`)
 
@@ -345,15 +345,9 @@ See `docs/LIBRARY-API.md` for full documentation.
 ### CLI Commands
 
 ```bash
-iw run docs/*.md --track open --provider openai -i -v   # Extract
-iw persist --latest -v                                    # Persist to Neo4j
-iw query "What are the main components?" -s my-project   # Query
-iw context "authentication" -s my-project                 # RAG context
-iw impact src/auth.ts -s my-project                       # Impact analysis
 iw doc-health                                               # Living Documentation (documentary domain, CARI default)
 iw intent living                                            # Living Documentation (alias)
-iw living                                                   # Living Documentation (alias)
-iw doc-health --neo4j -s my-project                         # Living Documentation (full KG mode)
+iw doc-health --neo4j -s my-project                         # Living Documentation (full KG mode, requires Neo4j)
 iw verify --score                                           # Living Documentation Score (12.3): composite 0-100/A-F
 iw intent score                                             # Living Documentation Score (alias)
 iw verify --score -f json                                   # JSON output for CI integration
@@ -363,15 +357,6 @@ iw verify --score -f json                                   # JSON output for CI
 
 | File                                               | Purpose                                    |
 | -------------------------------------------------- | ------------------------------------------ |
-| `packages/analyzer/src/stages/fx.ts`               | FX extraction (parallel chunks)            |
-| `packages/analyzer/src/stages/kx.ts`               | KX canonicalization (30 predicates)        |
-| `packages/analyzer/src/stages/gx.ts`               | GX cross-document entity merge             |
-| `packages/analyzer/src/pipeline/openTrack.ts`      | Open track orchestrator                    |
-| `packages/cli/src/commands/run.ts`                 | `iw run` CLI command                       |
-| `packages/cli/src/commands/query.ts`               | `iw query` CLI command                     |
-| `packages/cli/src/commands/context.ts`             | `iw context` CLI command                   |
-| `packages/cli/src/impact/impactAnalyzer.ts`        | Impact analysis engine                     |
-| `packages/cli/src/doc-health/docHealthAnalyzer.ts` | Documentation health analyzer (Neo4j)      |
 | `packages/cli/src/doc-health/cariDocHealth.ts`     | Documentation health analyzer (CARI)       |
 | `packages/index/src/queries/livingScore.ts`        | Living Documentation Score (12.3)          |
 | `packages/index/src/queries/calls.ts`              | Call graph query (Phase 4)                 |
@@ -380,7 +365,7 @@ iw verify --score -f json                                   # JSON output for CI
 
 ## MCP Tools
 
-The MCP server exposes 35 tools for GitHub Copilot (6 KG + 29 CARI).
+The MCP server exposes 58 tools for GitHub Copilot (6 KG + 52 CARI).
 
 All CARI query functions are also available as CLI subcommands
 (e.g., `iw index clones`, `iw index todos`) and via the `@intentweave/index`
@@ -428,12 +413,31 @@ programmatic API.
 | `cari_layers_infer`        | Auto-infer architectural layers                       | _(none)_                                                             |
 | `cari_layers_check`        | Validate imports vs. layer config                     | `allowSkipLayer?`                                                    |
 | `cari_focus`               | Focused architecture view                             | `target`, `hops?`, `maxNodes?`                                       |
+| `cari_slices`              | Vertical slice detection (feature cohorts spanning layers) | `minLayers?`, `limit?`                                          |
+| `cari_enrich`              | Score + optionally trigger selective LLM enrichment   | `budget?`, `dryRun?`, `provider?`                                    |
 | `cari_resolve`             | Resolve diagram component to code symbols + docs      | `name`, `limitSymbols?`, `limitDocs?`                                |
 | `cari_arch_diff`           | Validate diagram entities/flows against CARI evidence | `paths?`, `provider?`, `refresh?`                                    |
 | `cari_component_evidence`  | All CARI evidence for one architecture component      | `name`, `limit?`                                                     |
 | `cari_living_score`        | Composite living documentation score (12.3)           | `minConfidence?`, `allowSkipLayer?`                                  |
 | `cari_calls`               | Query the symbol_calls call graph (Phase 4)           | `callerFile?`, `calleeName?`, `callerName?`, `methodOnly?`, `limit?` |
 | `cari_trace`               | Trace call paths from entry-point file (Phase 4)      | `entry` (required), `hops?`, `maxNodes?`, `direction?`               |
+| `cari_naming_violations`   | Naming-convention enforcement                         | `limit?`                                                             |
+| `cari_comment_code_ratio`  | Comment-to-code ratio per file                        | `limit?`                                                             |
+| `cari_skipped_files`       | Files excluded from CARI analysis                     | _(none)_                                                             |
+| `cari_rules_check`         | Rules check (structural domain, direct)               | `severity?`, `changed?`                                              |
+| `cari_deprecated_callers`  | Calls to `@deprecated` symbols                        | `limit?`                                                             |
+| `cari_internal_violations` | `@internal` / `_` boundary violations                 | _(none)_                                                             |
+| `cari_type_assertions`     | `as any` and forced type-assertion inventory          | `limit?`                                                             |
+| `cari_test_intent`         | Test descriptions vs. symbol alignment                | `limit?`                                                             |
+| `cari_rules_trend`         | ADR conformance trend over git history                | `limit?`                                                             |
+| `cari_layers_from_decorators` | Layer assignment from class decorators             | _(none)_                                                             |
+| `cari_layers_name`         | LLM-generated layer & directory names                 | `provider`, `model?`, `api_key?`                                     |
+| `cari_verify`              | Spec-to-code grounding verification                   | _(none)_                                                             |
+| `cari_consistency`         | Constraint consistency check                          | _(none)_                                                             |
+| `cari_arch_check`          | Validate diagrams against import evidence             | `paths?`, `provider?`                                                |
+| `cari_cypher`              | Custom graph queries via CypherLite                   | `query`, `limit?`                                                    |
+| `cari_graph_schema`        | CARI graph schema — node/rel types, query templates   | _(none)_                                                             |
+| `cari_capsule`             | Architecture snapshot / capsule export                | `format?`                                                            |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 
