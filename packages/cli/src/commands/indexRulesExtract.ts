@@ -191,7 +191,9 @@ function createProvider(
 /** Extract JSON from LLM response, tolerating markdown code fences. */
 function extractJson(text: string): string {
   // Strip markdown code fences if present
-  const fenceMatch = text.match(new RegExp("```(?:json)?\\s*([\\s\\S]*?)\\s*```"));
+  const fenceMatch = text.match(
+    new RegExp("```(?:json)?\\s*([\\s\\S]*?)\\s*```"),
+  );
   if (fenceMatch) return fenceMatch[1];
   // Find outermost { ... } block
   const start = text.indexOf("{");
@@ -252,12 +254,16 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
       }
       const stat = fs.statSync(absPath);
       if (stat.isDirectory()) {
-        const dirFiles = fs.readdirSync(absPath)
+        const dirFiles = fs
+          .readdirSync(absPath)
           .filter((n) => n.endsWith(".md"))
           .sort()
           .map((n) => path.join(absPath, n));
         for (const fp of dirFiles) {
-          contents.push({ name: path.basename(fp), text: fs.readFileSync(fp, "utf-8") });
+          contents.push({
+            name: path.basename(fp),
+            text: fs.readFileSync(fp, "utf-8"),
+          });
         }
       } else {
         contents.push({

@@ -41,7 +41,9 @@ process.on("warning", (warning: Error) => {
     ...args: unknown[]
   ): void {
     const msg =
-      typeof warning === "string" ? warning : (warning as Error).message ?? "";
+      typeof warning === "string"
+        ? warning
+        : ((warning as Error).message ?? "");
     if (msg.includes("SQLite") && msg.includes("experimental")) return;
     (_warn as (w: string | Error, ...a: unknown[]) => void)(warning, ...args);
   };
@@ -71,11 +73,15 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
   // When Result = unknown (the default), this is unknown[] which still allows
   // downstream `as SomeRow[]` casts (unknown is the top type).
   all(...params: unknown[]): Result[] {
-    return this._stmt.all(...(params as Parameters<StatementSync["all"]>)) as unknown as Result[];
+    return this._stmt.all(
+      ...(params as Parameters<StatementSync["all"]>),
+    ) as unknown as Result[];
   }
 
   get(...params: unknown[]): Result | undefined {
-    return this._stmt.get(...(params as Parameters<StatementSync["get"]>)) as unknown as Result | undefined;
+    return this._stmt.get(
+      ...(params as Parameters<StatementSync["get"]>),
+    ) as unknown as Result | undefined;
   }
 
   run(...params: unknown[]): RunResult {
@@ -95,7 +101,9 @@ class Database {
     this._db = new DatabaseSync(path, { readOnly: options?.readonly ?? false });
   }
 
-  prepare<BindParameters = unknown, Result = unknown>(sql: string): StatementCompat<BindParameters, Result> {
+  prepare<BindParameters = unknown, Result = unknown>(
+    sql: string,
+  ): StatementCompat<BindParameters, Result> {
     return new StatementCompat<BindParameters, Result>(this._db.prepare(sql));
   }
 

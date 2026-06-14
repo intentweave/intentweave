@@ -3749,10 +3749,12 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 
         // KG enrichment (dryRun=false) is not available in this build.
         return {
-          content: [{
-            type: "text",
-            text: "LLM enrichment (dryRun=false) is not available in this build. Use dryRun=true (default) to see enrichment candidates ranked by CARI signals.",
-          }],
+          content: [
+            {
+              type: "text",
+              text: "LLM enrichment (dryRun=false) is not available in this build. Use dryRun=true (default) to see enrichment candidates ranked by CARI signals.",
+            },
+          ],
           isError: true,
         };
       } catch (err: any) {

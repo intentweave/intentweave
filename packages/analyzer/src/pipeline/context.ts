@@ -17,10 +17,18 @@ export interface PipelineLogger {
 
 export class ConsoleLogger implements PipelineLogger {
   constructor(private readonly prefix: string = "") {}
-  debug(msg: string, ...args: unknown[]) { console.debug(this.prefix, msg, ...args); }
-  info(msg: string, ...args: unknown[]) { console.info(this.prefix, msg, ...args); }
-  warn(msg: string, ...args: unknown[]) { console.warn(this.prefix, msg, ...args); }
-  error(msg: string, ...args: unknown[]) { console.error(this.prefix, msg, ...args); }
+  debug(msg: string, ...args: unknown[]) {
+    console.debug(this.prefix, msg, ...args);
+  }
+  info(msg: string, ...args: unknown[]) {
+    console.info(this.prefix, msg, ...args);
+  }
+  warn(msg: string, ...args: unknown[]) {
+    console.warn(this.prefix, msg, ...args);
+  }
+  error(msg: string, ...args: unknown[]) {
+    console.error(this.prefix, msg, ...args);
+  }
 }
 
 export class NoopLogger implements PipelineLogger {
@@ -57,8 +65,24 @@ export interface Profile {
 export const DEFAULT_PROFILE: Profile = {
   name: "default",
   version: "1.0.0",
-  kinds: ["component", "function", "class", "module", "interface", "type", "concept"],
-  predicates: ["implements", "uses", "calls", "imports", "extends", "defines", "documents"],
+  kinds: [
+    "component",
+    "function",
+    "class",
+    "module",
+    "interface",
+    "type",
+    "concept",
+  ],
+  predicates: [
+    "implements",
+    "uses",
+    "calls",
+    "imports",
+    "extends",
+    "defines",
+    "documents",
+  ],
   shapes: [],
   artifactMappings: [
     { role: "spec", kinds: ["component", "concept", "interface"] },
