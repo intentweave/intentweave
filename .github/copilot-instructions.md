@@ -355,13 +355,13 @@ iw verify --score -f json                                   # JSON output for CI
 
 ### Key Files
 
-| File                                               | Purpose                                    |
-| -------------------------------------------------- | ------------------------------------------ |
-| `packages/cli/src/doc-health/cariDocHealth.ts`     | Documentation health analyzer (CARI)       |
-| `packages/index/src/queries/livingScore.ts`        | Living Documentation Score (12.3)          |
-| `packages/index/src/queries/calls.ts`              | Call graph query (Phase 4)                 |
-| `packages/index/src/queries/trace.ts`              | BFS call-path tracer (Phase 4)             |
-| `packages/index/src/queries/ruleCoverage.ts`       | Behavioral rule coverage monitor (Phase 4) |
+| File                                           | Purpose                                    |
+| ---------------------------------------------- | ------------------------------------------ |
+| `packages/cli/src/doc-health/cariDocHealth.ts` | Documentation health analyzer (CARI)       |
+| `packages/index/src/queries/livingScore.ts`    | Living Documentation Score (12.3)          |
+| `packages/index/src/queries/calls.ts`          | Call graph query (Phase 4)                 |
+| `packages/index/src/queries/trace.ts`          | BFS call-path tracer (Phase 4)             |
+| `packages/index/src/queries/ruleCoverage.ts`   | Behavioral rule coverage monitor (Phase 4) |
 
 ## MCP Tools
 
@@ -384,60 +384,60 @@ programmatic API.
 
 ### CARI Tools (local SQLite, no Neo4j or LLM)
 
-| Tool                       | Purpose                                               | Key Parameters                                                       |
-| -------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
-| `intent_check`             | Check all intent domains (Phase 1 preferred tool)     | `domain?`, `severity?`, `changed?`, `limit?`                         |
-| `cari_retrieve`            | Ranked file retrieval                                 | `query`, `scope?`, `limit?`                                          |
-| `cari_connections`         | Connection discovery + gaps                           | `entity`, `include?`, `limit?`                                       |
-| `cari_check`               | CI drift detection                                    | `changed`, `severity?`                                               |
-| `cari_clones`              | Exact clone detection                                 | _(none)_                                                             |
-| `cari_structural_clones`   | Type 2 clone detection                                | _(none)_                                                             |
-| `cari_circular_imports`    | Import cycle detection                                | _(none)_                                                             |
-| `cari_unused_exports`      | Unused exported symbols                               | `limit?`                                                             |
-| `cari_hotspot_priority`    | High-churn low-doc files                              | `limit?`                                                             |
-| `cari_todos`               | TODO/FIXME/HACK/XXX list                              | `kind?`, `limit?`                                                    |
-| `cari_module_coverage`     | Coverage % per directory                              | _(none)_                                                             |
-| `cari_orphaned_sections`   | Ungrounded doc sections                               | _(none)_                                                             |
-| `cari_doc_completeness`    | Per-doc completeness                                  | _(none)_                                                             |
-| `cari_cross_group_drift`   | Cross-group conflicts                                 | _(none)_                                                             |
-| `cari_mentions_of`         | Entity → doc mentions                                 | `entityId`, `minConfidence?`, `limit?`                               |
-| `cari_annotations_for`     | File → all annotations                                | `filePath`, `minConfidence?`, `limit?`                               |
-| `cari_test_coverage`       | Test→source mapping + gaps                            | `limit?`                                                             |
-| `cari_hubs`                | God-node / hub analysis                               | `limit?`                                                             |
-| `cari_communities`         | Community detection                                   | _(none)_                                                             |
-| `cari_surprises`           | Surprising connections                                | `limit?`                                                             |
-| `cari_rationale`           | WHY/NOTE/IMPORTANT/DESIGN                             | `kind?`, `limit?`                                                    |
-| `cari_terminology`         | Terminology inconsistency                             | `limit?`                                                             |
-| `cari_dep_depth`           | Transitive import depth                               | `limit?`                                                             |
-| `cari_boundary_violations` | Package boundary violations                           | _(none)_                                                             |
-| `cari_layers_infer`        | Auto-infer architectural layers                       | _(none)_                                                             |
-| `cari_layers_check`        | Validate imports vs. layer config                     | `allowSkipLayer?`                                                    |
-| `cari_focus`               | Focused architecture view                             | `target`, `hops?`, `maxNodes?`                                       |
-| `cari_slices`              | Vertical slice detection (feature cohorts spanning layers) | `minLayers?`, `limit?`                                          |
-| `cari_enrich`              | Score + optionally trigger selective LLM enrichment   | `budget?`, `dryRun?`, `provider?`                                    |
-| `cari_resolve`             | Resolve diagram component to code symbols + docs      | `name`, `limitSymbols?`, `limitDocs?`                                |
-| `cari_arch_diff`           | Validate diagram entities/flows against CARI evidence | `paths?`, `provider?`, `refresh?`                                    |
-| `cari_component_evidence`  | All CARI evidence for one architecture component      | `name`, `limit?`                                                     |
-| `cari_living_score`        | Composite living documentation score (12.3)           | `minConfidence?`, `allowSkipLayer?`                                  |
-| `cari_calls`               | Query the symbol_calls call graph (Phase 4)           | `callerFile?`, `calleeName?`, `callerName?`, `methodOnly?`, `limit?` |
-| `cari_trace`               | Trace call paths from entry-point file (Phase 4)      | `entry` (required), `hops?`, `maxNodes?`, `direction?`               |
-| `cari_naming_violations`   | Naming-convention enforcement                         | `limit?`                                                             |
-| `cari_comment_code_ratio`  | Comment-to-code ratio per file                        | `limit?`                                                             |
-| `cari_skipped_files`       | Files excluded from CARI analysis                     | _(none)_                                                             |
-| `cari_rules_check`         | Rules check (structural domain, direct)               | `severity?`, `changed?`                                              |
-| `cari_deprecated_callers`  | Calls to `@deprecated` symbols                        | `limit?`                                                             |
-| `cari_internal_violations` | `@internal` / `_` boundary violations                 | _(none)_                                                             |
-| `cari_type_assertions`     | `as any` and forced type-assertion inventory          | `limit?`                                                             |
-| `cari_test_intent`         | Test descriptions vs. symbol alignment                | `limit?`                                                             |
-| `cari_rules_trend`         | ADR conformance trend over git history                | `limit?`                                                             |
-| `cari_layers_from_decorators` | Layer assignment from class decorators             | _(none)_                                                             |
-| `cari_layers_name`         | LLM-generated layer & directory names                 | `provider`, `model?`, `api_key?`                                     |
-| `cari_verify`              | Spec-to-code grounding verification                   | _(none)_                                                             |
-| `cari_consistency`         | Constraint consistency check                          | _(none)_                                                             |
-| `cari_arch_check`          | Validate diagrams against import evidence             | `paths?`, `provider?`                                                |
-| `cari_cypher`              | Custom graph queries via CypherLite                   | `query`, `limit?`                                                    |
-| `cari_graph_schema`        | CARI graph schema — node/rel types, query templates   | _(none)_                                                             |
-| `cari_capsule`             | Architecture snapshot / capsule export                | `format?`                                                            |
+| Tool                          | Purpose                                                    | Key Parameters                                                       |
+| ----------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- |
+| `intent_check`                | Check all intent domains (Phase 1 preferred tool)          | `domain?`, `severity?`, `changed?`, `limit?`                         |
+| `cari_retrieve`               | Ranked file retrieval                                      | `query`, `scope?`, `limit?`                                          |
+| `cari_connections`            | Connection discovery + gaps                                | `entity`, `include?`, `limit?`                                       |
+| `cari_check`                  | CI drift detection                                         | `changed`, `severity?`                                               |
+| `cari_clones`                 | Exact clone detection                                      | _(none)_                                                             |
+| `cari_structural_clones`      | Type 2 clone detection                                     | _(none)_                                                             |
+| `cari_circular_imports`       | Import cycle detection                                     | _(none)_                                                             |
+| `cari_unused_exports`         | Unused exported symbols                                    | `limit?`                                                             |
+| `cari_hotspot_priority`       | High-churn low-doc files                                   | `limit?`                                                             |
+| `cari_todos`                  | TODO/FIXME/HACK/XXX list                                   | `kind?`, `limit?`                                                    |
+| `cari_module_coverage`        | Coverage % per directory                                   | _(none)_                                                             |
+| `cari_orphaned_sections`      | Ungrounded doc sections                                    | _(none)_                                                             |
+| `cari_doc_completeness`       | Per-doc completeness                                       | _(none)_                                                             |
+| `cari_cross_group_drift`      | Cross-group conflicts                                      | _(none)_                                                             |
+| `cari_mentions_of`            | Entity → doc mentions                                      | `entityId`, `minConfidence?`, `limit?`                               |
+| `cari_annotations_for`        | File → all annotations                                     | `filePath`, `minConfidence?`, `limit?`                               |
+| `cari_test_coverage`          | Test→source mapping + gaps                                 | `limit?`                                                             |
+| `cari_hubs`                   | God-node / hub analysis                                    | `limit?`                                                             |
+| `cari_communities`            | Community detection                                        | _(none)_                                                             |
+| `cari_surprises`              | Surprising connections                                     | `limit?`                                                             |
+| `cari_rationale`              | WHY/NOTE/IMPORTANT/DESIGN                                  | `kind?`, `limit?`                                                    |
+| `cari_terminology`            | Terminology inconsistency                                  | `limit?`                                                             |
+| `cari_dep_depth`              | Transitive import depth                                    | `limit?`                                                             |
+| `cari_boundary_violations`    | Package boundary violations                                | _(none)_                                                             |
+| `cari_layers_infer`           | Auto-infer architectural layers                            | _(none)_                                                             |
+| `cari_layers_check`           | Validate imports vs. layer config                          | `allowSkipLayer?`                                                    |
+| `cari_focus`                  | Focused architecture view                                  | `target`, `hops?`, `maxNodes?`                                       |
+| `cari_slices`                 | Vertical slice detection (feature cohorts spanning layers) | `minLayers?`, `limit?`                                               |
+| `cari_enrich`                 | Score + optionally trigger selective LLM enrichment        | `budget?`, `dryRun?`, `provider?`                                    |
+| `cari_resolve`                | Resolve diagram component to code symbols + docs           | `name`, `limitSymbols?`, `limitDocs?`                                |
+| `cari_arch_diff`              | Validate diagram entities/flows against CARI evidence      | `paths?`, `provider?`, `refresh?`                                    |
+| `cari_component_evidence`     | All CARI evidence for one architecture component           | `name`, `limit?`                                                     |
+| `cari_living_score`           | Composite living documentation score (12.3)                | `minConfidence?`, `allowSkipLayer?`                                  |
+| `cari_calls`                  | Query the symbol_calls call graph (Phase 4)                | `callerFile?`, `calleeName?`, `callerName?`, `methodOnly?`, `limit?` |
+| `cari_trace`                  | Trace call paths from entry-point file (Phase 4)           | `entry` (required), `hops?`, `maxNodes?`, `direction?`               |
+| `cari_naming_violations`      | Naming-convention enforcement                              | `limit?`                                                             |
+| `cari_comment_code_ratio`     | Comment-to-code ratio per file                             | `limit?`                                                             |
+| `cari_skipped_files`          | Files excluded from CARI analysis                          | _(none)_                                                             |
+| `cari_rules_check`            | Rules check (structural domain, direct)                    | `severity?`, `changed?`                                              |
+| `cari_deprecated_callers`     | Calls to `@deprecated` symbols                             | `limit?`                                                             |
+| `cari_internal_violations`    | `@internal` / `_` boundary violations                      | _(none)_                                                             |
+| `cari_type_assertions`        | `as any` and forced type-assertion inventory               | `limit?`                                                             |
+| `cari_test_intent`            | Test descriptions vs. symbol alignment                     | `limit?`                                                             |
+| `cari_rules_trend`            | ADR conformance trend over git history                     | `limit?`                                                             |
+| `cari_layers_from_decorators` | Layer assignment from class decorators                     | _(none)_                                                             |
+| `cari_layers_name`            | LLM-generated layer & directory names                      | `provider`, `model?`, `api_key?`                                     |
+| `cari_verify`                 | Spec-to-code grounding verification                        | _(none)_                                                             |
+| `cari_consistency`            | Constraint consistency check                               | _(none)_                                                             |
+| `cari_arch_check`             | Validate diagrams against import evidence                  | `paths?`, `provider?`                                                |
+| `cari_cypher`                 | Custom graph queries via CypherLite                        | `query`, `limit?`                                                    |
+| `cari_graph_schema`           | CARI graph schema — node/rel types, query templates        | _(none)_                                                             |
+| `cari_capsule`                | Architecture snapshot / capsule export                     | `format?`                                                            |
 
 ### CARI Programmatic Queries (via `@intentweave/index`)
 

@@ -43,12 +43,12 @@ iw --help
 
 ### Requirements
 
-| Requirement        | Version  | Notes                                            |
-| ------------------ | -------- | ------------------------------------------------ |
-| **Node.js**        | ≥ 22.15 | `node -v` — requires Node 22.15+ for built-in SQLite  |
-| **Neo4j**          | 5.x     | Only for `query`, `context`, `impact`, `persist`      |
-| **OpenAI API key** | —       | Only for `--provider openai` and NL queries           |
-| **Docker**         | —       | Easiest way to run Neo4j locally                      |
+| Requirement        | Version | Notes                                                |
+| ------------------ | ------- | ---------------------------------------------------- |
+| **Node.js**        | ≥ 22.15 | `node -v` — requires Node 22.15+ for built-in SQLite |
+| **Neo4j**          | 5.x     | Only for `query`, `context`, `impact`, `persist`     |
+| **OpenAI API key** | —       | Only for `--provider openai` and NL queries          |
+| **Docker**         | —       | Easiest way to run Neo4j locally                     |
 
 > **CI / Docker note:** IntentWeave uses Node.js's built-in `node:sqlite` module
 > (available since Node 22.15), which requires **no native compilation** and no extra
