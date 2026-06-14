@@ -22,6 +22,7 @@ import { OpenAILLMProvider, type OpenAIConfig } from "./openai.js";
 
 // Re-export for consumers that want direct access
 export { OpenAILLMProvider, type OpenAIConfig } from "./openai.js";
+export { SmartMockLLMProvider, type SmartMockOptions } from "./mock.js";
 
 // =============================================================================
 // Plugin definition

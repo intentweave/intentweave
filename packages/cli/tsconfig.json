@@ -8,7 +8,8 @@
   "references": [
     { "path": "../core" },
     { "path": "../analyzer" },
-    { "path": "../sqlite-compat" }
+    { "path": "../sqlite-compat" },
+    { "path": "../plugin-llm" }
   ],
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]

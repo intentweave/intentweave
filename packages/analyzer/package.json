@@ -30,10 +30,6 @@
       "types": "./dist/extractors/index.d.ts",
       "import": "./dist/extractors/index.js"
     },
-    "./llm": {
-      "types": "./dist/providers/llm/index.d.ts",
-      "import": "./dist/providers/llm/index.js"
-    },
     "./viz": {
       "types": "./dist/viz/index.d.ts",
       "import": "./dist/viz/index.js"

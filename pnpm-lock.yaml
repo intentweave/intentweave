@@ -149,6 +149,9 @@ importers:
       '@intentweave/cari-native':
         specifier: workspace:*
         version: link:../cari-native
+      '@intentweave/plugin-llm':
+        specifier: workspace:*
+        version: link:../plugin-llm
       '@intentweave/plugin-python':
         specifier: workspace:*
         version: link:../plugin-python

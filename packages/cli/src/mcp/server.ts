@@ -84,7 +84,7 @@ async function llmComplete(
   system: string,
   userMessage: string,
 ): Promise<string> {
-  const { OpenAILLMProvider } = await import("@intentweave/analyzer/llm");
+  const { OpenAILLMProvider } = await import("@intentweave/plugin-llm");
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -3357,7 +3357,7 @@ Requires an OpenAI API key (OPENAI_API_KEY env var or api_key parameter).`,
         }
 
         const { OpenAILLMProvider, SmartMockLLMProvider } =
-          await import("@intentweave/analyzer/llm");
+          await import("@intentweave/plugin-llm");
         let llm;
         if (args.provider === "openai") {
           const apiKey = args.api_key ?? process.env.OPENAI_API_KEY;
@@ -5202,7 +5202,7 @@ pass them to \`cari_capsule\` for natural-language explanations.`,
           } = await import("@intentweave/index");
 
           const { OpenAILLMProvider, SmartMockLLMProvider } =
-            await import("@intentweave/analyzer/llm");
+            await import("@intentweave/plugin-llm");
           const apiKey = process.env.OPENAI_API_KEY;
           const llm =
             args.provider === "mock" || !apiKey

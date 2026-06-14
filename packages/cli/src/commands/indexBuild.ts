@@ -6708,7 +6708,7 @@ const indexExportSubcommand = new Command("export")
           }
 
           const { OpenAILLMProvider, SmartMockLLMProvider } =
-            await import("@intentweave/analyzer/llm");
+            await import("@intentweave/plugin-llm");
           const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY ?? "";
           const llm =
             opts.provider === "smart-mock"
@@ -6866,7 +6866,7 @@ Be concise: one sentence, under 160 characters.`;
           }
 
           const { OpenAILLMProvider, SmartMockLLMProvider } =
-            await import("@intentweave/analyzer/llm");
+            await import("@intentweave/plugin-llm");
           const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY ?? "";
           const llm =
             opts.provider === "smart-mock"
@@ -6897,7 +6897,7 @@ Be concise: one sentence, under 160 characters.`;
       let directoryNames;
       if (opts.provider) {
         const { OpenAILLMProvider, SmartMockLLMProvider } =
-          await import("@intentweave/analyzer/llm");
+          await import("@intentweave/plugin-llm");
         const layers = layersInfer(
           dbPath,
           opts.hierarchical ? { hierarchical: true } : undefined,
@@ -7532,7 +7532,7 @@ const indexCapsuleSubcommand = new Command("capsule")
       // ── Resolve LLM provider ──────────────────────────────────────
       const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
       const { OpenAILLMProvider, SmartMockLLMProvider } =
-        await import("@intentweave/analyzer/llm");
+        await import("@intentweave/plugin-llm");
       const llm =
         opts.provider === "mock" || !apiKey
           ? new SmartMockLLMProvider({ workspaceKey: "capsule" })

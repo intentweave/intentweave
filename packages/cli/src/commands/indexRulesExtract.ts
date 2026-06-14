@@ -25,7 +25,7 @@ import { dump as yamlDump } from "js-yaml";
 import {
   SmartMockLLMProvider,
   OpenAILLMProvider,
-} from "@intentweave/analyzer/llm";
+} from "@intentweave/plugin-llm";
 import type { LLMProvider } from "@intentweave/core";
 import type {
   RulesConfig,

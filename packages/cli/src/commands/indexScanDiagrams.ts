@@ -30,7 +30,7 @@ import { createHash } from "node:crypto";
 import {
   OpenAILLMProvider,
   SmartMockLLMProvider,
-} from "@intentweave/analyzer/llm";
+} from "@intentweave/plugin-llm";
 import type { LLMProvider } from "@intentweave/core";
 import type { ArchConfig, ArchComponent } from "@intentweave/index";
 
