@@ -9,7 +9,7 @@
  * dependencies — fragile).
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { DependencyDepthResult, DependencyDepthEntry } from "../types.js";
 import { openIndex, buildImportGraph } from "./shared.js";
 

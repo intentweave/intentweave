@@ -13,7 +13,7 @@
  * Target: <2 seconds for a single-file change.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";

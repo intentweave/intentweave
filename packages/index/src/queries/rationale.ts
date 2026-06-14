@@ -9,7 +9,7 @@
  * the existing TODO/FIXME/HACK markers.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { RationaleResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

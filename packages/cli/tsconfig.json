@@ -8,6 +8,7 @@
   "references": [
     { "path": "../core" },
     { "path": "../analyzer" },
+    { "path": "../sqlite-compat" }
   ],
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]

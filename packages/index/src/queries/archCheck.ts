@@ -14,7 +14,7 @@
  * $0 / no LLM — pure graph validation on SQLite data.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   ArchConfig,
   ArchComponent,

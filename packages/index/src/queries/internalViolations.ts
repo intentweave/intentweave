@@ -19,7 +19,7 @@
  * $0 / no LLM — pure SQLite queries after index build.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { InternalViolationsResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

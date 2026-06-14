@@ -10,7 +10,7 @@
  * Returns the top-K files most relevant to a natural-language query.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { RetrieveParams, RetrieveResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

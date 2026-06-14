@@ -30,7 +30,7 @@
  *   - CO_CHANGES     FILE     → FILE
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import {
   parse as parseCypher,
   transpile as transpileCypher,

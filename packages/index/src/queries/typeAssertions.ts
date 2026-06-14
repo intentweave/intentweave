@@ -9,7 +9,7 @@
  * a fan-in count per file as a risk signal.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import type { TypeAssertionEntry, TypeAssertionsResult } from "../types.js";
 
 export interface TypeAssertionsOptions {

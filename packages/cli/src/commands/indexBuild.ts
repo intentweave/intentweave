@@ -1293,7 +1293,7 @@ async function buildPrescriptiveReportData(
     }
 
     // ── resolve element names → file paths from symbols ──
-    const Database = (await import("better-sqlite3")).default;
+    const Database = (await import("@intentweave/sqlite-compat")).default;
     const db = new Database(dbPath, { readonly: true });
     let elementFileMap: Map<string, string>;
     try {
@@ -1339,7 +1339,7 @@ async function buildPrescriptiveReportData(
     const elementFiles = [...new Set([...elementFileMap.values()])];
     let actualImports: Array<{ from: string; to: string }> = [];
     if (elementFiles.length >= 2) {
-      const Database2 = (await import("better-sqlite3")).default;
+      const Database2 = (await import("@intentweave/sqlite-compat")).default;
       const db2 = new Database2(dbPath, { readonly: true });
       try {
         const fpList = elementFiles
@@ -1475,7 +1475,7 @@ async function buildPrescriptiveReportData(
       step("terminology…");
       const termResult = terminologyInconsistency(dbPath);
       // Aggregate: how many exported symbols are covered by at least one doc?
-      const AggDatabase = (await import("better-sqlite3")).default;
+      const AggDatabase = (await import("@intentweave/sqlite-compat")).default;
       const aggDb = new AggDatabase(dbPath, { readonly: true });
       const aggRow = aggDb
         .prepare(
@@ -1776,7 +1776,7 @@ async function buildPrescriptiveReportData(
   // ── Documentation Map: doc→code interconnections via CARI annotations ──
   step("doc map…");
   try {
-    const DocDatabase = (await import("better-sqlite3")).default;
+    const DocDatabase = (await import("@intentweave/sqlite-compat")).default;
     const docDb = new DocDatabase(dbPath, { readonly: true });
     try {
       // Total annotations count
@@ -7476,7 +7476,7 @@ const indexCapsuleSubcommand = new Command("capsule")
       markStaleForChangedSymbols,
     } = await import("@intentweave/index");
 
-    const Database = (await import("better-sqlite3")).default;
+    const Database = (await import("@intentweave/sqlite-compat")).default;
     const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
 

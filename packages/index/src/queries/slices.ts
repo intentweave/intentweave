@@ -11,7 +11,7 @@
  * Communities spanning only 1–2 layers are classified as horizontal modules.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { SlicesOptions, SlicesResult, VerticalSlice } from "../types.js";
 import { openIndex } from "./shared.js";
 import { communitiesFromDb } from "./communities.js";

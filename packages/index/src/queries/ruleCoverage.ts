@@ -11,7 +11,7 @@
  * This is the "rule coverage monitoring" deliverable from Phase 4.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import { openIndex } from "./shared.js";
 import type { RulesConfig } from "../types.js";
 

@@ -8,7 +8,7 @@
  * into the SQLite index. Batch inserts (500/tx) for performance.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import * as path from "path";
 import * as fs from "fs";
 

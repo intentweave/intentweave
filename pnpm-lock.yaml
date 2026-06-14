@@ -108,6 +108,9 @@ importers:
       '@intentweave/index':
         specifier: workspace:*
         version: link:../index
+      '@intentweave/sqlite-compat':
+        specifier: workspace:*
+        version: link:../sqlite-compat
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.1
         version: 1.27.1(zod@3.25.76)
@@ -133,15 +136,9 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
-      '@types/better-sqlite3':
-        specifier: ^7.6.12
-        version: 7.6.13
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
-      better-sqlite3:
-        specifier: ^11.7.0
-        version: 11.10.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -192,12 +189,12 @@ importers:
       '@intentweave/cypher-lite':
         specifier: workspace:*
         version: link:../cypher-lite
+      '@intentweave/sqlite-compat':
+        specifier: workspace:*
+        version: link:../sqlite-compat
       '@viz-js/viz':
         specifier: ^3.25.0
         version: 3.25.0
-      better-sqlite3:
-        specifier: ^11.7.0
-        version: 11.10.0
       minimatch:
         specifier: ^10.0.1
         version: 10.2.4
@@ -208,9 +205,6 @@ importers:
       '@intentweave/core':
         specifier: workspace:*
         version: link:../core
-      '@types/better-sqlite3':
-        specifier: ^7.6.12
-        version: 7.6.13
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -284,6 +278,15 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.8.0)(lightningcss@1.31.1)
+
+  packages/sqlite-compat:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.21
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
 
   packages/swift-parser:
     dependencies:
@@ -836,6 +839,9 @@ packages:
 
   '@types/node@20.19.41':
     resolution: {integrity: sha512-ECymXOukMnOoVkC2bb1Vc/w/836DXncOg5m8Xj1RH7xSHZJWNYY6Zh7EH477vcnD5egKNNfy2RpNOmuChhFPgQ==}
+
+  '@types/node@22.19.21':
+    resolution: {integrity: sha512-VMeFBSCKQKmm2swI2kW51SFusDqekC6q9trBCvJ/JliDchFSuoYYKN7yVNjPthP1HKZcx3U1gI/wTcEBjEFKTA==}
 
   '@types/node@25.8.0':
     resolution: {integrity: sha512-TCFSk8IZh+iLX1xtksoBVtdmgL+1IX0fC9BeU4QqFSuNdN/K+HUlhqOzEmSYYpZUVsLYcPqc9KX+60iDuninSQ==}
@@ -2172,6 +2178,10 @@ snapshots:
   '@types/js-yaml@4.0.9': {}
 
   '@types/node@20.19.41':
+    dependencies:
+      undici-types: 6.21.0
+
+  '@types/node@22.19.21':
     dependencies:
       undici-types: 6.21.0
 

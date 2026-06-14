@@ -10,7 +10,7 @@
  * and `mentions_of` surface them naturally.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import type { ExternalEntity } from "./types.js";
 import { registerExternalEntities } from "./writer.js";
 

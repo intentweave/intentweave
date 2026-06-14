@@ -11,7 +11,7 @@
  * Optionally writes the inferred layer configuration to `.iw/layers.yaml`.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import * as fs from "fs";
 import * as path from "path";
 import type {

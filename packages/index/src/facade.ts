@@ -31,7 +31,7 @@
  * ```
  */
 
-import type { Database } from "better-sqlite3";
+import type { Database } from "@intentweave/sqlite-compat";
 import * as path from "path";
 import * as fs from "fs";
 import { performance } from "perf_hooks";

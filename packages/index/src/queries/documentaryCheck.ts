@@ -22,7 +22,7 @@
  *   doc.completeness.low   ~0.97 (deterministic annotation count)
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { RulesViolation } from "../types.js";
 import { moduleCoverageFromDb } from "./moduleCoverage.js";
 import { terminologyInconsistencyFromDb } from "./terminologyInconsistency.js";

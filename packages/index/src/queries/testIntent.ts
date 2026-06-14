@@ -14,7 +14,7 @@
  *   resolver.test.ts:12 "resolveRawRef converts $ref to FQN" → "resolveRawRef" not found
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import type { TestIntentResult, TestDescriptionMatch } from "../types.js";
 
 export interface TestIntentOptions {

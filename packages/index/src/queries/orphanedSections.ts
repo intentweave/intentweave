@@ -8,7 +8,7 @@
  * resolve to code symbols. Likely: outdated descriptions, removed API docs.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { OrphanedSectionsResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

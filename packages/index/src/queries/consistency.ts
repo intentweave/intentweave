@@ -22,7 +22,7 @@
  * source files (e.g., AuthService USES "JWT" in doc1 vs USES "sessions" in doc2).
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   ConsistencyParams,
   ConsistencyResult,

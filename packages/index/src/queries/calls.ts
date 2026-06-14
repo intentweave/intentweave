@@ -9,7 +9,7 @@
  * most-called, and what a specific file depends on at the call level.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import { openIndex } from "./shared.js";
 
 // =============================================================================

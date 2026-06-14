@@ -13,7 +13,7 @@
  * Builds on: 9.1 (communities), existing co_occurrences + co_changes data.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   SurprisingConnectionsResult,
   SurprisingConnection,

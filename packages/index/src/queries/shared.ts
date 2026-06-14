@@ -5,7 +5,7 @@
  * Shared helpers for CARI query modules.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import * as fs from "fs";
 
 /**

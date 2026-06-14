@@ -8,7 +8,7 @@
  * from the code files it references?
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { DocCompletenessResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

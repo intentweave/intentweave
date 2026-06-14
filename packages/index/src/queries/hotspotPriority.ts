@@ -10,7 +10,7 @@
  * High-churn files with low documentation coverage appear first.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { HotspotPriorityResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

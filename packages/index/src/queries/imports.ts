@@ -9,7 +9,7 @@
  * - Unused export detection (exported symbols never imported)
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { CircularImportsResult, UnusedExportsResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

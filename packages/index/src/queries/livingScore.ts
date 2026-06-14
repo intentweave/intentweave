@@ -17,7 +17,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   LivingScoreParams,
   LivingScoreResult,

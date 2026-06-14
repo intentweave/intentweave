@@ -17,7 +17,7 @@
  * `diagramEntityCheck` can use them directly in place of LLM-guessed aliases.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   ResolveComponentParams,
   ResolveComponentResult,

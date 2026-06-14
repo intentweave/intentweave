@@ -16,7 +16,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { createExtractor } from "@intentweave/ast-extractor";
 import { openIndex } from "@intentweave/index";
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   ApiSurfaceResult,
   ApiChange,

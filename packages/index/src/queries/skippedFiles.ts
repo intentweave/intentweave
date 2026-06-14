@@ -12,7 +12,7 @@
  * No LLM or Neo4j needed — queries the local SQLite index.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { SkippedFilesResult, SkippedFileEntry } from "../types.js";
 import { openIndex } from "./shared.js";
 

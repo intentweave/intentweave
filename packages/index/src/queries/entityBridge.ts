@@ -8,7 +8,7 @@
  * annotationsForFile — list all annotations for a given document, with entity resolution.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   MentionsOfParams,
   MentionsOfResult,

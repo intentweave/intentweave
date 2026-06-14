@@ -9,7 +9,7 @@
  * qualifiers or divergent detail level.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { CrossGroupDriftResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

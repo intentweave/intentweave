@@ -13,7 +13,7 @@
  * $0 / no LLM / no Neo4j — pure SQLite queries on CARI index.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   CariImpactParams,
   CariImpactResult,

@@ -20,7 +20,7 @@ import {
   beforeEach,
   afterEach,
 } from "vitest";
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";

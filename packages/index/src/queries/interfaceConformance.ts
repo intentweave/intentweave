@@ -12,7 +12,7 @@
  * $0 / no LLM — pure SQLite query on AX-extracted symbols.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   InterfaceConformanceResult,
   ConformanceViolation,

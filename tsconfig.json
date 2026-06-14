@@ -8,6 +8,7 @@
     { "path": "packages/profiles" },
     { "path": "packages/ast-extractor" },
     { "path": "packages/index" },
+    { "path": "packages/sqlite-compat" },
     { "path": "packages/cypher-lite" },
     { "path": "packages/python-parser" },
     { "path": "packages/swift-parser" },

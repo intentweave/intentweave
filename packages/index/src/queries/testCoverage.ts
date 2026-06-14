@@ -13,7 +13,7 @@
  *   3. **Both**: naming + import agree
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   TestCoverageParams,
   TestCoverageResult,

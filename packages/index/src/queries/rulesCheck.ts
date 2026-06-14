@@ -16,7 +16,7 @@
  * $0 / no LLM — pure SQLite queries after index build.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import { minimatch } from "minimatch";
 import {
   parse as parseCypher,

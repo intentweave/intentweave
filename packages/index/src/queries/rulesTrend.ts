@@ -9,7 +9,7 @@
  * within the requested time window.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import type {
   RulesTrendResult,
   RuleTrend,

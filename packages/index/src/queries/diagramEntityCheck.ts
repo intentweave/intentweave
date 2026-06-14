@@ -21,7 +21,7 @@
  * $0 / no LLM — pure SQLite evidence.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { ArchConfig, ArchCheckResult } from "../types.js";
 import { openIndex } from "./shared.js";
 import { resolveComponentFromDb } from "./resolveComponent.js";

@@ -27,7 +27,7 @@
  */
 
 import * as fs from "node:fs";
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import type { SemanticCapsule, CapsuleKind } from "../types.js";
 
 // ── Public input types ────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@
  * Suggests the canonical name (the actual symbol name from code) for each entity.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   TerminologyInconsistencyResult,
   TerminologyVariant,

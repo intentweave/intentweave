@@ -16,7 +16,7 @@
  * 3. the import doesn't go through the package's barrel/index (e.g., @pkg/cli)
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { BoundaryViolationsResult, BoundaryViolation } from "../types.js";
 import { openIndex, resolveModuleSpecifier } from "./shared.js";
 

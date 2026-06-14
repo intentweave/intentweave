@@ -15,7 +15,7 @@
  * understanding is most needed and most likely stale.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   EnrichmentCandidate,
   EnrichmentScoreResult,

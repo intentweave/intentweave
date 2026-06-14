@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import { initSchema } from "../schema.js";
 import {
   collectSymbolEvidence,

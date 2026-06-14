@@ -13,7 +13,7 @@
  * trees, or focused HTML reports.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   FocusParams,
   FocusResult,

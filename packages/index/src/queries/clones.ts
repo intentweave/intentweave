@@ -12,7 +12,7 @@
  * violations (cross-layer reimplementations).
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { ClonesResult, StructuralClonesResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

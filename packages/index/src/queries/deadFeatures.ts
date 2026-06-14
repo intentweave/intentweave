@@ -14,7 +14,7 @@
  * When all three align, the symbol is very likely dead. Two signals = suspect.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { DeadFeatureResult, DeadFeatureCandidate } from "../types.js";
 import { openIndex } from "./shared.js";
 

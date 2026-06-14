@@ -11,7 +11,7 @@
  * Output formats: text, JSON, GitHub Actions annotations.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { CheckParams, CheckResult, CheckFinding } from "../types.js";
 import { openIndex } from "./shared.js";
 

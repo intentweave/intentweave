@@ -13,7 +13,7 @@
  * Ambiguous callees (same name, multiple files) are included as multiple nodes.
  */
 
-import Database from "better-sqlite3";
+import Database from "@intentweave/sqlite-compat";
 import { openIndex } from "./shared.js";
 
 // =============================================================================

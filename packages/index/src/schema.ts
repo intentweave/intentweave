@@ -8,7 +8,7 @@
  * code-aware retrieval index. Called once when creating a new index.db.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 
 /**
  * SQL statements executed in order to create the CARI schema.

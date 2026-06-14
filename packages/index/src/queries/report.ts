@@ -11,7 +11,7 @@
  * - Undocumented dependencies (co-change but zero doc mentions)
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { ReportResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

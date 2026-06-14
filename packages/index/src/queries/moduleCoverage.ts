@@ -8,7 +8,7 @@
  * Shows which modules are well-documented vs. under-documented.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { ModuleCoverageResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

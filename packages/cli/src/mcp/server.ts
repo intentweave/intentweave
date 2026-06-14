@@ -5191,7 +5191,7 @@ pass them to \`cari_capsule\` for natural-language explanations.`,
     async (args) => {
       try {
         const dbPath = path.join(process.cwd(), ".iw", "index.db");
-        const Database = (await import("better-sqlite3")).default;
+        const Database = (await import("@intentweave/sqlite-compat")).default;
         const db = new Database(dbPath);
         db.pragma("journal_mode = WAL");
         try {

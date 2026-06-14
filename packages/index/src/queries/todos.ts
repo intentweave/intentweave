@@ -7,7 +7,7 @@
  * Inventory of TODO / FIXME / HACK / XXX markers extracted during AX.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type { TodosResult } from "../types.js";
 import { openIndex } from "./shared.js";
 

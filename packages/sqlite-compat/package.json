@@ -1,0 +1,35 @@
+{
+  "name": "@intentweave/sqlite-compat",
+  "version": "0.15.1",
+  "description": "node:sqlite wrapper with better-sqlite3-compatible API — no native compilation",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intentweave/intentweave.git",
+    "directory": "packages/sqlite-compat"
+  }
+}

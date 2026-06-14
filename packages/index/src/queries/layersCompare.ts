@@ -12,7 +12,7 @@
  * $0 / no LLM — pure graph analysis on SQLite data.
  */
 
-import type Database from "better-sqlite3";
+import type Database from "@intentweave/sqlite-compat";
 import type {
   LayerConfig,
   LayersCompareResult,
