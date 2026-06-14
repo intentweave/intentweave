@@ -191,12 +191,51 @@ export function rulesCheckFromDb(
     byRule[v.ruleId] = (byRule[v.ruleId] ?? 0) + 1;
   }
 
+  // Detect rules whose `in:` scope matched zero indexed files — likely a wrong glob.
+  const scopeWarnings: Array<{ ruleId: string; pattern: string }> = [];
+  const structuralRulesWithScope = activeRules.filter(
+    (r) =>
+      (r.domain ?? "structural") === "structural" &&
+      r.forbidden.some((f) => f.in),
+  );
+  if (structuralRulesWithScope.length > 0) {
+    const filesTableExists = db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='files'`,
+      )
+      .get();
+
+    if (filesTableExists) {
+      const allFilePaths = (
+        db
+          .prepare(`SELECT DISTINCT path FROM files`)
+          .all() as Array<{ path: string }>
+      ).map((r) => r.path);
+
+      for (const rule of structuralRulesWithScope) {
+        for (const forbidden of rule.forbidden) {
+          if (!forbidden.in) continue;
+          const inPatterns = Array.isArray(forbidden.in)
+            ? forbidden.in
+            : [forbidden.in];
+          for (const pat of inPatterns) {
+            const hasMatch = allFilePaths.some((fp) => minimatch(fp, pat));
+            if (!hasMatch) {
+              scopeWarnings.push({ ruleId: rule.id, pattern: pat });
+            }
+          }
+        }
+      }
+    }
+  }
+
   return {
     violations: limited,
     totalViolations: allViolations.length,
     bySeverity,
     byRule,
     rulesChecked: activeRules.length,
+    scopeWarnings: scopeWarnings.length > 0 ? scopeWarnings : undefined,
   };
 }
 
@@ -655,7 +694,11 @@ function checkVariableAssignment(
   forbidden: RuleForbidden,
   changed?: string[],
 ): RulesViolation[] {
-  if (!forbidden.value_pattern) return [];
+  // Accept `pattern` as an alias for `value_pattern` — the LLM extraction prompt
+  // documents `pattern` as the field name for variable_assignment rules, so both
+  // must be accepted to avoid silent misses.
+  const valuePattern = forbidden.value_pattern ?? forbidden.pattern;
+  if (!valuePattern) return [];
 
   const tableExists = db
     .prepare(
@@ -666,7 +709,7 @@ function checkVariableAssignment(
 
   let valueRegex: RegExp;
   try {
-    valueRegex = new RegExp(forbidden.value_pattern);
+    valueRegex = new RegExp(valuePattern);
   } catch {
     return [];
   }
@@ -698,7 +741,7 @@ function checkVariableAssignment(
       adr: rule.adr,
       filePath: row.file,
       line: row.line,
-      detail: `variable \`${row.symbol_name}\` assigned value matching \`${forbidden.value_pattern}\`: ${row.value_text.slice(0, 80)}`,
+      detail: `variable \`${row.symbol_name}\` assigned value matching \`${valuePattern}\`: ${row.value_text.slice(0, 80)}`,
       autofix: rule.autofix,
     });
   }

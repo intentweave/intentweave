@@ -2,6 +2,53 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.15.3] — 2026-06-14
+
+### Added
+
+- **Path alias resolution in `.iw/config.yaml`** — new `aliases` key rewrites import specifiers
+  after index build so that path-aliased imports (Docusaurus `@site`, Webpack `@app`, TypeScript
+  `paths`, etc.) resolve to their real workspace-relative paths before cross-package checks run.
+  Without this, tools like `no-cross-package-internal-imports` raised false positives for any
+  project that uses module aliases. Configuration:
+  ```yaml
+  aliases:
+    "@site": "microsite"
+    "@app":  "packages/app/src"
+  ```
+  Applied as a post-build SQLite `UPDATE` on the `imports` table; works with both the native
+  Rust `cari-build` binary and the TypeScript pipeline.
+
+- **`iw intent extract` workspace-structure context** — before calling the LLM, the command now
+  loads up to 30 real file paths from the CARI index and injects them into the system prompt.
+  This prevents the LLM from generating glob patterns like `src/**` that match nothing in a
+  monorepo where all files live under `packages/*/src/**` or `plugins/*/src/**`.
+
+- **Scope warnings in `iw intent check`** — if a rule's `in:` glob matches zero indexed files,
+  the check now prints a warning rather than silently reporting the rule as clean:
+  ```
+  ⚠  scope warning: avoid-default-exports — in: src/** matched 0 indexed files (rule never evaluated)
+  ```
+
+- **`variable_assignment` rule accepts `pattern` field** — the LLM extraction prompt documents
+  `pattern` as the field for `variable_assignment` rules; the checker now treats `pattern` as an
+  alias for `value_pattern` so LLM-generated rules are not silently skipped.
+
+- **`maxTokens` raised to 8192 in `iw intent extract`** — prevents LLM response truncation when
+  many ADRs are analyzed in a single run.
+
+### Changed
+
+- **`node:sqlite` migration** — replaced `better-sqlite3` (native C++ addon requiring build tools)
+  with `node:sqlite` (Node.js 22.15+ built-in) via a new `@intentweave/sqlite-compat` shim package.
+  Zero native compilation; `npm install` no longer requires a C++ toolchain. Requires Node ≥ 22.15.
+
+- **`SmartMockLLMProvider` moved to `@intentweave/plugin-llm`** — the mock provider used in tests
+  and as an LLM fallback is now the canonical export of `plugin-llm` instead of a broken
+  `@intentweave/analyzer/llm` sub-path export.
+
+---
+
 ## [0.13.0] — 2026-05-17
 
 ### Added

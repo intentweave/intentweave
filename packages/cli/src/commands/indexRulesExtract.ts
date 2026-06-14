@@ -22,6 +22,7 @@ import chalk from "chalk";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { dump as yamlDump } from "js-yaml";
+import Database from "@intentweave/sqlite-compat";
 import {
   SmartMockLLMProvider,
   OpenAILLMProvider,
@@ -56,6 +57,7 @@ interface ExtractedConfig extends RulesConfig {
 function buildSystemPrompt(
   withAllowed: boolean,
   withLayerHints: boolean,
+  samplePaths?: string[],
 ): string {
   const allowedSchemaSection = withAllowed
     ? `
@@ -161,7 +163,15 @@ Rules to follow:
 3. Each forbidden entry should target the smallest possible scope (use "in" when the ADR specifies a layer).
 4. Infer reasonable file-scope globs from the ADR context (e.g. "apps/ui/**" for UI-specific rules).
 5. Default "mode" to "error" for structural rules at severity high/critical, and "warn" for medium/low or any behavioral/documentary rule.
-6. If no machine-enforceable constraints are found, output: {"version": 1, "rules": []}.`;
+6. If no machine-enforceable constraints are found, output: {"version": 1, "rules": []}.${samplePaths && samplePaths.length > 0 ? `
+
+IMPORTANT — Actual workspace file paths:
+The files in this project have paths like:
+${samplePaths.map((p) => `  ${p}`).join("\n")}
+
+When writing "in:" glob patterns, you MUST use patterns that match these actual paths.
+Do NOT use "src/**" if there is no root-level src/ directory. Instead use patterns
+like "packages/**", "plugins/**", or "**/src/**" that match the real structure above.` : ""}`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -241,6 +251,10 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
     "--layers-output <path>",
     "Output path for layer hints YAML when --with-layer-hints is set (default: .iw/layers.hints.yaml)",
   )
+  .option(
+    "--db <path>",
+    "Path to CARI index for workspace file path context (default: .iw/index.db)",
+  )
   .option("-v, --verbose", "Show prompt/response details")
   .action(async (files: string[], opts) => {
     // ── Read ADR files ──────────────────────────────────────────────
@@ -284,9 +298,33 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
       .map((c) => `=== ${c.name} ===\n\n${c.text}`)
       .join("\n\n---\n\n");
 
+    // Load sample file paths from the CARI index (if built) so the LLM can
+    // generate glob patterns that match the actual workspace structure.
+    let samplePaths: string[] | undefined;
+    const dbPath = path.resolve(opts.db ?? ".iw/index.db");
+    if (fs.existsSync(dbPath)) {
+      try {
+        const db = new Database(dbPath, { readonly: true });
+        samplePaths = (
+          db
+            .prepare(
+              `SELECT DISTINCT path FROM files WHERE indexed = 1 ORDER BY path LIMIT 30`,
+            )
+            .all() as Array<{ path: string }>
+        ).map((r) => r.path);
+        db.close();
+        if (opts.verbose && samplePaths.length > 0) {
+          console.log(chalk.dim(`  [context] ${samplePaths.length} sample paths loaded from index`));
+        }
+      } catch {
+        // Index may be incompatible or locked — proceed without path context
+      }
+    }
+
     const systemPrompt = buildSystemPrompt(
       Boolean(opts.withAllowed),
       Boolean(opts.withLayerHints),
+      samplePaths,
     );
 
     if (opts.verbose) {
@@ -321,7 +359,7 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
         system: systemPrompt,
         messages: [{ role: "user", content: userMessage }],
         temperature: 0.1,
-        maxTokens: 4096,
+        maxTokens: 8192,
       });
       responseText = response.content;
     } catch (err: unknown) {

@@ -243,6 +243,9 @@ thresholds:
     mode: error # promote documentary violations to CI-blocking (default: warn)
   behavioral:
     mode: warn # keep behavioral violations as warnings (default)
+aliases:
+  "@site": "microsite"    # Docusaurus — resolves @site/src/… → microsite/src/…
+  "@app": "packages/app"  # Webpack/TS path alias example
 ```
 
 When `documentary.mode: error` is set, `iw intent check --domain documentary` will exit 1 on violations.

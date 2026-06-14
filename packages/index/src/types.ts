@@ -2479,6 +2479,24 @@ export interface IwConfig {
       mode?: "error" | "warn";
     };
   };
+  /**
+   * Module specifier alias mappings applied to the imports table after index
+   * build. Useful for projects that use path aliases (Docusaurus `@site`,
+   * Webpack `@app`, TypeScript `paths`, etc.) that the AST extractor stores
+   * as raw specifiers.
+   *
+   * Each key is an alias prefix; the value is the real workspace-relative
+   * path prefix it resolves to. Applied as a post-build UPDATE so that
+   * cross-package import checks see the real paths.
+   *
+   * Example:
+   * ```yaml
+   * aliases:
+   *   "@site": "microsite"
+   *   "@app": "packages/app/src"
+   * ```
+   */
+  aliases?: Record<string, string>;
 }
 
 /** One violation found by rulesCheck. */
@@ -2514,6 +2532,8 @@ export interface RulesCheckResult {
   bySeverity: Record<"high" | "medium" | "low", number>;
   byRule: Record<string, number>;
   rulesChecked: number;
+  /** Rules whose `in:` scope pattern matched zero indexed files — likely a wrong glob. */
+  scopeWarnings?: Array<{ ruleId: string; pattern: string }>;
 }
 
 // ── 14.1 Deprecated Caller Detection ────────────────────────────────────────

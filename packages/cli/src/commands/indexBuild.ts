@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { load as yamlLoad } from "js-yaml";
 import { minimatch } from "minimatch";
+import Database from "@intentweave/sqlite-compat";
 
 // Analyzer stages (used by update subcommand)
 import {
@@ -86,6 +87,60 @@ export {
   discoverFiles,
   isExcluded,
 };
+
+// =============================================================================
+// Alias resolution — post-build import specifier rewriting
+// =============================================================================
+
+/**
+ * Rewrite import specifiers in the `imports` table that start with a known
+ * path alias prefix (e.g. Docusaurus `@site`, Webpack `@app`, TS `paths`).
+ *
+ * Without this, cross-package checks see `@site/src/foo` as a foreign package
+ * and raise false positives even though it resolves to the same workspace root.
+ *
+ * Configured via `.iw/config.yaml`:
+ * ```yaml
+ * aliases:
+ *   "@site": "microsite"
+ *   "@app":  "packages/app/src"
+ * ```
+ */
+function resolveImportAliases(
+  dbPath: string,
+  aliases: Record<string, string>,
+  verbose = false,
+): void {
+  const entries = Object.entries(aliases).filter(([k, v]) => k && v);
+  if (entries.length === 0) return;
+
+  const db = new Database(dbPath);
+  try {
+    let totalUpdated = 0;
+    for (const [alias, realPath] of entries) {
+      // Normalise: ensure both have a trailing slash so partial names don't match
+      const aliasPrefix = alias.endsWith("/") ? alias : alias + "/";
+      const realPrefix = realPath.endsWith("/") ? realPath : realPath + "/";
+      const result = db
+        .prepare(
+          `UPDATE imports
+           SET target_file = ? || substr(target_file, ?)
+           WHERE target_file LIKE ?`,
+        )
+        .run(realPrefix, aliasPrefix.length + 1, aliasPrefix + "%");
+      totalUpdated += Number(result.changes);
+    }
+    if (verbose && totalUpdated > 0) {
+      console.log(
+        chalk.gray(
+          `  ▸ resolved ${totalUpdated} aliased import(s) from .iw/config.yaml aliases`,
+        ),
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
 
 // =============================================================================
 // R1-f: cari-native binary shim
@@ -291,6 +346,9 @@ const indexBuildSubcommand = new Command("build")
     const session = opts.session ?? path.basename(cwd);
     const verbose = opts.verbose;
 
+    // Load .iw/config.yaml early — needed for alias resolution after build
+    const iwConfig = await loadIwConfig(path.join(cwd, ".iw"));
+
     // Parse --root tuples: "path:role" or "path:role:group"
     const roots: import("@intentweave/index").WorkspaceRoot[] = (
       (opts.root ?? []) as string[]
@@ -349,6 +407,11 @@ const indexBuildSubcommand = new Command("build")
           console.log(
             `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
           );
+
+          // Apply path alias resolution if configured in .iw/config.yaml
+          if (iwConfig?.aliases) {
+            resolveImportAliases(dbPath, iwConfig.aliases, verbose);
+          }
 
           // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
           try {
@@ -412,6 +475,11 @@ const indexBuildSubcommand = new Command("build")
             `files=${result.counts.files}`,
         ),
       );
+
+      // Apply path alias resolution if configured in .iw/config.yaml
+      if (iwConfig?.aliases) {
+        resolveImportAliases(result.dbPath, iwConfig.aliases, verbose);
+      }
 
       // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
       try {
@@ -4534,6 +4602,22 @@ const indexRulesCheckSubcommand = new Command("rules-check")
         );
         if (diagram) process.stdout.write(diagram);
       }
+      // Show scope warnings: rules whose `in:` pattern matched zero indexed files
+      if (result.scopeWarnings && result.scopeWarnings.length > 0) {
+        console.log();
+        for (const w of result.scopeWarnings) {
+          console.log(
+            chalk.yellow(
+              `  ⚠  scope warning: ${w.ruleId} — in: ${w.pattern} matched 0 indexed files (rule never evaluated)`,
+            ),
+          );
+        }
+        console.log(
+          chalk.yellow(
+            `\n  Hint: run \`iw intent extract\` again — the index now provides real\n  file paths to the LLM so globs will match your project structure.\n`,
+          ),
+        );
+      }
       console.log(
         chalk.green(
           `  ✓ No semantic rule violations found${scope}. (${result.rulesChecked} rule(s) checked)\n`,
@@ -4624,6 +4708,18 @@ const indexRulesCheckSubcommand = new Command("rules-check")
           `  ...showing ${result.violations.length} of ${result.totalViolations} total violations. Increase --limit to see more.\n`,
         ),
       );
+    }
+
+    // Show scope warnings after the violation list
+    if (result.scopeWarnings && result.scopeWarnings.length > 0) {
+      for (const w of result.scopeWarnings) {
+        console.log(
+          chalk.yellow(
+            `  ⚠  scope warning: ${w.ruleId} — in: ${w.pattern} matched 0 indexed files (rule never evaluated)`,
+          ),
+        );
+      }
+      console.log();
     }
 
     // Only exit non-zero if there are error-mode violations (warn-only → pass)
