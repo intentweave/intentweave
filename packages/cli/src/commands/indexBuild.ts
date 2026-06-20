@@ -183,6 +183,16 @@ async function detectTsPathAliases(
  * Path aliases defined in `tsconfig.json` / `tsconfig.base.json` are detected
  * automatically and merged with the manual config (manual config takes precedence).
  */
+function rebuildFtsIndexes(dbPath: string): void {
+  const db = new Database(dbPath);
+  try {
+    db.exec(`INSERT INTO annotations_fts(annotations_fts) VALUES('rebuild')`);
+    db.exec(`INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')`);
+  } finally {
+    db.close();
+  }
+}
+
 function resolveImportAliases(
   dbPath: string,
   aliases: Record<string, string>,
@@ -484,6 +494,9 @@ const indexBuildSubcommand = new Command("build")
           console.log(
             `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
           );
+
+          // Rebuild FTS5 indexes (native binary writes content tables but doesn't sync FTS)
+          rebuildFtsIndexes(dbPath);
 
           // Apply path alias resolution: auto-detect from tsconfig + manual .iw/config.yaml
           {
@@ -7614,6 +7627,71 @@ const indexSchemaSubcommand = new Command("schema")
 //   iw index capsule --stale-check       # mark stale based on body_hash changes
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── iw index context-pack ──────────────────────────────────────────────────
+const indexContextPackSubcommand = new Command("context-pack")
+  .description(
+    "Build a composite CARI context bundle — ranked files, symbols, rules, connections, and rationale — in one call.",
+  )
+  .option("--query <text>", "Natural-language topic or task description")
+  .option(
+    "--files <paths...>",
+    "Files being edited or changed (anchors drift + symbol lookup)",
+  )
+  .option(
+    "--entity <name>",
+    "Anchor on a specific symbol/component for connection discovery",
+  )
+  .option(
+    "--budget <n>",
+    "Approximate token budget for the output",
+    "4000",
+  )
+  .option(
+    "--sections <list>",
+    "Comma-separated sections to include: files,symbols,rules,connections,rationale,drift",
+  )
+  .option(
+    "-f, --format <fmt>",
+    "Output format: markdown (default) or json",
+    "markdown",
+  )
+  .option("--db <path>", "Path to the SQLite index", ".iw/index.db")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const { contextPack: cpFn } = await import("@intentweave/index");
+    const budget = parseInt(opts.budget ?? "4000", 10);
+    const sectionList = opts.sections
+      ? (opts.sections.split(",").map((s: string) => s.trim()) as import("@intentweave/index").ContextPackSection[])
+      : undefined;
+
+    try {
+      const result = cpFn(dbPath, {
+        query: opts.query,
+        files: opts.files,
+        entity: opts.entity,
+        budget: Math.min(budget, 12000),
+        sections: sectionList,
+      });
+
+      if (opts.format === "json") {
+        process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      } else {
+        process.stdout.write(result.summary + "\n");
+        console.error(
+          chalk.gray(
+            `  ~${result.tokenEstimate} tokens · ${result.sections.files.length} files · ${result.sections.symbols.length} symbols`,
+          ),
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`  ✗ context-pack failed: ${msg}`));
+      process.exit(1);
+    }
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const indexCapsuleSubcommand = new Command("capsule")
   .description(
     "Generate or retrieve LLM-derived semantic capsule summaries for symbols and call paths.",
@@ -7942,7 +8020,8 @@ export const indexCommand = new Command("index")
   .addCommand(indexRuleCoverageSubcommand)
   .addCommand(indexCypherSubcommand)
   .addCommand(indexSchemaSubcommand)
-  .addCommand(indexCapsuleSubcommand);
+  .addCommand(indexCapsuleSubcommand)
+  .addCommand(indexContextPackSubcommand);
 
 // ── LLM narrative generation for --explain ──────────────────────
 

@@ -5284,6 +5284,101 @@ pass them to \`cari_capsule\` for natural-language explanations.`,
     },
   );
 
+  // ── Tool: cari_context_pack ──────────────────────────────────────────
+  server.tool(
+    "cari_context_pack",
+    `Build a composite CARI context bundle for LLM prompt injection.
+
+Runs multiple CARI signals in one call and returns a token-budgeted markdown block:
+- **Relevant files** — ranked by annotation score, co-occurrence, symbol match
+- **Exported symbols** — from the top-ranked files
+- **Architecture rules** — active violations first, then clean rules
+- **Cross-layer connections** — linked entities + hidden coupling gaps
+- **Design rationale** — WHY/NOTE/DESIGN comments from context files
+- **Documentation drift** — docs that reference changed files (when \`files\` provided)
+
+Empty sections are omitted. The \`summary\` field is ready to paste into any LLM prompt.
+
+**Typical use:** give Copilot focused context before implementing a feature, reviewing a PR,
+or debugging an architectural issue — without calling 5 separate tools.`,
+    {
+      query: z
+        .string()
+        .optional()
+        .describe(
+          'Natural-language topic or task (e.g. "authentication flow", "how does billing work")',
+        ),
+      files: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Files being edited or changed in a PR — anchors drift detection and symbol lookup",
+        ),
+      entity: z
+        .string()
+        .optional()
+        .describe(
+          "Anchor on a specific symbol or component name for connection discovery",
+        ),
+      budget: z
+        .number()
+        .optional()
+        .default(4000)
+        .describe(
+          "Approximate token budget for the output (default: 4000, max: 12000)",
+        ),
+      sections: z
+        .array(
+          z.enum([
+            "files",
+            "symbols",
+            "rules",
+            "connections",
+            "rationale",
+            "drift",
+          ]),
+        )
+        .optional()
+        .describe(
+          "Which sections to include (default: all). Omit to get everything that has data.",
+        ),
+    },
+    async (args) => {
+      log(
+        `cari_context_pack: query="${args.query ?? ""}" entity="${args.entity ?? ""}" files=${JSON.stringify(args.files ?? [])} budget=${args.budget}`,
+      );
+      try {
+        const { contextPack: cpFn } = await loadIndex();
+        const dbPath = resolveIndexDb();
+        const result = cpFn(dbPath, {
+          query: args.query,
+          files: args.files,
+          entity: args.entity,
+          budget: Math.min(args.budget ?? 4000, 12000),
+          sections: args.sections as
+            | import("@intentweave/index").ContextPackSection[]
+            | undefined,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: [
+                result.summary,
+                "",
+                `---`,
+                `*~${result.tokenEstimate} tokens · ${result.sections.files.length} files · ${result.sections.symbols.length} symbols*`,
+              ].join("\n"),
+            },
+          ],
+        };
+      } catch (err: unknown) {
+        const msg = handleCariError(err);
+        return { content: [{ type: "text", text: msg }], isError: true };
+      }
+    },
+  );
+
   // ── Plugin MCP tools ─────────────────────────────────────────────────
   if (options.neo4jUri) {
     process.env.NEO4J_URI = options.neo4jUri;

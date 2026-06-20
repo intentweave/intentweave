@@ -2774,3 +2774,88 @@ export interface RuleCoverageResult {
   uncovered: PackageCoverage[];
   topUncovered: PackageCoverage[];
 }
+
+// =============================================================================
+// Query: contextPack
+// =============================================================================
+
+export type ContextPackSection =
+  | "files"
+  | "symbols"
+  | "rules"
+  | "connections"
+  | "rationale"
+  | "drift";
+
+export interface ContextPackInput {
+  /** Natural-language topic or task description (e.g. "authentication flow") */
+  query?: string;
+  /** Files being edited or changed in a PR — anchors drift detection */
+  files?: string[];
+  /** Anchor on a specific symbol/component for connection discovery */
+  entity?: string;
+  /** Approximate token budget for the output (default: 4000) */
+  budget?: number;
+  /** Which sections to include (default: all) */
+  sections?: ContextPackSection[];
+}
+
+export interface ContextPackFileEntry {
+  path: string;
+  score: number;
+  role: "code" | "doc";
+  topSymbols: string[];
+  reason: string;
+}
+
+export interface ContextPackRuleEntry {
+  ruleId: string;
+  domain: string;
+  severity: string;
+  description: string;
+  violations: number;
+}
+
+export interface ContextPackConnectionEntry {
+  from: string;
+  to: string;
+  signal: string;
+  strength: number;
+  isGap: boolean;
+}
+
+export interface ContextPackRationaleEntry {
+  kind: string;
+  text: string;
+  file: string;
+  line: number;
+}
+
+export interface ContextPackDriftEntry {
+  docFile: string;
+  severity: string;
+  annotationCount: number;
+}
+
+export interface ContextPackOutput {
+  /** The query or anchor used */
+  query: string;
+  sections: {
+    files: ContextPackFileEntry[];
+    symbols: Array<{
+      name: string;
+      kind: string;
+      file: string;
+      line: number;
+      exported: boolean;
+    }>;
+    rules: ContextPackRuleEntry[];
+    connections: ContextPackConnectionEntry[];
+    rationale: ContextPackRationaleEntry[];
+    drift: ContextPackDriftEntry[];
+  };
+  /** Deterministic markdown block ready for LLM prompt injection */
+  summary: string;
+  /** Approximate token count of the summary */
+  tokenEstimate: number;
+}

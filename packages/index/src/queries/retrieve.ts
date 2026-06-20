@@ -49,7 +49,7 @@ export function retrieveFromDb(
       `
       SELECT a.doc_path, a.line, a.text, a.confidence, a.symbol_id, a.idf_score
       FROM annotations a
-      JOIN annotations_fts fts ON fts.rowid = a.id
+      JOIN annotations_fts fts ON fts.rowid = a.rowid
       WHERE annotations_fts MATCH ?
       ORDER BY rank
       LIMIT 500
@@ -244,5 +244,6 @@ function sanitizeFtsQuery(query: string): string {
     .split(/\s+/)
     .filter((t) => t.length > 0)
     .map((t) => `"${t.replace(/"/g, '""')}"`);
-  return tokens.join(" ");
+  // Annotations are single keywords — use OR so any matching term scores the file
+  return tokens.join(" OR ");
 }

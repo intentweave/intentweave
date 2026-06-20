@@ -179,6 +179,8 @@ export {
   traceFromDb,
   ruleCoverage,
   ruleCoverageFromDb,
+  contextPack,
+  contextPackFromDb,
 } from "./queries/index.js";
 export type {
   DiagramEntityCheckResult,
@@ -390,6 +392,15 @@ export type {
   RuleCoverageOptions,
   RuleCoverageResult,
   PackageCoverage,
+  // Context pack types (cari_context_pack)
+  ContextPackSection,
+  ContextPackInput,
+  ContextPackOutput,
+  ContextPackFileEntry,
+  ContextPackRuleEntry,
+  ContextPackConnectionEntry,
+  ContextPackRationaleEntry,
+  ContextPackDriftEntry,
   // Semantic Capsule Layer (14.0)
   SemanticCapsule,
   CapsuleKind,

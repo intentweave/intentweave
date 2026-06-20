@@ -209,9 +209,10 @@ export function applyChanges(
         for (const file of data.ax.files) {
           if (!file.calls || file.calls.length === 0) continue;
           for (const call of file.calls) {
+            if (!call.callerName) continue; // skip top-level calls with no named caller
             callStmt.run(
               file.filePath,
-              call.callerName ?? null,
+              call.callerName,
               call.callerLine,
               call.calleeName,
               call.calleeId ?? null,
@@ -248,7 +249,7 @@ export function applyChanges(
             ann.confidence,
             ann.source,
             ann.qualifier ?? null,
-            ann.idfScore ?? null,
+            ann.idfScore ?? 1.0,
           );
           counts.annotations++;
         }

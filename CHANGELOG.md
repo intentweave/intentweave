@@ -2,6 +2,18 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.15.5] — 2026-06-21
+
+### Added
+
+- **`cari_context_pack` MCP tool + `iw index context-pack` CLI command** — composite context
+  bundle for LLM injection: ranked files, symbols, architectural rules (from conformance
+  snapshots), cross-layer connections, design rationale, and documentation drift in one call.
+  Token-budgeted (default 4 000 tokens), deterministic markdown output, empty sections omitted.
+  Accepts `--query`, `--files`, `--entity`, `--budget`, `--sections`, and `--format json`.
+
+---
+
 ## [0.15.4] — 2026-06-20
 
 ### Added

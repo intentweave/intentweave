@@ -6,6 +6,7 @@ export { connections, connectionsFromDb } from "./connections.js";
 export { check, checkFromDb, formatCheck } from "./check.js";
 export { report, reportFromDb } from "./report.js";
 export type { ReportOptions } from "./report.js";
+export { contextPack, contextPackFromDb } from "./contextPack.js";
 export {
   clones,
   clonesFromDb,
