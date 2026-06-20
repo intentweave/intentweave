@@ -2,6 +2,19 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.15.4] — 2026-06-20
+
+### Added
+
+- **Auto-detect TypeScript path aliases from `tsconfig.json`** — `iw index build` now reads
+  `compilerOptions.paths` from `tsconfig.json` and `tsconfig.base.json` (following `extends`
+  chains) and automatically rewrites aliased import specifiers in the index. This eliminates
+  false positives from cross-package rules in any project that uses TypeScript path aliases,
+  Webpack aliases, or Vite aliases — without requiring any manual configuration. Manual
+  `aliases` in `.iw/config.yaml` are merged on top and take precedence on conflict.
+
+---
+
 ## [0.15.3] — 2026-06-14
 
 ### Added

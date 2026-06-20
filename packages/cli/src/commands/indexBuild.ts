@@ -93,6 +93,79 @@ export {
 // =============================================================================
 
 /**
+ * Auto-detect TypeScript path aliases from `tsconfig.json` / `tsconfig.base.json`
+ * in the workspace root. Reads `compilerOptions.paths`, converts entries of the
+ * form `@alias/*` → `real/path` (strips the trailing `/*`), and follows `extends`
+ * one level deep so monorepo base configs are handled automatically.
+ *
+ * Returns an empty object when no tsconfig is found or no `paths` are defined.
+ * Aliases that resolve outside the workspace root (e.g. into `node_modules`) are
+ * silently skipped.
+ */
+async function detectTsPathAliases(
+  workspaceRoot: string,
+): Promise<Record<string, string>> {
+  const { existsSync, readFileSync } = await import("node:fs");
+  const out: Record<string, string> = {};
+
+  function parseJsonc(filePath: string): Record<string, unknown> | null {
+    try {
+      if (!existsSync(filePath)) return null;
+      const raw = readFileSync(filePath, "utf-8");
+      // tsconfig is JSONC — strip line and block comments before parsing
+      const stripped = raw
+        .replace(/\/\/[^\n]*/g, "")
+        .replace(/\/\*[\s\S]*?\*\//g, "");
+      return JSON.parse(stripped);
+    } catch {
+      return null;
+    }
+  }
+
+  const visited = new Set<string>();
+
+  function collect(filePath: string): void {
+    if (visited.has(filePath)) return;
+    visited.add(filePath);
+
+    const tsconfig = parseJsonc(filePath);
+    if (!tsconfig) return;
+    const baseDir = path.dirname(filePath);
+
+    // Follow extends first — child paths override parent below
+    if (typeof tsconfig.extends === "string") {
+      let extendsPath = path.resolve(baseDir, tsconfig.extends as string);
+      if (!extendsPath.endsWith(".json")) extendsPath += ".json";
+      collect(extendsPath);
+    }
+
+    const co = tsconfig.compilerOptions as Record<string, unknown> | undefined;
+    const paths = co?.paths as Record<string, string[]> | undefined;
+    if (!paths) return;
+
+    for (const [alias, targets] of Object.entries(paths)) {
+      const rawTarget = Array.isArray(targets) ? targets[0] : (targets as string);
+      if (!rawTarget) continue;
+      // Strip trailing /* from both alias key and target path
+      const aliasKey = alias.replace(/\/\*$/, "");
+      const targetPath = rawTarget.replace(/\/\*$/, "");
+      const absolute = path.resolve(baseDir, targetPath);
+      const relative = path.relative(workspaceRoot, absolute);
+      // Skip anything that escapes the workspace root or lands in node_modules
+      if (!relative.startsWith("..") && !relative.includes("node_modules")) {
+        out[aliasKey] = relative;
+      }
+    }
+  }
+
+  for (const candidate of ["tsconfig.json", "tsconfig.base.json"]) {
+    collect(path.join(workspaceRoot, candidate));
+  }
+
+  return out;
+}
+
+/**
  * Rewrite import specifiers in the `imports` table that start with a known
  * path alias prefix (e.g. Docusaurus `@site`, Webpack `@app`, TS `paths`).
  *
@@ -105,6 +178,8 @@ export {
  *   "@site": "microsite"
  *   "@app":  "packages/app/src"
  * ```
+ * Path aliases defined in `tsconfig.json` / `tsconfig.base.json` are detected
+ * automatically and merged with the manual config (manual config takes precedence).
  */
 function resolveImportAliases(
   dbPath: string,
@@ -133,7 +208,7 @@ function resolveImportAliases(
     if (verbose && totalUpdated > 0) {
       console.log(
         chalk.gray(
-          `  ▸ resolved ${totalUpdated} aliased import(s) from .iw/config.yaml aliases`,
+          `  ▸ resolved ${totalUpdated} aliased import(s) (tsconfig + config.yaml)`,
         ),
       );
     }
@@ -408,9 +483,11 @@ const indexBuildSubcommand = new Command("build")
             `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
           );
 
-          // Apply path alias resolution if configured in .iw/config.yaml
-          if (iwConfig?.aliases) {
-            resolveImportAliases(dbPath, iwConfig.aliases, verbose);
+          // Apply path alias resolution: auto-detect from tsconfig + manual .iw/config.yaml
+          {
+            const autoAliases = await detectTsPathAliases(cwd);
+            const mergedAliases = { ...autoAliases, ...iwConfig?.aliases };
+            resolveImportAliases(dbPath, mergedAliases, verbose);
           }
 
           // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
@@ -476,9 +553,11 @@ const indexBuildSubcommand = new Command("build")
         ),
       );
 
-      // Apply path alias resolution if configured in .iw/config.yaml
-      if (iwConfig?.aliases) {
-        resolveImportAliases(result.dbPath, iwConfig.aliases, verbose);
+      // Apply path alias resolution: auto-detect from tsconfig + manual .iw/config.yaml
+      {
+        const autoAliases = await detectTsPathAliases(cwd);
+        const mergedAliases = { ...autoAliases, ...iwConfig?.aliases };
+        resolveImportAliases(result.dbPath, mergedAliases, verbose);
       }
 
       // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
