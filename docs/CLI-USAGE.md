@@ -46,11 +46,11 @@ iw --help
 
 ### Requirements
 
-| Requirement        | Version | Notes                                                          |
-| ------------------ | ------- | -------------------------------------------------------------- |
-| **Node.js**        | ≥ 22.15 | `node -v` — requires Node.js built-in SQLite                   |
-| **Git**            | any     | For co-change analysis (TCG stage)                             |
-| **Neo4j**          | 5.x     | _Optional_ — only for `iw run`/`iw query`/`iw persist`        |
+| Requirement        | Version | Notes                                                             |
+| ------------------ | ------- | ----------------------------------------------------------------- |
+| **Node.js**        | ≥ 22.15 | `node -v` — requires Node.js built-in SQLite                      |
+| **Git**            | any     | For co-change analysis (TCG stage)                                |
+| **Neo4j**          | 5.x     | _Optional_ — only for `iw run`/`iw query`/`iw persist`            |
 | **OpenAI API key** | —       | _Optional_ — only for `--provider openai` and `iw intent extract` |
 
 CARINative uses no native C++ compilation. `npm install` works everywhere Node.js does.
@@ -92,13 +92,13 @@ iw index build --verbose          # show per-stage timing
 iw index build --include "src/**" # only index specific directories
 ```
 
-| Option             | Default        | Description                                                  |
-| ------------------ | -------------- | ------------------------------------------------------------ |
-| `--depth <mode>`   | `structured`   | `structured` (headings/bold/code) or `full` (+ body text)   |
-| `--output <path>`  | `.iw/index.db` | SQLite output path                                           |
-| `--include <glob>` | —              | Only index files matching glob (repeatable)                  |
-| `--exclude <glob>` | —              | Skip files matching glob (repeatable)                        |
-| `-v, --verbose`    | off            | Show per-stage progress and timing                           |
+| Option             | Default        | Description                                               |
+| ------------------ | -------------- | --------------------------------------------------------- |
+| `--depth <mode>`   | `structured`   | `structured` (headings/bold/code) or `full` (+ body text) |
+| `--output <path>`  | `.iw/index.db` | SQLite output path                                        |
+| `--include <glob>` | —              | Only index files matching glob (repeatable)               |
+| `--exclude <glob>` | —              | Skip files matching glob (repeatable)                     |
+| `-v, --verbose`    | off            | Show per-stage progress and timing                        |
 
 **Path alias resolution:** After building, `iw index build` automatically detects TypeScript path
 aliases from `tsconfig.json` / `tsconfig.base.json` (`compilerOptions.paths`) and rewrites
@@ -107,7 +107,7 @@ aliased specifiers in the imports table. Manual overrides go in `.iw/config.yaml
 ```yaml
 # .iw/config.yaml
 aliases:
-  "@site": "microsite"   # Docusaurus — only needed if tsconfig doesn't define it
+  "@site": "microsite" # Docusaurus — only needed if tsconfig doesn't define it
 ```
 
 ### `iw index retrieve`
@@ -179,38 +179,38 @@ iw index rule-coverage                          # packages with zero behavioral 
 
 All available via `iw index <command>`, MCP tool `cari_*`, and the `@intentweave/index` API:
 
-| Command                    | Purpose                                              |
-| -------------------------- | ---------------------------------------------------- |
-| `clones`                   | Exact clone detection (identical body hash)          |
-| `structural-clones`        | Type 2 clones (same control flow, different names)   |
-| `circular-imports`         | Import cycle detection                               |
-| `unused-exports`           | Exported symbols never imported                      |
-| `hotspot-priority`         | High-churn low-doc files ranked by urgency           |
-| `todos`                    | TODO/FIXME/HACK/XXX inventory                        |
-| `module-coverage`          | Documentation coverage % per directory               |
-| `orphaned-sections`        | Doc sections with all-ungrounded mentions            |
-| `doc-completeness`         | Per-doc completeness vs. referenced exports          |
-| `cross-group-drift`        | Cross-group entity coverage conflicts                |
-| `mentions-of`              | Entity → doc mentions                                |
-| `annotations-for`          | File → all annotations                               |
-| `test-coverage`            | Test→source mapping + gaps                           |
-| `hubs`                     | God-node / hub analysis (degree centrality)          |
-| `communities`              | Community detection                                  |
-| `surprises`                | Surprising connection ranking                        |
-| `rationale`                | WHY/NOTE/IMPORTANT/DESIGN rationale inventory        |
-| `terminology`              | Terminology inconsistency detection                  |
-| `dep-depth`                | Transitive import depth + fan-in/fan-out risk        |
-| `boundary-violations`      | Cross-package internal import detection              |
-| `layers-infer`             | Auto-infer architectural layers from import graph    |
-| `layers-check`             | Validate imports against layer configuration         |
-| `focus`                    | Focused architecture view around a target entity     |
-| `naming-violations`        | Naming convention enforcement                        |
-| `comment-code-ratio`       | Comment-to-code ratio per file                       |
-| `deprecated-callers`       | Calls to `@deprecated` symbols                       |
-| `internal-violations`      | `@internal` / `_` boundary violations                |
-| `type-assertions`          | `as any` and forced type-assertion inventory         |
-| `rules-trend`              | ADR conformance trend over git history               |
-| `skipped-files`            | Files excluded from CARI analysis                    |
+| Command               | Purpose                                            |
+| --------------------- | -------------------------------------------------- |
+| `clones`              | Exact clone detection (identical body hash)        |
+| `structural-clones`   | Type 2 clones (same control flow, different names) |
+| `circular-imports`    | Import cycle detection                             |
+| `unused-exports`      | Exported symbols never imported                    |
+| `hotspot-priority`    | High-churn low-doc files ranked by urgency         |
+| `todos`               | TODO/FIXME/HACK/XXX inventory                      |
+| `module-coverage`     | Documentation coverage % per directory             |
+| `orphaned-sections`   | Doc sections with all-ungrounded mentions          |
+| `doc-completeness`    | Per-doc completeness vs. referenced exports        |
+| `cross-group-drift`   | Cross-group entity coverage conflicts              |
+| `mentions-of`         | Entity → doc mentions                              |
+| `annotations-for`     | File → all annotations                             |
+| `test-coverage`       | Test→source mapping + gaps                         |
+| `hubs`                | God-node / hub analysis (degree centrality)        |
+| `communities`         | Community detection                                |
+| `surprises`           | Surprising connection ranking                      |
+| `rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory      |
+| `terminology`         | Terminology inconsistency detection                |
+| `dep-depth`           | Transitive import depth + fan-in/fan-out risk      |
+| `boundary-violations` | Cross-package internal import detection            |
+| `layers-infer`        | Auto-infer architectural layers from import graph  |
+| `layers-check`        | Validate imports against layer configuration       |
+| `focus`               | Focused architecture view around a target entity   |
+| `naming-violations`   | Naming convention enforcement                      |
+| `comment-code-ratio`  | Comment-to-code ratio per file                     |
+| `deprecated-callers`  | Calls to `@deprecated` symbols                     |
+| `internal-violations` | `@internal` / `_` boundary violations              |
+| `type-assertions`     | `as any` and forced type-assertion inventory       |
+| `rules-trend`         | ADR conformance trend over git history             |
+| `skipped-files`       | Files excluded from CARI analysis                  |
 
 ---
 
@@ -234,14 +234,14 @@ iw intent check --changed src/auth.ts --severity high --format json
 iw intent check --baseline .iw/baseline.json
 ```
 
-| Option                  | Default        | Description                                         |
-| ----------------------- | -------------- | --------------------------------------------------- |
-| `--domain <d>`          | `all`          | `structural`, `behavioral`, `documentary`, `all`    |
-| `--severity <level>`    | `info`         | Minimum: `info`, `medium`, `high`                   |
-| `--changed <files...>`  | —              | Scope to files changed in PR/commit                 |
-| `--config <path>`       | `.iw/rules.yaml` | Path to rules config                              |
-| `--baseline <path>`     | —              | Regression gating: fail only on new violations      |
-| `--format <f>`          | `text`         | `text`, `json`, `github`                            |
+| Option                 | Default          | Description                                      |
+| ---------------------- | ---------------- | ------------------------------------------------ |
+| `--domain <d>`         | `all`            | `structural`, `behavioral`, `documentary`, `all` |
+| `--severity <level>`   | `info`           | Minimum: `info`, `medium`, `high`                |
+| `--changed <files...>` | —                | Scope to files changed in PR/commit              |
+| `--config <path>`      | `.iw/rules.yaml` | Path to rules config                             |
+| `--baseline <path>`    | —                | Regression gating: fail only on new violations   |
+| `--format <f>`         | `text`           | `text`, `json`, `github`                         |
 
 ### `iw intent extract`
 
@@ -252,11 +252,11 @@ iw intent extract docs/ADR-001.md --provider openai --output .iw/rules.yaml
 iw intent extract docs/ --provider openai       # batch: all markdown in directory
 ```
 
-| Option              | Default          | Description                              |
-| ------------------- | ---------------- | ---------------------------------------- |
-| `--provider <name>` | `smart-mock`     | `smart-mock`, `openai`                   |
-| `--model <name>`    | `gpt-4o`         | LLM model                                |
-| `--output <path>`   | `.iw/rules.yaml` | Output path                              |
+| Option              | Default          | Description                                    |
+| ------------------- | ---------------- | ---------------------------------------------- |
+| `--provider <name>` | `smart-mock`     | `smart-mock`, `openai`                         |
+| `--model <name>`    | `gpt-4o`         | LLM model                                      |
+| `--output <path>`   | `.iw/rules.yaml` | Output path                                    |
 | `--db <path>`       | `.iw/index.db`   | Index DB (injects real file paths into prompt) |
 
 > The command injects up to 30 real file paths from the CARI index into the LLM prompt so
@@ -309,11 +309,11 @@ Optional per-workspace config. Created by `iw init`.
 version: 1
 thresholds:
   documentary:
-    coverage_min: 60     # flag modules with < 60% doc coverage (default: 50)
+    coverage_min: 60 # flag modules with < 60% doc coverage (default: 50)
     completeness_min: 50 # flag docs with < 50% completeness (default: 40)
-    mode: error          # promote to CI-blocking (default: warn)
+    mode: error # promote to CI-blocking (default: warn)
 aliases:
-  "@site": "microsite"  # manual alias override (tsconfig.json paths are auto-detected)
+  "@site": "microsite" # manual alias override (tsconfig.json paths are auto-detected)
 ```
 
 ### `.iw/rules.yaml`
@@ -338,14 +338,14 @@ See the [Semantic Rules guide](https://intentweave.org/docs/cari/semantic-rules/
 
 ## Environment Variables
 
-| Variable         | Default                 | Description                                        |
-| ---------------- | ----------------------- | -------------------------------------------------- |
-| `NEO4J_URI`      | `bolt://localhost:7687` | Neo4j bolt URI (optional, for KG commands)         |
-| `NEO4J_USERNAME` | `neo4j`                 | Neo4j username                                     |
-| `NEO4J_PASSWORD` | _(required for KG)_     | Neo4j password                                     |
-| `NEO4J_DATABASE` | `neo4j`                 | Neo4j database name                                |
-| `OPENAI_API_KEY` | _(optional)_            | Required for `--provider openai`                   |
-| `IW_SESSION`     | `default`               | Default session ID                                 |
+| Variable         | Default                 | Description                                |
+| ---------------- | ----------------------- | ------------------------------------------ |
+| `NEO4J_URI`      | `bolt://localhost:7687` | Neo4j bolt URI (optional, for KG commands) |
+| `NEO4J_USERNAME` | `neo4j`                 | Neo4j username                             |
+| `NEO4J_PASSWORD` | _(required for KG)_     | Neo4j password                             |
+| `NEO4J_DATABASE` | `neo4j`                 | Neo4j database name                        |
+| `OPENAI_API_KEY` | _(optional)_            | Required for `--provider openai`           |
+| `IW_SESSION`     | `default`               | Default session ID                         |
 
 ---
 
@@ -406,13 +406,13 @@ export OPENAI_API_KEY=sk-...
 iw run docs/**/*.md --track open --provider openai -i -v
 ```
 
-| Option                 | Default       | Description                                |
-| ---------------------- | ------------- | ------------------------------------------ |
-| `-t, --track <track>`  | `main`        | Pipeline track: `main`, `open`, `both`     |
-| `--provider <name>`    | `smart-mock`  | LLM provider: `smart-mock`, `openai`       |
-| `-i, --incremental`    | off           | SHA-256 content-addressed cache            |
-| `--persist`            | off           | Auto-persist to Neo4j after run            |
-| `-v, --verbose`        | off           | Show per-stage progress                    |
+| Option                | Default      | Description                            |
+| --------------------- | ------------ | -------------------------------------- |
+| `-t, --track <track>` | `main`       | Pipeline track: `main`, `open`, `both` |
+| `--provider <name>`   | `smart-mock` | LLM provider: `smart-mock`, `openai`   |
+| `-i, --incremental`   | off          | SHA-256 content-addressed cache        |
+| `--persist`           | off          | Auto-persist to Neo4j after run        |
+| `-v, --verbose`       | off          | Show per-stage progress                |
 
 ### `iw persist` — Write to Neo4j
 
@@ -471,7 +471,6 @@ export NEO4J_PASSWORD=intentweave
 1. Ensure `.vscode/mcp.json` exists with the correct server config
 2. Test the server starts without errors: `iw mcp`
 3. Restart VS Code after adding or modifying `mcp.json`
-
 
 ---
 

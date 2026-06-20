@@ -207,9 +207,9 @@ export function rulesCheckFromDb(
 
     if (filesTableExists) {
       const allFilePaths = (
-        db
-          .prepare(`SELECT DISTINCT path FROM files`)
-          .all() as Array<{ path: string }>
+        db.prepare(`SELECT DISTINCT path FROM files`).all() as Array<{
+          path: string;
+        }>
       ).map((r) => r.path);
 
       for (const rule of structuralRulesWithScope) {

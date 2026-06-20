@@ -144,7 +144,9 @@ async function detectTsPathAliases(
     if (!paths) return;
 
     for (const [alias, targets] of Object.entries(paths)) {
-      const rawTarget = Array.isArray(targets) ? targets[0] : (targets as string);
+      const rawTarget = Array.isArray(targets)
+        ? targets[0]
+        : (targets as string);
       if (!rawTarget) continue;
       // Strip trailing /* from both alias key and target path
       const aliasKey = alias.replace(/\/\*$/, "");

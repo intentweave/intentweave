@@ -163,7 +163,9 @@ Rules to follow:
 3. Each forbidden entry should target the smallest possible scope (use "in" when the ADR specifies a layer).
 4. Infer reasonable file-scope globs from the ADR context (e.g. "apps/ui/**" for UI-specific rules).
 5. Default "mode" to "error" for structural rules at severity high/critical, and "warn" for medium/low or any behavioral/documentary rule.
-6. If no machine-enforceable constraints are found, output: {"version": 1, "rules": []}.${samplePaths && samplePaths.length > 0 ? `
+6. If no machine-enforceable constraints are found, output: {"version": 1, "rules": []}.${
+    samplePaths && samplePaths.length > 0
+      ? `
 
 IMPORTANT — Actual workspace file paths:
 The files in this project have paths like:
@@ -171,7 +173,9 @@ ${samplePaths.map((p) => `  ${p}`).join("\n")}
 
 When writing "in:" glob patterns, you MUST use patterns that match these actual paths.
 Do NOT use "src/**" if there is no root-level src/ directory. Instead use patterns
-like "packages/**", "plugins/**", or "**/src/**" that match the real structure above.` : ""}`;
+like "packages/**", "plugins/**", or "**/src/**" that match the real structure above.`
+      : ""
+  }`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -314,7 +318,11 @@ export const indexRulesExtractSubcommand = new Command("rules-extract")
         ).map((r) => r.path);
         db.close();
         if (opts.verbose && samplePaths.length > 0) {
-          console.log(chalk.dim(`  [context] ${samplePaths.length} sample paths loaded from index`));
+          console.log(
+            chalk.dim(
+              `  [context] ${samplePaths.length} sample paths loaded from index`,
+            ),
+          );
         }
       } catch {
         // Index may be incompatible or locked — proceed without path context

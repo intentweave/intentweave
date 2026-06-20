@@ -244,11 +244,12 @@ thresholds:
   behavioral:
     mode: warn # keep behavioral violations as warnings (default)
 aliases:
-  "@site": "microsite"    # Override auto-detected alias (manual config wins)
-  "@app": "packages/app"  # Webpack/TS path alias example
+  "@site": "microsite" # Override auto-detected alias (manual config wins)
+  "@app": "packages/app" # Webpack/TS path alias example
 ```
 
 **Path alias resolution** runs automatically after every `iw index build`:
+
 1. Reads `compilerOptions.paths` from `tsconfig.json` / `tsconfig.base.json` (follows `extends`)
 2. Merges with any `aliases` in `.iw/config.yaml` (manual config wins on conflict)
 3. Rewrites matching `target_file` rows in the `imports` table so cross-package rules don't produce false positives

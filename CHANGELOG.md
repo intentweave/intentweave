@@ -24,11 +24,13 @@ All notable changes to IntentWeave are documented in this file.
   `paths`, etc.) resolve to their real workspace-relative paths before cross-package checks run.
   Without this, tools like `no-cross-package-internal-imports` raised false positives for any
   project that uses module aliases. Configuration:
+
   ```yaml
   aliases:
     "@site": "microsite"
-    "@app":  "packages/app/src"
+    "@app": "packages/app/src"
   ```
+
   Applied as a post-build SQLite `UPDATE` on the `imports` table; works with both the native
   Rust `cari-build` binary and the TypeScript pipeline.
 
@@ -39,6 +41,7 @@ All notable changes to IntentWeave are documented in this file.
 
 - **Scope warnings in `iw intent check`** — if a rule's `in:` glob matches zero indexed files,
   the check now prints a warning rather than silently reporting the rule as clean:
+
   ```
   ⚠  scope warning: avoid-default-exports — in: src/** matched 0 indexed files (rule never evaluated)
   ```
