@@ -249,6 +249,19 @@ export function retrieveFromDb(
     entries = entries.filter(([p]) => !isDocFile(p));
   }
 
+  // Phase B: apply per-path-prefix score multipliers (repo-shape adaptation)
+  if (params.pathPriors && params.pathPriors.size > 0) {
+    for (const [filePath, data] of entries) {
+      const mult = resolvePathMultiplier(filePath, params.pathPriors);
+      if (mult !== 1.0) {
+        data.score *= mult;
+        if (params.explainScoring) {
+          data.reasons.push(`path-prior ×${mult}`);
+        }
+      }
+    }
+  }
+
   // Sort by score descending, take top-K
   entries.sort((a, b) => b[1].score - a[1].score);
   const topK = entries.slice(0, limit);
@@ -269,6 +282,29 @@ export function retrieveFromDb(
 
 function isDocFile(filePath: string): boolean {
   return /\.(md|mdx|rst|txt|adoc)$/i.test(filePath);
+}
+
+/**
+ * Resolve the multiplier for a given file path by finding the longest matching
+ * prefix in the priors map.  Most-specific (longest) prefix wins.
+ * Returns 1.0 if no prefix matches.
+ */
+function resolvePathMultiplier(
+  filePath: string,
+  priors: Map<string, number>,
+): number {
+  let best = 1.0;
+  let bestLen = -1;
+  for (const [prefix, mult] of priors) {
+    if (
+      (filePath === prefix || filePath.startsWith(prefix + "/")) &&
+      prefix.length > bestLen
+    ) {
+      best = mult;
+      bestLen = prefix.length;
+    }
+  }
+  return best;
 }
 
 /**

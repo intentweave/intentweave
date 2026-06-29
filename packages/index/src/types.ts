@@ -239,6 +239,19 @@ export interface RetrieveParams {
 
   /** Restrict to code files, doc files, or all */
   scope?: "code" | "docs" | "all";
+
+  /**
+   * Per-path-prefix score multipliers for Phase B repo-shape adaptation.
+   * Keys are path prefixes (no trailing slash). Longest matching prefix wins.
+   * Multipliers < 1.0 downweight noise directories; > 1.0 boost important paths.
+   */
+  pathPriors?: Map<string, number>;
+
+  /**
+   * When true, append the applied multiplier to each file's reason string.
+   * Used with --adaptive-explain CLI flag.
+   */
+  explainScoring?: boolean;
 }
 
 export interface RetrieveResult {
@@ -2480,6 +2493,27 @@ export interface IwConfig {
     };
   };
   /**
+   * Adaptive context-pack tuning.
+   *
+   * Example:
+   * ```yaml
+   * adaptive:
+   *   path_exceptions:
+   *     - path: docs/decisions/
+   *       multiplier: 1.2
+   *     - path: packages/core-api/
+   *       multiplier: 1.5
+   * ```
+   */
+  adaptive?: {
+    /**
+     * Per-path multiplier overrides applied after density-based scoring.
+     * Allowlisted paths keep their multiplier even if they would otherwise
+     * be down-weighted. Paths with multiplier > 1.0 are boosted.
+     */
+    path_exceptions?: Array<{ path: string; multiplier: number }>;
+  };
+  /**
    * Module specifier alias mappings applied to the imports table after index
    * build. Useful for projects that use path aliases (Docusaurus `@site`,
    * Webpack `@app`, TypeScript `paths`, etc.) that the AST extractor stores
@@ -2798,6 +2832,18 @@ export interface ContextPackInput {
   budget?: number;
   /** Which sections to include (default: all) */
   sections?: ContextPackSection[];
+  /** Adaptive ranking mode (default: off) */
+  adaptiveMode?: "off" | "conservative" | "aggressive";
+  /** Include scoring diagnostics when supported */
+  explainScoring?: boolean;
+  /**
+   * Optional adaptive configuration loaded from .iw/config.yaml.
+   * Caller (CLI/MCP) is responsible for reading and passing this in
+   * so the index package stays free of fs/YAML dependencies.
+   */
+  adaptiveConfig?: {
+    pathExceptions?: Array<{ path: string; multiplier: number }>;
+  };
 }
 
 export interface ContextPackFileEntry {

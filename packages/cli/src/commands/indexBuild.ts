@@ -7664,11 +7664,7 @@ const indexContextPackSubcommand = new Command("context-pack")
     "--entity <name>",
     "Anchor on a specific symbol/component for connection discovery",
   )
-  .option(
-    "--budget <n>",
-    "Approximate token budget for the output",
-    "4000",
-  )
+  .option("--budget <n>", "Approximate token budget for the output", "4000")
   .option(
     "--sections <list>",
     "Comma-separated sections to include: files,symbols,rules,connections,rationale,drift",
@@ -7678,23 +7674,67 @@ const indexContextPackSubcommand = new Command("context-pack")
     "Output format: markdown (default) or json",
     "markdown",
   )
+  .option(
+    "--adaptive <mode>",
+    "Adaptive mode: off, conservative, aggressive",
+    "off",
+  )
+  .option(
+    "--adaptive-explain",
+    "Include adaptive scoring diagnostics in output (when supported)",
+    false,
+  )
   .option("--db <path>", "Path to the SQLite index", ".iw/index.db")
   .action(async (opts) => {
     const dbPath = resolveDbPath(opts.db);
     const { contextPack: cpFn } = await import("@intentweave/index");
     const budget = parseInt(opts.budget ?? "4000", 10);
+    const adaptiveModeRaw = String(opts.adaptive ?? "off").toLowerCase();
+    const adaptiveMode =
+      adaptiveModeRaw === "off" ||
+      adaptiveModeRaw === "conservative" ||
+      adaptiveModeRaw === "aggressive"
+        ? adaptiveModeRaw
+        : null;
     const sectionList = opts.sections
-      ? (opts.sections.split(",").map((s: string) => s.trim()) as import("@intentweave/index").ContextPackSection[])
+      ? (opts.sections
+          .split(",")
+          .map((s: string) =>
+            s.trim(),
+          ) as import("@intentweave/index").ContextPackSection[])
       : undefined;
 
+    if (!adaptiveMode) {
+      console.error(
+        chalk.red(
+          `  ✗ invalid --adaptive mode: ${String(opts.adaptive)} (use: off, conservative, aggressive)`,
+        ),
+      );
+      process.exit(1);
+    }
+
     try {
-      const result = cpFn(dbPath, {
+      // Load optional .iw/config.yaml for adaptive path_exceptions
+      const iwDir = path.dirname(dbPath);
+      const iwConfig =
+        adaptiveMode !== "off" ? await loadIwConfig(iwDir) : undefined;
+
+      const cpInput = {
         query: opts.query,
         files: opts.files,
         entity: opts.entity,
         budget: Math.min(budget, 12000),
         sections: sectionList,
-      });
+        adaptiveMode,
+        explainScoring: Boolean(opts.adaptiveExplain),
+        adaptiveConfig: iwConfig?.adaptive
+          ? {
+              pathExceptions: iwConfig.adaptive.path_exceptions,
+            }
+          : undefined,
+      } as import("@intentweave/index").ContextPackInput;
+
+      const result = cpFn(dbPath, cpInput);
 
       if (opts.format === "json") {
         process.stdout.write(JSON.stringify(result, null, 2) + "\n");
@@ -7710,6 +7750,274 @@ const indexContextPackSubcommand = new Command("context-pack")
       const msg = err instanceof Error ? err.message : String(err);
       console.error(chalk.red(`  ✗ context-pack failed: ${msg}`));
       process.exit(1);
+    }
+  });
+
+// ── iw index eval ──────────────────────────────────────────────────────────
+type EvalQueryInput = {
+  query: string;
+  files?: string[];
+  anchor_files?: string[];
+  entity?: string;
+};
+
+const NOISY_PATH_RE =
+  /^(\.changeset\/|\.specstory\/|\.claude\/|docs\/archive\/|archive\/|deprecated\/|legacy\/|node_modules\/|dist\/|build\/)/i;
+
+const indexEvalSubcommand = new Command("eval")
+  .description(
+    "Evaluate context-pack quality on a fixed query set (noisy-path share + latency).",
+  )
+  .option(
+    "--queries <path>",
+    "Path to query-set JSON (array of strings or {query,...} objects)",
+    ".iw/eval/queries.json",
+  )
+  .option("--db <path>", "Path to the SQLite index", ".iw/index.db")
+  .option(
+    "--top-k <n>",
+    "Number of files per query to include in noisy-path share",
+    "20",
+  )
+  .option("--budget <n>", "Token budget passed to context-pack", "4000")
+  .option(
+    "--adaptive <mode>",
+    "Adaptive mode: off, conservative, aggressive",
+    "off",
+  )
+  .option(
+    "--adaptive-explain",
+    "Include adaptive scoring diagnostics in output (when supported)",
+    false,
+  )
+  .option("-f, --format <fmt>", "Output format: text (default) or json", "text")
+  .option("-o, --output <path>", "Optional JSON report file path")
+  .action(async (opts) => {
+    const dbPath = resolveDbPath(opts.db);
+    const queryPath = path.resolve(opts.queries);
+    const topK = Math.max(1, parseInt(opts.topK ?? "20", 10));
+    const budget = Math.min(
+      12000,
+      Math.max(200, parseInt(opts.budget ?? "4000", 10)),
+    );
+    const adaptiveModeRaw = String(opts.adaptive ?? "off").toLowerCase();
+    const adaptiveMode =
+      adaptiveModeRaw === "off" ||
+      adaptiveModeRaw === "conservative" ||
+      adaptiveModeRaw === "aggressive"
+        ? adaptiveModeRaw
+        : null;
+
+    if (!adaptiveMode) {
+      console.error(
+        chalk.red(
+          `  ✗ invalid --adaptive mode: ${String(opts.adaptive)} (use: off, conservative, aggressive)`,
+        ),
+      );
+      process.exit(1);
+    }
+
+    const { contextPack: cpFn } = await import("@intentweave/index");
+
+    let querySetRaw = "";
+    try {
+      querySetRaw = await fs.readFile(queryPath, "utf-8");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`  ✗ failed to read query set: ${msg}`));
+      process.exit(1);
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(querySetRaw) as unknown;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`  ✗ query set is not valid JSON: ${msg}`));
+      process.exit(1);
+    }
+
+    if (!Array.isArray(parsed)) {
+      console.error(chalk.red("  ✗ query set must be a JSON array"));
+      process.exit(1);
+    }
+
+    const queryItems: EvalQueryInput[] = parsed
+      .map((item) => {
+        if (typeof item === "string") {
+          const query = item.trim();
+          return query.length > 0 ? ({ query } as EvalQueryInput) : null;
+        }
+        if (item && typeof item === "object") {
+          const rec = item as Record<string, unknown>;
+          if (typeof rec.query !== "string") return null;
+          const query = rec.query.trim();
+          if (query.length === 0) return null;
+          return {
+            query,
+            files: Array.isArray(rec.files)
+              ? rec.files.filter((v): v is string => typeof v === "string")
+              : undefined,
+            anchor_files: Array.isArray(rec.anchor_files)
+              ? rec.anchor_files.filter(
+                  (v): v is string => typeof v === "string",
+                )
+              : undefined,
+            entity: typeof rec.entity === "string" ? rec.entity : undefined,
+          } as EvalQueryInput;
+        }
+        return null;
+      })
+      .filter((x): x is EvalQueryInput => x !== null);
+
+    if (queryItems.length === 0) {
+      console.error(chalk.red("  ✗ query set is empty after parsing"));
+      process.exit(1);
+    }
+
+    const perQuery: Array<{
+      query: string;
+      durationMs: number;
+      topFiles: number;
+      noisyFiles: number;
+      noisyShare: number;
+    }> = [];
+
+    let totalTopFiles = 0;
+    let totalNoisyFiles = 0;
+    const durations: number[] = [];
+
+    // Load optional .iw/config.yaml once for the whole eval run
+    const iwDir = path.dirname(dbPath);
+    const iwConfig =
+      adaptiveMode !== "off" ? await loadIwConfig(iwDir) : undefined;
+    const adaptiveConfig = iwConfig?.adaptive
+      ? { pathExceptions: iwConfig.adaptive.path_exceptions }
+      : undefined;
+
+    for (const item of queryItems) {
+      const t0 = performance.now();
+      const cpInput = {
+        query: item.query,
+        files: item.anchor_files ?? item.files,
+        entity: item.entity,
+        budget,
+        adaptiveMode,
+        explainScoring: Boolean(opts.adaptiveExplain),
+        adaptiveConfig,
+      } as import("@intentweave/index").ContextPackInput;
+      const result = cpFn(dbPath, cpInput);
+      const durationMs = Math.round((performance.now() - t0) * 1000) / 1000;
+      const topFiles = result.sections.files.slice(0, topK);
+      const noisyFiles = topFiles.filter((f) =>
+        NOISY_PATH_RE.test(f.path),
+      ).length;
+      const noisyShare = topFiles.length > 0 ? noisyFiles / topFiles.length : 0;
+
+      durations.push(durationMs);
+      totalTopFiles += topFiles.length;
+      totalNoisyFiles += noisyFiles;
+      perQuery.push({
+        query: item.query,
+        durationMs,
+        topFiles: topFiles.length,
+        noisyFiles,
+        noisyShare,
+      });
+    }
+
+    const sortedDurations = [...durations].sort((a, b) => a - b);
+    const pick = (arr: number[], q: number): number => {
+      if (arr.length === 0) return 0;
+      const idx = Math.max(
+        0,
+        Math.min(arr.length - 1, Math.floor(q * (arr.length - 1))),
+      );
+      return arr[idx];
+    };
+
+    const report = {
+      generatedAt: new Date().toISOString(),
+      dbPath,
+      querySetPath: queryPath,
+      adaptiveMode,
+      topK,
+      budget,
+      queryCount: queryItems.length,
+      metrics: {
+        noisyPathShare: totalTopFiles > 0 ? totalNoisyFiles / totalTopFiles : 0,
+        noisyPathSharePct:
+          totalTopFiles > 0
+            ? Math.round((totalNoisyFiles / totalTopFiles) * 1000) / 10
+            : 0,
+        totalTopFiles,
+        totalNoisyFiles,
+        latencyMs: {
+          avg:
+            durations.length > 0
+              ? Math.round(
+                  (durations.reduce((a, b) => a + b, 0) / durations.length) *
+                    1000,
+                ) / 1000
+              : 0,
+          p50: pick(sortedDurations, 0.5),
+          p95: pick(sortedDurations, 0.95),
+          max: durations.length > 0 ? Math.max(...durations) : 0,
+        },
+      },
+      perQuery,
+    };
+
+    if (opts.output) {
+      const outPath = path.resolve(opts.output);
+      await fs.mkdir(path.dirname(outPath), { recursive: true });
+      await fs.writeFile(
+        outPath,
+        JSON.stringify(report, null, 2) + "\n",
+        "utf-8",
+      );
+    }
+
+    if (opts.format === "json") {
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+      return;
+    }
+
+    const worst = [...perQuery]
+      .sort((a, b) => b.noisyShare - a.noisyShare)
+      .slice(0, 5);
+
+    console.log(chalk.blue("\n  Context-Pack Eval Summary\n"));
+    console.log(`  DB: ${chalk.gray(dbPath)}`);
+    console.log(
+      `  Query set: ${chalk.gray(queryPath)} (${queryItems.length} queries)`,
+    );
+    console.log(`  Adaptive mode: ${chalk.cyan(adaptiveMode)}`);
+    console.log(`  Top-K: ${topK}`);
+    console.log(
+      `  Noisy-path share: ${chalk.yellow(
+        `${report.metrics.noisyPathSharePct.toFixed(1)}%`,
+      )} (${totalNoisyFiles}/${totalTopFiles})`,
+    );
+    console.log(
+      `  Latency ms: avg=${report.metrics.latencyMs.avg.toFixed(1)} p50=${report.metrics.latencyMs.p50.toFixed(1)} p95=${report.metrics.latencyMs.p95.toFixed(1)} max=${report.metrics.latencyMs.max.toFixed(1)}`,
+    );
+
+    if (worst.length > 0) {
+      console.log(chalk.bold("\n  Worst noisy-share queries:"));
+      for (const row of worst) {
+        console.log(
+          `  - ${(row.noisyShare * 100).toFixed(1)}% (${row.noisyFiles}/${row.topFiles}) · ${row.query}`,
+        );
+      }
+    }
+
+    if (opts.output) {
+      console.log(
+        chalk.gray(`\n  Wrote report to ${path.resolve(opts.output)}\n`),
+      );
+    } else {
+      console.log();
     }
   });
 
@@ -8044,7 +8352,8 @@ export const indexCommand = new Command("index")
   .addCommand(indexCypherSubcommand)
   .addCommand(indexSchemaSubcommand)
   .addCommand(indexCapsuleSubcommand)
-  .addCommand(indexContextPackSubcommand);
+  .addCommand(indexContextPackSubcommand)
+  .addCommand(indexEvalSubcommand);
 
 // ── LLM narrative generation for --explain ──────────────────────
 

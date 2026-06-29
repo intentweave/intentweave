@@ -25,7 +25,7 @@ All notable changes to IntentWeave are documented in this file.
 - **FTS5 `rowid` JOIN was wrong** — `fts.rowid = a.id` (TEXT UUID) fixed to `fts.rowid = a.rowid`
   (integer rowid); multi-word queries always returned 0 results previously
 
-- **FTS5 AND vs OR semantics** — `sanitizeFtsQuery` now joins tokens with ` OR ` so any matching
+- **FTS5 AND vs OR semantics** — `sanitizeFtsQuery` now joins tokens with `OR` so any matching
   keyword scores a file, rather than requiring all tokens in a single annotation row
 
 ### Added

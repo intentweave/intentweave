@@ -63,12 +63,23 @@ export function contextPackFromDb(
   const anchorFiles = input.files ?? [];
   const anchorEntity = input.entity?.trim() ?? "";
 
+  // Phase B: compute path-prior multipliers for repo-shape adaptation
+  const pathPriors =
+    input.adaptiveMode && input.adaptiveMode !== "off"
+      ? computePathPriors(db, input.adaptiveConfig?.pathExceptions)
+      : undefined;
+
   // ── 1. Ranked files ─────────────────────────────────────────────────────
   let files: ContextPackFileEntry[] = [];
   if (sections.includes("files")) {
     const effectiveQuery = query || anchorEntity;
     if (effectiveQuery) {
-      const result = retrieveFromDb(db, { query: effectiveQuery, limit: 20 });
+      const result = retrieveFromDb(db, {
+        query: effectiveQuery,
+        limit: 20,
+        pathPriors,
+        explainScoring: input.explainScoring,
+      });
       files = result.files.map((f) => ({
         path: f.path,
         score: Math.round(f.score * 100) / 100,
@@ -96,10 +107,7 @@ export function contextPackFromDb(
   }
 
   // Collect the set of context file paths for subsequent queries
-  const contextPaths = new Set([
-    ...files.map((f) => f.path),
-    ...anchorFiles,
-  ]);
+  const contextPaths = new Set([...files.map((f) => f.path), ...anchorFiles]);
 
   // ── 2. Symbols from context files ───────────────────────────────────────
   let symbols: Array<{
@@ -148,8 +156,10 @@ export function contextPackFromDb(
       line: r.line,
       exported: r.export === "exported",
     }));
-    symbols = trimToChars(symbols, Math.floor(budget * 0.2 * 4), (s) =>
-      `  ${s.name} (${s.kind}) — ${s.file}:${s.line}`,
+    symbols = trimToChars(
+      symbols,
+      Math.floor(budget * 0.2 * 4),
+      (s) => `  ${s.name} (${s.kind}) — ${s.file}:${s.line}`,
     );
   }
 
@@ -266,8 +276,11 @@ export function contextPackFromDb(
         severity: info.severity,
         annotationCount: info.count,
       }));
-      drift = trimToChars(drift, Math.floor(budget * 0.05 * 4), (d) =>
-        `  ${d.severity.toUpperCase()} ${d.docFile} (${d.annotationCount} annotations)`,
+      drift = trimToChars(
+        drift,
+        Math.floor(budget * 0.05 * 4),
+        (d) =>
+          `  ${d.severity.toUpperCase()} ${d.docFile} (${d.annotationCount} annotations)`,
       );
     } catch {
       // Drift is optional
@@ -369,12 +382,11 @@ function renderMarkdown(data: {
   const parts: string[] = [];
 
   // Header
-  const header =
-    data.query
-      ? `## CARI Context — "${data.query}"`
-      : data.anchorEntity
-        ? `## CARI Context — ${data.anchorEntity}`
-        : `## CARI Context`;
+  const header = data.query
+    ? `## CARI Context — "${data.query}"`
+    : data.anchorEntity
+      ? `## CARI Context — ${data.anchorEntity}`
+      : `## CARI Context`;
   parts.push(header);
   parts.push("");
 
@@ -457,9 +469,7 @@ function renderMarkdown(data: {
   if (data.rationale.length > 0) {
     parts.push("### Design Rationale");
     for (const r of data.rationale) {
-      parts.push(
-        `- [${r.kind}] ${r.text} (\`${r.file}\`:${r.line})`,
-      );
+      parts.push(`- [${r.kind}] ${r.text} (\`${r.file}\`:${r.line})`);
     }
     parts.push("");
   }
@@ -481,6 +491,68 @@ function renderMarkdown(data: {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Phase B: path-prior computation (repo-shape adaptation)
+// ---------------------------------------------------------------------------
+
+/** Dirs that are meta/noise artefacts and should be heavily downweighted. */
+const META_DIR_RE =
+  /^(archive|deprecated|legacy|backup|\.changeset|\.claude|\.specstory|node_modules|dist|build)$/i;
+
+/**
+ * Compute per-path score multipliers by identifying meta/noise directories.
+ *
+ * Strategy: top-level directory names that match META_DIR_RE receive a 0.05×
+ * multiplier to push them out of the top-K results.  Density-based scoring is
+ * intentionally omitted — annotation density varies too widely across repos to
+ * use an absolute threshold reliably.
+ *
+ * `pathExceptions` from `.iw/config.yaml` `adaptive.path_exceptions[]`
+ * override any computed value so maintainers can tune per-workspace.
+ *
+ * Keys in the returned map are path prefixes (no trailing slash); the caller's
+ * `resolvePathMultiplier` uses longest-prefix matching so that fine-grained
+ * config exceptions (e.g. `docs/decisions/`) beat coarser ones (e.g. `docs`).
+ */
+function computePathPriors(
+  db: Database.Database,
+  exceptions?: Array<{ path: string; multiplier: number }>,
+): Map<string, number> {
+  const priors = new Map<string, number>();
+
+  try {
+    // Identify top-level meta directories using the files table (one row per
+    // indexed file — orders of magnitude smaller than the annotations table).
+    const dirs = db
+      .prepare(
+        `SELECT DISTINCT
+           CASE WHEN instr(path, '/') > 0
+                THEN substr(path, 1, instr(path, '/') - 1)
+                ELSE path END AS dir
+         FROM files`,
+      )
+      .all() as Array<{ dir: string }>;
+
+    for (const { dir } of dirs) {
+      if (META_DIR_RE.test(dir)) {
+        priors.set(dir, 0.05);
+      }
+    }
+  } catch {
+    // files table may not exist in older indexes; skip gracefully
+    return priors;
+  }
+
+  // Config-level overrides — longer keys are respected by resolvePathMultiplier
+  if (exceptions) {
+    for (const exc of exceptions) {
+      priors.set(exc.path.replace(/\/$/, ""), exc.multiplier);
+    }
+  }
+
+  return priors;
+}
 
 function isDocFile(p: string): boolean {
   return /\.(md|mdx|rst|txt|adoc)$/i.test(p);
