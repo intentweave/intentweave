@@ -44,6 +44,9 @@ export function retrieveFromDb(
   const ftsQuery = sanitizeFtsQuery(query);
 
   // Strategy 1: FTS5 match on annotations text
+  // No ORDER BY rank — we aggregate + rank at the file level in JS below.
+  // ORDER BY rank on large corpora (2M+ rows) forces full BM25 computation on
+  // all matching rows before the LIMIT, causing multi-minute latency.
   const annotationHits = db
     .prepare(
       `
@@ -51,7 +54,6 @@ export function retrieveFromDb(
       FROM annotations a
       JOIN annotations_fts fts ON fts.rowid = a.rowid
       WHERE annotations_fts MATCH ?
-      ORDER BY rank
       LIMIT 500
     `,
     )
@@ -84,17 +86,22 @@ export function retrieveFromDb(
     doc_summary: string | null;
   }>;
 
-  // Strategy 3: Exact annotation text match (for short queries FTS may miss)
-  const exactHits = db
-    .prepare(
-      `
+  // Strategy 3: Exact annotation text match — only for single-word queries.
+  // Multi-word queries will never match a single-keyword annotation row, so
+  // skip this on large corpora to avoid a 2M-row LOWER() full-table scan.
+  const isSingleToken = !query.includes(" ");
+  const exactHits = isSingleToken
+    ? (db
+        .prepare(
+          `
       SELECT doc_path, line, text, confidence, symbol_id, idf_score
       FROM annotations
       WHERE LOWER(text) = LOWER(?)
       LIMIT 200
     `,
-    )
-    .all(query) as typeof annotationHits;
+        )
+        .all(query) as typeof annotationHits)
+    : [];
 
   // Score files by aggregating hits
   const fileScores = new Map<
@@ -123,6 +130,34 @@ export function retrieveFromDb(
     fileScores.set(filePath, existing);
   };
 
+  // Bulk-fetch symbols for all annotation hits that have a symbol_id
+  // (replaces N+1 individual queries that caused severe latency on large corpora)
+  const symbolIdSet = new Set(
+    [...annotationHits, ...exactHits]
+      .map((h) => h.symbol_id)
+      .filter((id): id is string => id != null),
+  );
+  const symbolMap = new Map<
+    string,
+    { file_path: string; line: number; name: string }
+  >();
+  if (symbolIdSet.size > 0) {
+    const placeholders = Array.from(symbolIdSet)
+      .map(() => "?")
+      .join(",");
+    const symRows = db
+      .prepare(
+        `SELECT id, file_path, line, name FROM symbols WHERE id IN (${placeholders})`,
+      )
+      .all(...Array.from(symbolIdSet)) as Array<{
+      id: string;
+      file_path: string;
+      line: number;
+      name: string;
+    }>;
+    for (const row of symRows) symbolMap.set(row.id, row);
+  }
+
   // Annotations → doc files
   for (const hit of [...annotationHits, ...exactHits]) {
     const boost = hit.idf_score ?? 0.5;
@@ -134,11 +169,7 @@ export function retrieveFromDb(
 
     // Also score the code file the annotation points to
     if (hit.symbol_id) {
-      const sym = db
-        .prepare(`SELECT file_path, line, name FROM symbols WHERE id = ?`)
-        .get(hit.symbol_id) as
-        | { file_path: string; line: number; name: string }
-        | undefined;
+      const sym = symbolMap.get(hit.symbol_id);
       if (sym) {
         addFileScore(
           sym.file_path,
@@ -162,18 +193,24 @@ export function retrieveFromDb(
   }
 
   // Boost files with co-occurrence connections to matched entities
+  // Cap to top-5 highest-scoring entities to avoid O(n) LOWER scans on large corpora
   const matchedEntities = new Set<string>();
   for (const hit of annotationHits) matchedEntities.add(hit.text.toLowerCase());
   for (const hit of symbolHits) matchedEntities.add(hit.name.toLowerCase());
 
   if (matchedEntities.size > 0) {
-    for (const entity of matchedEntities) {
+    // Limit to top-5 entities by their current file score contribution
+    const topEntities = [...matchedEntities]
+      .filter((e) => e.length > 2) // skip trivial tokens
+      .slice(0, 5);
+
+    for (const entity of topEntities) {
       const coocs = db
         .prepare(
           `
           SELECT entity_a, entity_b, score FROM co_occurrences
           WHERE LOWER(entity_a) = ? OR LOWER(entity_b) = ?
-          ORDER BY score DESC LIMIT 20
+          ORDER BY score DESC LIMIT 10
         `,
         )
         .all(entity, entity) as Array<{
@@ -187,10 +224,10 @@ export function retrieveFromDb(
           cooc.entity_a.toLowerCase() === entity
             ? cooc.entity_b
             : cooc.entity_a;
-        // Find files containing the related entity
+        // Use case-sensitive match so SQLite can use an index on annotations.text
         const relatedFiles = db
           .prepare(
-            `SELECT DISTINCT doc_path FROM annotations WHERE LOWER(text) = LOWER(?) LIMIT 5`,
+            `SELECT DISTINCT doc_path FROM annotations WHERE text = ? LIMIT 5`,
           )
           .all(related) as Array<{ doc_path: string }>;
         for (const f of relatedFiles) {

@@ -2,6 +2,41 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.15.6] — 2026-06-20
+
+### Fixed
+
+- **`iw index retrieve` / `context-pack` latency on large corpora** — 3m24s → sub-second on a
+  2.2M-annotation index. Root causes:
+  - `ORDER BY rank` on FTS5 JOIN forced full BM25 scan before `LIMIT 500` — removed (JS file-level
+    scoring handles ranking)
+  - N+1 symbol lookups (up to 500 individual queries) replaced with one bulk `IN (?)` query
+  - Strategy 3 exact-match (`LOWER(text)` full scan on 2.2M rows) now skipped for multi-word queries
+  - Co-occurrence `LOWER()` scans on 440K rows added lazy expression indexes (`idx_co_occ_a_lower`,
+    `idx_co_occ_b_lower`, `idx_annotations_text`) — one-time creation on first `openIndex` call,
+    persisted in the DB file
+
+- **`iw index update` NOT NULL failures** — incremental writer now skips call edges with no caller
+  name (`symbol_calls.caller_name NOT NULL`) and defaults `idf_score` to `1.0` instead of NULL
+
+- **FTS5 index not synced after native build** — `rebuildFtsIndexes()` is now called after
+  `cari-build` exits, enabling multi-word `retrieve` queries on natively-built indexes
+
+- **FTS5 `rowid` JOIN was wrong** — `fts.rowid = a.id` (TEXT UUID) fixed to `fts.rowid = a.rowid`
+  (integer rowid); multi-word queries always returned 0 results previously
+
+- **FTS5 AND vs OR semantics** — `sanitizeFtsQuery` now joins tokens with ` OR ` so any matching
+  keyword scores a file, rather than requiring all tokens in a single annotation row
+
+### Added
+
+- **`--no-native` flag for `iw index build`** — forces the TypeScript pipeline even when the Rust
+  binary is available. Verbose mode shows which engine was chosen and why.
+- **WAL mode set after native build** — `PRAGMA journal_mode=WAL; synchronous=NORMAL` applied
+  post-build for faster subsequent reads
+
+---
+
 ## [0.15.5] — 2026-06-21
 
 ### Added

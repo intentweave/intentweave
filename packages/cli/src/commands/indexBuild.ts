@@ -186,6 +186,10 @@ async function detectTsPathAliases(
 function rebuildFtsIndexes(dbPath: string): void {
   const db = new Database(dbPath);
   try {
+    // Enable WAL mode for all future connections (stored in DB file)
+    // This dramatically speeds up concurrent reads and write batching
+    db.exec(`PRAGMA journal_mode=WAL`);
+    db.exec(`PRAGMA synchronous=NORMAL`);
     db.exec(`INSERT INTO annotations_fts(annotations_fts) VALUES('rebuild')`);
     db.exec(`INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')`);
   } finally {
@@ -426,6 +430,11 @@ const indexBuildSubcommand = new Command("build")
     (val: string, prev: string[]) => [...(prev ?? []), val],
     [] as string[],
   )
+  .option(
+    "--no-native",
+    "Force the TypeScript pipeline even when the Rust native binary is available. " +
+      "Useful for repos where the JS pipeline is faster (e.g. huge doc corpora where write latency dominates).",
+  )
   .option("-v, --verbose", "Verbose output", false)
   .action(async (paths: string[], opts) => {
     if (!paths || paths.length === 0) paths = ["."];
@@ -471,8 +480,13 @@ const indexBuildSubcommand = new Command("build")
       // Use the Rust `cari-build` binary when:
       //   • No multi-root entries with roles (not yet supported by the binary)
       //   • No --include / --exclude filters (not yet supported by the binary)
+      //   • --no-native flag was NOT passed
       //   • The binary is found on disk (dev build or CARI_BUILD_PATH override)
-      const canUseNative = roots.length === 0 && !opts.include && !opts.exclude;
+      const canUseNative =
+        roots.length === 0 &&
+        !opts.include &&
+        !opts.exclude &&
+        opts.native !== false; // Commander sets opts.native=false when --no-native is passed
       const nativeBinary = canUseNative ? resolveCariNativeBinary() : null;
 
       if (nativeBinary) {
@@ -536,6 +550,15 @@ const indexBuildSubcommand = new Command("build")
         }
       }
       // ── end R1-f ────────────────────────────────────────────────────────────
+      if (verbose) {
+        const reason =
+          opts.native === false
+            ? "--no-native flag"
+            : !canUseNative
+              ? "multi-root / filters active"
+              : "native binary not found";
+        console.log(chalk.gray(`  ▸ using TypeScript pipeline (${reason})\n`));
+      }
 
       const result = await buildFromPaths({
         paths,

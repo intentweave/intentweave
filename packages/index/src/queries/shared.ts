@@ -20,8 +20,20 @@ export function openIndex(dbPath: string): Database.Database {
       `Index not found at ${dbPath}. Run \`iw index build\` first.`,
     );
   }
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database(dbPath, { readonly: false });
   db.pragma("journal_mode = WAL");
+
+  // Ensure performance indexes exist (one-time cost, idempotent IF NOT EXISTS).
+  // These are not in the base schema so that the Rust native builder doesn't need
+  // to be updated; they are created on first read and instant on subsequent reads.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_annotations_text
+      ON annotations(text);
+    CREATE INDEX IF NOT EXISTS idx_co_occ_a_lower
+      ON co_occurrences(LOWER(entity_a));
+    CREATE INDEX IF NOT EXISTS idx_co_occ_b_lower
+      ON co_occurrences(LOWER(entity_b));
+  `);
 
   // Validate schema version — catches indexes built by an incompatible version
   // of cari-native or a very old `iw index build` run.
