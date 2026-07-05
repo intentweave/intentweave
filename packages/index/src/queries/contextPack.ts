@@ -79,7 +79,9 @@ export function contextPackFromDb(
         limit: 20,
         pathPriors,
         anchorFiles:
-          input.adaptiveMode && input.adaptiveMode !== "off" && anchorFiles.length > 0
+          input.adaptiveMode &&
+          input.adaptiveMode !== "off" &&
+          anchorFiles.length > 0
             ? anchorFiles
             : undefined,
         explainScoring: input.explainScoring,

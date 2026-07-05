@@ -264,15 +264,24 @@ const IMPORT_EXTENSION_SWAPS: Record<string, string[]> = {
   ".cjs": [".cts", ".cjs"],
 };
 
-const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
+const SOURCE_EXTENSIONS = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mts",
+  ".cts",
+  ".mjs",
+  ".cjs",
+];
 
 function normalizeImportExtensions(dbPath: string, verbose = false): void {
   const db = new Database(dbPath);
   try {
     const knownPaths = new Set<string>(
-      (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
-        (r) => r.path,
-      ),
+      (
+        db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>
+      ).map((r) => r.path),
     );
     if (knownPaths.size === 0) return;
 
@@ -8003,7 +8012,9 @@ const indexEvalSubcommand = new Command("eval")
       const parts = p.split("/");
       if (
         parts.length >= 2 &&
-        (parts[0] === "packages" || parts[0] === "plugins" || parts[0] === "apps")
+        (parts[0] === "packages" ||
+          parts[0] === "plugins" ||
+          parts[0] === "apps")
       ) {
         return parts.slice(0, 2).join("/");
       }
@@ -8050,7 +8061,8 @@ const indexEvalSubcommand = new Command("eval")
           .map((f) => f.path)
           .filter((p) => !anchors.includes(p));
         anchorHit = top5NonAnchor.some(
-          (p) => anchorDirs.has(path.dirname(p)) || anchorPkgs.has(pathPackage(p)),
+          (p) =>
+            anchorDirs.has(path.dirname(p)) || anchorPkgs.has(pathPackage(p)),
         );
         if (anchorHit) anchorHitCount++;
       }

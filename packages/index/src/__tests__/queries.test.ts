@@ -645,10 +645,12 @@ describe("retrieve", () => {
       query: "AuthService",
       pathPriors: new Map([["docs", 2.0]]),
     });
-    const baseScore = baseline.files.find((f) => f.path === "docs/auth.md")!
-      .score;
-    const boostedScore = boosted.files.find((f) => f.path === "docs/auth.md")!
-      .score;
+    const baseScore = baseline.files.find(
+      (f) => f.path === "docs/auth.md",
+    )!.score;
+    const boostedScore = boosted.files.find(
+      (f) => f.path === "docs/auth.md",
+    )!.score;
     expect(boostedScore).toBeCloseTo(baseScore * 2.0, 1);
   });
 
@@ -692,10 +694,12 @@ describe("retrieve", () => {
       query: "AuthService",
       pathPriors: new Map([["nonexistent/prefix", 5.0]]),
     });
-    const baseScore = baseline.files.find((f) => f.path === "docs/auth.md")!
-      .score;
-    const sameScore = result.files.find((f) => f.path === "docs/auth.md")!
-      .score;
+    const baseScore = baseline.files.find(
+      (f) => f.path === "docs/auth.md",
+    )!.score;
+    const sameScore = result.files.find(
+      (f) => f.path === "docs/auth.md",
+    )!.score;
     expect(sameScore).toBe(baseScore);
   });
 
@@ -754,8 +758,9 @@ describe("retrieve", () => {
       anchorFiles: ["src/auth/service.ts"],
       explainScoring: true,
     });
-    const baseScore = baseline.files.find((f) => f.path === "src/auth/jwt.ts")!
-      .score;
+    const baseScore = baseline.files.find(
+      (f) => f.path === "src/auth/jwt.ts",
+    )!.score;
     const boostedEntry = boosted.files.find(
       (f) => f.path === "src/auth/jwt.ts",
     )!;

@@ -315,13 +315,20 @@ function applyAnchorNeighborhoodBoost(
   db: Database.Database,
   fileScores: Map<
     string,
-    { score: number; reasons: string[]; spans: Array<{ line: number; text: string }> }
+    {
+      score: number;
+      reasons: string[];
+      spans: Array<{ line: number; text: string }>;
+    }
   >,
   anchorFiles: string[],
   explain?: boolean,
 ): void {
   const anchorSet = new Set(anchorFiles);
-  const currentMax = Math.max(1, ...[...fileScores.values()].map((v) => v.score));
+  const currentMax = Math.max(
+    1,
+    ...[...fileScores.values()].map((v) => v.score),
+  );
   const IMPORT_NEIGHBOR_MULT = 1.3;
   const IMPORT_NEIGHBOR_BASE = currentMax * 0.5;
   const SAME_FOLDER_MULT = 1.15;
@@ -334,7 +341,12 @@ function applyAnchorNeighborhoodBoost(
   // matching both tiers get double-multiplied whenever explain is off).
   const boostedFiles = new Set<string>();
 
-  const boost = (filePath: string, mult: number, base: number, reason: string) => {
+  const boost = (
+    filePath: string,
+    mult: number,
+    base: number,
+    reason: string,
+  ) => {
     if (anchorSet.has(filePath) || boostedFiles.has(filePath)) return;
     boostedFiles.add(filePath);
     const existing = fileScores.get(filePath);
@@ -360,7 +372,12 @@ function applyAnchorNeighborhoodBoost(
     .all(...anchorFiles, ...anchorFiles) as Array<{ f: string | null }>;
   for (const row of neighborRows) {
     if (row.f && !anchorSet.has(row.f)) {
-      boost(row.f, IMPORT_NEIGHBOR_MULT, IMPORT_NEIGHBOR_BASE, "anchor-neighbor: import");
+      boost(
+        row.f,
+        IMPORT_NEIGHBOR_MULT,
+        IMPORT_NEIGHBOR_BASE,
+        "anchor-neighbor: import",
+      );
     }
   }
 
@@ -372,11 +389,21 @@ function applyAnchorNeighborhoodBoost(
       .prepare(
         `SELECT path FROM files WHERE path LIKE ? AND path NOT LIKE ? AND path != ? LIMIT ?`,
       )
-      .all(`${dir}/%`, `${dir}/%/%`, anchor, SAME_FOLDER_LIMIT_PER_ANCHOR) as Array<{
+      .all(
+        `${dir}/%`,
+        `${dir}/%/%`,
+        anchor,
+        SAME_FOLDER_LIMIT_PER_ANCHOR,
+      ) as Array<{
       path: string;
     }>;
     for (const row of rows) {
-      boost(row.path, SAME_FOLDER_MULT, SAME_FOLDER_BASE, "anchor-neighbor: same folder");
+      boost(
+        row.path,
+        SAME_FOLDER_MULT,
+        SAME_FOLDER_BASE,
+        "anchor-neighbor: same folder",
+      );
     }
   }
 }

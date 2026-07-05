@@ -42,6 +42,7 @@ Priority plan across all adaptive options, with my preferred rollout order:
   - If directory name matches regex `(archive|deprecated|legacy|backup|\.changeset|\.claude|\.specstory|node_modules|dist|build)`: mark as "meta"
   - Apply **downweight multipliers** (not boosts): low-signal paths get `0.2×`, meta paths get `0.05×`
 - **Allowlist overrides** (optional, in `.iw/config.yaml`):
+
   ```yaml
   adaptive:
     path_exceptions:
@@ -52,6 +53,7 @@ Priority plan across all adaptive options, with my preferred rollout order:
   ```
 
   - Allowlist takes precedence; guards important docs paths from over-penalization
+
 - **Code touch points**:
   - `packages/index/src/queries/retrieve.ts`: scoring aggregation loop (`addFileScore` and final score assembly) — add path prior multiplication
   - `packages/index/src/types.ts`: add `pathPriors?: Map<string, number>` to `ContextPackInput`
@@ -180,6 +182,7 @@ Priority plan across all adaptive options, with my preferred rollout order:
 
 - **Explain/debug output** (`--adaptive-explain` flag or `explain: true` in input):
   - Per result file, append comment showing boosts and rank delta:
+
     ```markdown
     ## Analysis
 
@@ -187,11 +190,13 @@ Priority plan across all adaptive options, with my preferred rollout order:
     - Boosts applied: path-prior (0.2×) + anchor-neighborhood (1.2×) + feedback (1.08×)
     - Final score: 42.5
     ```
+
   - Per section, show confidence + budget applied:
     ```
     Files: 60 results (confidence: 0.65, budget: 100%)
     Rules: skipped (confidence: 0.2, budget: 50% < threshold)
     ```
+
 - **Rollout process**:
   1. Ship Phase B–C with `--adaptive=conservative` (default in config)
   2. Run on backstage + codegraphchat-v2 for 2 weeks; collect metrics
