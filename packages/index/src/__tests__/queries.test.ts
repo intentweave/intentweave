@@ -455,6 +455,9 @@ function seedFixtures(db: Database.Database) {
       null,
     ],
     ["src/config.ts", "2026-02-10", 50, 0, "bob", 1, 0, "hash6", null],
+    // Same-folder-as-anchor fixture (no import edge to service.ts) — used to
+    // isolate the Phase C same-folder boost from the import-neighbor boost.
+    ["src/auth/mailer.ts", "2026-01-05", 5, 0, "alice", 1, 0, "hash11", null],
     [
       "docs/auth.md",
       "2026-02-01",
@@ -632,6 +635,134 @@ describe("retrieve", () => {
         result.files[apiIdx].score,
       );
     }
+  });
+
+  // ── Phase B: pathPriors ────────────────────────────────────────────────
+
+  it("boosts files under a prefix with a multiplier > 1.0", () => {
+    const baseline = retrieveFromDb(db, { query: "AuthService" });
+    const boosted = retrieveFromDb(db, {
+      query: "AuthService",
+      pathPriors: new Map([["docs", 2.0]]),
+    });
+    const baseScore = baseline.files.find((f) => f.path === "docs/auth.md")!
+      .score;
+    const boostedScore = boosted.files.find((f) => f.path === "docs/auth.md")!
+      .score;
+    expect(boostedScore).toBeCloseTo(baseScore * 2.0, 1);
+  });
+
+  it("downweights files under a prefix with a multiplier < 1.0", () => {
+    const baseline = retrieveFromDb(db, { query: "AuthService" });
+    const downweighted = retrieveFromDb(db, {
+      query: "AuthService",
+      pathPriors: new Map([["src", 0.5]]),
+    });
+    const baseScore = baseline.files.find(
+      (f) => f.path === "src/auth/service.ts",
+    )!.score;
+    const downScore = downweighted.files.find(
+      (f) => f.path === "src/auth/service.ts",
+    )!.score;
+    expect(downScore).toBeCloseTo(baseScore * 0.5, 1);
+  });
+
+  it("uses the longest matching prefix when priors overlap", () => {
+    const result = retrieveFromDb(db, {
+      query: "AuthService",
+      pathPriors: new Map([
+        ["src", 0.5],
+        ["src/auth", 2.0],
+      ]),
+    });
+    const baseline = retrieveFromDb(db, { query: "AuthService" });
+    const baseScore = baseline.files.find(
+      (f) => f.path === "src/auth/service.ts",
+    )!.score;
+    const serviceScore = result.files.find(
+      (f) => f.path === "src/auth/service.ts",
+    )!.score;
+    // The more specific "src/auth" prior (×2.0) should win over "src" (×0.5).
+    expect(serviceScore).toBeCloseTo(baseScore * 2.0, 1);
+  });
+
+  it("leaves scores unchanged when no prefix matches", () => {
+    const baseline = retrieveFromDb(db, { query: "AuthService" });
+    const result = retrieveFromDb(db, {
+      query: "AuthService",
+      pathPriors: new Map([["nonexistent/prefix", 5.0]]),
+    });
+    const baseScore = baseline.files.find((f) => f.path === "docs/auth.md")!
+      .score;
+    const sameScore = result.files.find((f) => f.path === "docs/auth.md")!
+      .score;
+    expect(sameScore).toBe(baseScore);
+  });
+
+  // ── Phase C: anchorFiles neighborhood boost ─────────────────────────────
+
+  it("surfaces 1-hop import-neighbors of an anchor even without an FTS match", () => {
+    const result = retrieveFromDb(db, {
+      query: "xyznonexistent123",
+      anchorFiles: ["src/auth/service.ts"],
+    });
+    const paths = result.files.map((f) => f.path);
+    // service.ts imports jwt.ts and pool.ts, and is imported by rate.ts.
+    expect(paths).toContain("src/auth/jwt.ts");
+    expect(paths).toContain("src/db/pool.ts");
+    expect(paths).toContain("src/middleware/rate.ts");
+  });
+
+  it("surfaces same-folder files of an anchor even without an import edge", () => {
+    const result = retrieveFromDb(db, {
+      query: "xyznonexistent123",
+      anchorFiles: ["src/auth/service.ts"],
+    });
+    const paths = result.files.map((f) => f.path);
+    // mailer.ts lives in src/auth/ alongside service.ts but has no import edge.
+    expect(paths).toContain("src/auth/mailer.ts");
+  });
+
+  it("never re-boosts or duplicates the anchor file itself", () => {
+    const result = retrieveFromDb(db, {
+      query: "xyznonexistent123",
+      anchorFiles: ["src/auth/service.ts"],
+    });
+    const matches = result.files.filter(
+      (f) => f.path === "src/auth/service.ts",
+    );
+    expect(matches.length).toBe(0);
+  });
+
+  it("does not apply anchor boosts when anchorFiles is empty or omitted", () => {
+    const withoutAnchors = retrieveFromDb(db, { query: "xyznonexistent123" });
+    const withEmptyAnchors = retrieveFromDb(db, {
+      query: "xyznonexistent123",
+      anchorFiles: [],
+    });
+    expect(withoutAnchors.files.length).toBe(0);
+    expect(withEmptyAnchors.files.length).toBe(0);
+  });
+
+  it("does not double-boost a file that is both an import-neighbor and same-folder", () => {
+    // jwt.ts is both an import-neighbor of service.ts AND lives in the same
+    // folder. It should only receive the (higher-priority) import-neighbor
+    // multiplier once, not both stacked multiplicatively.
+    const baseline = retrieveFromDb(db, { query: "signToken" });
+    const boosted = retrieveFromDb(db, {
+      query: "signToken",
+      anchorFiles: ["src/auth/service.ts"],
+      explainScoring: true,
+    });
+    const baseScore = baseline.files.find((f) => f.path === "src/auth/jwt.ts")!
+      .score;
+    const boostedEntry = boosted.files.find(
+      (f) => f.path === "src/auth/jwt.ts",
+    )!;
+    // Only the import-neighbor multiplier (×1.3) should apply, not ×1.3×1.15.
+    expect(boostedEntry.score).toBeCloseTo(baseScore * 1.3, 1);
+    expect(boostedEntry.reason).toContain("anchor-neighbor: import");
+    expect(boostedEntry.reason).not.toContain("anchor-neighbor: same folder");
   });
 });
 

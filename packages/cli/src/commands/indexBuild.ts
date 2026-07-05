@@ -233,6 +233,102 @@ function resolveImportAliases(
   }
 }
 
+/**
+ * Normalize `imports.target_file` extension mismatches against the real,
+ * indexed file paths in the `files` table.
+ *
+ * Both the native Rust extractor and (historically) the TypeScript AX
+ * resolver record `target_file` by doing pure lexical path-joining of the
+ * relative specifier against the importing file's directory, with **no
+ * filesystem verification**. This produces two classes of mismatch against
+ * the real, on-disk `files.path` entries:
+ *
+ *   1. Extension mismatch — e.g. `./shared.js` (NodeNext/ESM-style specifier)
+ *      resolves lexically to `shared.js` when the real source is `shared.ts`.
+ *   2. Missing extension / directory import — e.g. `./Tabs` or `../Text/Text`
+ *      resolves lexically to a bare path with no extension at all, when the
+ *      real file is `Tabs/index.tsx` or `Text/Text.tsx`.
+ *
+ * Left unfixed, this silently breaks every exact-match join against
+ * `files.path` / `symbols.file_path` — circular-import detection, impact
+ * analysis, community detection, unused-exports, and anchor-aware
+ * context-pack scoring (Phase C) all rely on that join.
+ *
+ * Runs as a cheap post-processing pass after either build pipeline,
+ * independent of which one produced the raw import edges.
+ */
+const IMPORT_EXTENSION_SWAPS: Record<string, string[]> = {
+  ".js": [".ts", ".tsx", ".js"],
+  ".jsx": [".tsx", ".jsx"],
+  ".mjs": [".mts", ".mjs"],
+  ".cjs": [".cts", ".cjs"],
+};
+
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
+
+function normalizeImportExtensions(dbPath: string, verbose = false): void {
+  const db = new Database(dbPath);
+  try {
+    const knownPaths = new Set<string>(
+      (db.prepare(`SELECT path FROM files`).all() as Array<{ path: string }>).map(
+        (r) => r.path,
+      ),
+    );
+    if (knownPaths.size === 0) return;
+
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT target_file FROM imports WHERE target_file IS NOT NULL`,
+      )
+      .all() as Array<{ target_file: string }>;
+
+    const update = db.prepare(
+      `UPDATE imports SET target_file = ? WHERE target_file = ?`,
+    );
+    let totalUpdated = 0;
+    const tx = db.transaction(() => {
+      for (const { target_file } of rows) {
+        if (knownPaths.has(target_file)) continue;
+        const ext = path.extname(target_file);
+        let candidate: string | undefined;
+
+        if (ext && IMPORT_EXTENSION_SWAPS[ext]) {
+          // Case 1: existing (likely wrong) extension — try swaps.
+          const base = target_file.slice(0, -ext.length);
+          candidate = IMPORT_EXTENSION_SWAPS[ext]
+            .map((swapExt) => base + swapExt)
+            .find((c) => c !== target_file && knownPaths.has(c));
+        } else if (!ext) {
+          // Case 2: no extension — try direct file, then index-file resolution.
+          candidate = SOURCE_EXTENSIONS.map((e) => target_file + e).find((c) =>
+            knownPaths.has(c),
+          );
+          if (!candidate) {
+            candidate = SOURCE_EXTENSIONS.map(
+              (e) => `${target_file}/index${e}`,
+            ).find((c) => knownPaths.has(c));
+          }
+        }
+
+        if (candidate) {
+          const result = update.run(candidate, target_file);
+          totalUpdated += Number(result.changes);
+        }
+      }
+    });
+    tx();
+    if (verbose && totalUpdated > 0) {
+      console.log(
+        chalk.gray(
+          `  ▸ normalized ${totalUpdated} import target extension(s) to match real files`,
+        ),
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
+
 // =============================================================================
 // R1-f: cari-native binary shim
 // =============================================================================
@@ -518,6 +614,7 @@ const indexBuildSubcommand = new Command("build")
             const mergedAliases = { ...autoAliases, ...iwConfig?.aliases };
             resolveImportAliases(dbPath, mergedAliases, verbose);
           }
+          normalizeImportExtensions(dbPath, verbose);
 
           // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
           try {
@@ -597,6 +694,7 @@ const indexBuildSubcommand = new Command("build")
         const mergedAliases = { ...autoAliases, ...iwConfig?.aliases };
         resolveImportAliases(result.dbPath, mergedAliases, verbose);
       }
+      normalizeImportExtensions(result.dbPath, verbose);
 
       // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
       try {
@@ -7676,8 +7774,7 @@ const indexContextPackSubcommand = new Command("context-pack")
   )
   .option(
     "--adaptive <mode>",
-    "Adaptive mode: off, conservative, aggressive",
-    "off",
+    "Adaptive mode: off, conservative, aggressive (default: conservative, overridable via .iw/config.yaml adaptive.mode)",
   )
   .option(
     "--adaptive-explain",
@@ -7689,7 +7786,13 @@ const indexContextPackSubcommand = new Command("context-pack")
     const dbPath = resolveDbPath(opts.db);
     const { contextPack: cpFn } = await import("@intentweave/index");
     const budget = parseInt(opts.budget ?? "4000", 10);
-    const adaptiveModeRaw = String(opts.adaptive ?? "off").toLowerCase();
+    // Load .iw/config.yaml once — used both to resolve the default adaptive
+    // mode (when --adaptive isn't explicitly passed) and for path_exceptions.
+    const iwDir = path.dirname(dbPath);
+    const iwConfig = await loadIwConfig(iwDir);
+    const adaptiveModeRaw = String(
+      opts.adaptive ?? iwConfig?.adaptive?.mode ?? "conservative",
+    ).toLowerCase();
     const adaptiveMode =
       adaptiveModeRaw === "off" ||
       adaptiveModeRaw === "conservative" ||
@@ -7714,11 +7817,6 @@ const indexContextPackSubcommand = new Command("context-pack")
     }
 
     try {
-      // Load optional .iw/config.yaml for adaptive path_exceptions
-      const iwDir = path.dirname(dbPath);
-      const iwConfig =
-        adaptiveMode !== "off" ? await loadIwConfig(iwDir) : undefined;
-
       const cpInput = {
         query: opts.query,
         files: opts.files,
@@ -7782,8 +7880,7 @@ const indexEvalSubcommand = new Command("eval")
   .option("--budget <n>", "Token budget passed to context-pack", "4000")
   .option(
     "--adaptive <mode>",
-    "Adaptive mode: off, conservative, aggressive",
-    "off",
+    "Adaptive mode: off, conservative, aggressive (default: conservative, overridable via .iw/config.yaml adaptive.mode)",
   )
   .option(
     "--adaptive-explain",
@@ -7800,7 +7897,13 @@ const indexEvalSubcommand = new Command("eval")
       12000,
       Math.max(200, parseInt(opts.budget ?? "4000", 10)),
     );
-    const adaptiveModeRaw = String(opts.adaptive ?? "off").toLowerCase();
+    // Load .iw/config.yaml once — used both to resolve the default adaptive
+    // mode (when --adaptive isn't explicitly passed) and for path_exceptions.
+    const iwDir = path.dirname(dbPath);
+    const iwConfig = await loadIwConfig(iwDir);
+    const adaptiveModeRaw = String(
+      opts.adaptive ?? iwConfig?.adaptive?.mode ?? "conservative",
+    ).toLowerCase();
     const adaptiveMode =
       adaptiveModeRaw === "off" ||
       adaptiveModeRaw === "conservative" ||
@@ -7881,16 +7984,34 @@ const indexEvalSubcommand = new Command("eval")
       topFiles: number;
       noisyFiles: number;
       noisyShare: number;
+      anchorFiles?: string[];
+      anchorHit?: boolean;
     }> = [];
 
     let totalTopFiles = 0;
     let totalNoisyFiles = 0;
+    let anchorQueryCount = 0;
+    let anchorHitCount = 0;
     const durations: number[] = [];
 
-    // Load optional .iw/config.yaml once for the whole eval run
-    const iwDir = path.dirname(dbPath);
-    const iwConfig =
-      adaptiveMode !== "off" ? await loadIwConfig(iwDir) : undefined;
+    // M2 gate: anchor-file neighborhood hit rate — for queries with a
+    // provided anchor, does a *non-anchor* file in the top-5 share a folder
+    // or monorepo package with the anchor? (The anchor itself is always
+    // force-included by contextPack, so it is excluded from this check —
+    // otherwise the metric would be trivially 100%.)
+    const pathPackage = (p: string): string => {
+      const parts = p.split("/");
+      if (
+        parts.length >= 2 &&
+        (parts[0] === "packages" || parts[0] === "plugins" || parts[0] === "apps")
+      ) {
+        return parts.slice(0, 2).join("/");
+      }
+      return parts[0] ?? "";
+    };
+
+    // adaptiveConfig (path_exceptions) derived from the .iw/config.yaml
+    // already loaded above when resolving the default adaptive mode.
     const adaptiveConfig = iwConfig?.adaptive
       ? { pathExceptions: iwConfig.adaptive.path_exceptions }
       : undefined;
@@ -7917,12 +8038,31 @@ const indexEvalSubcommand = new Command("eval")
       durations.push(durationMs);
       totalTopFiles += topFiles.length;
       totalNoisyFiles += noisyFiles;
+
+      const anchors = item.anchor_files ?? item.files;
+      let anchorHit: boolean | undefined;
+      if (anchors && anchors.length > 0) {
+        anchorQueryCount++;
+        const anchorDirs = new Set(anchors.map((a) => path.dirname(a)));
+        const anchorPkgs = new Set(anchors.map((a) => pathPackage(a)));
+        const top5NonAnchor = result.sections.files
+          .slice(0, 5)
+          .map((f) => f.path)
+          .filter((p) => !anchors.includes(p));
+        anchorHit = top5NonAnchor.some(
+          (p) => anchorDirs.has(path.dirname(p)) || anchorPkgs.has(pathPackage(p)),
+        );
+        if (anchorHit) anchorHitCount++;
+      }
+
       perQuery.push({
         query: item.query,
         durationMs,
         topFiles: topFiles.length,
         noisyFiles,
         noisyShare,
+        anchorFiles: anchors,
+        anchorHit,
       });
     }
 
@@ -7952,6 +8092,14 @@ const indexEvalSubcommand = new Command("eval")
             : 0,
         totalTopFiles,
         totalNoisyFiles,
+        anchorNeighborHitRate:
+          anchorQueryCount > 0 ? anchorHitCount / anchorQueryCount : null,
+        anchorNeighborHitRatePct:
+          anchorQueryCount > 0
+            ? Math.round((anchorHitCount / anchorQueryCount) * 1000) / 10
+            : null,
+        anchorQueryCount,
+        anchorHitCount,
         latencyMs: {
           avg:
             durations.length > 0
@@ -8002,6 +8150,13 @@ const indexEvalSubcommand = new Command("eval")
     console.log(
       `  Latency ms: avg=${report.metrics.latencyMs.avg.toFixed(1)} p50=${report.metrics.latencyMs.p50.toFixed(1)} p95=${report.metrics.latencyMs.p95.toFixed(1)} max=${report.metrics.latencyMs.max.toFixed(1)}`,
     );
+    if (anchorQueryCount > 0) {
+      console.log(
+        `  Anchor neighbor hit rate: ${chalk.yellow(
+          `${report.metrics.anchorNeighborHitRatePct?.toFixed(1)}%`,
+        )} (${anchorHitCount}/${anchorQueryCount} anchor queries)`,
+      );
+    }
 
     if (worst.length > 0) {
       console.log(chalk.bold("\n  Worst noisy-share queries:"));

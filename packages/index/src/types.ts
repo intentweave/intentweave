@@ -248,6 +248,14 @@ export interface RetrieveParams {
   pathPriors?: Map<string, number>;
 
   /**
+   * Anchor files for Phase C anchor-aware adaptation. Files that are
+   * 1-hop import-neighbors of an anchor (either direction) or live in the
+   * same folder as an anchor receive a score boost so they surface higher
+   * in results even when they don't directly match the FTS query terms.
+   */
+  anchorFiles?: string[];
+
+  /**
    * When true, append the applied multiplier to each file's reason string.
    * Used with --adaptive-explain CLI flag.
    */
@@ -2498,6 +2506,7 @@ export interface IwConfig {
    * Example:
    * ```yaml
    * adaptive:
+   *   mode: conservative
    *   path_exceptions:
    *     - path: docs/decisions/
    *       multiplier: 1.2
@@ -2506,6 +2515,12 @@ export interface IwConfig {
    * ```
    */
   adaptive?: {
+    /**
+     * Default adaptive ranking mode applied by `iw index eval` and
+     * `iw index context-pack` when no explicit `--adaptive` CLI flag is
+     * given. Default: "conservative".
+     */
+    mode?: "off" | "conservative" | "aggressive";
     /**
      * Per-path multiplier overrides applied after density-based scoring.
      * Allowlisted paths keep their multiplier even if they would otherwise

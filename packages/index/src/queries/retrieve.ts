@@ -11,6 +11,7 @@
  */
 
 import type Database from "@intentweave/sqlite-compat";
+import path from "node:path";
 import type { RetrieveParams, RetrieveResult } from "../types.js";
 import { openIndex } from "./shared.js";
 
@@ -241,6 +242,18 @@ export function retrieveFromDb(
     }
   }
 
+  // Phase C: anchor-aware neighborhood boost — surfaces files that are
+  // 1-hop import-neighbors of an anchor, or live in the same folder, even
+  // when they don't match the FTS query terms directly.
+  if (params.anchorFiles && params.anchorFiles.length > 0) {
+    applyAnchorNeighborhoodBoost(
+      db,
+      fileScores,
+      params.anchorFiles,
+      params.explainScoring,
+    );
+  }
+
   // Apply scope filter
   let entries = [...fileScores.entries()];
   if (params.scope === "docs") {
@@ -282,6 +295,90 @@ export function retrieveFromDb(
 
 function isDocFile(filePath: string): boolean {
   return /\.(md|mdx|rst|txt|adoc)$/i.test(filePath);
+}
+
+/**
+ * Phase C: boost (or inject) files that are 1-hop import-neighbors of an
+ * anchor file, or that live directly in the same folder as an anchor.
+ *
+ * Import-neighbors are a verified relational signal (real edges in the
+ * `imports` table); same-folder is a weaker, path-based signal capped to a
+ * handful of files per anchor so it can't flood results in large folders.
+ * Files already present in `fileScores` (from FTS matches) get their score
+ * multiplied; files with no FTS match are injected with a base score
+ * *relative to the current top score* (rather than a fixed constant) so the
+ * boost stays competitive regardless of corpus size — a flat constant like
+ * "1.2" is invisible on a large corpus where FTS content scores commonly
+ * reach 20-40+, but would dominate on a small corpus where scores are ~1-3.
+ */
+function applyAnchorNeighborhoodBoost(
+  db: Database.Database,
+  fileScores: Map<
+    string,
+    { score: number; reasons: string[]; spans: Array<{ line: number; text: string }> }
+  >,
+  anchorFiles: string[],
+  explain?: boolean,
+): void {
+  const anchorSet = new Set(anchorFiles);
+  const currentMax = Math.max(1, ...[...fileScores.values()].map((v) => v.score));
+  const IMPORT_NEIGHBOR_MULT = 1.3;
+  const IMPORT_NEIGHBOR_BASE = currentMax * 0.5;
+  const SAME_FOLDER_MULT = 1.15;
+  const SAME_FOLDER_BASE = currentMax * 0.35;
+  const SAME_FOLDER_LIMIT_PER_ANCHOR = 8;
+
+  // Tracks which files already received a neighbor-tier boost, independent of
+  // `explain` — the reasons array is only populated when explainScoring is on,
+  // so it can't be used as the "already boosted" marker (that would let a file
+  // matching both tiers get double-multiplied whenever explain is off).
+  const boostedFiles = new Set<string>();
+
+  const boost = (filePath: string, mult: number, base: number, reason: string) => {
+    if (anchorSet.has(filePath) || boostedFiles.has(filePath)) return;
+    boostedFiles.add(filePath);
+    const existing = fileScores.get(filePath);
+    if (existing) {
+      existing.score *= mult;
+      if (explain) existing.reasons.push(reason);
+    } else {
+      fileScores.set(filePath, { score: base, reasons: [reason], spans: [] });
+    }
+  };
+
+  // 1-hop import-neighbors (either direction), a real verified relationship.
+  // The second half is restricted to is_relative=1 because non-relative
+  // imports store the raw package specifier (e.g. "@backstage/types") as
+  // target_file, which is not a real file path.
+  const placeholders = anchorFiles.map(() => "?").join(",");
+  const neighborRows = db
+    .prepare(
+      `SELECT DISTINCT source_file AS f FROM imports WHERE target_file IN (${placeholders})
+       UNION
+       SELECT DISTINCT target_file AS f FROM imports WHERE source_file IN (${placeholders}) AND is_relative = 1`,
+    )
+    .all(...anchorFiles, ...anchorFiles) as Array<{ f: string | null }>;
+  for (const row of neighborRows) {
+    if (row.f && !anchorSet.has(row.f)) {
+      boost(row.f, IMPORT_NEIGHBOR_MULT, IMPORT_NEIGHBOR_BASE, "anchor-neighbor: import");
+    }
+  }
+
+  // Same-folder files (one level deep only), capped per anchor.
+  for (const anchor of anchorFiles) {
+    const dir = path.dirname(anchor);
+    if (!dir || dir === ".") continue;
+    const rows = db
+      .prepare(
+        `SELECT path FROM files WHERE path LIKE ? AND path NOT LIKE ? AND path != ? LIMIT ?`,
+      )
+      .all(`${dir}/%`, `${dir}/%/%`, anchor, SAME_FOLDER_LIMIT_PER_ANCHOR) as Array<{
+      path: string;
+    }>;
+    for (const row of rows) {
+      boost(row.path, SAME_FOLDER_MULT, SAME_FOLDER_BASE, "anchor-neighbor: same folder");
+    }
+  }
 }
 
 /**

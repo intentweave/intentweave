@@ -78,6 +78,10 @@ export function contextPackFromDb(
         query: effectiveQuery,
         limit: 20,
         pathPriors,
+        anchorFiles:
+          input.adaptiveMode && input.adaptiveMode !== "off" && anchorFiles.length > 0
+            ? anchorFiles
+            : undefined,
         explainScoring: input.explainScoring,
       });
       files = result.files.map((f) => ({

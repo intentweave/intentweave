@@ -5342,6 +5342,12 @@ or debugging an architectural issue — without calling 5 separate tools.`,
         .describe(
           "Which sections to include (default: all). Omit to get everything that has data.",
         ),
+      adaptiveMode: z
+        .enum(["off", "conservative", "aggressive"])
+        .optional()
+        .describe(
+          "Adaptive ranking mode. Default: conservative, or .iw/config.yaml adaptive.mode if set.",
+        ),
     },
     async (args) => {
       log(
@@ -5350,6 +5356,22 @@ or debugging an architectural issue — without calling 5 separate tools.`,
       try {
         const { contextPack: cpFn } = await loadIndex();
         const dbPath = resolveIndexDb();
+
+        const { load: yamlLoadMcp } = await import("js-yaml");
+        const { readFile } = await import("node:fs/promises");
+        const configPath = path.join(process.cwd(), ".iw", "config.yaml");
+        let iwConfig: import("@intentweave/index").IwConfig | undefined;
+        try {
+          const rawYaml = await readFile(configPath, "utf-8");
+          iwConfig = yamlLoadMcp(rawYaml) as
+            | import("@intentweave/index").IwConfig
+            | undefined;
+        } catch {
+          iwConfig = undefined;
+        }
+        const adaptiveMode =
+          args.adaptiveMode ?? iwConfig?.adaptive?.mode ?? "conservative";
+
         const result = cpFn(dbPath, {
           query: args.query,
           files: args.files,
@@ -5358,6 +5380,10 @@ or debugging an architectural issue — without calling 5 separate tools.`,
           sections: args.sections as
             | import("@intentweave/index").ContextPackSection[]
             | undefined,
+          adaptiveMode,
+          adaptiveConfig: iwConfig?.adaptive
+            ? { pathExceptions: iwConfig.adaptive.path_exceptions }
+            : undefined,
         });
         return {
           content: [

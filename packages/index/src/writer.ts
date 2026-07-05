@@ -73,13 +73,15 @@ export function buildIndex(
   try {
     initSchema(db);
 
+    const knownPaths = collectKnownPaths(ax, tcg);
+
     const counts = {
       symbols: writeSymbols(db, ax),
       annotations: writeAnnotations(db, annotations),
       coOccurrences: writeCoOccurrences(db, cox),
       coChanges: writeCoChanges(db, tcg),
-      files: writeFiles(db, ax, tcg, opts.docGroupOverride),
-      imports: writeImports(db, ax),
+      files: writeFiles(db, ax, tcg, opts.docGroupOverride, knownPaths),
+      imports: writeImports(db, ax, knownPaths),
       todos: writeTodos(db, ax),
       rationale: writeRationale(db, ax),
       calls: writeCalls(db, ax),
@@ -297,11 +299,25 @@ function computeRecency(edge: CoChangeEdge, tcg: TcgPipelineOutput): number {
 // Files
 // =============================================================================
 
+/**
+ * Collect the definitive set of real, indexed file paths (with their actual
+ * on-disk extensions). Used both to populate the `files` table and to
+ * normalize `imports.target_file` values that may carry a different
+ * extension than the real file (see `resolveTargetFile`).
+ */
+function collectKnownPaths(ax: AxOutput, tcg: TcgPipelineOutput): Set<string> {
+  const allPaths = new Set<string>();
+  for (const f of ax.files) allPaths.add(f.filePath);
+  for (const fp of tcg.tcx.filePaths) allPaths.add(fp);
+  return allPaths;
+}
+
 function writeFiles(
   db: Database.Database,
   ax: AxOutput,
   tcg: TcgPipelineOutput,
-  docGroupOverride?: Map<string, string>,
+  docGroupOverride: Map<string, string> | undefined,
+  knownPaths: Set<string>,
 ): number {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash, doc_group, indexed, skip_reason, comment_lines, code_lines)
@@ -319,17 +335,12 @@ function writeFiles(
     ownerMap.set(o.filePath, o);
   }
 
-  // Collect all known file paths
-  const allPaths = new Set<string>();
-  for (const f of ax.files) allPaths.add(f.filePath);
-  for (const fp of tcg.tcx.filePaths) allPaths.add(fp);
-
   // Build lookup map for AX file results
   const axFileMap = new Map<string, AxFileResult>();
   for (const f of ax.files) axFileMap.set(f.filePath, f);
 
   let count = 0;
-  const paths = [...allPaths];
+  const paths = [...knownPaths];
   for (let i = 0; i < paths.length; i += BATCH_SIZE) {
     const batch = paths.slice(i, i + BATCH_SIZE);
     const tx = db.transaction(() => {
@@ -377,7 +388,11 @@ function countBusFactor(own: OwnershipRecord): number {
 // Imports
 // =============================================================================
 
-function writeImports(db: Database.Database, ax: AxOutput): number {
+function writeImports(
+  db: Database.Database,
+  ax: AxOutput,
+  knownPaths: Set<string>,
+): number {
   const importCols = db.prepare(`PRAGMA table_info(imports)`).all() as Array<{
     name: string;
   }>;
@@ -400,10 +415,11 @@ function writeImports(db: Database.Database, ax: AxOutput): number {
       const batch = file.imports.slice(i, i + BATCH_SIZE);
       const tx = db.transaction(() => {
         for (const imp of batch) {
+          const targetFile = resolveTargetFile(imp.resolvedPath, knownPaths);
           if (hasLine) {
             stmt.run(
               file.filePath,
-              imp.resolvedPath ?? null,
+              targetFile,
               imp.moduleSpecifier,
               imp.line ?? null,
               imp.isRelative ? 1 : 0,
@@ -412,7 +428,7 @@ function writeImports(db: Database.Database, ax: AxOutput): number {
           } else {
             stmt.run(
               file.filePath,
-              imp.resolvedPath ?? null,
+              targetFile,
               imp.moduleSpecifier,
               imp.isRelative ? 1 : 0,
               JSON.stringify(imp.importedNames),
@@ -425,6 +441,48 @@ function writeImports(db: Database.Database, ax: AxOutput): number {
     }
   }
   return count;
+}
+
+/**
+ * Normalize a resolved import target path against the set of real, indexed
+ * file paths.
+ *
+ * Some AX producers (notably the native Rust extractor) record
+ * `resolvedPath` with the extension taken verbatim from the import
+ * specifier (e.g. `./shared.js` for a NodeNext/ESM-style import) rather than
+ * the real on-disk extension of the source file (`shared.ts`). Left as-is,
+ * this silently breaks every exact-match join against `files.path` /
+ * `symbols.file_path` (circular-import detection, impact analysis,
+ * community detection, unused-exports, etc.).
+ *
+ * If `resolvedPath` isn't already a known path, try swapping common
+ * JS/TS extension pairs to find the real file.
+ */
+const EXTENSION_SWAPS: Record<string, string[]> = {
+  ".js": [".ts", ".tsx", ".js"],
+  ".jsx": [".tsx", ".jsx"],
+  ".mjs": [".mts", ".mjs"],
+  ".cjs": [".cts", ".cjs"],
+};
+
+function resolveTargetFile(
+  resolvedPath: string | undefined,
+  knownPaths: Set<string>,
+): string | null {
+  if (!resolvedPath) return null;
+  if (knownPaths.has(resolvedPath)) return resolvedPath;
+
+  const ext = path.extname(resolvedPath);
+  const candidates = EXTENSION_SWAPS[ext];
+  if (!candidates) return resolvedPath;
+
+  const base = resolvedPath.slice(0, -ext.length);
+  for (const candidateExt of candidates) {
+    const candidate = base + candidateExt;
+    if (knownPaths.has(candidate)) return candidate;
+  }
+  // No on-disk match found; keep original value rather than dropping the edge.
+  return resolvedPath;
 }
 
 // =============================================================================

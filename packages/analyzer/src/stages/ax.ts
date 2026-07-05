@@ -485,6 +485,12 @@ function extractImports(
 
 /**
  * Resolve a relative import specifier to a workspace-relative file path.
+ *
+ * Handles both extensionless specifiers (`./foo`) and NodeNext/ESM-style
+ * specifiers that already carry a `.js`/`.jsx` extension pointing at the
+ * compiled output of a `.ts`/`.tsx` source file (`./foo.js` -> `./foo.ts`).
+ * The existing extension (if any) is stripped before re-probing so both
+ * styles resolve to the same on-disk source file.
  */
 function resolveImportPath(
   importingFile: string,
@@ -492,7 +498,8 @@ function resolveImportPath(
   workspaceRoot: string,
 ): string | undefined {
   const dir = path.dirname(path.join(workspaceRoot, importingFile));
-  const base = path.join(dir, specifier);
+  const specifierNoExt = specifier.replace(/\.(js|jsx|ts|tsx|mjs|cjs)$/, "");
+  const base = path.join(dir, specifierNoExt);
   const extensions = [".ts", ".tsx", ".js", ".jsx"];
 
   // Try direct file with extension
