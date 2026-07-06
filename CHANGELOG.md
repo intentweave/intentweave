@@ -2,6 +2,51 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.16.0] — 2026-07-06
+
+### Added
+
+- **Adaptive context-pack ranking (Phase B + C)** — Intelligent ranked file retrieval for LLM context
+  injection with two adaptive modes:
+  - Phase B (repo-shape adaptation): Directory-based path priors that downweight low-signal and
+    meta paths (`.changeset/`, `.specstory/`, `dist/`, etc.) and boost important doc paths via
+    `.iw/config.yaml` allowlist. Reduces noisy-path share by 45–68% while maintaining top-10 relevance.
+  - Phase C (anchor-aware neighborhood boost): 1-hop import-neighbor and same-folder files receive
+    proportional boosts (1.3–1.15×) scaled relative to corpus size, enabling anchored queries to
+    surface relevant files even without FTS content match. Achieves 88–100% anchor-file hit rate
+    across 3 large repos (backstage ~11k files, codegraphchat-v2 ~1.4k files, intentweave ~500 files).
+  - Conservative mode (default): Balances recall and precision. Aggressive mode boosts anchors more.
+    Off mode disables all adaptive scoring (backwards-compatible baseline).
+  - Available via `iw index context-pack --adaptive <mode>`, `cari_context_pack` MCP tool, and
+    `.iw/config.yaml adaptive.mode`.
+
+### Fixed
+
+- **Phase C anchor-neighborhood dedup bug** — Double-boost on files matching both import-neighbor
+  and same-folder tiers was caused by using explain-mode-gated `reasons` array as functional state.
+  Now uses separate `boostedFiles` Set for dedup logic, independent of explain flag. Critical lesson:
+  never use diagnostic-only fields for functional state-tracking (breaks when diagnostic=false).
+
+- **Phase C relative scoring calibration** — Initial Phase C used flat-constant boost bases (1.2,
+  0.9) causing 0% anchor hit rate on large corpora. Now computes `currentMax` from actual file scores
+  and scales injected bases as fractions (0.5×, 0.35×). Critical lesson: injected scores must scale
+  with corpus size and content density, not use fixed constants.
+
+- **Import-neighbor query leaking package specifiers** — `@backstage/types` and similar external
+  packages were treated as real files when computing neighbors. Fixed by adding `AND is_relative = 1`
+  filter to exclude non-relative imports.
+
+### Validated
+
+- **M2 acceptance gates all passed**:
+  - Anchor-neighbor hit rate ≥60%: backstage 88.9%, codegraphchat-v2 90%, intentweave 100% ✓
+  - Noisy-path-share ≤15%: intentweave 0%, codegraphchat-v2 3.7%, backstage 15% ✓
+  - Latency SLOs (p50<0.8s, p95<1.5s): all repos ✓
+  - Baseline byte-identical with `--adaptive off`: verified via sanity-check eval runs ✓
+  - 9 new unit tests for Phase B/C logic, all 475 tests passing ✓
+
+---
+
 ## [0.15.6] — 2026-06-20
 
 ### Fixed
