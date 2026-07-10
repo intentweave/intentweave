@@ -72,20 +72,33 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
   // Returns Result[] so that code using prepare<_, Result>() gets typed results.
   // When Result = unknown (the default), this is unknown[] which still allows
   // downstream `as SomeRow[]` casts (unknown is the top type).
+  //
+  // Handle both:
+  //   .all(val1, val2, val3) — individual positional args
+  //   .all([val1, val2, val3]) — array passed as single arg (better-sqlite3 style)
+  // node:sqlite expects individual args, so we detect the array case and spread it.
   all(...params: unknown[]): Result[] {
-    return this._stmt.all(
-      ...(params as Parameters<StatementSync["all"]>),
-    ) as unknown as Result[];
+    const args =
+      params.length === 1 && Array.isArray(params[0])
+        ? (params[0] as unknown[])
+        : params;
+    return this._stmt.all(...(args as Parameters<StatementSync["all"]>)) as unknown as Result[];
   }
 
   get(...params: unknown[]): Result | undefined {
-    return this._stmt.get(
-      ...(params as Parameters<StatementSync["get"]>),
-    ) as unknown as Result | undefined;
+    const args =
+      params.length === 1 && Array.isArray(params[0])
+        ? (params[0] as unknown[])
+        : params;
+    return this._stmt.get(...(args as Parameters<StatementSync["get"]>)) as unknown as Result | undefined;
   }
 
   run(...params: unknown[]): RunResult {
-    const r = this._stmt.run(...(params as Parameters<StatementSync["run"]>));
+    const args =
+      params.length === 1 && Array.isArray(params[0])
+        ? (params[0] as unknown[])
+        : params;
+    const r = this._stmt.run(...(args as Parameters<StatementSync["run"]>));
     return { changes: Number(r.changes), lastInsertRowid: r.lastInsertRowid };
   }
 }
