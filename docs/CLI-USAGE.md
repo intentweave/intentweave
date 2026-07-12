@@ -220,15 +220,15 @@ reference and the current list of built-in templates (`callers-of`, `callees-of`
 This is distinct from `iw query --cypher` (KG/Neo4j, see below) — `iw index cypher` needs
 only `.iw/index.db`.
 
-| Option                 | Default        | Description                                              |
-| ---------------------- | -------------- | --------------------------------------------------------- |
-| `--db <path>`          | `.iw/index.db` | Path to CARI index                                         |
-| `-p, --param <kv...>`  | —              | Query parameters as `key=value` pairs                      |
-| `--template <id>`      | —              | Run a named built-in template (alternative to `@:` prefix) |
-| `--list-templates`     | off            | List all available query templates and exit                |
-| `-f, --format <fmt>`   | `table`        | `table`, `json`, or `csv`                                   |
-| `--limit <n>`          | `50`           | Max rows to display                                         |
-| `--show-sql`           | off            | Print the generated SQL before results                      |
+| Option                | Default        | Description                                                |
+| --------------------- | -------------- | ---------------------------------------------------------- |
+| `--db <path>`         | `.iw/index.db` | Path to CARI index                                         |
+| `-p, --param <kv...>` | —              | Query parameters as `key=value` pairs                      |
+| `--template <id>`     | —              | Run a named built-in template (alternative to `@:` prefix) |
+| `--list-templates`    | off            | List all available query templates and exit                |
+| `-f, --format <fmt>`  | `table`        | `table`, `json`, or `csv`                                  |
+| `--limit <n>`         | `50`           | Max rows to display                                        |
+| `--show-sql`          | off            | Print the generated SQL before results                     |
 
 ### Analysis Subcommands
 
