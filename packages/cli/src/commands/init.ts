@@ -11,13 +11,59 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import * as readline from "node:readline/promises";
+import { fileURLToPath } from "node:url";
 import { IW_DIR, CLI_NAME } from "../constants.js";
+
+/** Where the bundled skill file template ships inside the published package. */
+const SKILL_TEMPLATE_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../assets/skill/SKILL.md",
+);
+
+/** Relative destinations (within the initialized directory) to scaffold the skill file into. */
+const SKILL_DESTINATIONS = [
+  ".claude/skills/intentweave/SKILL.md",
+  ".github/skills/intentweave/SKILL.md",
+];
+
+async function promptYesNo(question: string): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await rl.question(`${question} [Y/n] `);
+    const trimmed = answer.trim().toLowerCase();
+    return trimmed === "" || trimmed === "y" || trimmed === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+async function scaffoldSkillFile(absoluteDir: string): Promise<void> {
+  const template = await fs.readFile(SKILL_TEMPLATE_PATH, "utf-8");
+  for (const dest of SKILL_DESTINATIONS) {
+    const destPath = path.join(absoluteDir, dest);
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
+    await fs.writeFile(destPath, template, "utf-8");
+    console.log(chalk.green(`  ✓ ${dest}`));
+  }
+}
 
 export const initCommand = new Command("init")
   .description("Initialize a new IntentWeave workspace")
   .argument("[directory]", "Directory to initialize", ".")
   .option("-n, --name <name>", "Workspace name")
   .option("--force", "Overwrite existing configuration")
+  .option(
+    "--skill",
+    "Install the agent skill file (.claude/skills, .github/skills) without prompting",
+  )
+  .option(
+    "--skip-skill",
+    "Skip installing the agent skill file without prompting",
+  )
   .action(async (directory: string, options) => {
     const { name, force } = options;
 
@@ -66,6 +112,35 @@ export const initCommand = new Command("init")
     console.log(`  Workspace ID: ${workspaceId}`);
     console.log(`  Workspace Name: ${workspaceName}`);
     console.log(`  Config: ${configPath}`);
+    console.log("");
+
+    // Offer to scaffold an agent skill file so AI coding agents (Claude Code,
+    // Copilot, Cursor, etc.) know to call `iw` on their own instead of guessing.
+    let installSkill: boolean;
+    if (options.skill) {
+      installSkill = true;
+    } else if (options.skipSkill) {
+      installSkill = false;
+    } else if (process.stdin.isTTY && process.stdout.isTTY) {
+      installSkill = await promptYesNo(
+        "Install a skill file so your AI coding agent knows how to use IntentWeave (.claude/skills, .github/skills)?",
+      );
+    } else {
+      // Non-interactive (e.g. CI) — skip by default, don't hang waiting for input.
+      installSkill = false;
+    }
+
+    if (installSkill) {
+      console.log("");
+      console.log("Installing agent skill file:");
+      try {
+        await scaffoldSkillFile(absoluteDir);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(chalk.yellow(`  ⚠ Could not install skill file: ${msg}`));
+      }
+    }
+
     console.log("");
     console.log("Next steps:");
     console.log(

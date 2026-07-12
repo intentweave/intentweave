@@ -76,6 +76,19 @@ iw index export --book -o insights.html
 open insights.html
 ```
 
+`iw init` also offers to scaffold an agent skill file (`SKILL.md`) so AI coding agents
+(Claude Code, Copilot, Cursor) discover and use `iw` automatically:
+
+```bash
+iw init             # prompts interactively [Y/n] (auto-skipped in CI / non-TTY)
+iw init --skill      # force-install, no prompt
+iw init --skip-skill # force-skip, no prompt
+```
+
+Writes identical content to `.claude/skills/intentweave/SKILL.md` and
+`.github/skills/intentweave/SKILL.md`. Canonical template:
+`packages/cli/assets/skill/SKILL.md`.
+
 ---
 
 ## CARI Evidence Engine — `iw index`
@@ -129,13 +142,14 @@ iw index connections "AuthService"
 
 ### `iw index check`
 
-CI drift detection — which docs reference code you just changed?
+CI drift detection — which docs reference code you just changed? Changed files are
+positional arguments (there is no `--changed` flag on this subcommand).
 
 ```bash
-iw index check --changed src/auth/service.ts src/auth/jwt.ts
+iw index check src/auth/service.ts src/auth/jwt.ts
 
 # CI integration
-iw index check --changed $(git diff --name-only origin/main...HEAD) --format github
+iw index check $(git diff --name-only origin/main...HEAD) --format github
 ```
 
 ### `iw index report`
@@ -175,6 +189,47 @@ iw index trace --entry src/auth.ts --direction backward  # who calls into auth.t
 iw index rule-coverage                          # packages with zero behavioral rules
 ```
 
+### `iw index cypher` / `iw index schema` — Ad-Hoc Graph Queries
+
+A second layer on top of the 30+ built-in queries: run your own read-only graph
+queries directly against the CARI SQLite projection using CypherLite (a
+zero-dependency Cypher-subset → SQL transpiler). No Neo4j, no LLM.
+
+```bash
+# See the full node/relationship schema + built-in query templates
+iw index schema
+iw index schema --format json
+
+# Run a raw query
+iw index cypher "MATCH (a:SYMBOL)-[:CALLS]->(b:SYMBOL) RETURN a.name, b.name LIMIT 10"
+
+# Run a named built-in template with parameters
+iw index cypher --list-templates
+iw index cypher @:callers-of --param calleeName=validateToken
+iw index cypher --template co-changed-with --param file=src/auth.ts --format json
+
+# Debug the generated SQL
+iw index cypher "MATCH (f:FILE)-[:HAS_TODO]->(t:TODO) RETURN f.name, t.name" --show-sql
+```
+
+Node labels: `FILE`, `SYMBOL`, `DOCSPAN`, `TODO`, `RATIONALE`, `SEMANTIC`. Relationship
+types: `IMPORTS`, `DEFINES`, `CALLS`, `ANNOTATED_BY`, `HAS_TODO`, `HAS_RATIONALE`,
+`SUMMARIZED_BY`, `CO_OCCURS`, `CO_CHANGES`. Run `iw index schema` for the full property
+reference and the current list of built-in templates (`callers-of`, `callees-of`,
+`docs-for-callees`, `co-changed-with`, `undocumented-hubs`, `symbol-docs`, `import-chain`).
+This is distinct from `iw query --cypher` (KG/Neo4j, see below) — `iw index cypher` needs
+only `.iw/index.db`.
+
+| Option                 | Default        | Description                                              |
+| ---------------------- | -------------- | --------------------------------------------------------- |
+| `--db <path>`          | `.iw/index.db` | Path to CARI index                                         |
+| `-p, --param <kv...>`  | —              | Query parameters as `key=value` pairs                      |
+| `--template <id>`      | —              | Run a named built-in template (alternative to `@:` prefix) |
+| `--list-templates`     | off            | List all available query templates and exit                |
+| `-f, --format <fmt>`   | `table`        | `table`, `json`, or `csv`                                   |
+| `--limit <n>`          | `50`           | Max rows to display                                         |
+| `--show-sql`           | off            | Print the generated SQL before results                      |
+
 ### Analysis Subcommands
 
 All available via `iw index <command>`, MCP tool `cari_*`, and the `@intentweave/index` API:
@@ -211,6 +266,8 @@ All available via `iw index <command>`, MCP tool `cari_*`, and the `@intentweave
 | `type-assertions`     | `as any` and forced type-assertion inventory       |
 | `rules-trend`         | ADR conformance trend over git history             |
 | `skipped-files`       | Files excluded from CARI analysis                  |
+| `cypher`              | Ad-hoc CypherLite graph query (see above)          |
+| `schema`              | Graph projection schema + built-in query templates |
 
 ---
 

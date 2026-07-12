@@ -70,6 +70,26 @@ living documentation score — all from a single local SQLite file.
 
 ---
 
+## Agent Skill — Auto-Discovery for AI Coding Agents
+
+`iw init` can scaffold a `SKILL.md` that teaches AI coding agents (Claude Code, GitHub
+Copilot, Cursor, or any agent with shell access) to call `iw` on their own — grounding
+answers in the CARI index before guessing, and checking changes against your rules
+before finishing a task, instead of requiring a human to run the CLI and paste output
+into chat.
+
+```bash
+iw init             # prompts interactively (auto-skipped in CI / non-TTY environments)
+iw init --skill      # force-install, no prompt
+iw init --skip-skill # force-skip, no prompt
+```
+
+Installed identically to `.claude/skills/intentweave/SKILL.md` and
+`.github/skills/intentweave/SKILL.md`, so both Claude Code and Copilot discover it with
+no extra configuration. Canonical source: [`packages/cli/assets/skill/SKILL.md`](packages/cli/assets/skill/SKILL.md).
+
+---
+
 ## CARI Evidence Engine
 
 ```bash
@@ -82,6 +102,11 @@ iw index report                        # coverage, staleness, hidden couplings
 iw index layers-infer                  # auto-infer architectural layers
 iw index layers-check                  # validate imports vs. inferred layers
 iw index export --html                 # interactive architecture report
+
+# Graph queries — ad-hoc CypherLite queries over the CARI graph projection, no Neo4j
+iw index schema                        # node labels, relationship types, query templates
+iw index cypher "MATCH (a:SYMBOL)-[:CALLS]->(b:SYMBOL) RETURN a.name, b.name LIMIT 10"
+iw index cypher @:callers-of --param calleeName=validateToken
 
 # Code quality
 iw index clones                        # exact duplicate detection

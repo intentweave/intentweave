@@ -2,6 +2,31 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Agent skill file (`iw init`)** — `iw init` now offers to scaffold a `SKILL.md` (identical
+  content at `.claude/skills/intentweave/SKILL.md` and `.github/skills/intentweave/SKILL.md`)
+  that teaches AI coding agents (Claude Code, Copilot, Cursor, any MCP-capable client with shell
+  access) to call `iw` on their own — grounding answers in `iw index context-pack`/`retrieve`
+  before guessing, and running `iw intent check`/`iw index check` before finishing a task —
+  instead of requiring a human to invoke the CLI and paste output into chat. Prompted
+  interactively by default (`[Y/n]`); use `--skill` to force-install non-interactively or
+  `--skip-skill` to force-skip; skipped automatically in non-TTY environments (CI). Canonical
+  template lives at `packages/cli/assets/skill/SKILL.md`.
+
+### Documentation
+
+- Documented `iw index cypher` / `iw index schema` (ad-hoc CypherLite graph queries over the
+  CARI SQLite projection — no Neo4j) in `README.md` and `docs/CLI-USAGE.md`, and added a matching
+  "run an ad-hoc graph query" workflow to the agent skill file. These commands already existed
+  but were previously undocumented outside `--help` output.
+- Fixed a stale `docs/CLI-USAGE.md` example showing `iw index check --changed <files>` — the
+  command takes changed files as positional arguments; there is no `--changed` flag on
+  `iw index check` (only on `iw intent check` / `iw index rules-check`, where it's a
+  comma-separated string).
+
 ## [0.16.1] — 2026-07-12
 
 ### Fixed

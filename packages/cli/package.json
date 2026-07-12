@@ -48,7 +48,7 @@
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc",
+    "build": "tsc && cp -r assets dist/",
     "test": "vitest run",
     "test:unit": "vitest run",
     "typecheck": "tsc --noEmit",
