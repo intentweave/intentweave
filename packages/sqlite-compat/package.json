@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/sqlite-compat",
-  "version": "0.15.2",
-  "description": "node:sqlite wrapper with better-sqlite3-compatible API — no native compilation",
+  "version": "0.16.1",
+  "description": "node:sqlite wrapper with better-sqlite3-compatible API \u2014 no native compilation",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

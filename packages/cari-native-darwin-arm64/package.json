@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/cari-native-darwin-arm64",
-  "version": "0.15.2",
-  "description": "cari-build native binary — macOS Apple Silicon (arm64)",
+  "version": "0.16.1",
+  "description": "cari-build native binary \u2014 macOS Apple Silicon (arm64)",
   "license": "Apache-2.0",
   "cpu": [
     "arm64"

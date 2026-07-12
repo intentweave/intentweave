@@ -2,6 +2,13 @@
 
 All notable changes to IntentWeave are documented in this file.
 
+## [0.16.1] — 2026-07-12
+
+### Fixed
+
+- **`iw index export --book`** - fixed a bug, where not the complete book was exported, but only the first chapter. The bug was caused by a missing `await` in the code that iterates over the chapters. Now, all chapters are exported correctly.
+
+
 ## [0.16.0] — 2026-07-06
 
 ### Added
