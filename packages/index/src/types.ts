@@ -2859,6 +2859,16 @@ export interface ContextPackInput {
   adaptiveConfig?: {
     pathExceptions?: Array<{ path: string; multiplier: number }>;
   };
+  /**
+   * Optional parsed `.iw/rules.yaml` config. When provided, the `rules` section
+   * uses each rule's real `domain` (instead of assuming `structural`) and is
+   * ranked by relevance to the query/anchor files — rules scoped (via `in:`
+   * globs) to the context files, or textually matching the query, are kept
+   * ahead of unrelated rules when the token budget trims the list.
+   * Caller (CLI/MCP) is responsible for reading and parsing the YAML file so
+   * the index package stays free of fs/YAML dependencies.
+   */
+  rulesConfig?: RulesConfig;
 }
 
 export interface ContextPackFileEntry {

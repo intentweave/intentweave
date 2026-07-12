@@ -13,6 +13,7 @@
  */
 
 import type Database from "@intentweave/sqlite-compat";
+import { minimatch } from "minimatch";
 import type {
   ContextPackInput,
   ContextPackOutput,
@@ -21,6 +22,8 @@ import type {
   ContextPackConnectionEntry,
   ContextPackRationaleEntry,
   ContextPackDriftEntry,
+  RuleDefinition,
+  RulesConfig,
 } from "../types.js";
 import { openIndex } from "./shared.js";
 import { retrieveFromDb } from "./retrieve.js";
@@ -173,7 +176,13 @@ export function contextPackFromDb(
   let rules: ContextPackRuleEntry[] = [];
   if (sections.includes("rules")) {
     try {
-      rules = loadApplicableRules(db);
+      rules = loadApplicableRules(
+        db,
+        input.rulesConfig,
+        contextPaths,
+        anchorFiles,
+        query,
+      );
       rules = trimToChars(rules, Math.floor(budget * 0.15 * 4), (r) =>
         formatRuleLine(r),
       );
@@ -323,10 +332,56 @@ export function contextPackFromDb(
 }
 
 // ---------------------------------------------------------------------------
-// Rules loader (reads .iw/rules.yaml if present, falls back to DB scan)
+// Rules loader — reads the latest conformance_snapshots table, enriched with
+// each rule's real domain/description from a caller-supplied .iw/rules.yaml
+// (RulesConfig), and ranked by relevance to the context files/query.
 // ---------------------------------------------------------------------------
 
-function loadApplicableRules(db: Database.Database): ContextPackRuleEntry[] {
+/**
+ * True if `rule` is plausibly relevant to the current context: it has no
+ * file-scoping `in:` glob (applies everywhere), one of its `in:` globs
+ * matches a context/anchor file, or its id/description/adr textually
+ * matches the query. When `rule` is unknown (no rulesConfig supplied),
+ * every rule is treated as relevant — preserves the old unfiltered behavior.
+ */
+function isRuleRelevant(
+  rule: RuleDefinition | undefined,
+  contextPaths: Set<string>,
+  anchorFiles: string[],
+  query: string,
+): boolean {
+  if (!rule) return true;
+
+  const scopeGlobs = (rule.forbidden ?? [])
+    .map((f) => f.in)
+    .filter((g): g is string => Boolean(g));
+  if (scopeGlobs.length === 0) return true;
+
+  const candidatePaths = [...contextPaths, ...anchorFiles];
+  if (candidatePaths.some((p) => scopeGlobs.some((g) => minimatch(p, g)))) {
+    return true;
+  }
+
+  const q = query.trim().toLowerCase();
+  if (q) {
+    const haystack =
+      `${rule.id} ${rule.description ?? ""} ${rule.adr ?? ""}`.toLowerCase();
+    const terms = q.split(/\s+/).filter((t) => t.length > 2);
+    if (haystack.includes(q) || terms.some((t) => haystack.includes(t))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function loadApplicableRules(
+  db: Database.Database,
+  rulesConfig: RulesConfig | undefined,
+  contextPaths: Set<string>,
+  anchorFiles: string[],
+  query: string,
+): ContextPackRuleEntry[] {
   // Check if rules_violations snapshot table exists (created by snapshotConformance)
   const snap = db
     .prepare(
@@ -356,13 +411,29 @@ function loadApplicableRules(db: Database.Database): ContextPackRuleEntry[] {
     violation_count: number;
   }>;
 
-  return rows.map((r) => ({
-    ruleId: r.rule_id,
-    domain: "structural",
-    severity: r.violation_count > 0 ? "high" : "info",
-    description: r.rule_id,
-    violations: r.violation_count,
-  }));
+  const ruleMap = new Map<string, RuleDefinition>(
+    (rulesConfig?.rules ?? []).map((r) => [r.id, r]),
+  );
+
+  const entries = rows.map((r) => {
+    const rule = ruleMap.get(r.rule_id);
+    return {
+      entry: {
+        ruleId: r.rule_id,
+        domain: rule?.domain ?? "structural",
+        severity: r.violation_count > 0 ? "high" : "info",
+        description: rule?.description ?? r.rule_id,
+        violations: r.violation_count,
+      } satisfies ContextPackRuleEntry,
+      relevant: isRuleRelevant(rule, contextPaths, anchorFiles, query),
+    };
+  });
+
+  // Stable-sort so budget trimming keeps relevant rules first without
+  // disturbing the existing violated-first ordering within each group.
+  entries.sort((a, b) => Number(b.relevant) - Number(a.relevant));
+
+  return entries.map((e) => e.entry);
 }
 
 // ---------------------------------------------------------------------------

@@ -130,5 +130,5 @@ for judgment.
 
 For code-quality/dead-code checks (duplicate code, circular imports, unused exports, TODOs, etc.),
 run `iw index report` for a corpus-wide dashboard, or `iw index <subcommand> --help` for any
-specific one. Full command reference: [https://intentweave.org/docs/getting-started/](https://intentweave.org/docs/getting-started/)
+specific one. Full command reference: [https://intentweave.org/docs/reference/cli/](https://intentweave.org/docs/reference/cli/)
 and `iw --help` / `iw <command> --help` for any subcommand.

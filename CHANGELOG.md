@@ -4,6 +4,17 @@ All notable changes to IntentWeave are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`iw index context-pack` rules section** — the "rules" section previously hardcoded
+  `domain: "structural"` for every rule (regardless of its real domain in `.iw/rules.yaml`)
+  and ranked rules purely by violation count, with no relevance filtering against the
+  query/anchor files — so an unrelated high-violation rule could crowd out a genuinely
+  relevant, clean rule once the token budget trimmed the list. `ContextPackInput` now
+  accepts an optional `rulesConfig` (parsed `.iw/rules.yaml`, wired through by the CLI and
+  MCP server); rules now report their real `domain` and are ranked with relevant (in-scope
+  or query-matching) rules ahead of unrelated ones before budget trimming.
+
 ### Added
 
 - **Agent skill file (`iw init`)** — `iw init` now offers to scaffold a `SKILL.md` (identical
@@ -26,6 +37,23 @@ All notable changes to IntentWeave are documented in this file.
   command takes changed files as positional arguments; there is no `--changed` flag on
   `iw index check` (only on `iw intent check` / `iw index rules-check`, where it's a
   comma-separated string).
+- `docs/CLI-USAGE.md` contained an entire stale duplicate second half (Installation → Quick
+  Start → Command Reference → Environment Variables → Supported Languages → Common Workflows →
+  Troubleshooting) documenting removed commands (`iw run`, `iw query`, `iw persist`, `iw xlink`,
+  `iw context`, `iw impact`). Removed the duplicate, preserved the still-accurate
+  `iw index watch` and "Supported Languages" sections into the canonical copy, and replaced KG
+  command references with the current MCP-tool-based workflow (`kg_query`, `kg_context`,
+  `kg_impact`, ...).
+- Fixed a stale `iw query --cypher` reference (implying a still-existing Neo4j CLI query
+  command) in the `iw index cypher` docs in `docs/CLI-USAGE.md` and
+  `intentweave.org/docs/reference/cli.md` — replaced with a pointer to the `kg_query` MCP tool.
+- Added a dedicated `### iw intent check` reference section (with full options table) to
+  `intentweave.org/docs/reference/cli.md`, matching the one already in `docs/CLI-USAGE.md`.
+- Fixed the agent skill file's "Learn more" link, which pointed at
+  `/docs/getting-started/` instead of the actual CLI reference at `/docs/reference/cli/`.
+- Reworded "no Neo4j or LLM needed" (imprecise — `cari_layers_name` optionally calls an LLM)
+  to "no Neo4j needed; most tools need no LLM" in `README.md`, `.github/copilot-instructions.md`,
+  and `intentweave.org/docs/integrations/mcp.md`.
 
 ## [0.16.1] — 2026-07-12
 

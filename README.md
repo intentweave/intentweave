@@ -585,7 +585,8 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `kg_doc_health` | Documentation freshness          | `files?`                        |
 | `kg_schema`     | Graph schema description         | _(none)_                        |
 
-**CARI tools** (no Neo4j or LLM needed):
+**CARI tools** (no Neo4j needed; most also need no LLM — a few, like `cari_layers_name`,
+optionally call one for naming):
 
 | Tool                          | Purpose                                                      | Key Parameters                         |
 | ----------------------------- | ------------------------------------------------------------ | -------------------------------------- |

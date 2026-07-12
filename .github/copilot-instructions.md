@@ -391,7 +391,7 @@ programmatic API.
 | `kg_doc_health` | Documentation freshness (Neo4j) | `files?`                        |
 | `kg_schema`     | Graph schema                    | _(none)_                        |
 
-### CARI Tools (local SQLite, no Neo4j or LLM)
+### CARI Tools (local SQLite, no Neo4j; most need no LLM)
 
 | Tool                          | Purpose                                                    | Key Parameters                                                       |
 | ----------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- |

@@ -5369,6 +5369,19 @@ or debugging an architectural issue — without calling 5 separate tools.`,
         } catch {
           iwConfig = undefined;
         }
+        // Load .iw/rules.yaml (if present) so the rules section can report
+        // each rule's real domain and rank by relevance to the query/anchor
+        // files instead of assuming "structural" for everything.
+        const rulesYamlPath = path.join(process.cwd(), ".iw", "rules.yaml");
+        let rulesConfig: import("@intentweave/index").RulesConfig | undefined;
+        try {
+          const rawRules = await readFile(rulesYamlPath, "utf-8");
+          rulesConfig = yamlLoadMcp(rawRules) as
+            | import("@intentweave/index").RulesConfig
+            | undefined;
+        } catch {
+          rulesConfig = undefined;
+        }
         const adaptiveMode =
           args.adaptiveMode ?? iwConfig?.adaptive?.mode ?? "conservative";
 
@@ -5384,6 +5397,7 @@ or debugging an architectural issue — without calling 5 separate tools.`,
           adaptiveConfig: iwConfig?.adaptive
             ? { pathExceptions: iwConfig.adaptive.path_exceptions }
             : undefined,
+          rulesConfig,
         });
         return {
           content: [

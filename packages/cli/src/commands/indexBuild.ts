@@ -7799,6 +7799,17 @@ const indexContextPackSubcommand = new Command("context-pack")
     // mode (when --adaptive isn't explicitly passed) and for path_exceptions.
     const iwDir = path.dirname(dbPath);
     const iwConfig = await loadIwConfig(iwDir);
+    // Load .iw/rules.yaml (if present) so the rules section can report each
+    // rule's real domain and rank by relevance to the query/anchor files
+    // instead of assuming "structural" for everything.
+    let rulesConfig: import("@intentweave/index").RulesConfig | undefined;
+    try {
+      const rulesYamlPath = path.join(iwDir, "rules.yaml");
+      const raw = await fs.readFile(rulesYamlPath, "utf-8");
+      rulesConfig = yamlLoad(raw) as import("@intentweave/index").RulesConfig;
+    } catch {
+      rulesConfig = undefined;
+    }
     const adaptiveModeRaw = String(
       opts.adaptive ?? iwConfig?.adaptive?.mode ?? "conservative",
     ).toLowerCase();
@@ -7839,6 +7850,7 @@ const indexContextPackSubcommand = new Command("context-pack")
               pathExceptions: iwConfig.adaptive.path_exceptions,
             }
           : undefined,
+        rulesConfig,
       } as import("@intentweave/index").ContextPackInput;
 
       const result = cpFn(dbPath, cpInput);
