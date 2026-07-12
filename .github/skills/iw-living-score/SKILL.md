@@ -194,10 +194,10 @@ iw verify --score -f json | jq '{date: now | todate, score: .score, grade: .grad
 
 ## Troubleshooting
 
-| Symptom                       | Cause                                    | Fix                                                                         |
-| ----------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
-| All dimensions N/A            | Index not built                          | `iw index build`                                                            |
-| Arch Conformance N/A          | No relative imports resolved             | Check that source files use relative imports                                |
-| Spec Coverage stuck at N/A    | No knowledge graph populated              | See docs/kg/try-it.mdx — requires an existing populated Neo4j instance     |
-| Score 100 but docs feel stale | `is_doc` flag not set                    | Confirm docs/ files are picked up: `iw index build -v`                      |
-| Very low Arch Conformance     | Auto-inferred layers don't match reality | Tune with `iw index layers-infer > .iw/layers.yaml` then re-run             |
+| Symptom                       | Cause                                    | Fix                                                                    |
+| ----------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| All dimensions N/A            | Index not built                          | `iw index build`                                                       |
+| Arch Conformance N/A          | No relative imports resolved             | Check that source files use relative imports                           |
+| Spec Coverage stuck at N/A    | No knowledge graph populated             | See docs/kg/try-it.mdx — requires an existing populated Neo4j instance |
+| Score 100 but docs feel stale | `is_doc` flag not set                    | Confirm docs/ files are picked up: `iw index build -v`                 |
+| Very low Arch Conformance     | Auto-inferred layers don't match reality | Tune with `iw index layers-infer > .iw/layers.yaml` then re-run        |
