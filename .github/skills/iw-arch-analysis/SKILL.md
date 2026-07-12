@@ -58,11 +58,12 @@ iw index arch-check --strict
 
 ### Mode C — Enriched Diagram Triples (`--from-diagrams`)
 
-Uses KG entities extracted by `iw index enrich` — no LLM call at check time.
-Requires prior enrichment.
+Uses KG entities extracted via LLM enrichment — no LLM call at check time.
+Requires prior enrichment via the `cari_enrich` MCP tool (dry-run scoring only
+today; full extraction isn't wired up to a CLI command yet). In practice,
+prefer Mode A/B (`--from-scan`) until enrichment is fully available.
 
 ```bash
-iw index enrich --provider openai   # one-time enrichment
 iw index arch-check --from-diagrams
 ```
 

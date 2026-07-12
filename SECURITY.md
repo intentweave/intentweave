@@ -30,7 +30,6 @@ This policy covers:
 
 - All code in the `intentweave/intentweave` repository
 - Published `@intentweave/*` npm packages
-- The IntentWeave server (`apps/server`)
 
 Out of scope:
 

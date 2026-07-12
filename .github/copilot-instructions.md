@@ -15,24 +15,31 @@ IntentWeave is a **semantic knowledge extraction platform** that provides two co
 
 ```
 intentweave/
-├── apps/
-│   └── server/           # Fastify backend (REST API)
 ├── packages/
-│   ├── analyzer/         # Pipeline stages (IN, FX, KX, RX, CX, MX, PX, KWX, COX, AX)
+│   ├── analyzer/         # Pipeline stages (AX, KWX, COX, TCG)
 │   ├── ast-extractor/    # AST-based code entity extraction (tree-sitter)
 │   ├── cli/              # `iw` CLI commands + MCP server
-│   ├── core/             # Shared types, LLM interfaces, utilities
+│   ├── core/             # Shared types, plugin registry, capability interfaces
 │   ├── index/            # CARI — SQLite index (annotator, IDF, queries, incremental)
-│   ├── profiles/         # Profile packs for domain-specific extraction
+│   ├── cypher-lite/      # Zero-dep Cypher→SQL transpiler for SQLite KG
+│   ├── plugin-llm/       # LLM provider plugin (OpenAI)
+│   ├── plugin-python/    # Python language plugin (tree-sitter)
+│   ├── plugin-swift/     # Swift language plugin (tree-sitter)
 │   ├── python-parser/    # tree-sitter Python extraction
-│   ├── server-core/      # Fastify + Neo4j + middleware
-│   ├── server-open/      # Open track API routes
-│   └── swift-parser/     # tree-sitter Swift extraction
-├── ui/                   # React + Vite frontend
+│   ├── swift-parser/     # tree-sitter Swift extraction
+│   ├── sqlite-compat/    # SQLite driver compatibility shim
+│   └── cari-native*/     # Native CARI bindings (per-platform)
 ├── docs/                 # Specifications & documentation
 ├── .iw/                  # Workspace data (runs, cache, index.db)
 └── iw.sh                 # CLI wrapper (runs via tsx)
 ```
+
+> Note: the standalone REST API server (`apps/server`, `@intentweave/server-core`,
+> `@intentweave/server-open`) and the `ui/` frontend have been removed from the
+> monorepo. Supported integration surfaces are the CLI, MCP tools, and the
+> `@intentweave/index` programmatic API. The `@intentweave/plugin-kg` /
+> `plugin-kg-lite` packages (Neo4j / SQLite persistence, installed via
+> `iw plugin add kg`) live outside this monorepo.
 
 ## Build & Test
 

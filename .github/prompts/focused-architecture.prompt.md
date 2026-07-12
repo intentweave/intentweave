@@ -178,7 +178,7 @@ C4Context
   Person(dev, "Developer", "Runs analysis pipeline")
 
   System_Boundary(iw, "IntentWeave") {
-    Container(cli, "CLI", "TypeScript", "iw run / iw index commands")
+    Container(cli, "CLI", "TypeScript", "iw index / iw intent commands")
     Container(analyzer, "Analyzer", "TypeScript", "Pipeline orchestration & stages")
     Container(index, "CARI Index", "SQLite", "Code-aware retrieval")
     ContainerDb(neo4j, "Neo4j", "Graph DB", "Knowledge graph persistence")

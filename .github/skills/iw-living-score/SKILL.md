@@ -65,9 +65,9 @@ iw verify --score --allow-skip-layer
 # For Doc Freshness + Architecture Conformance:
 iw index build
 
-# For all 4 dimensions (requires OpenAI key):
-iw run docs/*.md --track open --provider openai -i
-iw persist --latest -v
+# Spec Coverage + Constraint Consistency require a populated Neo4j knowledge
+# graph (kg_entities / kg_relationships tables) — there is currently no CLI
+# command to populate one from scratch; see docs/kg/try-it.mdx.
 ```
 
 ## MCP Tool
@@ -94,8 +94,8 @@ cari_living_score
 
 | Dimension                | Score | Detail                                                                 | Available |
 | ------------------------ | ----- | ---------------------------------------------------------------------- | --------- |
-| Spec Coverage            | N/A   | No KG entities — run `iw index enrich` first                           | ✗         |
-| Constraint Consistency   | N/A   | No KG relationships — run `iw index enrich` first                      | ✗         |
+| Spec Coverage            | N/A   | No KG entities — requires a populated knowledge graph                  | ✗         |
+| Constraint Consistency   | N/A   | No KG relationships — requires a populated knowledge graph             | ✗         |
 | Doc Freshness            | 96%   | 1 stale doc out of 27 total                                            | ✓         |
 | Architecture Conformance | 88%   | 53 layer violations across 458 import edges (0 reverse, 53 skip-layer) | ✓         |
 ```
@@ -108,7 +108,8 @@ Measures how many knowledge-graph entities can be traced to real code symbols.
 
 - **High (> 80%)** — architecture concepts are well-grounded in code
 - **Low (< 60%)** — entities exist in docs but have no matching code; check for renamed symbols
-- **N/A** — enrichment hasn't run; use `iw run docs/*.md --track open --provider openai -i`
+- **N/A** — no knowledge graph populated; see docs/kg/try-it.mdx (query-only
+  today, no CLI ingestion path)
 
 Investigation:
 
@@ -123,7 +124,7 @@ Measures how many KG relationships are free of contradictions.
 
 - **High (> 90%)** — specifications are internally consistent
 - **Low (< 70%)** — conflicting statements exist; run `iw verify --consistency -v`
-- **N/A** — enrichment hasn't run
+- **N/A** — no knowledge graph populated
 
 Investigation:
 
@@ -197,6 +198,6 @@ iw verify --score -f json | jq '{date: now | todate, score: .score, grade: .grad
 | ----------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
 | All dimensions N/A            | Index not built                          | `iw index build`                                                            |
 | Arch Conformance N/A          | No relative imports resolved             | Check that source files use relative imports                                |
-| Spec Coverage stuck at N/A    | No enrichment                            | `iw run docs/*.md --track open --provider openai -i && iw persist --latest` |
+| Spec Coverage stuck at N/A    | No knowledge graph populated              | See docs/kg/try-it.mdx — requires an existing populated Neo4j instance     |
 | Score 100 but docs feel stale | `is_doc` flag not set                    | Confirm docs/ files are picked up: `iw index build -v`                      |
 | Very low Arch Conformance     | Auto-inferred layers don't match reality | Tune with `iw index layers-infer > .iw/layers.yaml` then re-run             |

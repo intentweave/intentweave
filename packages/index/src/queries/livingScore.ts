@@ -127,7 +127,7 @@ function computeSpecCoverage(
   if (!tableExists) {
     return unavailable(
       "Spec Coverage",
-      "No KG entities — run `iw index enrich` first",
+      "No KG entities — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
     );
   }
 
@@ -136,7 +136,7 @@ function computeSpecCoverage(
   if (result.summary.total === 0) {
     return unavailable(
       "Spec Coverage",
-      "No KG entities — run `iw index enrich` first",
+      "No KG entities — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
     );
   }
 
@@ -166,7 +166,7 @@ function computeConstraintConsistency(
   if (!tableExists) {
     return unavailable(
       "Constraint Consistency",
-      "No KG relationships — run `iw index enrich` first",
+      "No KG relationships — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
     );
   }
 
@@ -181,7 +181,7 @@ function computeConstraintConsistency(
   if (total === 0) {
     return unavailable(
       "Constraint Consistency",
-      "No KG relationships — run `iw index enrich` first",
+      "No KG relationships — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
     );
   }
 
