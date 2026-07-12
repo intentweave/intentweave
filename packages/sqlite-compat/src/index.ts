@@ -82,7 +82,9 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
       params.length === 1 && Array.isArray(params[0])
         ? (params[0] as unknown[])
         : params;
-    return this._stmt.all(...(args as Parameters<StatementSync["all"]>)) as unknown as Result[];
+    return this._stmt.all(
+      ...(args as Parameters<StatementSync["all"]>),
+    ) as unknown as Result[];
   }
 
   get(...params: unknown[]): Result | undefined {
@@ -90,7 +92,9 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
       params.length === 1 && Array.isArray(params[0])
         ? (params[0] as unknown[])
         : params;
-    return this._stmt.get(...(args as Parameters<StatementSync["get"]>)) as unknown as Result | undefined;
+    return this._stmt.get(
+      ...(args as Parameters<StatementSync["get"]>),
+    ) as unknown as Result | undefined;
   }
 
   run(...params: unknown[]): RunResult {
