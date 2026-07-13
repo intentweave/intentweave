@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/cari-native-linux-x64",
-  "version": "0.16.1",
-  "description": "cari-build native binary — Linux x86_64",
+  "version": "0.17.0",
+  "description": "cari-build native binary \u2014 Linux x86_64",
   "license": "Apache-2.0",
   "cpu": [
     "x64"

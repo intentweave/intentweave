@@ -4,6 +4,8 @@ All notable changes to IntentWeave are documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-07-13
+
 ### Fixed
 
 - **`iw index context-pack` rules section** — the "rules" section previously hardcoded
@@ -54,6 +56,12 @@ All notable changes to IntentWeave are documented in this file.
 - Reworded "no Neo4j or LLM needed" (imprecise — `cari_layers_name` optionally calls an LLM)
   to "no Neo4j needed; most tools need no LLM" in `README.md`, `.github/copilot-instructions.md`,
   and `intentweave.org/docs/integrations/mcp.md`.
+- Fixed a `iw index check --changed <files...>` drift on intentweave.org that had spread to
+  6 pages (`docs/cari/check.md`, `examples/pr-drift.md`, `docs/getting-started.md`,
+  `docs/integrations/ci.md`, `docs/plugins/overview.md`, and an incomplete options table on
+  `docs/reference/cli.md`) — the command takes changed files as a positional argument
+  (`.argument("<changed...>")`), not a `--changed` flag; only `iw intent check` / `iw index
+  rules-check` have a real (comma-separated) `--changed` flag.
 
 ## [0.16.1] — 2026-07-12
 
