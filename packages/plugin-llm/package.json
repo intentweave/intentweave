@@ -35,7 +35,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "LLM provider plugin \u2014 wraps OpenAI-compatible APIs behind the LlmCapability interface"
+    "description": "LLM provider plugin — wraps OpenAI-compatible APIs behind the LlmCapability interface"
   },
   "engines": {
     "node": ">=20.0.0"

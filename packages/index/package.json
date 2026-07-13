@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/index",
   "version": "0.17.0",
-  "description": "Code-aware retrieval index \u2014 SQLite-based index for agents and CI",
+  "description": "Code-aware retrieval index — SQLite-based index for agents and CI",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -45,7 +45,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Code-aware retrieval index \u2014 lightweight SQLite backend for agents and CI"
+    "description": "Code-aware retrieval index — lightweight SQLite backend for agents and CI"
   },
   "license": "Apache-2.0",
   "repository": {

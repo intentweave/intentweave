@@ -1,7 +1,7 @@
 {
   "name": "@intentweave/cli",
   "version": "0.17.0",
-  "description": "Command-line interface for IntentWeave \u2014 iw commands + MCP server",
+  "description": "Command-line interface for IntentWeave — iw commands + MCP server",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -83,7 +83,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "CLI and MCP server \u2014 open-source entry point for users"
+    "description": "CLI and MCP server — open-source entry point for users"
   },
   "license": "Apache-2.0",
   "repository": {

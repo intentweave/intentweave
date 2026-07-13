@@ -61,7 +61,7 @@ All notable changes to IntentWeave are documented in this file.
   `docs/integrations/ci.md`, `docs/plugins/overview.md`, and an incomplete options table on
   `docs/reference/cli.md`) — the command takes changed files as a positional argument
   (`.argument("<changed...>")`), not a `--changed` flag; only `iw intent check` / `iw index
-  rules-check` have a real (comma-separated) `--changed` flag.
+rules-check` have a real (comma-separated) `--changed` flag.
 
 ## [0.16.1] — 2026-07-12
 

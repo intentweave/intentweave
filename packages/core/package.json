@@ -75,7 +75,7 @@
   },
   "intentweave": {
     "tier": "oss",
-    "description": "Core types, predicates, and interfaces \u2014 always open-source"
+    "description": "Core types, predicates, and interfaces — always open-source"
   },
   "engines": {
     "node": ">=20.0.0"
