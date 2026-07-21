@@ -279,11 +279,9 @@ describe("File discovery utilities", () => {
     });
 
     it("discovers non-binary files when includeAllFiles is true", async () => {
-      const files = await discoverFiles(
-        [path.join(tmpDir, "config")],
-        tmpDir,
-        { includeAllFiles: true },
-      );
+      const files = await discoverFiles([path.join(tmpDir, "config")], tmpDir, {
+        includeAllFiles: true,
+      });
       const names = files.map((f) => path.basename(f)).sort();
       expect(names).toEqual([
         "notes.cfg",
@@ -294,21 +292,17 @@ describe("File discovery utilities", () => {
     });
 
     it("excludes files with known-binary extensions even with includeAllFiles", async () => {
-      const files = await discoverFiles(
-        [path.join(tmpDir, "config")],
-        tmpDir,
-        { includeAllFiles: true },
-      );
+      const files = await discoverFiles([path.join(tmpDir, "config")], tmpDir, {
+        includeAllFiles: true,
+      });
       const names = files.map((f) => path.basename(f));
       expect(names).not.toContain("logo.png");
     });
 
     it("excludes unrecognized extensions that sniff as binary content", async () => {
-      const files = await discoverFiles(
-        [path.join(tmpDir, "config")],
-        tmpDir,
-        { includeAllFiles: true },
-      );
+      const files = await discoverFiles([path.join(tmpDir, "config")], tmpDir, {
+        includeAllFiles: true,
+      });
       const names = files.map((f) => path.basename(f));
       expect(names).not.toContain("data.bin2");
     });
@@ -318,11 +312,10 @@ describe("File discovery utilities", () => {
         path.join(tmpDir, "config", "huge.cfg"),
         "x".repeat(1000),
       );
-      const files = await discoverFiles(
-        [path.join(tmpDir, "config")],
-        tmpDir,
-        { includeAllFiles: true, maxFileSize: 100 },
-      );
+      const files = await discoverFiles([path.join(tmpDir, "config")], tmpDir, {
+        includeAllFiles: true,
+        maxFileSize: 100,
+      });
       const names = files.map((f) => path.basename(f));
       expect(names).not.toContain("huge.cfg");
       // .md files are unaffected by the maxFileSize cap for generic files
