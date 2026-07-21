@@ -48,8 +48,10 @@ inputs:
 
   build-index:
     description: >
-      Whether to run 'iw index build' before checking.
-      Set to 'false' if you restore a cached index.
+      Whether to run 'iw index build' before checking. Set to 'false' if you
+      restore a cached '.iw/index.db' (e.g. via actions/cache) before this
+      step — the action will then run a fast incremental 'iw index update'
+      against the restored index instead of a full rebuild.
     required: false
     default: "true"
 
@@ -82,11 +84,25 @@ runs:
       run: npm install -g @intentweave/cli@${{ inputs.iw-version }}
 
     # ── 2. Build or update the CARI index ─────────────────────────────────
-    - name: Build CARI index
-      if: inputs.build-index == 'true'
+    # When `build-index: false`, we expect the caller to have restored a
+    # cached `.iw/index.db` (e.g. via `actions/cache`) *before* this action
+    # runs. If a cached index is present we bring it up to date with a fast
+    # incremental `iw index update` (content-hash delta) instead of a full
+    # rebuild; if no cached index exists, we fail with a clear message
+    # rather than silently checking against a missing/stale index.
+    - name: Build or update CARI index
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: iw index build -v
+      run: |
+        if [ "${{ inputs.build-index }}" = "true" ]; then
+          iw index build -v
+        elif [ -f .iw/index.db ]; then
+          echo "Restored cached index found — running incremental update"
+          iw index update -v
+        else
+          echo "::error::build-index is 'false' but no .iw/index.db was found. Restore a cache before this action (see docs/CLI-USAGE.md#ci-caching), or set build-index: true."
+          exit 1
+        fi
 
     # ── 3. Determine changed files (PR diff or push diff) ─────────────────
     - name: Get changed files

@@ -689,6 +689,44 @@ The structured JSON block at the end contains per-document grounding details. Us
     return await import("@intentweave/index");
   }
 
+  /**
+   * Opt-in local session log (`.iw/config.yaml` → `sessionLog: true`).
+   * Reads the workspace config fresh on each call (cheap, and config may
+   * change between tool invocations within a long-running MCP server).
+   */
+  async function logMcpSessionEvent(input: {
+    tool: string;
+    confidence?: number;
+    resultCount?: number;
+  }): Promise<void> {
+    const { logSessionEvent } = await loadIndex();
+    let sessionLogEnabled = false;
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const { load: yamlLoad } = await import("js-yaml");
+      const raw = await readFile(
+        path.join(process.cwd(), ".iw", "config.yaml"),
+        "utf-8",
+      );
+      const parsed = yamlLoad(raw) as
+        | import("@intentweave/index").IwConfig
+        | undefined;
+      sessionLogEnabled =
+        !!parsed && typeof parsed === "object" && parsed.sessionLog === true;
+    } catch {
+      // No config file, or unreadable — session logging stays disabled.
+    }
+    await logSessionEvent({
+      enabled: sessionLogEnabled,
+      workspaceRoot: process.cwd(),
+      surface: "mcp",
+      tool: input.tool,
+      sessionId,
+      confidence: input.confidence,
+      resultCount: input.resultCount,
+    });
+  }
+
   // ── Tool: cari_retrieve ───────────────────────────────────────────
   server.tool(
     "cari_retrieve",
@@ -725,6 +763,12 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           query: args.query,
           scope: args.scope,
           limit: args.limit,
+        });
+
+        await logMcpSessionEvent({
+          tool: "cari_retrieve",
+          confidence: result.files[0]?.score,
+          resultCount: result.files.length,
         });
 
         if (result.files.length === 0) {
@@ -805,6 +849,12 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
           entity: args.entity,
           limit: args.limit,
           include: args.include as any,
+        });
+
+        await logMcpSessionEvent({
+          tool: "cari_connections",
+          confidence: result.connections[0]?.sources[0]?.score,
+          resultCount: result.connections.length,
         });
 
         if (result.connections.length === 0 && result.gaps.length === 0) {
@@ -907,6 +957,12 @@ Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
         const result = check(dbPath, {
           changed: args.changed,
           severity: args.severity,
+        });
+
+        await logMcpSessionEvent({
+          tool: "cari_check",
+          // CheckFinding carries a severity, not a numeric confidence.
+          resultCount: result.findings.length,
         });
 
         if (result.findings.length === 0) {
@@ -3808,117 +3864,10 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
           checkTests: args.checkTests,
         });
 
-        if (result.entities.length === 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "No KG entities found. Run `iw index enrich` first to extract semantic entities.",
-              },
-            ],
-          };
-        }
-
-        const { summary } = result;
-        const lines: string[] = [
-          `## Spec-to-Code Verification`,
-          "",
-          `**${summary.total}** entities checked — **${summary.coveragePercent}%** spec coverage`,
-          "",
-          "| Status | Entity | Type | Source | Grounded In |",
-          "|--------|--------|------|--------|-------------|",
-        ];
-
-        const STATUS_ICONS: Record<string, string> = {
-          grounded: "✓",
-          untested: "⚠",
-          partial: "~",
-          ungrounded: "✗",
-        };
-
-        for (const e of result.entities) {
-          const icon = STATUS_ICONS[e.status] ?? "?";
-          const groundedStr =
-            e.groundedIn.length > 0
-              ? e.groundedIn
-                  .map((g) => `${g.symbolName} (${g.filePath})`)
-                  .join(", ")
-              : "—";
-          lines.push(
-            `| ${icon} ${e.status} | ${e.name} | ${e.entityType} | ${e.sourceFile} | ${groundedStr} |`,
-          );
-        }
-
-        lines.push(
-          "",
-          "### Summary",
-          "",
-          `- ✓ **${summary.grounded}** grounded`,
-          `- ⚠ **${summary.untested}** untested (code found but no tests)`,
-          `- ~ **${summary.partial}** partial (mentioned in docs, no code symbol)`,
-          `- ✗ **${summary.ungrounded}** ungrounded (no code references)`,
-        );
-
-        if (result.byFile.length > 1) {
-          lines.push("", "### By File", "");
-          for (const f of result.byFile) {
-            lines.push(
-              `- **${f.file}**: ${f.coveragePercent}% (${f.grounded}/${f.total})`,
-            );
-          }
-        }
-
-        return { content: [{ type: "text", text: lines.join("\n") }] };
-      } catch (err: any) {
-        const msg = handleCariError(err);
-        return { content: [{ type: "text", text: msg }], isError: true };
-      }
-    },
-  );
-
-  // ── Tool: cari_verify ───────────────────────────────────────────────
-  server.tool(
-    "cari_verify",
-    "Spec-to-code verification: check whether KG entities (from enrichment) are grounded in code symbols. " +
-      "Returns grounded/ungrounded/partial/untested status for each entity. " +
-      "Requires prior enrichment (iw index enrich). " +
-      "Use to validate that documented decisions, requirements, and components have corresponding code.",
-    {
-      files: z
-        .array(z.string())
-        .optional()
-        .describe("Restrict to entities from these source files"),
-      types: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Only verify entities of these types (e.g., decision, requirement, component)",
-        ),
-      minConfidence: z
-        .number()
-        .optional()
-        .describe(
-          "Minimum annotation confidence to count as grounded (default: 0.5)",
-        ),
-      checkTests: z
-        .boolean()
-        .optional()
-        .describe("Check test coverage for grounded entities (default: true)"),
-    },
-    async (args) => {
-      try {
-        log(
-          `cari_verify: files=${args.files}, types=${args.types}, checkTests=${args.checkTests}`,
-        );
-
-        const { verify } = await import("@intentweave/index");
-        const dbPath = resolveIndexDb();
-
-        const result = verify(dbPath, {
-          files: args.files,
-          types: args.types,
-          minConfidence: args.minConfidence,
-          checkTests: args.checkTests,
+        await logMcpSessionEvent({
+          tool: "cari_verify",
+          confidence: result.summary.coveragePercent,
+          resultCount: result.entities.length,
         });
 
         if (result.entities.length === 0) {
@@ -4024,6 +3973,12 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
         });
 
         const { summary } = result;
+
+        await logMcpSessionEvent({
+          tool: "cari_consistency",
+          confidence: summary.consistencyPercent,
+          resultCount: result.conflicts.length,
+        });
 
         if (result.conflicts.length === 0) {
           return {
@@ -4441,6 +4396,12 @@ No Neo4j needed — LLM is used only for the initial diagram scan (cached after 
         const result = diagramEntityCheck(dbPath, archConfig);
         const { summary } = result;
 
+        await logMcpSessionEvent({
+          tool: "cari_arch_diff",
+          confidence: summary.conformancePercent,
+          resultCount: result.flows.length,
+        });
+
         const lines: string[] = [
           "## Architecture Diff (Entity Evidence)",
           "",
@@ -4668,6 +4629,11 @@ Use to get an at-a-glance health score for a project's living documentation.`,
         const result = livingScore(dbPath, {
           minConfidence: args.minConfidence,
           allowSkipLayer: args.allowSkipLayer,
+        });
+
+        await logMcpSessionEvent({
+          tool: "cari_living_score",
+          confidence: result.score,
         });
 
         const GRADE_EMOJI: Record<string, string> = {

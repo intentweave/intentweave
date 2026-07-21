@@ -33,6 +33,10 @@ export { annotate, toSlug, tokenize } from "./annotator.js";
 export type { AnnotateOptions } from "./annotator.js";
 export { computeIdf } from "./idf.js";
 
+// Opt-in local session log (.iw/sessions/) — never transmitted anywhere
+export { logSessionEvent } from "./sessionLog.js";
+export type { SessionLogEntry, LogSessionEventInput } from "./sessionLog.js";
+
 // KG writer (Selective Semantic Enrichment — 11.8)
 export { writeKgResults, bridgeKgEntities } from "./kgWriter.js";
 export type { KgWriteInput, KgWriteResult } from "./kgWriter.js";

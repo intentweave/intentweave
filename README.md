@@ -172,6 +172,8 @@ thresholds:
     mode: error # promote to CI-blocking
   behavioral:
     mode: warn # keep as warnings
+sessionLog: true # opt-in local query log — see docs/CLI-USAGE.md#sessionlog
+indexAllFiles: true # opt-in: index non-binary config/data files too — see docs/CLI-USAGE.md#indexallfiles
 ```
 
 Rules live in `.iw/rules.yaml`:

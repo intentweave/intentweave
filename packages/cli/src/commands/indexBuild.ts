@@ -69,6 +69,7 @@ import {
   buildExcludeList,
   discoverFiles,
   isExcluded,
+  logSessionEvent,
 } from "@intentweave/index";
 
 // Rules extract subcommand (13.4)
@@ -569,6 +570,13 @@ const indexBuildSubcommand = new Command("build")
         `  ▸ depth: ${opts.depth} | output: ${opts.output ?? ".iw/index.db"}\n`,
       ),
     );
+    if (iwConfig?.indexAllFiles) {
+      console.log(
+        chalk.gray(
+          "  ▸ indexAllFiles: enabled — discovering non-binary files beyond md/mdx/txt/rst\n",
+        ),
+      );
+    }
     if (roots.length > 0) {
       for (const r of roots) {
         console.log(
@@ -591,6 +599,7 @@ const indexBuildSubcommand = new Command("build")
         roots.length === 0 &&
         !opts.include &&
         !opts.exclude &&
+        !iwConfig?.indexAllFiles && // not yet supported by the native binary
         opts.native !== false; // Commander sets opts.native=false when --no-native is passed
       const nativeBinary = canUseNative ? resolveCariNativeBinary() : null;
 
@@ -673,6 +682,7 @@ const indexBuildSubcommand = new Command("build")
         depth: opts.depth as "structured" | "full",
         exclude: opts.exclude,
         include: opts.include,
+        includeAllFiles: iwConfig?.indexAllFiles ?? false,
         session,
         outputPath: opts.output,
         maxFileSize: parseInt(opts.maxFileSize, 10),
@@ -2352,8 +2362,9 @@ const indexRetrieveSubcommand = new Command("retrieve")
   .option("--scope <scope>", "Filter: code, docs, or all", "all")
   .option("--db <path>", "Path to index.db")
   .option("-f, --format <format>", "Output format: text or json", "text")
-  .action((queryParts: string[], opts) => {
+  .action(async (queryParts: string[], opts) => {
     const dbPath = resolveDbPath(opts.db);
+    const cwd = process.cwd();
     const params: RetrieveParams = {
       query: queryParts.join(" "),
       limit: parseInt(opts.limit, 10),
@@ -2361,6 +2372,16 @@ const indexRetrieveSubcommand = new Command("retrieve")
     };
 
     const result = retrieve(dbPath, params);
+
+    const iwConfig = await loadIwConfig(path.join(cwd, ".iw"));
+    await logSessionEvent({
+      enabled: iwConfig?.sessionLog === true,
+      workspaceRoot: cwd,
+      surface: "cli",
+      tool: "index retrieve",
+      confidence: result.files[0]?.score,
+      resultCount: result.files.length,
+    });
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));
@@ -2401,8 +2422,9 @@ const indexConnectionsSubcommand = new Command("connections")
   )
   .option("--db <path>", "Path to index.db")
   .option("-f, --format <format>", "Output format: text or json", "text")
-  .action((entity: string, opts) => {
+  .action(async (entity: string, opts) => {
     const dbPath = resolveDbPath(opts.db);
+    const cwd = process.cwd();
     const params: ConnectionsParams = {
       entity,
       limit: parseInt(opts.limit, 10),
@@ -2410,6 +2432,16 @@ const indexConnectionsSubcommand = new Command("connections")
     };
 
     const result = connections(dbPath, params);
+
+    const iwConfig = await loadIwConfig(path.join(cwd, ".iw"));
+    await logSessionEvent({
+      enabled: iwConfig?.sessionLog === true,
+      workspaceRoot: cwd,
+      surface: "cli",
+      tool: "index connections",
+      confidence: result.connections[0]?.sources[0]?.score,
+      resultCount: result.connections.length,
+    });
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));
@@ -2524,6 +2556,17 @@ const indexCheckSubcommand = new Command("check")
           ),
       );
     }
+
+    const iwConfig = await loadIwConfig(path.join(cwd, ".iw"));
+    await logSessionEvent({
+      enabled: iwConfig?.sessionLog === true,
+      workspaceRoot: cwd,
+      surface: "cli",
+      tool: "index check",
+      // CheckFinding carries a severity, not a numeric confidence — left
+      // undefined rather than forcing a misleading mapping.
+      resultCount: result.findings.length,
+    });
 
     if (opts.format === "json" || opts.format === "github") {
       console.log(formatCheck(result, opts.format));
@@ -6230,6 +6273,18 @@ Notes:
     const result = isEntityMode
       ? diagramEntityCheck(dbPath, config)
       : archCheck(dbPath, config);
+
+    {
+      const iwConfig = await loadIwConfig(path.join(process.cwd(), ".iw"));
+      await logSessionEvent({
+        enabled: iwConfig?.sessionLog === true,
+        workspaceRoot: process.cwd(),
+        surface: "cli",
+        tool: "index arch-check",
+        confidence: (result as { summary?: { conformancePercent?: number } })
+          .summary?.conformancePercent,
+      });
+    }
 
     if (opts.format === "json") {
       console.log(JSON.stringify(result, null, 2));

@@ -22,17 +22,35 @@ import { Command } from "commander";
 import chalk from "chalk";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { verify, consistency, livingScore } from "@intentweave/index";
+import { load as yamlLoad } from "js-yaml";
+import {
+  verify,
+  consistency,
+  livingScore,
+  logSessionEvent,
+} from "@intentweave/index";
 import type {
   VerifyResult,
   VerifyEntityResult,
   ConsistencyResult,
   ConstraintConflict,
   LivingScoreResult,
+  IwConfig,
 } from "@intentweave/index";
 
 function resolveDbPath(dbOpt?: string): string {
   return dbOpt ?? path.join(process.cwd(), ".iw", "index.db");
+}
+
+/** Load optional `.iw/config.yaml`; returns undefined (silently) if absent/invalid. */
+function loadIwConfig(cwd: string): IwConfig | undefined {
+  try {
+    const raw = fs.readFileSync(path.join(cwd, ".iw", "config.yaml"), "utf-8");
+    const parsed = yamlLoad(raw) as IwConfig;
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const STATUS_ICONS: Record<string, string> = {
@@ -98,6 +116,14 @@ export const verifyCommand = new Command("verify")
     if (opts.score) {
       const result = livingScore(dbPath, { minConfidence });
 
+      await logSessionEvent({
+        enabled: loadIwConfig(process.cwd())?.sessionLog === true,
+        workspaceRoot: process.cwd(),
+        surface: "cli",
+        tool: "verify --score",
+        confidence: result.score,
+      });
+
       if (opts.format === "json") {
         const output = JSON.stringify(result, null, 2);
         if (opts.output) {
@@ -134,6 +160,15 @@ export const verifyCommand = new Command("verify")
         minConfidence,
       });
 
+      await logSessionEvent({
+        enabled: loadIwConfig(process.cwd())?.sessionLog === true,
+        workspaceRoot: process.cwd(),
+        surface: "cli",
+        tool: "verify --consistency",
+        confidence: result.summary.consistencyPercent,
+        resultCount: result.conflicts.length,
+      });
+
       if (opts.format === "json") {
         const output = JSON.stringify(result, null, 2);
         if (opts.output) {
@@ -168,6 +203,15 @@ export const verifyCommand = new Command("verify")
       types,
       minConfidence,
       checkTests,
+    });
+
+    await logSessionEvent({
+      enabled: loadIwConfig(process.cwd())?.sessionLog === true,
+      workspaceRoot: process.cwd(),
+      surface: "cli",
+      tool: "verify",
+      confidence: result.summary.coveragePercent,
+      resultCount: result.entities.length,
     });
 
     if (result.entities.length === 0) {

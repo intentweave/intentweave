@@ -241,6 +241,94 @@ describe("File discovery utilities", () => {
       expect(files).toEqual([]);
     });
   });
+
+  describe("discoverFiles with includeAllFiles", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "facade-discover-all-"));
+      fs.mkdirSync(path.join(tmpDir, "config"), { recursive: true });
+
+      fs.writeFileSync(path.join(tmpDir, "config", "readme.md"), "# Docs");
+      fs.writeFileSync(
+        path.join(tmpDir, "config", "settings.json"),
+        '{"key": "value"}',
+      );
+      fs.writeFileSync(
+        path.join(tmpDir, "config", "settings.yaml"),
+        "key: value",
+      );
+      fs.writeFileSync(path.join(tmpDir, "config", "logo.png"), "\x89PNG\r\n");
+      // Unrecognized extension whose content sniffs as binary (NUL byte)
+      fs.writeFileSync(
+        path.join(tmpDir, "config", "data.bin2"),
+        Buffer.from([0x00, 0x01, 0x02]),
+      );
+      // Unrecognized extension whose content sniffs as text
+      fs.writeFileSync(path.join(tmpDir, "config", "notes.cfg"), "a=1\nb=2\n");
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("does not discover non-doc files by default", async () => {
+      const files = await discoverFiles([path.join(tmpDir, "config")], tmpDir);
+      const names = files.map((f) => path.basename(f)).sort();
+      expect(names).toEqual(["readme.md"]);
+    });
+
+    it("discovers non-binary files when includeAllFiles is true", async () => {
+      const files = await discoverFiles(
+        [path.join(tmpDir, "config")],
+        tmpDir,
+        { includeAllFiles: true },
+      );
+      const names = files.map((f) => path.basename(f)).sort();
+      expect(names).toEqual([
+        "notes.cfg",
+        "readme.md",
+        "settings.json",
+        "settings.yaml",
+      ]);
+    });
+
+    it("excludes files with known-binary extensions even with includeAllFiles", async () => {
+      const files = await discoverFiles(
+        [path.join(tmpDir, "config")],
+        tmpDir,
+        { includeAllFiles: true },
+      );
+      const names = files.map((f) => path.basename(f));
+      expect(names).not.toContain("logo.png");
+    });
+
+    it("excludes unrecognized extensions that sniff as binary content", async () => {
+      const files = await discoverFiles(
+        [path.join(tmpDir, "config")],
+        tmpDir,
+        { includeAllFiles: true },
+      );
+      const names = files.map((f) => path.basename(f));
+      expect(names).not.toContain("data.bin2");
+    });
+
+    it("excludes newly-included files larger than maxFileSize", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "config", "huge.cfg"),
+        "x".repeat(1000),
+      );
+      const files = await discoverFiles(
+        [path.join(tmpDir, "config")],
+        tmpDir,
+        { includeAllFiles: true, maxFileSize: 100 },
+      );
+      const names = files.map((f) => path.basename(f));
+      expect(names).not.toContain("huge.cfg");
+      // .md files are unaffected by the maxFileSize cap for generic files
+      expect(names).toContain("readme.md");
+    });
+  });
 });
 
 // =============================================================================

@@ -4,6 +4,39 @@ All notable changes to IntentWeave are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in local session log** — new `.iw/config.yaml` field `sessionLog: true` (default
+  `false`) makes confidence/score-bearing CARI queries append one JSON line per invocation to
+  `.iw/sessions/<YYYY-MM-DD>.jsonl` (one file per UTC day). Covered on both the CLI and MCP
+  surfaces: `index retrieve`/`cari_retrieve`, `index connections`/`cari_connections`,
+  `index check`/`cari_check`, `index arch-check`/`cari_arch_diff`, `verify`/`cari_verify`,
+  `verify --consistency`/`cari_consistency`, `verify --score`/`cari_living_score`. Nothing is
+  ever transmitted — this is a deliberately simple, local, human-readable signal meant for
+  manual review, not an automatic runtime adaptation. Logging never blocks or throws; it
+  silently no-ops when disabled. See `docs/CLI-USAGE.md#sessionlog--local-transparent-query-log-opt-in`.
+
+- **Opt-in `indexAllFiles` config** — new `.iw/config.yaml` field `indexAllFiles: true` (default
+  `false`) widens `iw index build`'s file discovery beyond the default markdown/txt/rst
+  allowlist to any non-binary file (config, data, source files in unsupported languages),
+  indexed as plain text for keyword/annotation matching. Binary files are excluded via a
+  built-in extension denylist plus a content sniff (NUL-byte heuristic) fallback for
+  unrecognized extensions; newly-included files larger than `--max-file-size` (default 256 KiB)
+  are skipped. AX (code symbol extraction) is unaffected. Not yet supported by the Rust native
+  build acceleration — automatically falls back to the TypeScript pipeline when enabled. See
+  `docs/CLI-USAGE.md#indexallfiles--index-non-binary-files-beyond-mdmdxtxtrst-opt-in`.
+
+- **CI caching / delta indexing** — `doc-health-action`'s `build-index: false` now runs a
+  fast incremental `iw index update` against a cache-restored `.iw/index.db` instead of
+  silently skipping indexing entirely. Documented the full pattern (`actions/cache` +
+  `iw index update`, cache-key-includes-CLI-version caveat, Jenkins/Zuul equivalents) at
+  `docs/CLI-USAGE.md#ci-caching--delta-indexing-instead-of-a-full-rebuild`.
+
+### Fixed
+
+- **MCP server: duplicate `cari_verify` tool registration** — `packages/cli/src/mcp/server.ts`
+  registered `cari_verify` twice (byte-identical blocks back to back); removed the redundant copy.
+
 ## [0.17.0] — 2026-07-13
 
 ### Fixed

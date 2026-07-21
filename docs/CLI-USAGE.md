@@ -392,7 +392,66 @@ thresholds:
     mode: error # promote to CI-blocking (default: warn)
 aliases:
   "@site": "microsite" # manual alias override (tsconfig.json paths are auto-detected)
+sessionLog: true # opt-in local session log (default: false, see below)
 ```
+
+#### `sessionLog` — local, transparent query log (opt-in)
+
+When `sessionLog: true`, confidence/score-bearing CARI queries append one JSON
+line per invocation to `.iw/sessions/<YYYY-MM-DD>.jsonl` — one file per UTC
+calendar day. Nothing is ever transmitted anywhere; this is purely a local,
+human-readable record meant to be reviewed by a maintainer later, not an
+automatic runtime adaptation.
+
+Covered on both the CLI and MCP surfaces: `iw index retrieve` / `cari_retrieve`,
+`iw index connections` / `cari_connections`, `iw index check` / `cari_check`,
+`iw index arch-check` / `cari_arch_diff`, `iw verify` / `cari_verify`,
+`iw verify --consistency` / `cari_consistency`, `iw verify --score` /
+`cari_living_score`.
+
+Each line looks like:
+
+```json
+{
+  "ts": "2026-07-14T10:15:30.000Z",
+  "surface": "cli",
+  "tool": "index retrieve",
+  "sessionId": "default",
+  "confidence": 0.87,
+  "resultCount": 5
+}
+```
+
+Default is `false` (disabled) — no `.iw/sessions/` directory is created unless
+you opt in. `.iw/` is already git-ignored, so log files never get committed.
+
+#### `indexAllFiles` — index non-binary files beyond md/mdx/txt/rst (opt-in)
+
+By default, `iw index build` only discovers markdown (`.md`/`.mdx`) and plain
+text (`.txt`/`.rst`) files for keyword/annotation indexing (AX code-symbol
+extraction is separate and unaffected by this setting). Set `indexAllFiles: true`
+to widen discovery to any non-binary file — config (`.json`/`.yaml`/`.toml`),
+data, and source files in languages without an AX plugin — so their content
+becomes searchable/annotatable as plain text.
+
+```yaml
+# .iw/config.yaml
+indexAllFiles: true
+```
+
+Binary files are still excluded:
+
+- A built-in denylist of known-binary extensions (images, fonts, archives,
+  executables/libraries, media, compiled artifacts, binary document formats,
+  databases) is always skipped, even with `indexAllFiles: true`.
+- Files with an unrecognized extension are sniffed for a NUL byte in the
+  first 8 KB (the same heuristic git/ripgrep use) and skipped if found.
+- Newly-included files larger than `--max-file-size` (default 256 KiB) are
+  skipped, to avoid indexing huge lockfiles or data dumps.
+
+Note: the Rust native build acceleration (`cari-build`) does not yet support
+`indexAllFiles` — when enabled, `iw index build` automatically falls back to
+the TypeScript pipeline (same fallback behavior as `--include`/`--exclude`).
 
 ### `.iw/rules.yaml`
 
@@ -449,6 +508,61 @@ open insights.html
     npx @intentweave/cli index build
     npx @intentweave/cli intent check --format github
 ```
+
+### CI caching — delta indexing instead of a full rebuild {#ci-caching}
+
+`iw index build` re-parses the whole workspace every run. For faster CI, cache
+`.iw/index.db` across runs and use `iw index update` — a content-hash-based
+incremental update — to re-index only what changed instead.
+
+```yaml
+# .github/workflows/ci.yml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 100 # iw index update's TCG (churn/hotspot) stage reads recent git log;
+    # a shallow depth (or the default depth-1 checkout) still works but with weaker history
+
+- uses: actions/cache@v4
+  with:
+    path: .iw/index.db
+    # Include the CLI version in the key: there is no automatic schema
+    # migration on `iw index update`, so a stale-schema cache from an
+    # older/newer CLI version should trigger a fresh full build, not reuse.
+    key: iw-index-${{ runner.os }}-${{ steps.iw-version.outputs.version }}-${{ github.event.pull_request.base.sha || github.sha }}
+    restore-keys: |
+      iw-index-${{ runner.os }}-${{ steps.iw-version.outputs.version }}-
+
+- run: npm install -g @intentweave/cli
+- id: iw-version
+  run: echo "version=$(iw --version)" >> "$GITHUB_OUTPUT"
+
+- name: Build or update CARI index
+  run: |
+    if [ -f .iw/index.db ]; then
+      iw index update -v
+    else
+      iw index build -v
+    fi
+
+- run: iw intent check --format github
+```
+
+The bundled composite action (`intentweave/doc-health-action`) supports this pattern
+directly — restore `.iw/index.db` via `actions/cache` before the action, then pass
+`build-index: false`; it runs `iw index update` against the restored index automatically.
+
+**Caveats:**
+
+- `iw index update` still re-parses the current file tree with AX to detect what
+  changed (content-hash comparison, not a git diff) — it's a real speedup because only
+  changed files go through KWX/annotate/write, but it's not free.
+- No schema-version guard exists yet — always key the cache on the installed CLI
+  version so a version bump forces a fresh full build rather than reusing an
+  incompatible cached index.
+- Jenkins / Zuul / other CI: the pattern is identical — persist the single
+  `.iw/index.db` file between builds (Jenkins `stash`/`unstash` or an artifact/cache
+  plugin; Zuul's artifact/cache storage or a reusable workspace), then run
+  `iw index update` instead of `iw index build` when a prior index is present.
 
 ### Using with GitHub Copilot (MCP)
 

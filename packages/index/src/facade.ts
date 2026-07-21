@@ -240,6 +240,15 @@ export interface CariConfig {
   /** Glob patterns to include (filters discovered files) */
   include?: string[];
 
+  /**
+   * Discover non-binary files beyond the default doc-extension allowlist
+   * (.md/.mdx/.txt/.rst) — config, data, unsupported source languages, etc.
+   * Binary files are excluded via an extension denylist plus a content
+   * sniff fallback. Newly-included files are subject to `maxFileSize`.
+   * Default: false.
+   */
+  includeAllFiles?: boolean;
+
   /** Session name (default: directory basename) */
   session?: string;
 
@@ -277,6 +286,129 @@ export interface CariStageProgress {
 // =============================================================================
 
 const SUPPORTED_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".rst"]);
+
+/**
+ * Extensions treated as binary and always excluded from discovery, even
+ * when `includeAllFiles` is enabled. Not exhaustive — files with an
+ * unrecognized extension still go through a content sniff (see
+ * `looksLikeBinaryContent`) before being included.
+ */
+const BINARY_EXTENSIONS = new Set([
+  // images
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".ico",
+  ".webp",
+  ".tiff",
+  ".tif",
+  ".psd",
+  ".ai",
+  ".eps",
+  ".icns",
+  ".heic",
+  // fonts
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
+  // archives
+  ".zip",
+  ".tar",
+  ".gz",
+  ".tgz",
+  ".bz2",
+  ".xz",
+  ".7z",
+  ".rar",
+  ".jar",
+  ".war",
+  ".ear",
+  // executables / compiled libraries
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bin",
+  ".o",
+  ".a",
+  ".lib",
+  ".node",
+  ".wasm",
+  ".class",
+  ".pyc",
+  // media
+  ".mp3",
+  ".mp4",
+  ".mov",
+  ".avi",
+  ".mkv",
+  ".wav",
+  ".flac",
+  ".ogg",
+  ".webm",
+  ".flv",
+  ".wmv",
+  // binary document formats
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  // databases
+  ".db",
+  ".sqlite",
+  ".sqlite3",
+  ".mdb",
+]);
+
+/** Bytes read from the start of a file to sniff for binary content. */
+const SNIFF_BYTE_LENGTH = 8000;
+
+/**
+ * Heuristic binary-content sniff — same technique used by git/ripgrep: a
+ * NUL byte anywhere in the first `SNIFF_BYTE_LENGTH` bytes is a strong
+ * signal the file is not plain text.
+ */
+async function looksLikeBinaryContent(absPath: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof fs.promises.open>> | undefined;
+  try {
+    handle = await fs.promises.open(absPath, "r");
+    const buffer = Buffer.alloc(SNIFF_BYTE_LENGTH);
+    const { bytesRead } = await handle.read(buffer, 0, SNIFF_BYTE_LENGTH, 0);
+    for (let i = 0; i < bytesRead; i++) {
+      if (buffer[i] === 0) return true;
+    }
+    return false;
+  } catch {
+    // Unreadable — treat as binary/unsafe rather than risk a crash downstream.
+    return true;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+/**
+ * Decide whether a file outside the default doc-extension allowlist should
+ * be included when `includeAllFiles` is enabled: not a known-binary
+ * extension, within the size cap, and (for unrecognized extensions) passes
+ * a content sniff for binary data.
+ */
+async function shouldIncludeAsGenericFile(
+  absPath: string,
+  sizeBytes: number,
+  maxFileSize: number,
+): Promise<boolean> {
+  const ext = path.extname(absPath).toLowerCase();
+  if (BINARY_EXTENSIONS.has(ext)) return false;
+  if (sizeBytes > maxFileSize) return false;
+  return !(await looksLikeBinaryContent(absPath));
+}
 
 /** Directories excluded by default. */
 export const DEFAULT_EXCLUDES = [
@@ -338,28 +470,54 @@ export function isExcluded(
 export async function discoverFiles(
   paths: string[],
   cwd: string,
-  opts: { include?: string[]; exclude?: string[] } = {},
+  opts: {
+    include?: string[];
+    exclude?: string[];
+    /**
+     * When true, also discover non-binary files outside the default
+     * doc-extension allowlist (config, data, unsupported source
+     * languages, etc.), subject to `maxFileSize` and a binary content
+     * sniff. Default: false.
+     */
+    includeAllFiles?: boolean;
+    /** Size cap (bytes) for files newly included via `includeAllFiles`. */
+    maxFileSize?: number;
+  } = {},
 ): Promise<string[]> {
-  const { exclude = [] } = opts;
+  const { exclude = [], includeAllFiles = false, maxFileSize = 262144 } = opts;
 
   if (opts.include && opts.include.length > 0) {
     const includeMatchers = opts.include.map(
       (p: string) => (file: string) => minimatch(file, p),
     );
-    const files = await discoverFilesRecursive(paths, cwd, exclude);
+    const files = await discoverFilesRecursive(
+      paths,
+      cwd,
+      exclude,
+      includeAllFiles,
+      maxFileSize,
+    );
     return files.filter((f) => {
       const rel = path.relative(cwd, f);
       return includeMatchers.some((m) => m(rel));
     });
   }
 
-  return discoverFilesRecursive(paths, cwd, exclude);
+  return discoverFilesRecursive(
+    paths,
+    cwd,
+    exclude,
+    includeAllFiles,
+    maxFileSize,
+  );
 }
 
 async function discoverFilesRecursive(
   paths: string[],
   cwd: string,
   excludePatterns: string[],
+  includeAllFiles: boolean = false,
+  maxFileSize: number = 262144,
 ): Promise<string[]> {
   let minimatchFn: ((file: string, pattern: string) => boolean) | null = null;
   if (excludePatterns.length > 0) {
@@ -373,7 +531,14 @@ async function discoverFilesRecursive(
     if (!stat) continue;
 
     if (stat.isFile()) {
-      if (SUPPORTED_EXTENSIONS.has(path.extname(abs).toLowerCase())) {
+      const isSupportedDoc = SUPPORTED_EXTENSIONS.has(
+        path.extname(abs).toLowerCase(),
+      );
+      const include =
+        isSupportedDoc ||
+        (includeAllFiles &&
+          (await shouldIncludeAsGenericFile(abs, stat.size, maxFileSize)));
+      if (include) {
         const rel = path.relative(cwd, abs);
         if (!isExcluded(rel, excludePatterns, minimatchFn)) {
           files.push(abs);
@@ -395,7 +560,13 @@ async function discoverFilesRecursive(
       const entries = await fs.promises.readdir(abs, { withFileTypes: true });
       const subPaths = entries.map((e) => path.join(abs, e.name));
       files.push(
-        ...(await discoverFilesRecursive(subPaths, cwd, excludePatterns)),
+        ...(await discoverFilesRecursive(
+          subPaths,
+          cwd,
+          excludePatterns,
+          includeAllFiles,
+          maxFileSize,
+        )),
       );
     }
   }
@@ -477,6 +648,7 @@ export async function buildFromPaths(
     depth = "structured",
     exclude = [],
     include,
+    includeAllFiles = false,
     session = path.basename(workspaceRoot),
     outputPath,
     maxFileSize = 262144,
@@ -520,6 +692,8 @@ export async function buildFromPaths(
       const files = await discoverFiles([root.absPath], primaryCodeRoot, {
         include,
         exclude: excludePatterns,
+        includeAllFiles,
+        maxFileSize,
       });
       allFiles.push(...files);
       // Only non-primary roots (or non-code roots) get a group override
@@ -533,6 +707,8 @@ export async function buildFromPaths(
     docFiles = await discoverFiles(inputPaths, workspaceRoot, {
       include,
       exclude: excludePatterns,
+      includeAllFiles,
+      maxFileSize,
     });
   }
 

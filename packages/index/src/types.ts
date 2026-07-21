@@ -2546,6 +2546,44 @@ export interface IwConfig {
    * ```
    */
   aliases?: Record<string, string>;
+  /**
+   * Opt-in local session log (default: `false` / disabled).
+   *
+   * When `true`, confidence/score-bearing CARI queries (`retrieve`,
+   * `connections`, `check`, `arch-check`, `verify`, `--consistency`,
+   * `--score`) append one JSON line per invocation to
+   * `.iw/sessions/<YYYY-MM-DD>.jsonl` — timestamp, tool name, session id,
+   * a representative confidence/score, and result count. Purely local:
+   * nothing is transmitted anywhere. Intended for a team/maintainer to
+   * later review which query types are actually used and how confident
+   * the results were — a deliberate, human-reviewed signal rather than an
+   * automatic runtime adaptation.
+   *
+   * Example:
+   * ```yaml
+   * sessionLog: true
+   * ```
+   */
+  sessionLog?: boolean;
+  /**
+   * Opt-in expansion of file discovery beyond the default markdown/txt/rst
+   * allowlist (default: `false` / disabled).
+   *
+   * When `true`, `iw index build` discovers ANY non-binary file (config,
+   * data, unsupported source languages, etc.) in addition to the default
+   * doc extensions, and indexes it for keyword/mention matching (KWX) as
+   * plain text. Binary files are excluded via an extension denylist plus a
+   * content sniff (NUL-byte heuristic) fallback for unrecognized extensions.
+   * Newly-included files larger than `maxFileSize` (default 256 KiB, same
+   * default used for AX) are skipped. AX (code symbol extraction) is
+   * unaffected — this only widens the doc/KWX side of discovery.
+   *
+   * Example:
+   * ```yaml
+   * indexAllFiles: true
+   * ```
+   */
+  indexAllFiles?: boolean;
 }
 
 /** One violation found by rulesCheck. */
