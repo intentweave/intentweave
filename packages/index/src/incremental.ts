@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { resolveTargetFile } from "./writer.js";
 import type { Annotation } from "./types.js";
 import type { AxOutput } from "@intentweave/analyzer";
 import type {
@@ -55,6 +56,14 @@ export interface IncrementalUpdateResult {
     annotations: number;
     coOccurrences: number;
     files: number;
+    imports: number;
+    todos: number;
+    rationale: number;
+    propertyAccesses: number;
+    typeAssertions: number;
+    testDescriptions: number;
+    variableAssignments: number;
+    defUseChains: number;
   };
   skipped: number;
   durationMs: number;
@@ -154,7 +163,20 @@ export function applyChanges(
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
 
-    const counts = { symbols: 0, annotations: 0, coOccurrences: 0, files: 0 };
+    const counts = {
+      symbols: 0,
+      annotations: 0,
+      coOccurrences: 0,
+      files: 0,
+      imports: 0,
+      todos: 0,
+      rationale: 0,
+      propertyAccesses: 0,
+      typeAssertions: 0,
+      testDescriptions: 0,
+      variableAssignments: 0,
+      defUseChains: 0,
+    };
 
     const tx = db.transaction(() => {
       // ── 1. Process deletions ────────────────────────────────
@@ -170,20 +192,38 @@ export function applyChanges(
         (c) => !c.isDoc && c.status !== "deleted",
       );
       if (codeChanges.length > 0 && data.ax) {
+        const changedCodePaths = new Set(codeChanges.map((c) => c.path));
         for (const change of codeChanges) {
           log(`  CODE ${change.status}: ${change.path}`);
-          // Delete old symbols and calls for this file
+          // Delete old rows derived from AX for this file across every
+          // per-file table, so the inserts below are a clean replace rather
+          // than an append (see symbol_calls regression note below — the
+          // same append-without-delete bug applies to all of these).
           deleteSymbolsForFile(db, change.path);
           deleteCallsForFile(db, change.path);
+          deleteImportsForFile(db, change.path);
+          deleteTodosForFile(db, change.path);
+          deleteRationaleForFile(db, change.path);
+          deletePropertyAccessesForFile(db, change.path);
+          deleteTypeAssertionsForFile(db, change.path);
+          deleteTestDescriptionsForFile(db, change.path);
+          deleteVariableAssignmentsForFile(db, change.path);
+          deleteDefUseChainsForFile(db, change.path);
           counts.files++;
         }
 
-        // Insert new symbols from AX
+        // Insert new symbols from AX — scoped to changed files only.
+        // `data.ax` is a full-workspace AX re-scan (the caller re-runs AX on
+        // everything to detect changes), so we must filter down to the files
+        // we actually deleted above, otherwise unchanged files' rows would be
+        // re-inserted (harmless for `symbols`, which is INSERT OR REPLACE by
+        // id, but see symbol_calls below).
         const symbolStmt = db.prepare(`
           INSERT OR REPLACE INTO symbols (id, name, kind, container, signature, file_path, line, end_line, export, doc_summary)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
           for (const sym of file.symbols) {
             symbolStmt.run(
               sym.id,
@@ -201,12 +241,17 @@ export function applyChanges(
           }
         }
 
-        // Insert new calls from AX (Phase 4: symbol_calls incremental)
+        // Insert new calls from AX (Phase 4: symbol_calls incremental).
+        // `symbol_calls` uses a plain INSERT with no unique key, so unlike
+        // `symbols` it is NOT idempotent — it MUST be scoped to only the
+        // files we deleted above, or every unchanged file's call edges get
+        // re-appended (duplicated) on every `iw index update`.
         const callStmt = db.prepare(`
           INSERT INTO symbol_calls (caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
           VALUES (?, ?, ?, ?, ?, ?)
         `);
         for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
           if (!file.calls || file.calls.length === 0) continue;
           for (const call of file.calls) {
             if (!call.callerName) continue; // skip top-level calls with no named caller
@@ -218,6 +263,191 @@ export function applyChanges(
               call.calleeId ?? null,
               call.isMethod ? 1 : 0,
             );
+          }
+        }
+
+        // Insert new imports from AX — same scoping rule as symbol_calls
+        // above (plain INSERT, no unique key, would duplicate every
+        // unchanged file's edges if left unfiltered).
+        // `knownPaths` for the extension-normalization pass (see
+        // `resolveTargetFile` in writer.ts) is built from this same
+        // full-workspace AX scan, which is an accurate proxy for "real
+        // indexed files" since the caller always re-runs AX on everything.
+        const knownPaths = new Set(data.ax.files.map((f) => f.filePath));
+        const importCols = db
+          .prepare(`PRAGMA table_info(imports)`)
+          .all() as Array<{ name: string }>;
+        const hasLine = importCols.some((c) => c.name === "line");
+        const importStmt = hasLine
+          ? db.prepare(`
+              INSERT INTO imports (source_file, target_file, module_specifier, line, is_relative, imported_names)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `)
+          : db.prepare(`
+              INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names)
+              VALUES (?, ?, ?, ?, ?)
+            `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (!file.imports || file.imports.length === 0) continue;
+          for (const imp of file.imports) {
+            const targetFile = resolveTargetFile(imp.resolvedPath, knownPaths);
+            if (hasLine) {
+              importStmt.run(
+                file.filePath,
+                targetFile,
+                imp.moduleSpecifier,
+                imp.line ?? null,
+                imp.isRelative ? 1 : 0,
+                JSON.stringify(imp.importedNames),
+              );
+            } else {
+              importStmt.run(
+                file.filePath,
+                targetFile,
+                imp.moduleSpecifier,
+                imp.isRelative ? 1 : 0,
+                JSON.stringify(imp.importedNames),
+              );
+            }
+            counts.imports++;
+          }
+        }
+
+        // Insert new todos from AX — scoped to changed files only.
+        const todoStmt = db.prepare(`
+          INSERT INTO todos (file_path, line, kind, text)
+          VALUES (?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (!file.todos || file.todos.length === 0) continue;
+          for (const todo of file.todos) {
+            todoStmt.run(file.filePath, todo.line, todo.kind, todo.text);
+            counts.todos++;
+          }
+        }
+
+        // Insert new rationale comments from AX — scoped to changed files only.
+        const rationaleStmt = db.prepare(`
+          INSERT INTO rationale (file_path, line, kind, text, symbol)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (!file.rationale || file.rationale.length === 0) continue;
+          for (const item of file.rationale) {
+            rationaleStmt.run(
+              file.filePath,
+              item.line,
+              item.kind,
+              item.text,
+              null,
+            );
+            counts.rationale++;
+          }
+        }
+
+        // Insert new property accesses from AX — scoped to changed files only.
+        const propAccessStmt = db.prepare(`
+          INSERT INTO property_accesses (file, symbol_name, line, chain, root, depth)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (!file.propertyAccesses || file.propertyAccesses.length === 0)
+            continue;
+          for (const pa of file.propertyAccesses) {
+            propAccessStmt.run(
+              file.filePath,
+              pa.symbolName ?? null,
+              pa.line,
+              pa.chain,
+              pa.root,
+              pa.depth,
+            );
+            counts.propertyAccesses++;
+          }
+        }
+
+        // Insert new type assertions from AX — scoped to changed files only.
+        const typeAssertStmt = db.prepare(`
+          INSERT INTO type_assertions (file, line, kind, context, target_type)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (!file.typeAssertions || file.typeAssertions.length === 0)
+            continue;
+          for (const ta of file.typeAssertions) {
+            typeAssertStmt.run(
+              file.filePath,
+              ta.line,
+              ta.kind,
+              ta.context ?? null,
+              ta.targetType ?? null,
+            );
+            counts.typeAssertions++;
+          }
+        }
+
+        // Insert new test descriptions from AX — scoped to changed files only.
+        const testDescStmt = db.prepare(`
+          INSERT INTO test_descriptions (file, line, kind, description)
+          VALUES (?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (!file.testDescriptions || file.testDescriptions.length === 0)
+            continue;
+          for (const td of file.testDescriptions) {
+            testDescStmt.run(file.filePath, td.line, td.kind, td.description);
+            counts.testDescriptions++;
+          }
+        }
+
+        // Insert new variable assignments from AX — scoped to changed files only.
+        const varAssignStmt = db.prepare(`
+          INSERT INTO variable_assignments (file, line, symbol_name, value_text, context)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (
+            !file.variableAssignments ||
+            file.variableAssignments.length === 0
+          )
+            continue;
+          for (const va of file.variableAssignments) {
+            varAssignStmt.run(
+              file.filePath,
+              va.line,
+              va.symbolName,
+              va.valueText,
+              va.context ?? null,
+            );
+            counts.variableAssignments++;
+          }
+        }
+
+        // Insert new def-use chains from AX — scoped to changed files only.
+        const defUseStmt = db.prepare(`
+          INSERT INTO def_use_chains (file, function, def_line, var_name, use_line, use_context)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        for (const file of data.ax.files) {
+          if (!changedCodePaths.has(file.filePath)) continue;
+          if (!file.defUseChains || file.defUseChains.length === 0) continue;
+          for (const c of file.defUseChains) {
+            defUseStmt.run(
+              file.filePath,
+              c.functionName ?? null,
+              c.defLine,
+              c.varName,
+              c.useLine,
+              c.useContext,
+            );
+            counts.defUseChains++;
           }
         }
       }
@@ -419,6 +649,16 @@ export function applyChanges(
 function deleteFileData(db: Database.Database, filePath: string): void {
   // Delete symbols in this file
   deleteSymbolsForFile(db, filePath);
+  // Delete call edges, imports, and other AX-derived per-file data
+  deleteCallsForFile(db, filePath);
+  deleteImportsForFile(db, filePath);
+  deleteTodosForFile(db, filePath);
+  deleteRationaleForFile(db, filePath);
+  deletePropertyAccessesForFile(db, filePath);
+  deleteTypeAssertionsForFile(db, filePath);
+  deleteTestDescriptionsForFile(db, filePath);
+  deleteVariableAssignmentsForFile(db, filePath);
+  deleteDefUseChainsForFile(db, filePath);
   // Delete annotations referencing this doc
   deleteAnnotationsForDoc(db, filePath);
   // Delete co-occurrences mentioning this file
@@ -430,6 +670,61 @@ function deleteFileData(db: Database.Database, filePath: string): void {
 /** Delete call edges from symbol_calls for a code file (Phase 4). */
 function deleteCallsForFile(db: Database.Database, filePath: string): void {
   db.prepare("DELETE FROM symbol_calls WHERE caller_file = ?").run(filePath);
+}
+
+/** Delete import edges from the imports table for a code file. */
+function deleteImportsForFile(db: Database.Database, filePath: string): void {
+  db.prepare("DELETE FROM imports WHERE source_file = ?").run(filePath);
+}
+
+/** Delete TODO/FIXME/HACK/XXX markers for a code file. */
+function deleteTodosForFile(db: Database.Database, filePath: string): void {
+  db.prepare("DELETE FROM todos WHERE file_path = ?").run(filePath);
+}
+
+/** Delete WHY/NOTE/IMPORTANT/DESIGN rationale comments for a code file. */
+function deleteRationaleForFile(db: Database.Database, filePath: string): void {
+  db.prepare("DELETE FROM rationale WHERE file_path = ?").run(filePath);
+}
+
+/** Delete property access chains for a code file. */
+function deletePropertyAccessesForFile(
+  db: Database.Database,
+  filePath: string,
+): void {
+  db.prepare("DELETE FROM property_accesses WHERE file = ?").run(filePath);
+}
+
+/** Delete type assertions for a code file. */
+function deleteTypeAssertionsForFile(
+  db: Database.Database,
+  filePath: string,
+): void {
+  db.prepare("DELETE FROM type_assertions WHERE file = ?").run(filePath);
+}
+
+/** Delete test descriptions for a code file. */
+function deleteTestDescriptionsForFile(
+  db: Database.Database,
+  filePath: string,
+): void {
+  db.prepare("DELETE FROM test_descriptions WHERE file = ?").run(filePath);
+}
+
+/** Delete variable assignments for a code file. */
+function deleteVariableAssignmentsForFile(
+  db: Database.Database,
+  filePath: string,
+): void {
+  db.prepare("DELETE FROM variable_assignments WHERE file = ?").run(filePath);
+}
+
+/** Delete def-use chains for a code file. */
+function deleteDefUseChainsForFile(
+  db: Database.Database,
+  filePath: string,
+): void {
+  db.prepare("DELETE FROM def_use_chains WHERE file = ?").run(filePath);
 }
 
 /** Delete symbols (and annotations referencing them) for a code file. */

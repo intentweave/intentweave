@@ -465,7 +465,7 @@ const EXTENSION_SWAPS: Record<string, string[]> = {
   ".cjs": [".cts", ".cjs"],
 };
 
-function resolveTargetFile(
+export function resolveTargetFile(
   resolvedPath: string | undefined,
   knownPaths: Set<string>,
 ): string | null {
@@ -484,10 +484,6 @@ function resolveTargetFile(
   // No on-disk match found; keep original value rather than dropping the edge.
   return resolvedPath;
 }
-
-// =============================================================================
-// TODOs
-// =============================================================================
 
 function writeTodos(db: Database.Database, ax: AxOutput): number {
   const stmt = db.prepare(`

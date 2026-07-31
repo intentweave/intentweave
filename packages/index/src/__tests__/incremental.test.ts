@@ -375,6 +375,304 @@ describe("applyChanges", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("does not duplicate symbol_calls for unchanged files across repeated updates (regression)", () => {
+    // Simulate the real CLI flow: `iw index update` re-runs AX on the WHOLE
+    // workspace (not just the delta) to detect changes, then passes that
+    // full-workspace AxOutput into applyChanges — even though only one file
+    // actually changed. applyChanges must scope symbol/call inserts to the
+    // changed files only, or unchanged files' calls get re-appended (doubled)
+    // on every single update.
+    const dbPath = makeDbWithFiles(tmpDir, [
+      {
+        path: "src/foo.ts",
+        content: "export function doSomething() {}",
+        isDoc: false,
+      },
+      {
+        path: "src/bar.ts",
+        content: "export function doOther() {}",
+        isDoc: false,
+      },
+    ]);
+
+    const fullAx: AxOutput = {
+      version: "1.0",
+      workspaceRoot: tmpDir,
+      extractedAt: Date.now(),
+      totalFiles: 2,
+      totalSymbols: 2,
+      files: [
+        {
+          filePath: "src/foo.ts",
+          contentHash: "hash-foo-v2",
+          language: "typescript",
+          symbols: [makeSymbol({ id: "impl:src/foo.ts#function:doSomething" })],
+          calls: [
+            {
+              callerName: "doSomething",
+              callerLine: 1,
+              calleeName: "helper",
+              calleeId: null,
+              isMethod: false,
+            },
+          ],
+          extractedAt: Date.now(),
+        },
+        {
+          filePath: "src/bar.ts",
+          contentHash: "hash-bar-unchanged",
+          language: "typescript",
+          symbols: [
+            makeSymbol({
+              id: "impl:src/bar.ts#function:doOther",
+              name: "doOther",
+              filePath: "src/bar.ts",
+            }),
+          ],
+          calls: [
+            {
+              callerName: "doOther",
+              callerLine: 1,
+              calleeName: "otherHelper",
+              calleeId: null,
+              isMethod: false,
+            },
+          ],
+          extractedAt: Date.now(),
+        },
+      ],
+      stats: { byKind: {}, exported: 2, internal: 0 },
+    } as AxOutput;
+
+    // Only foo.ts actually changed; bar.ts is unchanged (not in `changes`).
+    const changes: FileChange[] = [
+      { path: "src/foo.ts", status: "modified", isDoc: false },
+    ];
+
+    // Run the update twice in a row, exactly as `iw index update` would if
+    // invoked back-to-back with no further edits (foo.ts keeps "changing"
+    // each time in this test only to keep triggering the code path; the key
+    // assertion is that bar.ts — never in `changes` — does not accumulate).
+    applyChanges(
+      dbPath,
+      changes,
+      { ax: fullAx },
+      { dbPath, workspaceRoot: tmpDir },
+    );
+    applyChanges(
+      dbPath,
+      changes,
+      { ax: fullAx },
+      { dbPath, workspaceRoot: tmpDir },
+    );
+
+    const db = new Database(dbPath, { readonly: true });
+    const fooCalls = db
+      .prepare("SELECT * FROM symbol_calls WHERE caller_file = ?")
+      .all("src/foo.ts");
+    const barCalls = db
+      .prepare("SELECT * FROM symbol_calls WHERE caller_file = ?")
+      .all("src/bar.ts");
+    db.close();
+
+    // foo.ts was deleted+reinserted each time -> exactly 1 row (not doubled)
+    expect(fooCalls).toHaveLength(1);
+    // bar.ts was never in `changes` -> must stay at 0, never touched/duplicated
+    expect(barCalls).toHaveLength(0);
+  });
+
+  it("refreshes imports/todos/rationale/property_accesses/type_assertions/test_descriptions/variable_assignments/def_use_chains for changed files without duplicating unchanged files (regression)", () => {
+    // Same full-workspace-AX-rescan scenario as the symbol_calls regression
+    // above, but covering every other per-file AX-derived table that
+    // `applyChanges` previously left completely untouched (silently going
+    // stale for changed files, since nothing ever deleted+reinserted them).
+    const dbPath = makeDbWithFiles(tmpDir, [
+      { path: "src/foo.ts", content: "// old content", isDoc: false },
+      { path: "src/bar.ts", content: "// unchanged content", isDoc: false },
+    ]);
+
+    // Seed pre-existing rows for BOTH files, simulating a prior full build.
+    const seedDb = new Database(dbPath);
+    for (const file of ["src/foo.ts", "src/bar.ts"]) {
+      seedDb
+        .prepare(
+          `INSERT INTO imports (source_file, target_file, module_specifier, is_relative, imported_names) VALUES (?, NULL, ?, 0, '[]')`,
+        )
+        .run(file, "old-module");
+      seedDb
+        .prepare(
+          `INSERT INTO todos (file_path, line, kind, text) VALUES (?, 1, 'todo', 'old todo')`,
+        )
+        .run(file);
+      seedDb
+        .prepare(
+          `INSERT INTO rationale (file_path, line, kind, text, symbol) VALUES (?, 1, 'why', 'old rationale', NULL)`,
+        )
+        .run(file);
+      seedDb
+        .prepare(
+          `INSERT INTO property_accesses (file, symbol_name, line, chain, root, depth) VALUES (?, NULL, 1, 'old.chain.here', 'old', 3)`,
+        )
+        .run(file);
+      seedDb
+        .prepare(
+          `INSERT INTO type_assertions (file, line, kind, context, target_type) VALUES (?, 1, 'as_any', NULL, NULL)`,
+        )
+        .run(file);
+      seedDb
+        .prepare(
+          `INSERT INTO test_descriptions (file, line, kind, description) VALUES (?, 1, 'it', 'old test')`,
+        )
+        .run(file);
+      seedDb
+        .prepare(
+          `INSERT INTO variable_assignments (file, line, symbol_name, value_text, context) VALUES (?, 1, 'x', 'old', NULL)`,
+        )
+        .run(file);
+      seedDb
+        .prepare(
+          `INSERT INTO def_use_chains (file, function, def_line, var_name, use_line, use_context) VALUES (?, NULL, 1, 'x', 2, 'old')`,
+        )
+        .run(file);
+    }
+    seedDb.close();
+
+    const fullAx: AxOutput = {
+      version: "1.0",
+      workspaceRoot: tmpDir,
+      extractedAt: Date.now(),
+      totalFiles: 2,
+      totalSymbols: 0,
+      files: [
+        {
+          filePath: "src/foo.ts",
+          contentHash: "hash-foo-v2",
+          language: "typescript",
+          symbols: [],
+          imports: [
+            {
+              moduleSpecifier: "./new-module",
+              resolvedPath: "src/new-module.ts",
+              isRelative: true,
+              importedNames: ["x"],
+            },
+          ],
+          todos: [{ line: 5, kind: "todo", text: "new todo" }],
+          rationale: [{ line: 6, kind: "why", text: "new rationale" }],
+          propertyAccesses: [
+            {
+              symbolName: null,
+              line: 7,
+              chain: "new.chain.here",
+              root: "new",
+              depth: 3,
+            },
+          ],
+          typeAssertions: [
+            { line: 8, kind: "as_any", context: null, targetType: null },
+          ],
+          testDescriptions: [{ line: 9, kind: "it", description: "new test" }],
+          variableAssignments: [
+            { line: 10, symbolName: "y", valueText: "new", context: null },
+          ],
+          defUseChains: [
+            {
+              functionName: null,
+              defLine: 11,
+              varName: "y",
+              useLine: 12,
+              useContext: "new",
+            },
+          ],
+          extractedAt: Date.now(),
+        },
+        {
+          filePath: "src/bar.ts",
+          contentHash: "hash-bar-unchanged",
+          language: "typescript",
+          symbols: [],
+          imports: [
+            {
+              moduleSpecifier: "./bar-module",
+              resolvedPath: "src/bar-module.ts",
+              isRelative: true,
+              importedNames: ["z"],
+            },
+          ],
+          todos: [{ line: 1, kind: "todo", text: "bar todo" }],
+          rationale: [{ line: 1, kind: "why", text: "bar rationale" }],
+          propertyAccesses: [
+            {
+              symbolName: null,
+              line: 1,
+              chain: "bar.chain.here",
+              root: "bar",
+              depth: 3,
+            },
+          ],
+          typeAssertions: [
+            { line: 1, kind: "as_any", context: null, targetType: null },
+          ],
+          testDescriptions: [{ line: 1, kind: "it", description: "bar test" }],
+          variableAssignments: [
+            { line: 1, symbolName: "b", valueText: "bar", context: null },
+          ],
+          defUseChains: [
+            {
+              functionName: null,
+              defLine: 1,
+              varName: "b",
+              useLine: 2,
+              useContext: "bar",
+            },
+          ],
+          extractedAt: Date.now(),
+        },
+      ],
+      stats: { byKind: {}, exported: 0, internal: 0 },
+    } as unknown as AxOutput;
+
+    // Only foo.ts actually changed; bar.ts is unchanged (not in `changes`).
+    const changes: FileChange[] = [
+      { path: "src/foo.ts", status: "modified", isDoc: false },
+    ];
+
+    applyChanges(
+      dbPath,
+      changes,
+      { ax: fullAx },
+      { dbPath, workspaceRoot: tmpDir },
+    );
+
+    const db = new Database(dbPath, { readonly: true });
+    const tables = [
+      ["imports", "source_file"],
+      ["todos", "file_path"],
+      ["rationale", "file_path"],
+      ["property_accesses", "file"],
+      ["type_assertions", "file"],
+      ["test_descriptions", "file"],
+      ["variable_assignments", "file"],
+      ["def_use_chains", "file"],
+    ] as const;
+
+    for (const [table, col] of tables) {
+      const fooRows = db
+        .prepare(`SELECT * FROM ${table} WHERE ${col} = ?`)
+        .all("src/foo.ts") as any[];
+      const barRows = db
+        .prepare(`SELECT * FROM ${table} WHERE ${col} = ?`)
+        .all("src/bar.ts") as any[];
+
+      // foo.ts: old row replaced by the new one (exactly 1, not appended)
+      expect(fooRows, `${table} for changed file src/foo.ts`).toHaveLength(1);
+      // bar.ts: untouched — still exactly the original seeded row, not
+      // duplicated and not deleted
+      expect(barRows, `${table} for unchanged file src/bar.ts`).toHaveLength(1);
+    }
+    db.close();
+  });
+
   it("inserts new annotations for changed doc files", () => {
     const dbPath = makeDbWithFiles(tmpDir, [
       { path: "docs/README.md", content: "# Hello", isDoc: true },
@@ -500,6 +798,14 @@ describe("applyChanges", () => {
       annotations: 0,
       coOccurrences: 0,
       files: 0,
+      imports: 0,
+      todos: 0,
+      rationale: 0,
+      propertyAccesses: 0,
+      typeAssertions: 0,
+      testDescriptions: 0,
+      variableAssignments: 0,
+      defUseChains: 0,
     });
   });
 

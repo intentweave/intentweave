@@ -2859,7 +2859,7 @@ const indexUpdateSubcommand = new Command("update")
       console.log(
         chalk.gray(
           `    symbols=${result.updated.symbols} annotations=${result.updated.annotations} ` +
-            `co_occ=${result.updated.coOccurrences} files=${result.updated.files}`,
+            `co_occ=${result.updated.coOccurrences} imports=${result.updated.imports} files=${result.updated.files}`,
         ),
       );
     } catch (err: any) {
@@ -3065,7 +3065,7 @@ const indexWatchSubcommand = new Command("watch")
         console.log(
           `${ts()} ${chalk.green("✓")} Updated in ${elapsed}s — ` +
             chalk.gray(
-              `symbols=${result.updated.symbols} annotations=${result.updated.annotations} files=${result.updated.files}`,
+              `symbols=${result.updated.symbols} annotations=${result.updated.annotations} imports=${result.updated.imports} files=${result.updated.files}`,
             ),
         );
       } catch (err: any) {
