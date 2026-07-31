@@ -734,7 +734,7 @@ function writeDefUseChains(db: Database.Database, ax: AxOutput): number {
 /**
  * Classify a document file into a semantic group based on its path.
  */
-function classifyDocGroup(filePath: string): string {
+export function classifyDocGroup(filePath: string): string {
   const lower = filePath.toLowerCase();
   const base = path.basename(lower);
 

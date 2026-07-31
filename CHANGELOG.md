@@ -8,6 +8,36 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Fixed
 
+- **`iw index update`: `symbol_calls` duplicated on every incremental update** — `iw index update`
+  (and `iw index watch`) re-run AST extraction (AX) across the *entire* workspace to detect
+  content-hash changes, then fed that full-workspace result into `applyChanges()`. The
+  `symbol_calls` insert loop was not scoped to the files that actually changed, so every
+  unchanged file's call edges were re-appended (duplicated) on every single update — directly
+  causing rule findings backed by the call graph (`cari_calls`, `call`/`property_access` rule
+  types, `ruleCoverage()`) to be double- (or N-times-) counted after repeated updates. Insert
+  loops are now filtered to the changed-files set. `symbols` had the same unscoped loop but used
+  `INSERT OR REPLACE` keyed by id, so it was accidentally idempotent and non-symptomatic.
+
+- **`iw index update`: several tables never refreshed at all** — `imports`, `todos`,
+  `rationale`, `property_accesses`, `type_assertions`, `variable_assignments`, and
+  `def_use_chains` were never written by `applyChanges()`, so they silently went stale for
+  changed files (and left orphaned rows behind for deleted files) after every incremental
+  update — only a full `iw index build` kept them current. Incremental update now
+  deletes+reinserts these tables scoped to the changed/deleted files, matching the full-build
+  writer's behavior.
+
+- **`iw index update`: `doc_group`/`comment_lines`/`code_lines` silently wiped for every file** —
+  the "update file metadata" step used `INSERT OR REPLACE INTO files` with a partial column
+  list. `INSERT OR REPLACE` deletes and reinserts the whole row, so any column left out of the
+  list reverted to its schema default — resetting `doc_group` to `NULL` and `comment_lines`/
+  `code_lines` to `0` (and `indexed`/`skip_reason` to their defaults) for **every file in the
+  workspace**, not just the ones that changed, on every single `iw index update` call. This
+  broke `cari_module_coverage` (relies on `doc_group`) and `cari_comment_code_ratio` (relies on
+  `comment_lines`/`code_lines`) after any incremental update. Switched to `INSERT ... ON
+  CONFLICT(path) DO UPDATE` so only the intended columns are touched; `comment_lines`/
+  `code_lines` are refreshed from the fresh AX rescan and doc `doc_group` is recomputed from the
+  file path, while unrelated columns are preserved untouched for unchanged files.
+
 ## [0.17.1] — 2026-07-31
 
 ### Added

@@ -673,6 +673,100 @@ describe("applyChanges", () => {
     db.close();
   });
 
+  it("does not wipe doc_group/comment_lines/code_lines for unchanged files (regression)", () => {
+    // `applyChanges` previously used `INSERT OR REPLACE INTO files` with a
+    // partial column list. `INSERT OR REPLACE` deletes+reinserts the whole
+    // row, so any column NOT in the list reverts to its schema default —
+    // silently wiping `doc_group`/`comment_lines`/`code_lines` (and
+    // resetting `indexed`/`skip_reason`) for EVERY file in the workspace
+    // (not just changed ones) on every single `iw index update` call.
+    const dbPath = makeDbWithFiles(tmpDir, [
+      { path: "src/foo.ts", content: "// old content", isDoc: false },
+      { path: "src/bar.ts", content: "// unchanged", isDoc: false },
+      { path: "docs/GUIDE.md", content: "# Guide", isDoc: true },
+    ]);
+
+    // Seed pre-existing metadata that a prior full build would have set.
+    const seedDb = new Database(dbPath);
+    seedDb
+      .prepare(
+        `UPDATE files SET doc_group = ?, comment_lines = ?, code_lines = ? WHERE path = ?`,
+      )
+      .run("core", 3, 42, "src/bar.ts");
+    seedDb
+      .prepare(`UPDATE files SET doc_group = ? WHERE path = ?`)
+      .run("architecture", "docs/GUIDE.md");
+    seedDb.close();
+
+    const fullAx: AxOutput = {
+      version: "1.0",
+      workspaceRoot: tmpDir,
+      extractedAt: Date.now(),
+      totalFiles: 2,
+      totalSymbols: 0,
+      files: [
+        {
+          filePath: "src/foo.ts",
+          contentHash: "hash-foo-v2",
+          language: "typescript",
+          symbols: [],
+          commentLines: 2,
+          codeLines: 10,
+          extractedAt: Date.now(),
+        },
+        {
+          filePath: "src/bar.ts",
+          contentHash: "hash-bar-unchanged",
+          language: "typescript",
+          symbols: [],
+          commentLines: 3,
+          codeLines: 42,
+          extractedAt: Date.now(),
+        },
+      ],
+      stats: { byKind: {}, exported: 0, internal: 0 },
+    } as AxOutput;
+
+    const changes: FileChange[] = [
+      { path: "src/foo.ts", status: "modified", isDoc: false },
+      { path: "docs/GUIDE.md", status: "modified", isDoc: true },
+    ];
+
+    applyChanges(
+      dbPath,
+      changes,
+      { ax: fullAx },
+      { dbPath, workspaceRoot: tmpDir },
+    );
+
+    const db = new Database(dbPath, { readonly: true });
+    const bar = db
+      .prepare("SELECT * FROM files WHERE path = ?")
+      .get("src/bar.ts") as any;
+    const guide = db
+      .prepare("SELECT * FROM files WHERE path = ?")
+      .get("docs/GUIDE.md") as any;
+    const foo = db
+      .prepare("SELECT * FROM files WHERE path = ?")
+      .get("src/foo.ts") as any;
+    db.close();
+
+    // bar.ts was never in `changes` -> its doc_group/comment_lines/code_lines
+    // must survive the update untouched, not reset to null/0.
+    expect(bar.doc_group).toBe("core");
+    expect(bar.comment_lines).toBe(3);
+    expect(bar.code_lines).toBe(42);
+
+    // docs/GUIDE.md's doc_group is recomputed via classifyDocGroup (still
+    // deterministic from its path) rather than being wiped.
+    expect(guide.doc_group).not.toBeNull();
+
+    // foo.ts (changed file) gets its comment/code line counts refreshed
+    // from the fresh AX rescan.
+    expect(foo.comment_lines).toBe(2);
+    expect(foo.code_lines).toBe(10);
+  });
+
   it("inserts new annotations for changed doc files", () => {
     const dbPath = makeDbWithFiles(tmpDir, [
       { path: "docs/README.md", content: "# Hello", isDoc: true },

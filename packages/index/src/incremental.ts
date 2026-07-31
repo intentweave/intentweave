@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { resolveTargetFile } from "./writer.js";
+import { resolveTargetFile, classifyDocGroup } from "./writer.js";
 import type { Annotation } from "./types.js";
 import type { AxOutput } from "@intentweave/analyzer";
 import type {
@@ -510,12 +510,38 @@ export function applyChanges(
       }
 
       // ── 6. Update file metadata ────────────────────────────
-      const fileStmt = db.prepare(`
-        INSERT OR REPLACE INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      // IMPORTANT: use an upsert (INSERT ... ON CONFLICT DO UPDATE) rather
+      // than `INSERT OR REPLACE`. `INSERT OR REPLACE` deletes+reinserts the
+      // whole row, so any column NOT in the column list reverts to its
+      // schema default — this previously wiped `doc_group`, `comment_lines`,
+      // and `code_lines` (and reset `indexed`/`skip_reason` to their
+      // defaults) for EVERY file in the workspace on every single
+      // `iw index update` call, not just changed files, silently breaking
+      // `cari_module_coverage` (needs doc_group) and `cari_comment_code_ratio`
+      // (needs comment_lines/code_lines) after any incremental update.
+      const fileStmtCode = db.prepare(`
+        INSERT INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash, indexed, skip_reason, comment_lines, code_lines)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+          last_modified = excluded.last_modified,
+          churn = excluded.churn,
+          is_hotspot = excluded.is_hotspot,
+          primary_owner = excluded.primary_owner,
+          bus_factor = excluded.bus_factor,
+          is_doc = excluded.is_doc,
+          content_hash = excluded.content_hash,
+          indexed = excluded.indexed,
+          skip_reason = excluded.skip_reason,
+          comment_lines = excluded.comment_lines,
+          code_lines = excluded.code_lines
       `);
 
-      // Update from AX (code files with content hashes)
+      // Update from AX (code files with content hashes). `indexed`,
+      // `skip_reason`, `comment_lines`, `code_lines` are refreshed from the
+      // fresh full-workspace AX rescan (accurate for every file, not just
+      // changed ones); `doc_group` is intentionally left out of the column
+      // list so it is preserved untouched by the upsert (code files never
+      // have one, same as the full build).
       if (data.ax) {
         for (const axFile of data.ax.files) {
           const hot = data.tcg?.hot.hotspots.find(
@@ -524,7 +550,7 @@ export function applyChanges(
           const own = data.tcg?.own.ownership.find(
             (o) => o.filePath === axFile.filePath,
           );
-          fileStmt.run(
+          fileStmtCode.run(
             axFile.filePath,
             hot?.lastModified ?? null,
             hot?.churn ?? null,
@@ -533,11 +559,32 @@ export function applyChanges(
             own ? countBusFactor(own) : null,
             0,
             axFile.contentHash,
+            axFile.skipped ? 0 : 1,
+            axFile.skipReason ?? null,
+            axFile.commentLines ?? 0,
+            axFile.codeLines ?? 0,
           );
         }
       }
 
-      // Update doc files with fresh content hashes
+      // Update doc files with fresh content hashes + doc_group classification.
+      // `indexed`/`skip_reason`/`comment_lines`/`code_lines` are intentionally
+      // left out of the column list so they're preserved untouched by the
+      // upsert (docs aren't AST-extracted, so the full build always leaves
+      // them at their schema defaults anyway — nothing of value to lose).
+      const fileStmtDoc = db.prepare(`
+        INSERT INTO files (path, last_modified, churn, is_hotspot, primary_owner, bus_factor, is_doc, content_hash, doc_group)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+          last_modified = excluded.last_modified,
+          churn = excluded.churn,
+          is_hotspot = excluded.is_hotspot,
+          primary_owner = excluded.primary_owner,
+          bus_factor = excluded.bus_factor,
+          is_doc = excluded.is_doc,
+          content_hash = excluded.content_hash,
+          doc_group = excluded.doc_group
+      `);
       for (const change of docChanges) {
         const abs = path.join(opts.workspaceRoot, change.path);
         const hash = fs.existsSync(abs) ? hashFile(abs) : null;
@@ -547,7 +594,7 @@ export function applyChanges(
         const own = data.tcg?.own.ownership.find(
           (o) => o.filePath === change.path,
         );
-        fileStmt.run(
+        fileStmtDoc.run(
           change.path,
           hot?.lastModified ?? null,
           hot?.churn ?? null,
@@ -556,6 +603,7 @@ export function applyChanges(
           own ? countBusFactor(own) : null,
           1,
           hash,
+          classifyDocGroup(change.path),
         );
       }
 
