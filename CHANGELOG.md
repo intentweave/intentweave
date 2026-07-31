@@ -9,7 +9,7 @@ All notable changes to IntentWeave are documented in this file.
 ### Fixed
 
 - **`iw index update`: `symbol_calls` duplicated on every incremental update** — `iw index update`
-  (and `iw index watch`) re-run AST extraction (AX) across the *entire* workspace to detect
+  (and `iw index watch`) re-run AST extraction (AX) across the _entire_ workspace to detect
   content-hash changes, then fed that full-workspace result into `applyChanges()`. The
   `symbol_calls` insert loop was not scoped to the files that actually changed, so every
   unchanged file's call edges were re-appended (duplicated) on every single update — directly
@@ -34,7 +34,7 @@ All notable changes to IntentWeave are documented in this file.
   workspace**, not just the ones that changed, on every single `iw index update` call. This
   broke `cari_module_coverage` (relies on `doc_group`) and `cari_comment_code_ratio` (relies on
   `comment_lines`/`code_lines`) after any incremental update. Switched to `INSERT ... ON
-  CONFLICT(path) DO UPDATE` so only the intended columns are touched; `comment_lines`/
+CONFLICT(path) DO UPDATE` so only the intended columns are touched; `comment_lines`/
   `code_lines` are refreshed from the fresh AX rescan and doc `doc_group` is recomputed from the
   file path, while unrelated columns are preserved untouched for unchanged files.
 
