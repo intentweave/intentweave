@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/core",
-  "version": "0.17.1",
+  "version": "0.17.2",
   "description": "Core types, utilities, and interfaces for IntentWeave",
   "type": "module",
   "main": "./dist/index.js",

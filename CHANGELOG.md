@@ -8,6 +8,10 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Fixed
 
+## [0.17.2] — 2026-07-31
+
+### Fixed
+
 - **`iw index update`: `symbol_calls` duplicated on every incremental update** — `iw index update`
   (and `iw index watch`) re-run AST extraction (AX) across the _entire_ workspace to detect
   content-hash changes, then fed that full-workspace result into `applyChanges()`. The

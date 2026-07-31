@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/python-parser",
-  "version": "0.17.1",
+  "version": "0.17.2",
   "description": "Tree-sitter based AST extractor for Python source files",
   "type": "module",
   "main": "./dist/index.js",

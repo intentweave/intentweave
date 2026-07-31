@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/index",
-  "version": "0.17.1",
+  "version": "0.17.2",
   "description": "Code-aware retrieval index — SQLite-based index for agents and CI",
   "type": "module",
   "main": "./dist/index.js",

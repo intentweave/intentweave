@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/plugin-llm",
-  "version": "0.17.1",
+  "version": "0.17.2",
   "description": "LLM provider plugin for IntentWeave (OpenAI, Azure OpenAI, compatible APIs)",
   "type": "module",
   "main": "./dist/index.js",
