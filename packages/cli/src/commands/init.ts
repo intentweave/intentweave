@@ -144,7 +144,7 @@ export const initCommand = new Command("init")
     console.log("");
     console.log("Next steps:");
     console.log(
-      `  ${chalk.blue(`${CLI_NAME} analyze`)} - Analyze files in this workspace`,
+      `  ${chalk.blue(`${CLI_NAME} index build`)} - Build the CARI index for this workspace`,
     );
     console.log(
       `  ${chalk.blue(`${CLI_NAME} status`)} - Show workspace status`,
