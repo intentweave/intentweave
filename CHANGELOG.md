@@ -6,6 +6,12 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
+### Fixed
+
+## [0.17.1] — 2026-07-31
+
+### Added
+
 - **Opt-in local session log** — new `.iw/config.yaml` field `sessionLog: true` (default
   `false`) makes confidence/score-bearing CARI queries append one JSON line per invocation to
   `.iw/sessions/<YYYY-MM-DD>.jsonl` (one file per UTC day). Covered on both the CLI and MCP
