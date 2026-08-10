@@ -65,7 +65,7 @@ describe("iw claims check", () => {
     writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
     writeFileSync(
       path.join(workspace, "src", "session.ts"),
-      "/** @default 1800 */\nexport const SESSION_TIMEOUT = 1800;\n",
+      "/**\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
     );
     writeFileSync(
       path.join(workspace, "docs", "session-timeout.md"),
@@ -125,6 +125,7 @@ describe("iw claims check", () => {
         claimIdentityId: effectiveClaim.id,
         status: "supported",
         dependencies: expect.any(Array),
+        review: expect.objectContaining({ decision: "accepted" }),
       },
     ]);
 
@@ -195,7 +196,7 @@ describe("iw claims check", () => {
     writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 1800\n");
     writeFileSync(
       path.join(workspace, "src", "session.ts"),
-      "/** @default 1800 */\nexport const SESSION_TIMEOUT = 1800;\n",
+      "/**\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
     );
     writeFileSync(
       path.join(workspace, "docs", "session-timeout.md"),
@@ -290,5 +291,156 @@ describe("iw claims check", () => {
       index.prepare(`SELECT decision_origin FROM review_decisions WHERE is_current = 1`).get(),
     ).toEqual({ decision_origin: "carry-forward" });
     index.close();
+
+    const reviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const claimsToReview = reviewIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
+         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+         WHERE ca.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    reviewIndex.close();
+    for (const claim of claimsToReview) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+    writeFileSync(
+      path.join(workspace, "src", "session.ts"),
+      "export const SESSION_TIMEOUT = 1800;\n",
+    );
+    git("add", "src/session.ts");
+    git("commit", "-m", "remove timeout annotation");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
+
+    expect(process.exitCode).toBe(4);
+    const brokenIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      brokenIndex
+        .prepare(
+          `SELECT reason, status FROM review_decision_reopens
+           WHERE reason = 'continuity-broken'`,
+        )
+        .all(),
+    ).toEqual([{ reason: "continuity-broken", status: "open" }]);
+    expect(
+      brokenIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+    ).toEqual({ current_reviews: 2 });
+    brokenIndex.close();
+
+    const warrantReviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const claimsForWarrantReview = warrantReviewIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
+         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+         WHERE ca.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    warrantReviewIndex.close();
+    for (const claim of claimsForWarrantReview) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+    const priorEngineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    priorEngineIndex
+      .prepare(`UPDATE rule_result_versions SET implementation_fingerprint = 'claims-engine-v0'`)
+      .run();
+    priorEngineIndex.close();
+    writeFileSync(path.join(workspace, "continuity.md"), "snapshot anchor\n");
+    git("add", "continuity.md");
+    git("commit", "-m", "advance immutable reference");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
+
+    expect(process.exitCode).toBe(4);
+    const warrantIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const warrantReopens = warrantIndex
+      .prepare(
+        `SELECT reason, status FROM review_decision_reopens
+         WHERE reason = 'warrant-changed'`,
+      )
+      .all() as Array<{ reason: string; status: string }>;
+    expect(warrantReopens.length).toBeGreaterThan(0);
+    expect(warrantReopens.every((reopen) => reopen.status === "open")).toBe(true);
+    expect(
+      warrantIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+    ).toEqual({ current_reviews: 0 });
+    warrantIndex.close();
+
+    const uncertainReviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const claimsForUncertainReview = uncertainReviewIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
+         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+         WHERE ca.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    uncertainReviewIndex.close();
+    for (const claim of claimsForUncertainReview) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  session.timeout:
+    configKeys: [session.timeout]
+    codeDefaults:
+      - file: src/session-v2.ts
+        export: SESSION_TIMEOUT
+    documentation:
+      - file: docs/session-timeout.md
+        assertions:
+          - id: eu-prod-override-doc
+            target: effective
+            scope: eu-prod
+            pattern: '^The eu-prod override is (?<value>\\d+) seconds\\.$'
+`,
+    );
+    writeFileSync(
+      path.join(workspace, "src", "session-v2.ts"),
+      "export const SESSION_TIMEOUT = 1800;\n",
+    );
+    git("add", "intentweave.bindings.yaml", "src/session-v2.ts");
+    git("commit", "-m", "move timeout binding");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
+
+    expect(process.exitCode).toBe(4);
+    const uncertainIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const uncertainReopens = uncertainIndex
+      .prepare(
+        `SELECT reason, status FROM review_decision_reopens
+         WHERE reason = 'continuity-uncertain'`,
+      )
+      .all() as Array<{ reason: string; status: string }>;
+    expect(uncertainReopens.length).toBeGreaterThan(0);
+    expect(uncertainReopens.every((reopen) => reopen.status === "open")).toBe(true);
+    expect(
+      uncertainIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+    ).toEqual({ current_reviews: 0 });
+    uncertainIndex.close();
   });
 });

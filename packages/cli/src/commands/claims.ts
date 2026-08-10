@@ -211,10 +211,11 @@ function isMaterialChange(
   return !from || !to || from.material_fingerprint !== to.material_fingerprint;
 }
 
-function reopenMaterialChanges(
+function reopenEvidenceChanges(
   database: Database.Database,
   reviews: ClaimsReviewStore,
   evidenceVersionId: string,
+  reason: "material-change" | "continuity-uncertain",
   provenance: unknown,
 ): string[] {
   const impacted = database
@@ -251,12 +252,124 @@ function reopenMaterialChanges(
       basisAssessmentId: assessment.assessment_id,
       dependencyKind: assessment.dependency_kind,
       dependencyVersionId: assessment.dependency_version_id,
-      reason: "material-change",
+      reason,
       secondaryProvenance: provenance,
     });
     if (reopened?.created) reopenedClaims.push(assessment.claim_identity_id);
   }
   return reopenedClaims;
+}
+
+function reopenBrokenContinuity(
+  database: Database.Database,
+  reviews: ClaimsReviewStore,
+  previousEvidenceVersionId: string,
+  assessmentIds: string[],
+  provenance: unknown,
+): string[] {
+  if (assessmentIds.length === 0) return [];
+  const evidence = database
+    .prepare(
+      `SELECT source_kind FROM evidence_versions evidence
+       JOIN evidence_identities identity ON identity.id = evidence.evidence_identity_id
+       WHERE evidence.id = ?`,
+    )
+    .get(previousEvidenceVersionId) as { source_kind: string } | undefined;
+  if (!evidence) return [];
+  const claimTypes =
+    evidence.source_kind === "code-default" || evidence.source_kind === "code-annotation"
+      ? ["CLM-DEFAULT"]
+      : evidence.source_kind === "documentation"
+        ? ["CLM-DOC-CONFORMANCE"]
+        : ["CLM-EFFECTIVE", "CLM-DOC-CONFORMANCE"];
+  const placeholders = assessmentIds.map(() => "?").join(", ");
+  const claimTypePlaceholders = claimTypes.map(() => "?").join(", ");
+  const impacted = database
+    .prepare(
+      `SELECT ci.id AS claim_identity_id, ca.id AS assessment_id
+       FROM evidence_versions evidence
+       JOIN evidence_identities evidence_identity
+         ON evidence_identity.id = evidence.evidence_identity_id
+       JOIN claim_identities ci
+         ON ci.parameter_identity_id = evidence_identity.parameter_identity_id
+       JOIN claim_versions cv ON cv.claim_identity_id = ci.id
+       JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+       WHERE evidence.id = ? AND ca.is_current = 1
+        AND ca.id IN (${placeholders})
+        AND ci.claim_type IN (${claimTypePlaceholders})`,
+    )
+     .all(previousEvidenceVersionId, ...assessmentIds, ...claimTypes) as Array<{
+    claim_identity_id: string;
+    assessment_id: string;
+  }>;
+  const reopenedClaims: string[] = [];
+  for (const assessment of impacted) {
+    const reopened = reviews.reopen({
+      claimIdentityId: assessment.claim_identity_id,
+      basisAssessmentId: assessment.assessment_id,
+      dependencyKind: "evidence_version",
+      dependencyVersionId: previousEvidenceVersionId,
+      reason: "continuity-broken",
+      secondaryProvenance: provenance,
+    });
+    if (reopened?.created) reopenedClaims.push(assessment.claim_identity_id);
+  }
+  return reopenedClaims;
+}
+
+function reopenWarrantChange(
+  database: Database.Database,
+  reviews: ClaimsReviewStore,
+  assessmentId: string,
+): string | undefined {
+  const changedWarrant = database
+    .prepare(
+      `SELECT ci.id AS claim_identity_id, current_dependency.dependency_version_id
+       FROM claim_assessments current_assessment
+       JOIN claim_versions current_version
+         ON current_version.id = current_assessment.claim_version_id
+       JOIN claim_identities ci ON ci.id = current_version.claim_identity_id
+       JOIN review_decisions review
+         ON review.claim_identity_id = ci.id AND review.is_current = 1
+       JOIN claim_assessment_dependencies current_dependency
+         ON current_dependency.claim_assessment_id = current_assessment.id
+       JOIN rule_result_versions current_result
+         ON current_result.id = current_dependency.dependency_version_id
+       JOIN rule_result_identities current_identity
+         ON current_identity.id = current_result.rule_result_identity_id
+       WHERE current_assessment.id = ?
+         AND current_dependency.dependency_kind = 'rule_result_version'
+         AND EXISTS (
+           SELECT 1
+           FROM claim_assessment_dependencies reviewed_dependency
+           JOIN rule_result_versions reviewed_result
+             ON reviewed_result.id = reviewed_dependency.dependency_version_id
+           JOIN rule_result_identities reviewed_identity
+             ON reviewed_identity.id = reviewed_result.rule_result_identity_id
+           WHERE reviewed_dependency.claim_assessment_id = review.basis_assessment_id
+             AND reviewed_dependency.dependency_kind = 'rule_result_version'
+             AND reviewed_identity.identity_key = current_identity.identity_key
+             AND (
+               reviewed_result.normalized_status != current_result.normalized_status
+               OR reviewed_result.normalized_output_json != current_result.normalized_output_json
+               OR reviewed_result.rule_contract_version != current_result.rule_contract_version
+               OR reviewed_result.implementation_fingerprint != current_result.implementation_fingerprint
+             )
+         )
+       LIMIT 1`,
+    )
+    .get(assessmentId) as
+    | { claim_identity_id: string; dependency_version_id: string }
+    | undefined;
+  if (!changedWarrant) return undefined;
+  const reopened = reviews.reopen({
+    claimIdentityId: changedWarrant.claim_identity_id,
+    basisAssessmentId: assessmentId,
+    dependencyKind: "rule_result_version",
+    dependencyVersionId: changedWarrant.dependency_version_id,
+    reason: "warrant-changed",
+  });
+  return reopened?.created ? changedWarrant.claim_identity_id : undefined;
 }
 
 export async function runClaimsCheck(options: {
@@ -459,9 +572,29 @@ export async function runClaimsCheck(options: {
       }
       if (claimsGit && baseRevision && headRevision) {
         const changedPaths = claimsGit.changedPaths(baseRevision, headRevision);
+        const reviews = new ClaimsReviewStore(database);
         for (const [identityKey, current] of currentEvidence) {
           const previous = previousEvidence.get(identityKey);
-          if (!previous || previous.version.id === current.version.id) continue;
+          if (!previous) {
+            const provenance = {
+              baseRevision,
+              headRevision,
+              changedPaths,
+              missingPredecessorIdentity: identityKey,
+            };
+            const reopened = reopenEvidenceChanges(
+              database,
+              reviews,
+              current.version.id,
+              "continuity-uncertain",
+              provenance,
+            );
+            for (const claimIdentityId of reopened) {
+              reopenedClaimIds.add(claimIdentityId);
+            }
+            continue;
+          }
+          if (previous.version.id === current.version.id) continue;
           const materialChange = isMaterialChange(
             database,
             previous.version.id,
@@ -481,10 +614,11 @@ export async function runClaimsCheck(options: {
             provenance,
           });
           if (materialChange) {
-            const reopened = reopenMaterialChanges(
+            const reopened = reopenEvidenceChanges(
               database,
-              new ClaimsReviewStore(database),
+              reviews,
               current.version.id,
+              "material-change",
               provenance,
             );
             for (const claimIdentityId of reopened) {
@@ -492,8 +626,30 @@ export async function runClaimsCheck(options: {
             }
           }
         }
+        for (const [identityKey, previous] of previousEvidence) {
+          if (currentEvidence.has(identityKey)) continue;
+          const reopened = reopenBrokenContinuity(
+            database,
+            reviews,
+            previous.version.id,
+            assessmentIds,
+            {
+              baseRevision,
+              headRevision,
+              changedPaths,
+              missingCurrentIdentity: identityKey,
+            },
+          );
+          for (const claimIdentityId of reopened) {
+            reopenedClaimIds.add(claimIdentityId);
+          }
+        }
       }
       const reviews = new ClaimsReviewStore(database);
+      for (const assessmentId of assessmentIds) {
+        const reopenedClaimId = reopenWarrantChange(database, reviews, assessmentId);
+        if (reopenedClaimId) reopenedClaimIds.add(reopenedClaimId);
+      }
       for (const assessmentId of assessmentIds) {
         const assessment = database
           .prepare(
@@ -628,6 +784,14 @@ export async function runClaimsExplain(options: {
              FROM claim_assessment_dependencies WHERE claim_assessment_id = ?`,
           )
           .all(assessment.assessment_id),
+        review: database
+          .prepare(
+            `SELECT id, basis_assessment_id, decision, actor, decision_origin,
+                    carried_forward_from_decision_id, created_at
+             FROM review_decisions
+             WHERE claim_identity_id = ? AND is_current = 1`,
+          )
+          .get(assessment.claim_identity_id),
         reopens: database
           .prepare(
             `SELECT reason, dependency_kind, dependency_version_id,
@@ -645,6 +809,9 @@ export async function runClaimsExplain(options: {
           console.log(`${claim.claimType}${claim.scope ? ` (${claim.scope})` : ""}: ${claim.status}`);
           console.log(`  Claim: ${claim.claimIdentityId}`);
           console.log(`  Assessment: ${claim.assessmentId}`);
+          if (claim.review) {
+            console.log(`  Review: ${(claim.review as { decision: string }).decision}`);
+          }
         }
       }
       process.exitCode = output.length === 0 ? 2 : 0;
