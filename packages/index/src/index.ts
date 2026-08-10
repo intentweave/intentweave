@@ -18,20 +18,32 @@ export {
   ruleResultFingerprint,
 } from "./claims/canonical.js";
 export { ClaimsStore } from "./claims/store.js";
+export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
-export { assessRuleResults } from "./claims/policies.js";
+export { assessClaimPolicy, assessRuleResults } from "./claims/policies.js";
+export {
+  r1LiteralBinding,
+  r3ConfigResolution,
+  r3DocumentationConformance,
+  r7ScopeOverride,
+} from "./claims/rules.js";
 export type {
   AssessmentResult,
   AssessmentRuleInput,
   AssessmentEffect,
   ClaimAssessmentDependencyInput,
   ClaimAssessmentStatus,
+  ClaimPolicyDependencyInput,
   ClaimsExitInput,
+  ClaimsContractVersions,
+  ClaimsScopeEvaluation,
+  ClaimsScopeEvaluationInput,
   ClaimDependencyKind,
   ClaimScalar,
   EpistemicRole,
   MaterialFingerprintInput,
+  NormalizedRuleResult,
   PersistEvidenceInput,
   PersistedVersion,
   PersistRuleResultInput,
@@ -46,6 +58,8 @@ export type {
   RuleResultFingerprintInput,
   RuleResultStatus,
   WarrantPolarity,
+  VersionedClaimValue,
+  VersionedScopeEvidence,
 } from "./claims/types.js";
 
 // CypherLite CARI graph projection + query runner

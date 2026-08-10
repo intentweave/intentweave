@@ -1,8 +1,8 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-/** Scalar values supported by the claims slice's normalized observations. */
-export type ClaimScalar = string | number | boolean | null;
+/** Values supported by the claims slice's normalized observations. */
+export type ClaimScalar = string | number | boolean | null | string[];
 
 export type RuleApplicability = "applicable" | "not_applicable";
 export type RuleResultStatus =
@@ -74,6 +74,14 @@ export interface PersistedVersion {
   created: boolean;
 }
 
+export interface PersistEvidenceContinuityInput {
+  fromEvidenceVersionId: string;
+  toEvidenceVersionId: string;
+  basis: string;
+  confidence: string;
+  provenance: unknown;
+}
+
 export interface AssessmentRuleInput {
   ruleResultVersionId: string;
   epistemicRole: EpistemicRole;
@@ -142,4 +150,58 @@ export interface ClaimsExitInput {
   ruleStatuses: RuleResultStatus[];
   assessmentStatuses: ClaimAssessmentStatus[];
   reviewRequired: boolean;
+}
+
+export interface NormalizedRuleResult {
+  applicability: RuleApplicability;
+  status: RuleResultStatus;
+  output: unknown;
+  reasons: string[];
+}
+
+export interface ClaimPolicyDependencyInput {
+  dependencyKind: ClaimDependencyKind;
+  dependencyVersionId: string;
+  epistemicRole: EpistemicRole;
+  authoritative: boolean;
+  assertionValue?: ClaimScalar;
+  claimValue?: ClaimScalar;
+  ruleStatus?: RuleResultStatus;
+}
+
+export interface VersionedClaimValue {
+  versionId: string;
+  value: ClaimScalar;
+}
+
+export interface VersionedScopeEvidence {
+  versionId: string;
+  capabilities: string[];
+}
+
+export interface ClaimsContractVersions {
+  r1RuleContractVersion: string;
+  r3RuleContractVersion: string;
+  r7RuleContractVersion: string;
+  implementationFingerprint: string;
+  defaultPolicyVersion: string;
+  runtimePolicyVersion: string;
+  documentationPolicyVersion: string;
+}
+
+export interface ClaimsScopeEvaluationInput {
+  parameterKey: string;
+  scope: string;
+  repositoryRevision: string;
+  codeDefault?: VersionedClaimValue;
+  codeAnnotation?: VersionedClaimValue;
+  configOverride?: VersionedClaimValue;
+  documentedOverride?: VersionedClaimValue;
+  scopeEvidence: VersionedScopeEvidence;
+  contracts: ClaimsContractVersions;
+}
+
+export interface ClaimsScopeEvaluation {
+  ruleResults: PersistedVersion[];
+  assessments: PersistedAssessment[];
 }

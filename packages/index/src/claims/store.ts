@@ -10,6 +10,7 @@ import {
 } from "./canonical.js";
 import type {
   PersistClaimAssessmentInput,
+  PersistEvidenceContinuityInput,
   PersistEvidenceInput,
   PersistedAssessment,
   PersistedVersion,
@@ -119,6 +120,50 @@ export class ClaimsStore {
         .run(`${parameterId}:${id}`, parameterId, id, now);
 
       return { id, ordinal, created: true };
+    });
+
+    return persist();
+  }
+
+  persistEvidenceContinuity(input: PersistEvidenceContinuityInput): boolean {
+    const persist = this.db.transaction(() => {
+      const id = `continuity:${fingerprint({
+        fromEvidenceVersionId: input.fromEvidenceVersionId,
+        toEvidenceVersionId: input.toEvidenceVersionId,
+        basis: input.basis,
+      })}`;
+      const result = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO evidence_continuity (
+             id, from_evidence_version_id, to_evidence_version_id,
+             basis, confidence, provenance_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.fromEvidenceVersionId,
+          input.toEvidenceVersionId,
+          input.basis,
+          input.confidence,
+          canonicalJson(input.provenance),
+          Date.now(),
+        );
+      if (result.changes === 0) return false;
+
+      const predecessor = this.db
+        .prepare(
+          `SELECT id FROM parameter_evidence_bindings WHERE evidence_version_id = ?`,
+        )
+        .get(input.fromEvidenceVersionId) as { id: string } | undefined;
+      if (predecessor) {
+        this.db
+          .prepare(
+            `UPDATE parameter_evidence_bindings
+             SET predecessor_binding_id = ? WHERE evidence_version_id = ?`,
+          )
+          .run(predecessor.id, input.toEvidenceVersionId);
+      }
+      return true;
     });
 
     return persist();

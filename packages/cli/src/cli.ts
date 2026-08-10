@@ -35,6 +35,7 @@ process.stderr.on("error", (err: NodeJS.ErrnoException) => {
 import { Command } from "commander";
 import { createRequire } from "node:module";
 import { getPluginRegistry } from "@intentweave/core";
+import { claimsCommand } from "./commands/claims.js";
 import { docHealthCommand } from "./commands/doc-health.js";
 import { driftCommand } from "./commands/drift.js";
 import { hookCommand } from "./commands/hook.js";
@@ -83,6 +84,7 @@ program
   .version(version);
 
 // Register commands (alphabetical order)
+program.addCommand(claimsCommand);
 program.addCommand(docHealthCommand);
 program.addCommand(driftCommand);
 program.addCommand(explainCommand);

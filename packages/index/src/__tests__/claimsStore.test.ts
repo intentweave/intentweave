@@ -62,6 +62,65 @@ describe("ClaimsStore", () => {
     expect(changed).toMatchObject({ ordinal: 2, created: true });
   });
 
+  it("links evidence versions with immutable-anchor provenance and binding lineage", () => {
+    const before = store.persistEvidence({
+      parameterKey: "session.timeout",
+      sourceKind: "config",
+      identityKey: "session.timeout:config:eu-prod:session.timeout",
+      fingerprint: "before",
+      materialFingerprint: "material-before",
+      normalizedValue: 1800,
+      semanticLocation: "session.timeout",
+      provenance: { revision: "base" },
+      repositoryRevision: "base",
+    });
+    const after = store.persistEvidence({
+      parameterKey: "session.timeout",
+      sourceKind: "config",
+      identityKey: "session.timeout:config:eu-prod:session.timeout",
+      fingerprint: "after",
+      materialFingerprint: "material-after",
+      normalizedValue: 3600,
+      semanticLocation: "session.timeout",
+      provenance: { revision: "head" },
+      repositoryRevision: "head",
+    });
+
+    expect(
+      store.persistEvidenceContinuity({
+        fromEvidenceVersionId: before.id,
+        toEvidenceVersionId: after.id,
+        basis: "git-merge-base",
+        confidence: "high",
+        provenance: { base: "base", head: "head", materialChange: true },
+      }),
+    ).toBe(true);
+    expect(
+      store.persistEvidenceContinuity({
+        fromEvidenceVersionId: before.id,
+        toEvidenceVersionId: after.id,
+        basis: "git-merge-base",
+        confidence: "high",
+        provenance: { base: "base", head: "head", materialChange: true },
+      }),
+    ).toBe(false);
+    expect(
+      db.prepare(`SELECT basis, confidence, provenance_json FROM evidence_continuity`).get(),
+    ).toMatchObject({
+      basis: "git-merge-base",
+      confidence: "high",
+      provenance_json: JSON.stringify({ base: "base", head: "head", materialChange: true }),
+    });
+    expect(
+      db
+        .prepare(
+          `SELECT predecessor_binding_id FROM parameter_evidence_bindings
+           WHERE evidence_version_id = ?`,
+        )
+        .get(after.id),
+    ).toEqual({ predecessor_binding_id: expect.any(String) });
+  });
+
   it("deduplicates normalized rule results and links their evidence", () => {
     const evidence = store.persistEvidence({
       parameterKey: "session.timeout",

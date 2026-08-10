@@ -4,6 +4,7 @@
 import type {
   AssessmentResult,
   AssessmentRuleInput,
+  ClaimPolicyDependencyInput,
   ClaimAssessmentDependencyInput,
 } from "./types.js";
 
@@ -59,5 +60,70 @@ export function assessRuleResults(
   if (supports && contradicts) return { status: "contested", dependencies };
   if (contradicts) return { status: "refuted", dependencies };
   if (inconclusive || !supports) return { status: "inconclusive", dependencies };
+  return { status: "supported", dependencies };
+}
+
+function policyDependencyFor(
+  input: ClaimPolicyDependencyInput,
+): ClaimAssessmentDependencyInput {
+  if (input.epistemicRole === "assertion") {
+    const effect =
+      input.assertionValue === undefined || input.claimValue === undefined
+        ? "neutral"
+        : input.assertionValue === input.claimValue
+          ? "supports"
+          : "contradicts";
+    return {
+      dependencyKind: input.dependencyKind,
+      dependencyVersionId: input.dependencyVersionId,
+      epistemicRole: "assertion",
+      warrantPolarity: null,
+      assessmentEffect: effect,
+    };
+  }
+
+  const effect =
+    input.ruleStatus === "passed"
+      ? "supports"
+      : input.ruleStatus === "failed"
+        ? "contradicts"
+        : "neutral";
+  return {
+    dependencyKind: input.dependencyKind,
+    dependencyVersionId: input.dependencyVersionId,
+    epistemicRole: "warrant",
+    warrantPolarity:
+      effect === "supports" ? "supports" : effect === "contradicts" ? "contradicts" : null,
+    assessmentEffect: effect,
+  };
+}
+
+/**
+ * Evaluate one claim under its explicit authority policy.
+ *
+ * Non-authoritative inputs retain their derived effect for explain/history, but
+ * cannot override an authoritative runtime or contract dependency by count.
+ */
+export function assessClaimPolicy(
+  inputs: ClaimPolicyDependencyInput[],
+): AssessmentResult {
+  const dependencies = inputs.map(policyDependencyFor);
+  const authoritative = dependencies.filter((_, index) => inputs[index].authoritative);
+  const supports = authoritative.some(
+    (dependency) => dependency.assessmentEffect === "supports",
+  );
+  const contradicts = authoritative.some(
+    (dependency) => dependency.assessmentEffect === "contradicts",
+  );
+  const incomplete = inputs.some(
+    (input, index) =>
+      input.authoritative &&
+      (dependencies[index].assessmentEffect === "neutral" ||
+        input.ruleStatus === "inconclusive"),
+  );
+
+  if (supports && contradicts) return { status: "contested", dependencies };
+  if (contradicts) return { status: "refuted", dependencies };
+  if (incomplete || !supports) return { status: "inconclusive", dependencies };
   return { status: "supported", dependencies };
 }

@@ -6,7 +6,10 @@ import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
   extractDocumentationAssertions,
+  extractScopeConfigEvidence,
+  extractScopeRegistryEvidence,
   parseClaimsBindings,
+  parseScopeRegistry,
 } from "./discovery.js";
 
 const bindings = parseClaimsBindings({
@@ -114,5 +117,75 @@ describe("Claims documentation discovery", () => {
         },
       }),
     ).toThrow(ClaimsBindingError);
+  });
+
+  it("creates one scope observation per declared scope with sorted capabilities", () => {
+    const scopes = parseScopeRegistry({
+      environments: [
+        { name: "eu-prod", capabilities: ["session-runtime", "metrics"] },
+        { name: "dev", capabilities: ["session-runtime"] },
+      ],
+    });
+
+    expect(extractScopeRegistryEvidence(scopes)).toEqual([
+      {
+        sourceKind: "scope-registry",
+        identityKey: "scope-registry:eu-prod",
+        semanticLocation: "eu-prod",
+        normalizedValue: ["metrics", "session-runtime"],
+        scope: "eu-prod",
+      },
+      {
+        sourceKind: "scope-registry",
+        identityKey: "scope-registry:dev",
+        semanticLocation: "dev",
+        normalizedValue: ["session-runtime"],
+        scope: "dev",
+      },
+    ]);
+  });
+
+  it("reads registered config key paths and preserves missing values as inconclusive", () => {
+    const scopes = parseScopeRegistry({
+      environments: [
+        { name: "eu-prod", capabilities: ["session-runtime"] },
+        { name: "staging", capabilities: ["session-runtime"] },
+      ],
+    });
+    const observations = extractScopeConfigEvidence(
+      bindings,
+      scopes,
+      (scope) => (scope === "eu-prod" ? "session:\n  timeout: 3600\n" : undefined),
+    );
+
+    expect(observations).toEqual([
+      {
+        kind: "evidence",
+        parameterKey: "session.timeout",
+        sourceKind: "config",
+        identityKey: "session.timeout:config:eu-prod:session.timeout",
+        semanticLocation: "session.timeout",
+        normalizedValue: 3600,
+        scope: "eu-prod",
+        filePath: "config/eu-prod.yaml",
+      },
+      {
+        kind: "inconclusive",
+        parameterKey: "session.timeout",
+        sourceKind: "config",
+        scope: "staging",
+        reason: "config-value-missing",
+      },
+    ]);
+  });
+
+  it("rejects an unknown requested scope", () => {
+    const scopes = parseScopeRegistry({
+      environments: [{ name: "eu-prod", capabilities: ["session-runtime"] }],
+    });
+
+    expect(() =>
+      extractScopeConfigEvidence(bindings, scopes, () => undefined, "does-not-exist"),
+    ).toThrow("Unknown scope does-not-exist");
   });
 });

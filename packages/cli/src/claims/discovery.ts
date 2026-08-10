@@ -78,6 +78,42 @@ export interface CodeInconclusiveObservation {
 
 export type CodeObservation = CodeEvidenceObservation | CodeInconclusiveObservation;
 
+export interface ScopeRegistryEntry {
+  name: string;
+  capabilities: string[];
+}
+
+export interface ScopeEvidenceObservation {
+  sourceKind: "scope-registry";
+  identityKey: string;
+  semanticLocation: string;
+  normalizedValue: string[];
+  scope: string;
+}
+
+export interface ConfigEvidenceObservation {
+  kind: "evidence";
+  parameterKey: string;
+  sourceKind: "config";
+  identityKey: string;
+  semanticLocation: string;
+  normalizedValue: ClaimScalar;
+  scope: string;
+  filePath: string;
+}
+
+export interface ConfigInconclusiveObservation {
+  kind: "inconclusive";
+  parameterKey: string;
+  sourceKind: "config";
+  scope: string;
+  reason: "config-value-missing" | "config-value-invalid";
+}
+
+export type ConfigObservation =
+  | ConfigEvidenceObservation
+  | ConfigInconclusiveObservation;
+
 export class ClaimsBindingError extends Error {}
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -104,6 +140,20 @@ function parseScalar(value: string): ClaimScalar | undefined {
   }
   if (/^(['"]).*\1$/.test(normalized)) return normalized.slice(1, -1);
   return undefined;
+}
+
+function scalarFromYaml(value: unknown): ClaimScalar | undefined {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  return undefined;
+}
+
+function getKeyPath(value: unknown, keyPath: string): unknown {
+  return keyPath.split(".").reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    return (current as Record<string, unknown>)[segment];
+  }, value);
 }
 
 export function parseClaimsBindings(raw: unknown): ClaimsBindings {
@@ -189,6 +239,103 @@ export function parseClaimsBindings(raw: unknown): ClaimsBindings {
 export function loadClaimsBindings(workspaceRoot: string): ClaimsBindings {
   const filePath = path.join(workspaceRoot, "intentweave.bindings.yaml");
   return parseClaimsBindings(yamlLoad(readFileSync(filePath, "utf-8")));
+}
+
+export function parseScopeRegistry(raw: unknown): ScopeRegistryEntry[] {
+  const root = requireRecord(raw, "Scope registry");
+  if (!Array.isArray(root.environments)) {
+    throw new ClaimsBindingError("Scope registry environments must be an array");
+  }
+  const seen = new Set<string>();
+  return root.environments.map((entry, index) => {
+    const environment = requireRecord(entry, `environments[${index}]`);
+    const name = requireString(environment.name, `environments[${index}].name`);
+    if (seen.has(name)) {
+      throw new ClaimsBindingError(`Scope ${name} must be unique`);
+    }
+    seen.add(name);
+    if (!Array.isArray(environment.capabilities)) {
+      throw new ClaimsBindingError(`environments[${index}].capabilities must be an array`);
+    }
+    const capabilities = environment.capabilities
+      .map((capability, capabilityIndex) =>
+        requireString(
+          capability,
+          `environments[${index}].capabilities[${capabilityIndex}]`,
+        ),
+      )
+      .sort();
+    return { name, capabilities };
+  });
+}
+
+export function extractScopeRegistryEvidence(
+  scopes: ScopeRegistryEntry[],
+): ScopeEvidenceObservation[] {
+  return scopes.map((scope) => ({
+    sourceKind: "scope-registry",
+    identityKey: `scope-registry:${scope.name}`,
+    semanticLocation: scope.name,
+    normalizedValue: scope.capabilities,
+    scope: scope.name,
+  }));
+}
+
+/**
+ * Reads only registered parameter key paths from a requested registered scope.
+ * An absent config file or key is evidence insufficiency, never a guessed default.
+ */
+export function extractScopeConfigEvidence(
+  bindings: ClaimsBindings,
+  scopes: ScopeRegistryEntry[],
+  readScopeConfig: (scope: string) => string | undefined,
+  requestedScope?: string,
+): ConfigObservation[] {
+  const selectedScopes = requestedScope
+    ? scopes.filter((scope) => scope.name === requestedScope)
+    : scopes;
+  if (requestedScope && selectedScopes.length === 0) {
+    throw new ClaimsBindingError(`Unknown scope ${requestedScope}`);
+  }
+  const observations: ConfigObservation[] = [];
+  for (const scope of selectedScopes) {
+    const rawConfig = readScopeConfig(scope.name);
+    let config: unknown;
+    try {
+      config = rawConfig === undefined ? undefined : yamlLoad(rawConfig);
+    } catch (error) {
+      throw new ClaimsBindingError(
+        `Invalid configuration for ${scope.name}: ${(error as Error).message}`,
+      );
+    }
+    for (const [parameterKey, parameter] of Object.entries(bindings.parameters)) {
+      for (const configKey of parameter.configKeys) {
+        const value = getKeyPath(config, configKey);
+        const normalizedValue = scalarFromYaml(value);
+        if (normalizedValue === undefined) {
+          observations.push({
+            kind: "inconclusive",
+            parameterKey,
+            sourceKind: "config",
+            scope: scope.name,
+            reason: value === undefined ? "config-value-missing" : "config-value-invalid",
+          });
+          continue;
+        }
+        observations.push({
+          kind: "evidence",
+          parameterKey,
+          sourceKind: "config",
+          identityKey: `${parameterKey}:config:${scope.name}:${configKey}`,
+          semanticLocation: configKey,
+          normalizedValue,
+          scope: scope.name,
+          filePath: `config/${scope.name}.yaml`,
+        });
+      }
+    }
+  }
+  return observations;
 }
 
 export function extractDocumentationAssertions(
