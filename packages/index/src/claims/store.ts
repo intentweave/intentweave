@@ -2,9 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type Database from "@intentweave/sqlite-compat";
-import { canonicalJson, fingerprint, ruleResultFingerprint } from "./canonical.js";
+import {
+  assessmentKey,
+  canonicalJson,
+  fingerprint,
+  ruleResultFingerprint,
+} from "./canonical.js";
 import type {
+  PersistClaimAssessmentInput,
   PersistEvidenceInput,
+  PersistedAssessment,
   PersistedVersion,
   PersistRuleResultInput,
 } from "./types.js";
@@ -15,8 +22,11 @@ function idFor(kind: string, identityKey: string): string {
 
 function nextOrdinal(
   db: Database.Database,
-  table: "evidence_versions" | "rule_result_versions",
-  identityColumn: "evidence_identity_id" | "rule_result_identity_id",
+  table: "evidence_versions" | "rule_result_versions" | "claim_versions",
+  identityColumn:
+    | "evidence_identity_id"
+    | "rule_result_identity_id"
+    | "claim_identity_id",
   identityId: string,
 ): number {
   const row = db
@@ -188,6 +198,157 @@ export class ClaimsStore {
       }
 
       return { id, ordinal, created: true };
+    });
+
+    return persist();
+  }
+
+  persistClaimAssessment(
+    input: PersistClaimAssessmentInput,
+  ): PersistedAssessment {
+    const persist = this.db.transaction(() => {
+      const now = Date.now();
+      const parameterId = idFor("parameter", input.parameterKey);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO parameter_identities (id, canonical_key, created_at)
+           VALUES (?, ?, ?)`,
+        )
+        .run(parameterId, input.parameterKey, now);
+
+      const identityKey = [input.parameterKey, input.claimType, input.scope ?? ""].join(":");
+      const claimIdentityId = idFor("claim", identityKey);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO claim_identities
+             (id, parameter_identity_id, claim_type, scope, identity_key, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          claimIdentityId,
+          parameterId,
+          input.claimType,
+          input.scope ?? null,
+          identityKey,
+          now,
+        );
+
+      const statementJson = canonicalJson(input.normalizedStatement);
+      const latestVersion = this.db
+        .prepare(
+          `SELECT id, version_ordinal, normalized_statement_json,
+                  assessment_policy_id, assessment_policy_version
+           FROM claim_versions
+           WHERE claim_identity_id = ?
+           ORDER BY version_ordinal DESC LIMIT 1`,
+        )
+        .get(claimIdentityId) as
+        | {
+            id: string;
+            version_ordinal: number;
+            normalized_statement_json: string;
+            assessment_policy_id: string;
+            assessment_policy_version: string;
+          }
+        | undefined;
+      const unchangedClaim =
+        latestVersion &&
+        latestVersion.normalized_statement_json === statementJson &&
+        latestVersion.assessment_policy_id === input.assessmentPolicyId &&
+        latestVersion.assessment_policy_version === input.assessmentPolicyVersion;
+      const claimVersionId = unchangedClaim
+        ? latestVersion.id
+        : `${claimIdentityId}@${nextOrdinal(
+            this.db,
+            "claim_versions",
+            "claim_identity_id",
+            claimIdentityId,
+          )}`;
+      if (!unchangedClaim) {
+        this.db
+          .prepare(
+            `INSERT INTO claim_versions (
+               id, claim_identity_id, version_ordinal, normalized_statement_json,
+               assessment_policy_id, assessment_policy_version, repository_revision, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            claimVersionId,
+            claimIdentityId,
+            Number(claimVersionId.slice(claimVersionId.lastIndexOf("@") + 1)),
+            statementJson,
+            input.assessmentPolicyId,
+            input.assessmentPolicyVersion,
+            input.repositoryRevision,
+            now,
+          );
+      }
+
+      const key = assessmentKey(claimVersionId, input.dependencies);
+      const existing = this.db
+        .prepare(
+          `SELECT id FROM claim_assessments WHERE assessment_key = ?`,
+        )
+        .get(key) as { id: string } | undefined;
+      if (existing) {
+        return {
+          id: existing.id,
+          claimIdentityId,
+          claimVersionId,
+          created: false,
+        };
+      }
+
+      const assessmentId = `assessment:${key}`;
+      this.db
+        .prepare(
+          `INSERT INTO claim_assessments (
+             id, claim_version_id, assessment_key, epistemic_status,
+             repository_revision, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          assessmentId,
+          claimVersionId,
+          key,
+          input.status,
+          input.repositoryRevision,
+          now,
+        );
+      const insertDependency = this.db.prepare(
+        `INSERT INTO claim_assessment_dependencies (
+           claim_assessment_id, dependency_kind, dependency_version_id,
+           epistemic_role, warrant_polarity, assessment_effect
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const dependency of input.dependencies) {
+        insertDependency.run(
+          assessmentId,
+          dependency.dependencyKind,
+          dependency.dependencyVersionId,
+          dependency.epistemicRole,
+          dependency.warrantPolarity,
+          dependency.assessmentEffect,
+        );
+      }
+      this.db
+        .prepare(
+          `UPDATE claim_assessments
+           SET is_current = 0, superseded_by_assessment_id = ?
+           WHERE is_current = 1
+             AND id != ?
+             AND claim_version_id IN (
+               SELECT id FROM claim_versions WHERE claim_identity_id = ?
+             )`,
+        )
+        .run(assessmentId, assessmentId, claimIdentityId);
+
+      return {
+        id: assessmentId,
+        claimIdentityId,
+        claimVersionId,
+        created: true,
+      };
     });
 
     return persist();

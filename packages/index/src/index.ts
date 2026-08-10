@@ -18,10 +18,16 @@ export {
   ruleResultFingerprint,
 } from "./claims/canonical.js";
 export { ClaimsStore } from "./claims/store.js";
+export { ClaimsReviewStore } from "./claims/review.js";
+export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
+export { assessRuleResults } from "./claims/policies.js";
 export type {
+  AssessmentResult,
+  AssessmentRuleInput,
   AssessmentEffect,
   ClaimAssessmentDependencyInput,
   ClaimAssessmentStatus,
+  ClaimsExitInput,
   ClaimDependencyKind,
   ClaimScalar,
   EpistemicRole,
@@ -29,6 +35,13 @@ export type {
   PersistEvidenceInput,
   PersistedVersion,
   PersistRuleResultInput,
+  PersistClaimAssessmentInput,
+  PersistedAssessment,
+  PersistedReopen,
+  PersistedReviewDecision,
+  RecordReviewInput,
+  ReopenReason,
+  ReopenReviewInput,
   RuleApplicability,
   RuleResultFingerprintInput,
   RuleResultStatus,

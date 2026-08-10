@@ -73,3 +73,73 @@ export interface PersistedVersion {
   ordinal: number;
   created: boolean;
 }
+
+export interface AssessmentRuleInput {
+  ruleResultVersionId: string;
+  epistemicRole: EpistemicRole;
+  status: RuleResultStatus;
+}
+
+export interface AssessmentResult {
+  status: ClaimAssessmentStatus;
+  dependencies: ClaimAssessmentDependencyInput[];
+}
+
+export interface PersistClaimAssessmentInput {
+  parameterKey: string;
+  claimType: string;
+  scope?: string;
+  normalizedStatement: unknown;
+  assessmentPolicyId: string;
+  assessmentPolicyVersion: string;
+  repositoryRevision: string;
+  status: ClaimAssessmentStatus;
+  dependencies: ClaimAssessmentDependencyInput[];
+}
+
+export interface PersistedAssessment {
+  id: string;
+  claimIdentityId: string;
+  claimVersionId: string;
+  created: boolean;
+}
+
+export type ReopenReason =
+  | "material-change"
+  | "continuity-uncertain"
+  | "continuity-broken"
+  | "warrant-changed";
+
+export interface RecordReviewInput {
+  claimIdentityId: string;
+  basisAssessmentId: string;
+  decision: string;
+  actor: string;
+}
+
+export interface ReopenReviewInput {
+  claimIdentityId: string;
+  basisAssessmentId: string;
+  dependencyKind: ClaimDependencyKind;
+  dependencyVersionId: string;
+  reason: ReopenReason;
+  secondaryProvenance?: unknown;
+}
+
+export interface PersistedReviewDecision {
+  id: string;
+  carriedForward: boolean;
+}
+
+export interface PersistedReopen {
+  id: string;
+  created: boolean;
+}
+
+export interface ClaimsExitInput {
+  invalidInput?: boolean;
+  discoveryEmpty?: boolean;
+  ruleStatuses: RuleResultStatus[];
+  assessmentStatuses: ClaimAssessmentStatus[];
+  reviewRequired: boolean;
+}

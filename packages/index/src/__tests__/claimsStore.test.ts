@@ -97,4 +97,79 @@ describe("ClaimsStore", () => {
     expect(repeated).toEqual({ ...first, created: false });
     expect(evidenceLinks).toEqual([{ evidence_version_id: evidence.id }]);
   });
+
+  it("versions claim statements and supersedes prior current assessments", () => {
+    const dependencies = [
+      {
+        dependencyKind: "rule_result_version" as const,
+        dependencyVersionId: "rule:r3@1",
+        epistemicRole: "warrant" as const,
+        warrantPolarity: "supports" as const,
+        assessmentEffect: "supports" as const,
+      },
+    ];
+    const first = store.persistClaimAssessment({
+      parameterKey: "session.timeout",
+      claimType: "CLM-EFFECTIVE",
+      scope: "eu-prod",
+      normalizedStatement: { value: 3600 },
+      assessmentPolicyId: "runtime-resolution",
+      assessmentPolicyVersion: "v1",
+      repositoryRevision: "c0",
+      status: "supported",
+      dependencies,
+    });
+    const repeated = store.persistClaimAssessment({
+      parameterKey: "session.timeout",
+      claimType: "CLM-EFFECTIVE",
+      scope: "eu-prod",
+      normalizedStatement: { value: 3600 },
+      assessmentPolicyId: "runtime-resolution",
+      assessmentPolicyVersion: "v1",
+      repositoryRevision: "c0",
+      status: "supported",
+      dependencies,
+    });
+    const changed = store.persistClaimAssessment({
+      parameterKey: "session.timeout",
+      claimType: "CLM-EFFECTIVE",
+      scope: "eu-prod",
+      normalizedStatement: { value: 5400 },
+      assessmentPolicyId: "runtime-resolution",
+      assessmentPolicyVersion: "v1",
+      repositoryRevision: "c2",
+      status: "supported",
+      dependencies: [
+        {
+          ...dependencies[0],
+          dependencyVersionId: "rule:r3@2",
+        },
+      ],
+    });
+    const assessments = db
+      .prepare(
+        `SELECT id, is_current, superseded_by_assessment_id
+        FROM claim_assessments ORDER BY is_current ASC`,
+      )
+      .all() as Array<{
+      id: string;
+      is_current: number;
+      superseded_by_assessment_id: string | null;
+    }>;
+
+    expect(repeated).toEqual({ ...first, created: false });
+    expect(changed.claimVersionId).not.toBe(first.claimVersionId);
+    expect(assessments).toEqual([
+      {
+        id: first.id,
+        is_current: 0,
+        superseded_by_assessment_id: changed.id,
+      },
+      {
+        id: changed.id,
+        is_current: 1,
+        superseded_by_assessment_id: null,
+      },
+    ]);
+  });
 });

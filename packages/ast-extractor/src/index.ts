@@ -38,6 +38,14 @@ export type {
 
 // Re-export extractor
 export { AstExtractor, createExtractor } from "./extractor.js";
+export {
+  extractClaimEvidence,
+  type ClaimEvidenceExtraction,
+  type ClaimLiteral,
+  type ExtractedCodeAnnotation,
+  type ExtractedLiteralBinding,
+  type LiteralBindingKind,
+} from "./claimEvidence.js";
 
 // Convenience utilities
 import { AstExtractor } from "./extractor.js";
