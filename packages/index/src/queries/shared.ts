@@ -7,12 +7,13 @@
 
 import Database from "@intentweave/sqlite-compat";
 import * as fs from "fs";
+import { migrateSchema14To15 } from "../schema.js";
 
 /**
  * Open the index database in read-only mode.
  * Throws if the file doesn't exist.
  */
-const EXPECTED_SCHEMA_VERSION = "14";
+const EXPECTED_SCHEMA_VERSION = "15";
 
 export function openIndex(dbPath: string): Database.Database {
   if (!fs.existsSync(dbPath)) {
@@ -22,6 +23,19 @@ export function openIndex(dbPath: string): Database.Database {
   }
   const db = new Database(dbPath, { readonly: false });
   db.pragma("journal_mode = WAL");
+
+  try {
+    const schemaRow = db
+      .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+      .get() as { value: string } | undefined;
+    if (schemaRow?.value === "14") {
+      migrateSchema14To15(db);
+    }
+  } catch (error) {
+    if (!(error instanceof Error && error.message.includes("_meta"))) {
+      throw error;
+    }
+  }
 
   // Ensure performance indexes exist (one-time cost, idempotent IF NOT EXISTS).
   // These are not in the base schema so that the Rust native builder doesn't need

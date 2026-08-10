@@ -365,6 +365,208 @@ CREATE TABLE IF NOT EXISTS _meta (
 `;
 
 /**
+ * Claims companion schema added in version 15.
+ *
+ * This is deliberately kept separate from `SCHEMA_SQL`: released native
+ * builders can still produce a version-14 core index, which the CLI upgrades
+ * with `migrateSchema14To15()` before opening it through query helpers.
+ */
+const CLAIMS_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS parameter_identities (
+  id TEXT PRIMARY KEY,
+  canonical_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence_identities (
+  id TEXT PRIMARY KEY,
+  parameter_identity_id TEXT REFERENCES parameter_identities(id),
+  source_kind TEXT NOT NULL,
+  identity_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence_versions (
+  id TEXT PRIMARY KEY,
+  evidence_identity_id TEXT NOT NULL REFERENCES evidence_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  material_fingerprint TEXT NOT NULL,
+  normalized_value TEXT,
+  semantic_location TEXT NOT NULL,
+  file_path TEXT,
+  symbol_id TEXT,
+  span_start_line INTEGER,
+  span_end_line INTEGER,
+  repository_revision TEXT,
+  provenance_json TEXT NOT NULL,
+  observed_at INTEGER NOT NULL,
+  UNIQUE (evidence_identity_id, version_ordinal),
+  UNIQUE (evidence_identity_id, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS parameter_evidence_bindings (
+  id TEXT PRIMARY KEY,
+  parameter_identity_id TEXT NOT NULL REFERENCES parameter_identities(id),
+  evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  predecessor_binding_id TEXT REFERENCES parameter_evidence_bindings(id),
+  created_at INTEGER NOT NULL,
+  UNIQUE (parameter_identity_id, evidence_version_id)
+);
+
+CREATE TABLE IF NOT EXISTS evidence_continuity (
+  id TEXT PRIMARY KEY,
+  from_evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  to_evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (from_evidence_version_id, to_evidence_version_id)
+);
+
+CREATE TABLE IF NOT EXISTS rule_result_identities (
+  id TEXT PRIMARY KEY,
+  rule_id TEXT NOT NULL,
+  scope TEXT,
+  identity_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rule_result_versions (
+  id TEXT PRIMARY KEY,
+  rule_result_identity_id TEXT NOT NULL REFERENCES rule_result_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  applicability TEXT NOT NULL,
+  normalized_status TEXT NOT NULL,
+  normalized_output_json TEXT NOT NULL,
+  normalized_reasons_json TEXT NOT NULL,
+  rule_contract_version TEXT NOT NULL,
+  implementation_fingerprint TEXT NOT NULL,
+  observed_at INTEGER NOT NULL,
+  UNIQUE (rule_result_identity_id, version_ordinal),
+  UNIQUE (rule_result_identity_id, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS rule_result_evidence (
+  rule_result_version_id TEXT NOT NULL REFERENCES rule_result_versions(id),
+  evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  PRIMARY KEY (rule_result_version_id, evidence_version_id)
+);
+
+CREATE TABLE IF NOT EXISTS claim_identities (
+  id TEXT PRIMARY KEY,
+  parameter_identity_id TEXT NOT NULL REFERENCES parameter_identities(id),
+  claim_type TEXT NOT NULL,
+  scope TEXT,
+  identity_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claim_versions (
+  id TEXT PRIMARY KEY,
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  normalized_statement_json TEXT NOT NULL,
+  assessment_policy_id TEXT NOT NULL,
+  assessment_policy_version TEXT NOT NULL,
+  repository_revision TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (claim_identity_id, version_ordinal)
+);
+
+CREATE TABLE IF NOT EXISTS claim_assessments (
+  id TEXT PRIMARY KEY,
+  claim_version_id TEXT NOT NULL REFERENCES claim_versions(id),
+  assessment_key TEXT NOT NULL UNIQUE,
+  epistemic_status TEXT NOT NULL,
+  repository_revision TEXT NOT NULL,
+  reference_key TEXT UNIQUE,
+  is_current INTEGER NOT NULL DEFAULT 1,
+  superseded_by_assessment_id TEXT REFERENCES claim_assessments(id),
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claim_assessment_dependencies (
+  claim_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  dependency_kind TEXT NOT NULL,
+  dependency_version_id TEXT NOT NULL,
+  epistemic_role TEXT NOT NULL,
+  warrant_polarity TEXT,
+  assessment_effect TEXT NOT NULL,
+  PRIMARY KEY (
+    claim_assessment_id,
+    dependency_kind,
+    dependency_version_id,
+    epistemic_role,
+    warrant_polarity,
+    assessment_effect
+  )
+);
+
+CREATE TABLE IF NOT EXISTS review_decisions (
+  id TEXT PRIMARY KEY,
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  basis_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  decision TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  decision_origin TEXT NOT NULL,
+  carried_forward_from_decision_id TEXT REFERENCES review_decisions(id),
+  superseded_by_decision_id TEXT REFERENCES review_decisions(id),
+  invalidated_by_reopen_id TEXT,
+  is_current INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_decision_reopens (
+  id TEXT PRIMARY KEY,
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  previous_review_decision_id TEXT REFERENCES review_decisions(id),
+  basis_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  dependency_kind TEXT NOT NULL,
+  dependency_version_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  secondary_provenance_json TEXT,
+  status TEXT NOT NULL,
+  resolved_by_decision_id TEXT REFERENCES review_decisions(id),
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_versions_identity_ordinal
+  ON evidence_versions(evidence_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_rule_result_versions_identity_ordinal
+  ON rule_result_versions(rule_result_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_rule_result_evidence_evidence
+  ON rule_result_evidence(evidence_version_id);
+CREATE INDEX IF NOT EXISTS idx_claim_versions_identity_ordinal
+  ON claim_versions(claim_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_assessments_claim_current
+  ON claim_assessments(claim_version_id, is_current);
+CREATE INDEX IF NOT EXISTS idx_assessment_dependencies_dependency
+  ON claim_assessment_dependencies(dependency_kind, dependency_version_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_review_decisions_current_claim
+  ON review_decisions(claim_identity_id) WHERE is_current = 1;
+CREATE INDEX IF NOT EXISTS idx_review_reopens_claim_status
+  ON review_decision_reopens(claim_identity_id, status);
+`;
+
+/** Upgrade a core schema-14 database with the additive claims companion schema. */
+export function migrateSchema14To15(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(CLAIMS_SCHEMA_SQL);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '15')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
  * Initialize the CARI schema on a fresh database.
  * Safe to call on an existing database (IF NOT EXISTS guards).
  */
@@ -409,8 +611,5 @@ export function initSchema(db: Database.Database): void {
     `);
   }
 
-  // Store schema version
-  db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '14')`,
-  ).run();
+  migrateSchema14To15(db);
 }

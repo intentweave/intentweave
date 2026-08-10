@@ -9,7 +9,31 @@
  */
 
 // Phase 1: Core index
-export { initSchema } from "./schema.js";
+export { initSchema, migrateSchema14To15 } from "./schema.js";
+export {
+  assessmentKey,
+  canonicalJson,
+  fingerprint,
+  materialFingerprint,
+  ruleResultFingerprint,
+} from "./claims/canonical.js";
+export { ClaimsStore } from "./claims/store.js";
+export type {
+  AssessmentEffect,
+  ClaimAssessmentDependencyInput,
+  ClaimAssessmentStatus,
+  ClaimDependencyKind,
+  ClaimScalar,
+  EpistemicRole,
+  MaterialFingerprintInput,
+  PersistEvidenceInput,
+  PersistedVersion,
+  PersistRuleResultInput,
+  RuleApplicability,
+  RuleResultFingerprintInput,
+  RuleResultStatus,
+  WarrantPolarity,
+} from "./claims/types.js";
 
 // CypherLite CARI graph projection + query runner
 export {

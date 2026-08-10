@@ -618,6 +618,16 @@ const indexBuildSubcommand = new Command("build")
             paths,
             verbose,
           });
+          // Released native binaries may still emit schema 14. Upgrade the
+          // additive claims companion layer before any helper opens the DB.
+          {
+            const db = new Database(dbPath);
+            try {
+              migrateSchema14To15(db);
+            } finally {
+              db.close();
+            }
+          }
           const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
           console.log(
             `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
@@ -804,6 +814,7 @@ import {
   layersFromDecorators,
   rulesTrend,
   snapshotConformance,
+  migrateSchema14To15,
   testIntent,
   livingScore,
   calls,

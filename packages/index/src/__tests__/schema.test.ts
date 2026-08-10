@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "@intentweave/sqlite-compat";
-import { initSchema } from "../schema.js";
+import { initSchema, migrateSchema14To15 } from "../schema.js";
 
 describe("initSchema", () => {
   let db: Database.Database;
@@ -86,7 +86,36 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("14");
+    expect(row?.value).toBe("15");
+  });
+
+  it("migrates a schema-14 index with the claims companion tables", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+
+    migrateSchema14To15(db);
+    migrateSchema14To15(db);
+
+    const version = db
+      .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+      .get() as { value: string };
+    const claimsTables = db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
+          'parameter_identities', 'parameter_evidence_bindings',
+          'evidence_identities', 'evidence_versions', 'evidence_continuity',
+          'rule_result_identities', 'rule_result_versions', 'rule_result_evidence',
+          'claim_identities', 'claim_versions', 'claim_assessments',
+          'claim_assessment_dependencies', 'review_decisions',
+          'review_decision_reopens'
+        )`,
+      )
+      .all() as Array<{ name: string }>;
+
+    expect(version.value).toBe("15");
+    expect(claimsTables).toHaveLength(14);
   });
 
   it("sets WAL journal mode", () => {
