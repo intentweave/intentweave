@@ -207,20 +207,43 @@ describe("iw claims check", () => {
     git("add", ".");
     git("commit", "-m", "base claims evidence");
     const baseRevision = git("rev-parse", "HEAD");
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
-    writeFileSync(
-      path.join(workspace, "docs", "session-timeout.md"),
-      "The eu-prod override is 3600 seconds.\n",
-    );
-    git("add", ".");
-    git("commit", "-m", "raise eu timeout");
-    const headRevision = git("rev-parse", "HEAD");
     mkdirSync(path.join(workspace, ".iw"));
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
     database.close();
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", format: "json" });
+    const baseIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const baseClaims = baseIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
+         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+         WHERE ca.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    baseIndex.close();
+    for (const claim of baseClaims) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+
+    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
+    writeFileSync(
+      path.join(workspace, "docs", "session-timeout.md"),
+      "The eu-prod override is 3600 seconds.\n",
+    );
+    git("add", "config/eu-prod.yaml", "docs/session-timeout.md");
+    git("commit", "-m", "raise eu timeout");
+    const headRevision = git("rev-parse", "HEAD");
     process.exitCode = undefined;
 
     await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
@@ -237,7 +260,6 @@ describe("iw claims check", () => {
          JOIN evidence_versions current ON current.id = continuity.to_evidence_version_id`,
       )
       .all() as Array<{ from_ordinal: number; to_ordinal: number; provenance_json: string }>;
-    index.close();
     expect(continuity.length).toBeGreaterThan(0);
     expect(continuity.every((link) => link.from_ordinal < link.to_ordinal)).toBe(true);
     expect(continuity.map((link) => JSON.parse(link.provenance_json))).toContainEqual(
@@ -248,5 +270,25 @@ describe("iw claims check", () => {
         changedPaths: ["config/eu-prod.yaml", "docs/session-timeout.md"],
       }),
     );
+    const reopens = index
+      .prepare(
+        `SELECT reason, status FROM review_decision_reopens
+         WHERE reason = 'material-change'`,
+      )
+      .all() as Array<{ reason: string; status: string }>;
+    expect(reopens).toHaveLength(2);
+    expect(reopens).toEqual(
+      expect.arrayContaining([
+        { reason: "material-change", status: "open" },
+        { reason: "material-change", status: "open" },
+      ]),
+    );
+    expect(
+      index.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+    ).toEqual({ current_reviews: 1 });
+    expect(
+      index.prepare(`SELECT decision_origin FROM review_decisions WHERE is_current = 1`).get(),
+    ).toEqual({ decision_origin: "carry-forward" });
+    index.close();
   });
 });

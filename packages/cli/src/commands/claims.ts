@@ -193,6 +193,72 @@ function claimsDatabase(workspaceRoot: string): Database.Database {
   return database;
 }
 
+function isMaterialChange(
+  database: Database.Database,
+  fromEvidenceVersionId: string,
+  toEvidenceVersionId: string,
+): boolean {
+  const versions = database
+    .prepare(
+      `SELECT id, material_fingerprint FROM evidence_versions WHERE id IN (?, ?)`,
+    )
+    .all(fromEvidenceVersionId, toEvidenceVersionId) as Array<{
+    id: string;
+    material_fingerprint: string;
+  }>;
+  const from = versions.find((version) => version.id === fromEvidenceVersionId);
+  const to = versions.find((version) => version.id === toEvidenceVersionId);
+  return !from || !to || from.material_fingerprint !== to.material_fingerprint;
+}
+
+function reopenMaterialChanges(
+  database: Database.Database,
+  reviews: ClaimsReviewStore,
+  evidenceVersionId: string,
+  provenance: unknown,
+): string[] {
+  const impacted = database
+    .prepare(
+      `SELECT DISTINCT ci.id AS claim_identity_id, ca.id AS assessment_id,
+              dependency.dependency_kind, dependency.dependency_version_id
+       FROM claim_assessments ca
+       JOIN claim_versions cv ON cv.id = ca.claim_version_id
+       JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+       JOIN claim_assessment_dependencies dependency
+         ON dependency.claim_assessment_id = ca.id
+       WHERE ca.is_current = 1 AND (
+         (dependency.dependency_kind = 'evidence_version'
+          AND dependency.dependency_version_id = ?)
+         OR
+         (dependency.dependency_kind = 'rule_result_version'
+          AND EXISTS (
+            SELECT 1 FROM rule_result_evidence rule_evidence
+            WHERE rule_evidence.rule_result_version_id = dependency.dependency_version_id
+              AND rule_evidence.evidence_version_id = ?
+          ))
+       )`,
+    )
+    .all(evidenceVersionId, evidenceVersionId) as Array<{
+    claim_identity_id: string;
+    assessment_id: string;
+    dependency_kind: "evidence_version" | "rule_result_version";
+    dependency_version_id: string;
+  }>;
+  const reopenedClaims: string[] = [];
+  for (const assessment of impacted) {
+    const reopened = reviews.reopen({
+      claimIdentityId: assessment.claim_identity_id,
+      basisAssessmentId: assessment.assessment_id,
+      dependencyKind: assessment.dependency_kind,
+      dependencyVersionId: assessment.dependency_version_id,
+      reason: "material-change",
+      secondaryProvenance: provenance,
+    });
+    if (reopened?.created) reopenedClaims.push(assessment.claim_identity_id);
+  }
+  return reopenedClaims;
+}
+
 export async function runClaimsCheck(options: {
   scope?: string;
   since?: string;
@@ -267,7 +333,8 @@ export async function runClaimsCheck(options: {
       const output = { scopes: [] as Array<{ scope: string; ruleStatuses: string[]; assessmentStatuses: string[] }> };
       const allRuleStatuses: Array<"passed" | "failed" | "inconclusive" | "not_applicable"> = [];
       const allAssessmentStatuses: Array<"supported" | "refuted" | "contested" | "inconclusive"> = [];
-      let reviewRequired = false;
+      const assessmentIds: string[] = [];
+      const reopenedClaimIds = new Set<string>();
 
       for (const scope of selectedScopes) {
         for (const [parameterKey] of Object.entries(bindings.parameters)) {
@@ -386,16 +453,7 @@ export async function runClaimsCheck(options: {
           );
           allRuleStatuses.push(...ruleStatuses);
           allAssessmentStatuses.push(...assessmentStatuses);
-          reviewRequired ||= result.assessments.some((assessment) => {
-            const row = database.prepare(
-              `SELECT ca.epistemic_status, EXISTS(
-                 SELECT 1 FROM review_decisions rd
-                 WHERE rd.claim_identity_id = ? AND rd.is_current = 1
-               ) AS reviewed
-               FROM claim_assessments ca WHERE ca.id = ?`,
-            ).get(assessment.claimIdentityId, assessment.id) as { epistemic_status: string; reviewed: number };
-            return row.epistemic_status !== "inconclusive" && row.reviewed === 0;
-          });
+          assessmentIds.push(...result.assessments.map((assessment) => assessment.id));
           output.scopes.push({ scope: scope.name, ruleStatuses, assessmentStatuses });
         }
       }
@@ -404,20 +462,68 @@ export async function runClaimsCheck(options: {
         for (const [identityKey, current] of currentEvidence) {
           const previous = previousEvidence.get(identityKey);
           if (!previous || previous.version.id === current.version.id) continue;
+          const materialChange = isMaterialChange(
+            database,
+            previous.version.id,
+            current.version.id,
+          );
+          const provenance = {
+            baseRevision,
+            headRevision,
+            changedPaths,
+            materialChange,
+          };
           store.persistEvidenceContinuity({
             fromEvidenceVersionId: previous.version.id,
             toEvidenceVersionId: current.version.id,
             basis: "git-merge-base",
             confidence: "high",
-            provenance: {
-              baseRevision,
-              headRevision,
-              changedPaths,
-              materialChange: previous.value !== current.value,
-            },
+            provenance,
           });
+          if (materialChange) {
+            const reopened = reopenMaterialChanges(
+              database,
+              new ClaimsReviewStore(database),
+              current.version.id,
+              provenance,
+            );
+            for (const claimIdentityId of reopened) {
+              reopenedClaimIds.add(claimIdentityId);
+            }
+          }
         }
       }
+      const reviews = new ClaimsReviewStore(database);
+      for (const assessmentId of assessmentIds) {
+        const assessment = database
+          .prepare(
+            `SELECT ci.id AS claim_identity_id, ca.epistemic_status
+             FROM claim_assessments ca
+             JOIN claim_versions cv ON cv.id = ca.claim_version_id
+             JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+             WHERE ca.id = ?`,
+          )
+          .get(assessmentId) as {
+          claim_identity_id: string;
+          epistemic_status: string;
+        };
+        if (
+          assessment.epistemic_status !== "inconclusive" &&
+          !reopenedClaimIds.has(assessment.claim_identity_id)
+        ) {
+          reviews.carryForward(assessment.claim_identity_id, assessmentId);
+        }
+      }
+      const reviewRequired = assessmentIds.some((assessmentId) => {
+        const row = database.prepare(
+          `SELECT ca.epistemic_status, EXISTS(
+             SELECT 1 FROM review_decisions rd
+             WHERE rd.basis_assessment_id = ca.id AND rd.is_current = 1
+           ) AS reviewed
+           FROM claim_assessments ca WHERE ca.id = ?`,
+        ).get(assessmentId) as { epistemic_status: string; reviewed: number };
+        return row.epistemic_status !== "inconclusive" && row.reviewed === 0;
+      });
       console.log(options.format === "json" ? JSON.stringify(output, null, 2) : formatText(output));
       process.exitCode = claimsExitCode({
         discoveryEmpty: output.scopes.length === 0,
