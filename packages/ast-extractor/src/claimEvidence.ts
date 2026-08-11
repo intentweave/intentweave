@@ -21,6 +21,8 @@ export interface ExtractedLiteralBinding {
   normalizedValue: ClaimLiteral;
   span: SourceRange;
   structureFingerprint: string;
+  exported: boolean;
+  topLevel: boolean;
 }
 
 export interface ExtractedCodeAnnotation {
@@ -33,6 +35,17 @@ export interface ExtractedCodeAnnotation {
 export interface ClaimEvidenceExtraction {
   literalBindings: ExtractedLiteralBinding[];
   codeAnnotations: ExtractedCodeAnnotation[];
+}
+
+function parseSafe(parser: Parser, content: string): Parser.Tree {
+  if (content.length <= 32_000) return parser.parse(content);
+  return (parser as unknown as {
+    parse(reader: (startIndex: number) => string | null): Parser.Tree;
+  }).parse((startIndex: number) =>
+    startIndex >= content.length
+      ? null
+      : content.slice(startIndex, startIndex + 4096),
+  );
 }
 
 function normalizedLiteral(text: string): ClaimLiteral | undefined {
@@ -73,6 +86,32 @@ function bindingKind(node: Parser.SyntaxNode): LiteralBindingKind {
     ancestor = ancestor.parent;
   }
   return "parameter-default";
+}
+
+function bindingContext(node: Parser.SyntaxNode): {
+  exported: boolean;
+  topLevel: boolean;
+} {
+  let exported = false;
+  let topLevel = true;
+  let crossedDeclarationBoundary = false;
+  let ancestor = node.parent;
+  while (ancestor) {
+    if (ancestor.type === "export_statement" && !crossedDeclarationBoundary) {
+      exported = true;
+    }
+    if (
+      ancestor.type === "statement_block" ||
+      ancestor.type === "class_body" ||
+      ancestor.type.includes("function") ||
+      ancestor.type.includes("method")
+    ) {
+      topLevel = false;
+      crossedDeclarationBoundary = true;
+    }
+    ancestor = ancestor.parent;
+  }
+  return { exported, topLevel };
 }
 
 function immediateJsDoc(
@@ -120,8 +159,8 @@ export function extractClaimEvidence(
   filePath: string,
 ): ClaimEvidenceExtraction {
   const parser = new Parser();
-  parser.setLanguage(TypeScript.typescript);
-  const tree = parser.parse(content);
+  parser.setLanguage(/\.[jt]sx$/i.test(filePath) ? TypeScript.tsx : TypeScript.typescript);
+  const tree = parseSafe(parser, content);
   const literalBindings: ExtractedLiteralBinding[] = [];
   const codeAnnotations: ExtractedCodeAnnotation[] = [];
   const seen = new Set<string>();
@@ -148,6 +187,7 @@ export function extractClaimEvidence(
       normalizedValue: value,
       span: range(declaration),
       structureFingerprint: hash(`${declaration.type}:${name}`),
+      ...bindingContext(declaration),
     };
     literalBindings.push(binding);
 

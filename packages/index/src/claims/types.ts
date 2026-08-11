@@ -61,10 +61,13 @@ export interface PersistEvidenceInput {
   spanStartLine?: number;
   spanEndLine?: number;
   repositoryRevision?: string;
+  bindingBasis?: string;
+  bindingConfidence?: string;
 }
 
 export interface PersistRuleResultInput extends RuleResultFingerprintInput {
   ruleId: string;
+  subjectKey?: string;
   scope?: string;
 }
 
@@ -184,6 +187,7 @@ export interface ClaimsContractVersions {
   r3RuleContractVersion: string;
   r7RuleContractVersion: string;
   implementationFingerprint: string;
+  literalPolicyVersion: string;
   defaultPolicyVersion: string;
   runtimePolicyVersion: string;
   documentationPolicyVersion: string;
@@ -198,6 +202,15 @@ export interface ClaimsScopeEvaluationInput {
   configOverride?: VersionedClaimValue;
   documentedOverride?: VersionedClaimValue;
   scopeEvidence: VersionedScopeEvidence;
+  contracts: ClaimsContractVersions;
+}
+
+export interface ClaimsDefaultEvaluationInput {
+  parameterKey: string;
+  claimType?: "CLM-DEFAULT" | "CLM-LITERAL";
+  repositoryRevision: string;
+  codeDefault?: VersionedClaimValue;
+  codeAnnotation?: VersionedClaimValue;
   contracts: ClaimsContractVersions;
 }
 

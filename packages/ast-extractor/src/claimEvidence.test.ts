@@ -16,6 +16,8 @@ describe("extractClaimEvidence", () => {
         kind: "variable",
         name: "SESSION_TIMEOUT",
         normalizedValue: 1800,
+        exported: true,
+        topLevel: true,
       },
     ]);
     expect(evidence.codeAnnotations).toMatchObject([
@@ -41,6 +43,17 @@ describe("extractClaimEvidence", () => {
     expect(evidence.literalBindings).toMatchObject([
       { kind: "destructuring-default", name: "timeout", normalizedValue: 1800 },
       { kind: "parameter-default", name: "retries", normalizedValue: 3 },
+    ]);
+  });
+
+  it("extracts claims from source files larger than the direct parser limit", () => {
+    const evidence = extractClaimEvidence(
+      `${"// padding\n".repeat(4_000)}export const LARGE_FILE_DEFAULT = 42;`,
+      "src/large.ts",
+    );
+
+    expect(evidence.literalBindings).toMatchObject([
+      { name: "LARGE_FILE_DEFAULT", normalizedValue: 42 },
     ]);
   });
 });

@@ -41,6 +41,7 @@ describe("ClaimsEngine", () => {
     r3RuleContractVersion: "r3-v1",
     r7RuleContractVersion: "r7-v1",
     implementationFingerprint: "impl-v1",
+    literalPolicyVersion: "v1",
     defaultPolicyVersion: "v1",
     runtimePolicyVersion: "v1",
     documentationPolicyVersion: "v1",

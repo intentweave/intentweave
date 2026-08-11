@@ -40,6 +40,7 @@ describe("ClaimsGit", () => {
     expect(claimsGit.resolveCommit("HEAD~1")).toBe(base);
     expect(claimsGit.mergeBase("HEAD~1")).toBe(base);
     expect(claimsGit.changedPaths(base, head)).toEqual(["docs.md", "session.yaml"]);
+    expect(claimsGit.listFiles(head)).toEqual(["docs.md", "session.yaml"]);
     expect(claimsGit.show(base, "session.yaml")).toBe("timeout: 1800");
     expect(claimsGit.show(head, "session.yaml")).toBe("timeout: 3600");
     expect(claimsGit.show(base, "docs.md")).toBeUndefined();

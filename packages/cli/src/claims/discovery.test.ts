@@ -2,12 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
+  extractDiscoveredCodeEvidence,
   extractDocumentationAssertions,
   extractScopeConfigEvidence,
   extractScopeRegistryEvidence,
+  loadClaimsBindings,
+  loadOptionalClaimsBindings,
   parseClaimsBindings,
   parseScopeRegistry,
 } from "./discovery.js";
@@ -40,6 +46,64 @@ const bindings = parseClaimsBindings({
 });
 
 describe("Claims documentation discovery", () => {
+  it("treats a missing bindings manifest as automatic-discovery mode", () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    try {
+      expect(loadOptionalClaimsBindings(workspace)).toBeUndefined();
+      expect(() => loadClaimsBindings(workspace)).toThrow("Claims bindings not found");
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("discovers provisional code claims and lets explicit bindings win", () => {
+    const observations = extractDiscoveredCodeEvidence(
+      ["src/options.ts", "src/session.ts"],
+      (file) =>
+        file === "src/options.ts"
+          ? "/**\n * @default 25\n */\nexport const PAGE_SIZE = 25;"
+          : "export const SESSION_TIMEOUT = 1800;",
+      bindings,
+    );
+
+    expect(observations).toHaveLength(2);
+    expect(observations).toMatchObject([
+      {
+        parameterKey: expect.stringContaining("src/options.ts#PAGE_SIZE"),
+        claimType: "CLM-DEFAULT",
+        sourceKind: "code-default",
+        normalizedValue: 25,
+        bindingBasis: "r1-discovery",
+      },
+      {
+        parameterKey: expect.stringContaining("src/options.ts#PAGE_SIZE"),
+        claimType: "CLM-DEFAULT",
+        sourceKind: "code-annotation",
+        normalizedValue: 25,
+        bindingBasis: "r1-discovery",
+      },
+    ]);
+    expect(
+      observations.some((observation) =>
+        observation.symbolId.includes("SESSION_TIMEOUT"),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not materialize ordinary local literals as claims", () => {
+    const observations = extractDiscoveredCodeEvidence(
+      ["src/calculate.ts"],
+      () =>
+        `export function calculate() {
+          let total = 0;
+          for (let i = 0; i < 10; i += 1) total += i;
+          return total;
+        }`,
+    );
+
+    expect(observations).toEqual([]);
+  });
+
   it("extracts only explicitly bound single-line assertions", () => {
     const observations = extractDocumentationAssertions(bindings, (file) => {
       expect(file).toBe("docs/session-timeout.md");

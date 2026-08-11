@@ -49,6 +49,16 @@ export class ClaimsGit {
     return output ? output.split("\n").filter(Boolean).sort() : [];
   }
 
+  listFiles(revision: string): string[] {
+    const output = git(this.workspaceRoot, [
+      "ls-tree",
+      "-r",
+      "--name-only",
+      revision,
+    ]);
+    return output ? output.split("\n").filter(Boolean).sort() : [];
+  }
+
   show(revision: string, filePath: string): string | undefined {
     try {
       return git(this.workspaceRoot, ["show", `${revision}:${filePath}`]);

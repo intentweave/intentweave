@@ -18,10 +18,11 @@ import type { ClaimScalar, PersistedVersion } from "@intentweave/index";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
+  extractDiscoveredCodeEvidence,
   extractDocumentationAssertions,
   extractScopeConfigEvidence,
   extractScopeRegistryEvidence,
-  loadClaimsBindings,
+  loadOptionalClaimsBindings,
   parseClaimsBindings,
   parseScopeRegistry,
 } from "../claims/discovery.js";
@@ -33,6 +34,7 @@ const contracts = {
   r3RuleContractVersion: "r3-v1",
   r7RuleContractVersion: "r7-v1",
   implementationFingerprint: "claims-engine-v1",
+  literalPolicyVersion: "literal-binding-v1",
   defaultPolicyVersion: "default-contract-v1",
   runtimePolicyVersion: "runtime-resolution-v1",
   documentationPolicyVersion: "documentation-conformance-v1",
@@ -41,6 +43,46 @@ const contracts = {
 interface PersistedObservation {
   version: PersistedVersion;
   value: ClaimScalar;
+}
+
+const CLAIM_CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
+const CLAIM_CODE_IGNORES = [
+  "/node_modules/",
+  "/dist/",
+  "/coverage/",
+  "/.git/",
+  "/.iw/",
+  "/fixtures/",
+  "/__tests__/",
+];
+
+function isClaimCodeFile(filePath: string): boolean {
+  const normalized = `/${filePath.replaceAll("\\", "/")}`;
+  return (
+    CLAIM_CODE_EXTENSIONS.some((extension) => normalized.endsWith(extension)) &&
+    !CLAIM_CODE_IGNORES.some((ignored) => normalized.includes(ignored)) &&
+    !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(normalized)
+  );
+}
+
+async function discoverWorkingTreeCodeFiles(workspaceRoot: string): Promise<string[]> {
+  const { glob } = await import("tinyglobby");
+  return (
+    await glob(["**/*.{ts,tsx,js,jsx}"], {
+      cwd: workspaceRoot,
+      ignore: [
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/coverage/**",
+        ".git/**",
+        ".iw/**",
+        "**/fixtures/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+      ],
+    })
+  ).filter(isClaimCodeFile).sort();
 }
 
 function currentRevision(workspaceRoot: string): string {
@@ -63,6 +105,8 @@ function persistObservation(
     filePath?: string;
     symbolId?: string;
     line?: number;
+    bindingBasis?: string;
+    bindingConfidence?: string;
     revision: string;
   },
 ): PersistedObservation {
@@ -95,6 +139,8 @@ function persistObservation(
       spanStartLine: input.line,
       spanEndLine: input.line,
       repositoryRevision: input.revision,
+      bindingBasis: input.bindingBasis,
+      bindingConfidence: input.bindingConfidence,
     }),
     value: input.value,
   };
@@ -102,17 +148,21 @@ function persistObservation(
 
 function persistSnapshotEvidence(
   store: ClaimsStore,
-  bindings: ReturnType<typeof loadClaimsBindings>,
+  bindings: NonNullable<ReturnType<typeof loadOptionalClaimsBindings>>,
   scopes: ReturnType<typeof parseScopeRegistry>,
   readBoundFile: (filePath: string) => string,
   readScopeConfig: (scope: string) => string | undefined,
   revision: string,
+  discoveredCode: ReturnType<typeof extractDiscoveredCodeEvidence> = [],
 ): Map<string, PersistedObservation> {
   const observations = new Map<string, PersistedObservation>();
   const persist = (identityKey: string, input: Parameters<typeof persistObservation>[1]) => {
     observations.set(identityKey, persistObservation(store, input));
   };
-  for (const observation of extractBoundCodeEvidence(bindings, readBoundFile)) {
+  for (const observation of [
+    ...extractBoundCodeEvidence(bindings, readBoundFile),
+    ...discoveredCode,
+  ]) {
     if (!("identityKey" in observation)) continue;
     persist(observation.identityKey, {
       parameterKey: observation.parameterKey,
@@ -123,6 +173,8 @@ function persistSnapshotEvidence(
       filePath: observation.filePath,
       symbolId: observation.symbolId,
       line: observation.line,
+      bindingBasis: observation.bindingBasis,
+      bindingConfidence: observation.bindingConfidence,
       revision,
     });
   }
@@ -166,6 +218,12 @@ function persistSnapshotEvidence(
 }
 
 function formatText(result: {
+  claims: Array<{
+    parameterKey: string;
+    claimType: string;
+    ruleStatuses: string[];
+    assessmentStatuses: string[];
+  }>;
   scopes: Array<{
     scope: string;
     ruleStatuses: string[];
@@ -173,6 +231,11 @@ function formatText(result: {
   }>;
 }): string {
   const lines: string[] = [];
+  for (const claim of result.claims) {
+    lines.push(`Claim: ${claim.parameterKey} (${claim.claimType})`);
+    lines.push(`  Rule results: ${claim.ruleStatuses.join(", ")}`);
+    lines.push(`  Assessments: ${claim.assessmentStatuses.join(", ") || "none"}`);
+  }
   for (const scope of result.scopes) {
     lines.push(`Scope: ${scope.scope}`);
     lines.push(`  Rule results: ${scope.ruleStatuses.join(", ")}`);
@@ -382,34 +445,74 @@ export async function runClaimsCheck(options: {
     const claimsGit = options.since ? new ClaimsGit(workspaceRoot) : undefined;
     const headRevision = claimsGit?.head();
     const baseRevision = options.since ? claimsGit!.mergeBase(options.since) : undefined;
-    const readCurrentFile = (filePath: string) => {
-      if (!claimsGit || !headRevision) return fs.readFileSync(path.join(workspaceRoot, filePath), "utf-8");
-      return claimsGit.show(headRevision, filePath) ?? "";
+    const readOptionalCurrentFile = (filePath: string): string | undefined => {
+      if (claimsGit && headRevision) return claimsGit.show(headRevision, filePath);
+      const absolutePath = path.join(workspaceRoot, filePath);
+      return fs.existsSync(absolutePath)
+        ? fs.readFileSync(absolutePath, "utf-8")
+        : undefined;
     };
-    const bindings = claimsGit
-      ? parseClaimsBindings(yamlLoad(readCurrentFile("intentweave.bindings.yaml")))
-      : loadClaimsBindings(workspaceRoot);
+    const readCurrentFile = (filePath: string): string => {
+      const content = readOptionalCurrentFile(filePath);
+      if (content === undefined) {
+        throw new ClaimsBindingError(`Configured Claims source not found: ${filePath}`);
+      }
+      return content;
+    };
+    const bindingsText = readOptionalCurrentFile("intentweave.bindings.yaml");
+    const bindings = bindingsText
+      ? parseClaimsBindings(yamlLoad(bindingsText))
+      : { parameters: {} };
+    const registryText = readOptionalCurrentFile("config/environments.yaml");
     const registryPath = path.join(workspaceRoot, "config", "environments.yaml");
-    const scopes = parseScopeRegistry(yamlLoad(readCurrentFile("config/environments.yaml")));
+    const scopes = registryText ? parseScopeRegistry(yamlLoad(registryText)) : [];
+    if (options.scope && scopes.length === 0) {
+      throw new ClaimsBindingError(
+        `Scope ${options.scope} cannot be evaluated because no scope registry was discovered`,
+      );
+    }
+    const currentCodeFiles = claimsGit && headRevision
+      ? claimsGit.listFiles(headRevision).filter(isClaimCodeFile)
+      : await discoverWorkingTreeCodeFiles(workspaceRoot);
+    const discoveredCode = extractDiscoveredCodeEvidence(
+      currentCodeFiles,
+      readCurrentFile,
+      bindings,
+    );
     const database = claimsDatabase(workspaceRoot);
     try {
       const store = new ClaimsStore(database);
       const engine = new ClaimsEngine(store);
       const revision = headRevision ?? currentRevision(workspaceRoot);
       const readBoundFile = readCurrentFile;
-      const code = extractBoundCodeEvidence(bindings, readBoundFile);
+      const code = [
+        ...extractBoundCodeEvidence(bindings, readBoundFile),
+        ...discoveredCode,
+      ];
       const docs = extractDocumentationAssertions(bindings, readBoundFile);
       const previousEvidence = (() => {
         if (!claimsGit || !baseRevision) return new Map<string, PersistedObservation>();
         const baseRegistry = claimsGit.show(baseRevision, "config/environments.yaml");
-        if (!baseRegistry) return new Map<string, PersistedObservation>();
+        const baseBindingsText = claimsGit.show(baseRevision, "intentweave.bindings.yaml");
+        const baseBindings = baseBindingsText
+          ? parseClaimsBindings(yamlLoad(baseBindingsText))
+          : { parameters: {} };
+        const baseCodeFiles = claimsGit.listFiles(baseRevision).filter(isClaimCodeFile);
+        const readBaseFile = (filePath: string) =>
+          claimsGit.show(baseRevision, filePath) ?? "";
+        const baseDiscoveredCode = extractDiscoveredCodeEvidence(
+          baseCodeFiles,
+          readBaseFile,
+          baseBindings,
+        );
         return persistSnapshotEvidence(
           store,
-          bindings,
-          parseScopeRegistry(yamlLoad(baseRegistry)),
-          (filePath) => claimsGit.show(baseRevision, filePath) ?? "",
+          baseBindings,
+          baseRegistry ? parseScopeRegistry(yamlLoad(baseRegistry)) : [],
+          readBaseFile,
           (scope) => claimsGit.show(baseRevision, `config/${scope}.yaml`),
           baseRevision,
+          baseDiscoveredCode,
         );
       })();
       const currentEvidence = new Map<string, PersistedObservation>();
@@ -443,11 +546,106 @@ export async function runClaimsCheck(options: {
       const selectedScopes = options.scope
         ? scopes.filter((scope) => scope.name === options.scope)
         : scopes;
-      const output = { scopes: [] as Array<{ scope: string; ruleStatuses: string[]; assessmentStatuses: string[] }> };
+      const output = {
+        claims: [] as Array<{
+          parameterKey: string;
+          claimType: string;
+          ruleStatuses: string[];
+          assessmentStatuses: string[];
+        }>,
+        scopes: [] as Array<{
+          scope: string;
+          ruleStatuses: string[];
+          assessmentStatuses: string[];
+        }>,
+      };
       const allRuleStatuses: Array<"passed" | "failed" | "inconclusive" | "not_applicable"> = [];
       const allAssessmentStatuses: Array<"supported" | "refuted" | "contested" | "inconclusive"> = [];
       const assessmentIds: string[] = [];
       const reopenedClaimIds = new Set<string>();
+
+      const unscopedParameterKeys = new Set(
+        (scopes.length === 0 ? code : discoveredCode).map(
+          (observation) => observation.parameterKey,
+        ),
+      );
+      for (const parameterKey of [...unscopedParameterKeys].sort()) {
+        const codeDefault = code.find(
+          (observation) =>
+            observation.parameterKey === parameterKey &&
+            observation.sourceKind === "code-default" &&
+            "identityKey" in observation,
+        );
+        const codeAnnotation = code.find(
+          (observation) =>
+            observation.parameterKey === parameterKey &&
+            observation.sourceKind === "code-annotation" &&
+            "identityKey" in observation,
+        );
+        if (!codeDefault || !("identityKey" in codeDefault)) continue;
+        const persistedCodeDefault = persistObservation(store, {
+          parameterKey,
+          sourceKind: codeDefault.sourceKind,
+          identityKey: codeDefault.identityKey,
+          semanticLocation: codeDefault.semanticLocation,
+          value: codeDefault.normalizedValue,
+          filePath: codeDefault.filePath,
+          symbolId: codeDefault.symbolId,
+          line: codeDefault.line,
+          bindingBasis: codeDefault.bindingBasis,
+          bindingConfidence: codeDefault.bindingConfidence,
+          revision,
+        });
+        currentEvidence.set(codeDefault.identityKey, persistedCodeDefault);
+        const persistedAnnotation =
+          codeAnnotation && "identityKey" in codeAnnotation
+            ? persistObservation(store, {
+                parameterKey,
+                sourceKind: codeAnnotation.sourceKind,
+                identityKey: codeAnnotation.identityKey,
+                semanticLocation: codeAnnotation.semanticLocation,
+                value: codeAnnotation.normalizedValue,
+                filePath: codeAnnotation.filePath,
+                symbolId: codeAnnotation.symbolId,
+                line: codeAnnotation.line,
+                bindingBasis: codeAnnotation.bindingBasis,
+                bindingConfidence: codeAnnotation.bindingConfidence,
+                revision,
+              })
+            : undefined;
+        if (persistedAnnotation && codeAnnotation && "identityKey" in codeAnnotation) {
+          currentEvidence.set(codeAnnotation.identityKey, persistedAnnotation);
+        }
+        const result = engine.evaluateDefault({
+          parameterKey,
+          claimType: codeDefault.claimType,
+          repositoryRevision: revision,
+          codeDefault: {
+            versionId: persistedCodeDefault.version.id,
+            value: persistedCodeDefault.value,
+          },
+          codeAnnotation: persistedAnnotation && {
+            versionId: persistedAnnotation.version.id,
+            value: persistedAnnotation.value,
+          },
+          contracts,
+        });
+        const ruleStatuses = result.ruleResults.map((rule) =>
+          (database.prepare(`SELECT normalized_status FROM rule_result_versions WHERE id = ?`).get(rule.id) as { normalized_status: "passed" | "failed" | "inconclusive" | "not_applicable" }).normalized_status,
+        );
+        const assessmentStatuses = result.assessments.map((assessment) =>
+          (database.prepare(`SELECT epistemic_status FROM claim_assessments WHERE id = ?`).get(assessment.id) as { epistemic_status: "supported" | "refuted" | "contested" | "inconclusive" }).epistemic_status,
+        );
+        allRuleStatuses.push(...ruleStatuses);
+        allAssessmentStatuses.push(...assessmentStatuses);
+        assessmentIds.push(...result.assessments.map((assessment) => assessment.id));
+        output.claims.push({
+          parameterKey,
+          claimType: codeDefault.claimType,
+          ruleStatuses,
+          assessmentStatuses,
+        });
+      }
 
       for (const scope of selectedScopes) {
         for (const [parameterKey] of Object.entries(bindings.parameters)) {
@@ -478,6 +676,8 @@ export async function runClaimsCheck(options: {
                   filePath: codeDefault.filePath,
                   symbolId: codeDefault.symbolId,
                   line: codeDefault.line,
+                  bindingBasis: codeDefault.bindingBasis,
+                  bindingConfidence: codeDefault.bindingConfidence,
                   revision,
                 })
               : undefined;
@@ -495,6 +695,8 @@ export async function runClaimsCheck(options: {
                   filePath: codeAnnotation.filePath,
                   symbolId: codeAnnotation.symbolId,
                   line: codeAnnotation.line,
+                  bindingBasis: codeAnnotation.bindingBasis,
+                  bindingConfidence: codeAnnotation.bindingConfidence,
                   revision,
                 })
               : undefined;
@@ -682,7 +884,7 @@ export async function runClaimsCheck(options: {
       });
       console.log(options.format === "json" ? JSON.stringify(output, null, 2) : formatText(output));
       process.exitCode = claimsExitCode({
-        discoveryEmpty: output.scopes.length === 0,
+        discoveryEmpty: output.claims.length === 0 && output.scopes.length === 0,
         ruleStatuses: allRuleStatuses,
         assessmentStatuses: allAssessmentStatuses,
         reviewRequired,
@@ -825,10 +1027,10 @@ export async function runClaimsExplain(options: {
 }
 
 export const claimsCommand = new Command("claims")
-  .description("Assess explicitly bound repository claims")
+  .description("Discover, assess, explain, and review repository claims")
   .addCommand(
     new Command("check")
-      .description("Evaluate bound claims for one scope or all registered scopes")
+      .description("Discover and evaluate claims, optionally for a registered scope")
       .option("--scope <scope>", "Registered scope to evaluate")
       .option("--since <ref>", "Compare immutable HEAD evidence with the merge-base of a Git ref")
       .option("-f, --format <format>", "Output format: text or json", "text")

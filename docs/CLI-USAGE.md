@@ -453,6 +453,76 @@ Note: the Rust native build acceleration (`cari-build`) does not yet support
 `indexAllFiles` — when enabled, `iw index build` automatically falls back to
 the TypeScript pipeline (same fallback behavior as `--include`/`--exclude`).
 
+### Claims discovery and optional bindings
+
+`iw claims check` extracts provisional claims directly from syntactically strong
+scalar literal bindings in TypeScript and JavaScript: exported literals,
+top-level constants, parameter/destructuring defaults, and directly annotated
+defaults. Ordinary local variables, loop counters, accumulators, assignments,
+tests, fixtures, generated output, dependencies, and build directories are not
+materialized as claims by the default scan.
+
+Explicit defaults become `CLM-DEFAULT`; other exported or top-level constants
+become `CLM-LITERAL`. A directly attached JSDoc default is captured as separate
+corroborating or contradicting evidence.
+
+No binding manifest or scope registry is required for this unscoped discovery:
+
+```bash
+iw index build
+iw claims check
+iw claims explain
+```
+
+Automatically discovered code claims use provisional code-based parameter
+identities and `r1-discovery` provenance. IntentWeave does not guess that
+similarly named code, configuration, and prose values represent the same domain
+parameter.
+
+Add `intentweave.bindings.yaml` only when you want to promote or correlate a
+candidate with a canonical parameter key, documentation assertion, or scoped
+configuration. Scoped checks additionally require `config/environments.yaml`
+and the corresponding `config/<scope>.yaml` files.
+
+```yaml
+# intentweave.bindings.yaml
+parameters:
+  session.timeout:
+    configKeys: [session.timeout]
+    codeDefaults:
+      - file: src/session.ts
+        export: SESSION_TIMEOUT
+    documentation:
+      - file: docs/session-timeout.md
+        assertions:
+          - id: production-override
+            target: effective
+            scope: production
+            pattern: '^The production override is (?<value>\d+) seconds\.$'
+```
+
+```yaml
+# config/environments.yaml
+environments:
+  - name: production
+    capabilities: [session-runtime]
+```
+
+```yaml
+# config/production.yaml
+session:
+  timeout: 3600
+```
+
+With optional bindings in place, evaluate the correlated scope and inspect the
+evidence chain:
+
+```bash
+iw claims check --scope production
+iw claims explain
+iw claims check --scope production --since origin/main
+```
+
 ### `.iw/rules.yaml`
 
 Architectural rules for `iw intent check`. Created by `iw intent extract` or manually.

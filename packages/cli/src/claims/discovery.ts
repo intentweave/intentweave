@@ -1,7 +1,7 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { extractClaimEvidence } from "@intentweave/ast-extractor";
 import { load as yamlLoad } from "js-yaml";
@@ -59,6 +59,7 @@ export type DocumentationObservation =
 
 export interface CodeEvidenceObservation {
   parameterKey: string;
+  claimType: "CLM-DEFAULT" | "CLM-LITERAL";
   sourceKind: "code-default" | "code-annotation";
   identityKey: string;
   semanticLocation: string;
@@ -66,6 +67,8 @@ export interface CodeEvidenceObservation {
   filePath: string;
   symbolId: string;
   line: number;
+  bindingBasis?: "explicit-map" | "r1-discovery";
+  bindingConfidence?: "certain" | "probable";
 }
 
 export interface CodeInconclusiveObservation {
@@ -238,7 +241,22 @@ export function parseClaimsBindings(raw: unknown): ClaimsBindings {
 
 export function loadClaimsBindings(workspaceRoot: string): ClaimsBindings {
   const filePath = path.join(workspaceRoot, "intentweave.bindings.yaml");
+  if (!existsSync(filePath)) {
+    throw new ClaimsBindingError(
+      `Claims bindings not found at ${filePath}`,
+    );
+  }
   return parseClaimsBindings(yamlLoad(readFileSync(filePath, "utf-8")));
+}
+
+/** Bindings enrich discovered claims, but are not required for code discovery. */
+export function loadOptionalClaimsBindings(
+  workspaceRoot: string,
+): ClaimsBindings | undefined {
+  const filePath = path.join(workspaceRoot, "intentweave.bindings.yaml");
+  return existsSync(filePath)
+    ? parseClaimsBindings(yamlLoad(readFileSync(filePath, "utf-8")))
+    : undefined;
 }
 
 export function parseScopeRegistry(raw: unknown): ScopeRegistryEntry[] {
@@ -419,6 +437,7 @@ export function extractBoundCodeEvidence(
       }
       observations.push({
         parameterKey,
+        claimType: "CLM-DEFAULT",
         sourceKind: "code-default",
         identityKey: `${parameterKey}:code-default:${binding.file}:${binding.export}`,
         semanticLocation: parameterKey,
@@ -426,11 +445,14 @@ export function extractBoundCodeEvidence(
         filePath: binding.file,
         symbolId: literal.symbolId,
         line: literal.span.startLine,
+        bindingBasis: "explicit-map",
+        bindingConfidence: "certain",
       });
       for (const annotation of evidence.codeAnnotations) {
         if (annotation.targetSymbolId !== literal.symbolId) continue;
         observations.push({
           parameterKey,
+          claimType: "CLM-DEFAULT",
           sourceKind: "code-annotation",
           identityKey: `${parameterKey}:code-annotation:${binding.file}:${binding.export}:default`,
           semanticLocation: `${parameterKey}.default`,
@@ -438,9 +460,86 @@ export function extractBoundCodeEvidence(
           filePath: binding.file,
           symbolId: literal.symbolId,
           line: annotation.span.startLine,
+          bindingBasis: "explicit-map",
+          bindingConfidence: "certain",
         });
       }
     }
   }
+  return observations;
+}
+
+/**
+ * Discover provisional default and literal claims from strong R1 bindings.
+ * Explicit bindings win for the same file and symbol and are emitted by
+ * `extractBoundCodeEvidence` instead, preventing duplicate claim identities.
+ */
+export function extractDiscoveredCodeEvidence(
+  filePaths: string[],
+  readCode: (filePath: string) => string,
+  bindings: ClaimsBindings = { parameters: {} },
+): CodeEvidenceObservation[] {
+  const explicitlyBound = new Set(
+    Object.values(bindings.parameters).flatMap((parameter) =>
+      parameter.codeDefaults.map((binding) => `${binding.file}\0${binding.export}`),
+    ),
+  );
+  const observations: CodeEvidenceObservation[] = [];
+
+  for (const filePath of [...filePaths].sort()) {
+    const evidence = extractClaimEvidence(readCode(filePath), filePath);
+    for (const literal of evidence.literalBindings) {
+      if (explicitlyBound.has(`${filePath}\0${literal.name}`)) continue;
+      const annotations = evidence.codeAnnotations.filter(
+        (annotation) => annotation.targetSymbolId === literal.symbolId,
+      );
+      const constantName = /^[A-Z][A-Z0-9_]*$/.test(literal.name);
+      const materializeClaim =
+        annotations.length > 0 ||
+        literal.exported ||
+        (literal.topLevel && constantName) ||
+        literal.kind === "parameter-default" ||
+        literal.kind === "destructuring-default";
+      if (!materializeClaim) continue;
+      const parameterKey = `code:${filePath}#${literal.name}:${literal.structureFingerprint.slice(0, 12)}`;
+      const claimType =
+        annotations.length > 0 ||
+        literal.kind === "parameter-default" ||
+        literal.kind === "destructuring-default" ||
+        (/(?:^|_)DEFAULT(?:_|$)/.test(literal.name) ||
+          /(?:^|_)default(?:_|[A-Z]|$)/.test(literal.name))
+          ? "CLM-DEFAULT"
+          : "CLM-LITERAL";
+      observations.push({
+        parameterKey,
+        claimType,
+        sourceKind: "code-default",
+        identityKey: `${parameterKey}:literal`,
+        semanticLocation: parameterKey,
+        normalizedValue: literal.normalizedValue,
+        filePath,
+        symbolId: literal.symbolId,
+        line: literal.span.startLine,
+        bindingBasis: "r1-discovery",
+        bindingConfidence: "probable",
+      });
+      for (const annotation of annotations) {
+        observations.push({
+          parameterKey,
+          claimType,
+          sourceKind: "code-annotation",
+          identityKey: `${parameterKey}:annotation:default`,
+          semanticLocation: `${parameterKey}.default`,
+          normalizedValue: annotation.normalizedValue,
+          filePath,
+          symbolId: literal.symbolId,
+          line: annotation.span.startLine,
+          bindingBasis: "r1-discovery",
+          bindingConfidence: "probable",
+        });
+      }
+    }
+  }
+
   return observations;
 }

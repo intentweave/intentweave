@@ -24,6 +24,68 @@ describe("iw claims check", () => {
     }
   });
 
+  it("extracts an unscoped default claim without a bindings manifest", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"));
+    mkdirSync(path.join(workspace, "src"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    writeFileSync(
+      path.join(workspace, "src", "options.ts"),
+      "/**\n * @default 25\n */\nexport const PAGE_SIZE = 25;\nexport const MAX_RETRIES = 3;\n",
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    expect(process.exitCode).toBe(4);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      claims: expect.arrayContaining([
+        {
+          parameterKey: expect.stringContaining("src/options.ts#PAGE_SIZE"),
+          claimType: "CLM-DEFAULT",
+          ruleStatuses: ["passed"],
+          assessmentStatuses: ["supported"],
+        },
+        {
+          parameterKey: expect.stringContaining("src/options.ts#MAX_RETRIES"),
+          claimType: "CLM-LITERAL",
+          ruleStatuses: ["passed"],
+          assessmentStatuses: ["supported"],
+        },
+      ]),
+      scopes: [],
+    });
+    const index = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      index.prepare("SELECT COUNT(*) AS count FROM claim_identities").get(),
+    ).toEqual({ count: 2 });
+    expect(
+      index.prepare("SELECT COUNT(*) AS count FROM rule_result_identities").get(),
+    ).toEqual({ count: 2 });
+    expect(
+      index
+        .prepare(
+          `SELECT basis, confidence FROM parameter_evidence_bindings
+           ORDER BY basis, confidence`,
+        )
+        .all(),
+    ).toHaveLength(3);
+    expect(
+      index
+        .prepare(
+          `SELECT COUNT(*) AS count FROM parameter_evidence_bindings
+           WHERE basis = 'r1-discovery' AND confidence = 'probable'`,
+        )
+        .get(),
+    ).toEqual({ count: 3 });
+    index.close();
+  });
+
   it("runs the C0 bound path and reports review-required before a review", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     workspaces.push(workspace);

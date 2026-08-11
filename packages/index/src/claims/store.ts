@@ -115,9 +115,16 @@ export class ClaimsStore {
         .prepare(
           `INSERT OR IGNORE INTO parameter_evidence_bindings
              (id, parameter_identity_id, evidence_version_id, basis, confidence, created_at)
-           VALUES (?, ?, ?, 'explicit', 'high', ?)`,
+           VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .run(`${parameterId}:${id}`, parameterId, id, now);
+        .run(
+          `${parameterId}:${id}`,
+          parameterId,
+          id,
+          input.bindingBasis ?? "explicit",
+          input.bindingConfidence ?? "certain",
+          now,
+        );
 
       return { id, ordinal, created: true };
     });
@@ -175,7 +182,11 @@ export class ClaimsStore {
   ): PersistedVersion {
     const persist = this.db.transaction(() => {
       const now = Date.now();
-      const identityKey = `${input.ruleId}:${input.scope ?? ""}`;
+      const identityKey = [
+        input.ruleId,
+        input.subjectKey ?? "",
+        input.scope ?? "",
+      ].join(":");
       const identityId = idFor("rule-result", identityKey);
       this.db
         .prepare(

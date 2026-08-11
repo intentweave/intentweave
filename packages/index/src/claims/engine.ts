@@ -11,6 +11,7 @@ import {
 import { ClaimsStore } from "./store.js";
 import type {
   ClaimsScopeEvaluation,
+  ClaimsDefaultEvaluationInput,
   ClaimsScopeEvaluationInput,
   ClaimScalar,
   NormalizedRuleResult,
@@ -20,6 +21,7 @@ import type {
 function resultVersion(
   store: ClaimsStore,
   ruleId: string,
+  subjectKey: string,
   scope: string | undefined,
   result: NormalizedRuleResult,
   evidenceVersionIds: string[],
@@ -29,6 +31,7 @@ function resultVersion(
   return store.persistRuleResult(
     {
       ruleId,
+      subjectKey,
       scope,
       applicability: result.applicability,
       normalizedStatus: result.status,
@@ -67,7 +70,7 @@ function outputValue(output: unknown): ClaimScalar | undefined {
 export class ClaimsEngine {
   constructor(private readonly store: ClaimsStore) {}
 
-  evaluateScope(input: ClaimsScopeEvaluationInput): ClaimsScopeEvaluation {
+  evaluateDefault(input: ClaimsDefaultEvaluationInput): ClaimsScopeEvaluation {
     const ruleResults: PersistedVersion[] = [];
     const assessments = [];
     const codeEvidenceIds = [input.codeDefault, input.codeAnnotation]
@@ -76,6 +79,7 @@ export class ClaimsEngine {
     const r1Version = resultVersion(
       this.store,
       "R1.literal-binding",
+      input.parameterKey,
       undefined,
       r1,
       codeEvidenceIds,
@@ -120,15 +124,29 @@ export class ClaimsEngine {
     assessments.push(
       this.store.persistClaimAssessment({
         parameterKey: input.parameterKey,
-        claimType: "CLM-DEFAULT",
+        claimType: input.claimType ?? "CLM-DEFAULT",
         normalizedStatement: { value: input.codeDefault?.value ?? null },
-        assessmentPolicyId: "default-contract",
-        assessmentPolicyVersion: input.contracts.defaultPolicyVersion,
+        assessmentPolicyId:
+          input.claimType === "CLM-LITERAL"
+            ? "literal-binding"
+            : "default-contract",
+        assessmentPolicyVersion:
+          input.claimType === "CLM-LITERAL"
+            ? input.contracts.literalPolicyVersion
+            : input.contracts.defaultPolicyVersion,
         repositoryRevision: input.repositoryRevision,
         status: defaultAssessment.status,
         dependencies: defaultAssessment.dependencies,
       }),
     );
+
+    return { ruleResults, assessments };
+  }
+
+  evaluateScope(input: ClaimsScopeEvaluationInput): ClaimsScopeEvaluation {
+    const defaults = this.evaluateDefault(input);
+    const ruleResults = [...defaults.ruleResults];
+    const assessments = [...defaults.assessments];
 
     const r7 = r7ScopeOverride(
       input.scopeEvidence.capabilities,
@@ -137,6 +155,7 @@ export class ClaimsEngine {
     const r7Version = resultVersion(
       this.store,
       "R7.scope-override",
+      input.parameterKey,
       input.scope,
       r7,
       [input.scopeEvidence.versionId, input.configOverride?.versionId].filter(
@@ -155,6 +174,7 @@ export class ClaimsEngine {
     const r3Version = resultVersion(
       this.store,
       "R3.effective",
+      input.parameterKey,
       input.scope,
       r3,
       [input.codeDefault?.versionId, input.configOverride?.versionId].filter(
@@ -203,6 +223,7 @@ export class ClaimsEngine {
       const r3DocVersion = resultVersion(
         this.store,
         "R3.doc-conformance",
+        input.parameterKey,
         input.scope,
         r3Doc,
         [
