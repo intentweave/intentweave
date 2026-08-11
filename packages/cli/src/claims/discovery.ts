@@ -501,7 +501,7 @@ export function extractDiscoveredCodeEvidence(
         literal.kind === "parameter-default" ||
         literal.kind === "destructuring-default";
       if (!materializeClaim) continue;
-      const parameterKey = `code:${filePath}#${literal.name}:${literal.structureFingerprint.slice(0, 12)}`;
+      const parameterKey = `code:${literal.symbolId}:${literal.structureFingerprint.slice(0, 12)}`;
       const claimType =
         annotations.length > 0 ||
         literal.kind === "parameter-default" ||

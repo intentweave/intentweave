@@ -86,6 +86,169 @@ describe("iw claims check", () => {
     index.close();
   });
 
+  it("promotes an inferred claim when an explicit binding is later added", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"));
+    mkdirSync(path.join(workspace, "src"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    writeFileSync(
+      path.join(workspace, "src", "options.ts"),
+      "/**\n * @default 25\n */\nexport const PAGE_SIZE = 25;\n",
+    );
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    const inferredIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const inferred = inferredIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
+         JOIN claim_versions version ON version.claim_identity_id = ci.id
+         JOIN claim_assessments assessment ON assessment.claim_version_id = version.id
+         WHERE parameter.canonical_key LIKE 'code:%' AND assessment.is_current = 1`,
+      )
+      .get() as { id: string };
+    inferredIndex.close();
+    await runClaimsReview({
+      claim: inferred.id,
+      actor: "reviewer",
+      decision: "accepted",
+      format: "json",
+    });
+
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  ui.pageSize:
+    codeDefaults:
+      - file: src/options.ts
+        export: PAGE_SIZE
+`,
+    );
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    expect(process.exitCode).toBe(0);
+    const promotedIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      promotedIndex
+        .prepare(
+          `SELECT parameter.canonical_key
+           FROM claim_identities ci
+           JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
+           JOIN claim_versions version ON version.claim_identity_id = ci.id
+           JOIN claim_assessments assessment ON assessment.claim_version_id = version.id
+           WHERE assessment.is_current = 1`,
+        )
+        .all(),
+    ).toEqual([{ canonical_key: "ui.pageSize" }]);
+    expect(
+      promotedIndex
+        .prepare(
+          `SELECT assessment.is_current, assessment.superseded_by_assessment_id
+           FROM claim_assessments assessment
+           JOIN claim_versions version ON version.id = assessment.claim_version_id
+           JOIN claim_identities ci ON ci.id = version.claim_identity_id
+           WHERE ci.id = ?`,
+        )
+        .get(inferred.id),
+    ).toMatchObject({ is_current: 0, superseded_by_assessment_id: expect.any(String) });
+    expect(
+      promotedIndex
+        .prepare(
+          `SELECT decision_origin, is_current
+           FROM review_decisions
+           WHERE is_current = 1`,
+        )
+        .all(),
+    ).toEqual([{ decision_origin: "carry-forward", is_current: 1 }]);
+    promotedIndex.close();
+  });
+
+  it("reopens review when promotion changes the claim policy", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"));
+    mkdirSync(path.join(workspace, "src"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    writeFileSync(
+      path.join(workspace, "src", "options.ts"),
+      "export const PAGE_SIZE = 25;\n",
+    );
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    const inferredIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const inferred = inferredIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
+         JOIN claim_versions version ON version.claim_identity_id = ci.id
+         JOIN claim_assessments assessment ON assessment.claim_version_id = version.id
+         WHERE parameter.canonical_key LIKE 'code:%' AND assessment.is_current = 1`,
+      )
+      .get() as { id: string };
+    inferredIndex.close();
+    await runClaimsReview({
+      claim: inferred.id,
+      actor: "reviewer",
+      decision: "accepted",
+      format: "json",
+    });
+
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  ui.pageSize:
+    codeDefaults:
+      - file: src/options.ts
+        export: PAGE_SIZE
+`,
+    );
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    expect(process.exitCode).toBe(4);
+    const promotedIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      promotedIndex
+        .prepare(
+          `SELECT parameter.canonical_key
+           FROM claim_identities ci
+           JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
+           JOIN claim_versions version ON version.claim_identity_id = ci.id
+           JOIN claim_assessments assessment ON assessment.claim_version_id = version.id
+           WHERE assessment.is_current = 1`,
+        )
+        .all(),
+    ).toEqual([{ canonical_key: "ui.pageSize" }]);
+    expect(
+      promotedIndex
+        .prepare(
+          `SELECT reason, status
+           FROM review_decision_reopens
+           WHERE claim_identity_id != ?`,
+        )
+        .all(inferred.id),
+    ).toEqual([{ reason: "warrant-changed", status: "open" }]);
+    promotedIndex.close();
+  });
+
   it("runs the C0 bound path and reports review-required before a review", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     workspaces.push(workspace);

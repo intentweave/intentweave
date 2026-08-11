@@ -435,6 +435,42 @@ function reopenWarrantChange(
   return reopened?.created ? changedWarrant.claim_identity_id : undefined;
 }
 
+function promoteDiscoveredClaim(
+  database: Database.Database,
+  reviews: ClaimsReviewStore,
+  codeDefault: Extract<ReturnType<typeof extractBoundCodeEvidence>[number], { identityKey: string }>,
+  targetClaimIdentityId: string,
+  targetAssessmentId: string,
+  dependencyVersionId: string,
+): void {
+  if (codeDefault.bindingBasis !== "explicit-map") return;
+  const inferredClaims = database
+    .prepare(
+      `SELECT DISTINCT ci.id
+       FROM claim_assessments ca
+       JOIN claim_versions cv ON cv.id = ca.claim_version_id
+       JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+       JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
+       JOIN evidence_identities evidence_identity
+         ON evidence_identity.parameter_identity_id = parameter.id
+       JOIN evidence_versions evidence ON evidence.evidence_identity_id = evidence_identity.id
+       WHERE ca.is_current = 1
+         AND parameter.canonical_key LIKE 'code:%'
+         AND evidence_identity.source_kind = 'code-default'
+         AND evidence.symbol_id = ?
+         AND ci.id != ?`,
+    )
+    .all(codeDefault.symbolId, targetClaimIdentityId) as Array<{ id: string }>;
+  for (const inferred of inferredClaims) {
+    reviews.promoteDiscoveryClaim(
+      inferred.id,
+      targetClaimIdentityId,
+      targetAssessmentId,
+      dependencyVersionId,
+    );
+  }
+}
+
 export async function runClaimsCheck(options: {
   scope?: string;
   since?: string;
@@ -483,6 +519,7 @@ export async function runClaimsCheck(options: {
     try {
       const store = new ClaimsStore(database);
       const engine = new ClaimsEngine(store);
+      const reviews = new ClaimsReviewStore(database);
       const revision = headRevision ?? currentRevision(workspaceRoot);
       const readBoundFile = readCurrentFile;
       const code = [
@@ -630,6 +667,14 @@ export async function runClaimsCheck(options: {
           },
           contracts,
         });
+        promoteDiscoveredClaim(
+          database,
+          reviews,
+          codeDefault,
+          result.assessments[0]!.claimIdentityId,
+          result.assessments[0]!.id,
+          result.ruleResults[0]!.id,
+        );
         const ruleStatuses = result.ruleResults.map((rule) =>
           (database.prepare(`SELECT normalized_status FROM rule_result_versions WHERE id = ?`).get(rule.id) as { normalized_status: "passed" | "failed" | "inconclusive" | "not_applicable" }).normalized_status,
         );
@@ -760,6 +805,16 @@ export async function runClaimsCheck(options: {
             },
             contracts,
           });
+          if (codeDefault && "identityKey" in codeDefault) {
+            promoteDiscoveredClaim(
+              database,
+              reviews,
+              codeDefault,
+              result.assessments[0]!.claimIdentityId,
+              result.assessments[0]!.id,
+              result.ruleResults[0]!.id,
+            );
+          }
           const ruleStatuses = result.ruleResults.map((rule) =>
             (database.prepare(`SELECT normalized_status FROM rule_result_versions WHERE id = ?`).get(rule.id) as { normalized_status: "passed" | "failed" | "inconclusive" | "not_applicable" }).normalized_status,
           );
@@ -774,7 +829,6 @@ export async function runClaimsCheck(options: {
       }
       if (claimsGit && baseRevision && headRevision) {
         const changedPaths = claimsGit.changedPaths(baseRevision, headRevision);
-        const reviews = new ClaimsReviewStore(database);
         for (const [identityKey, current] of currentEvidence) {
           const previous = previousEvidence.get(identityKey);
           if (!previous) {
@@ -847,7 +901,6 @@ export async function runClaimsCheck(options: {
           }
         }
       }
-      const reviews = new ClaimsReviewStore(database);
       for (const assessmentId of assessmentIds) {
         const reopenedClaimId = reopenWarrantChange(database, reviews, assessmentId);
         if (reopenedClaimId) reopenedClaimIds.add(reopenedClaimId);

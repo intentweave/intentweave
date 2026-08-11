@@ -104,6 +104,23 @@ describe("Claims documentation discovery", () => {
     expect(observations).toEqual([]);
   });
 
+  it("keeps same-named parameter defaults as distinct provisional claims", () => {
+    const observations = extractDiscoveredCodeEvidence(
+      ["src/limits.ts"],
+      () =>
+        `export function readPage(limit = 10) {
+          return limit;
+        }
+        export function search(limit = 20) {
+          return limit;
+        }`,
+    );
+
+    expect(observations).toHaveLength(2);
+    expect(new Set(observations.map((observation) => observation.parameterKey)).size).toBe(2);
+    expect(new Set(observations.map((observation) => observation.identityKey)).size).toBe(2);
+  });
+
   it("extracts only explicitly bound single-line assertions", () => {
     const observations = extractDocumentationAssertions(bindings, (file) => {
       expect(file).toBe("docs/session-timeout.md");
