@@ -704,6 +704,28 @@ export async function runClaimsCheck(options: {
         if (persistedAnnotation && codeAnnotation && "identityKey" in codeAnnotation) {
           currentEvidence.set(codeAnnotation.identityKey, persistedAnnotation);
         }
+        const documentedDefault = docs.find(
+          (observation) =>
+            observation.parameterKey === parameterKey &&
+            observation.kind === "evidence" &&
+            observation.semanticLocation === `${parameterKey}.default`,
+        );
+        const persistedDocumentedDefault =
+          documentedDefault && documentedDefault.kind === "evidence"
+            ? persistObservation(store, {
+                parameterKey,
+                sourceKind: "documentation",
+                identityKey: documentedDefault.identityKey,
+                semanticLocation: documentedDefault.semanticLocation,
+                value: documentedDefault.normalizedValue,
+                filePath: documentedDefault.filePath,
+                line: documentedDefault.line,
+                revision,
+              })
+            : undefined;
+        if (documentedDefault && documentedDefault.kind === "evidence" && persistedDocumentedDefault) {
+          currentEvidence.set(documentedDefault.identityKey, persistedDocumentedDefault);
+        }
         const result = engine.evaluateDefault({
           parameterKey,
           claimType: codeDefault.claimType,
@@ -715,6 +737,10 @@ export async function runClaimsCheck(options: {
           codeAnnotation: persistedAnnotation && {
             versionId: persistedAnnotation.version.id,
             value: persistedAnnotation.value,
+          },
+          documentedDefault: persistedDocumentedDefault && {
+            versionId: persistedDocumentedDefault.version.id,
+            value: persistedDocumentedDefault.value,
           },
           contracts,
         });
@@ -830,6 +856,28 @@ export async function runClaimsCheck(options: {
           if (documentedValue && documentedValue.kind === "evidence" && persistedDocumentation) {
             currentEvidence.set(documentedValue.identityKey, persistedDocumentation);
           }
+          const documentedDefaultValue = docs.find(
+            (observation) =>
+              observation.parameterKey === parameterKey &&
+              observation.kind === "evidence" &&
+              observation.semanticLocation === `${parameterKey}.default`,
+          );
+          const persistedDocumentedDefault =
+            documentedDefaultValue && documentedDefaultValue.kind === "evidence"
+              ? persistObservation(store, {
+                  parameterKey,
+                  sourceKind: "documentation",
+                  identityKey: documentedDefaultValue.identityKey,
+                  semanticLocation: documentedDefaultValue.semanticLocation,
+                  value: documentedDefaultValue.normalizedValue,
+                  filePath: documentedDefaultValue.filePath,
+                  line: documentedDefaultValue.line,
+                  revision,
+                })
+              : undefined;
+          if (documentedDefaultValue && documentedDefaultValue.kind === "evidence" && persistedDocumentedDefault) {
+            currentEvidence.set(documentedDefaultValue.identityKey, persistedDocumentedDefault);
+          }
           const result = engine.evaluateScope({
             parameterKey,
             scope: scope.name,
@@ -841,6 +889,10 @@ export async function runClaimsCheck(options: {
             codeAnnotation: persistedAnnotation && {
               versionId: persistedAnnotation.version.id,
               value: persistedAnnotation.value,
+            },
+            documentedDefault: persistedDocumentedDefault && {
+              versionId: persistedDocumentedDefault.version.id,
+              value: persistedDocumentedDefault.value,
             },
             configOverride: persistedConfig && {
               versionId: persistedConfig.version.id,
@@ -918,7 +970,13 @@ export async function runClaimsCheck(options: {
             headRevision,
             changedPaths,
             materialChange,
-            ...(matchedRename ? { rename: matchedRename.rename } : {}),
+            ...(matchedRename
+              ? {
+                  rename: matchedRename.rename,
+                  continuityBasis: "git-file-rename",
+                  continuityConfidence: materialChange ? "probable" : "certain",
+                }
+              : {}),
           };
           store.persistEvidenceContinuity({
             fromEvidenceVersionId: previous.version.id,

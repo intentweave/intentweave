@@ -199,6 +199,7 @@ export interface ClaimsScopeEvaluationInput {
   repositoryRevision: string;
   codeDefault?: VersionedClaimValue;
   codeAnnotation?: VersionedClaimValue;
+  documentedDefault?: VersionedClaimValue;
   configOverride?: VersionedClaimValue;
   documentedOverride?: VersionedClaimValue;
   scopeEvidence: VersionedScopeEvidence;
@@ -211,6 +212,7 @@ export interface ClaimsDefaultEvaluationInput {
   repositoryRevision: string;
   codeDefault?: VersionedClaimValue;
   codeAnnotation?: VersionedClaimValue;
+  documentedDefault?: VersionedClaimValue;
   contracts: ClaimsContractVersions;
 }
 

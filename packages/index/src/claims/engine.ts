@@ -113,6 +113,18 @@ export class ClaimsEngine {
             },
           ]
         : []),
+      ...(input.documentedDefault && input.codeDefault
+        ? [
+            {
+              dependencyKind: "evidence_version" as const,
+              dependencyVersionId: input.documentedDefault.versionId,
+              epistemicRole: "assertion" as const,
+              authoritative: false,
+              assertionValue: input.documentedDefault.value,
+              claimValue: input.codeDefault.value,
+            },
+          ]
+        : []),
       {
         dependencyKind: "rule_result_version" as const,
         dependencyVersionId: r1Version.id,
