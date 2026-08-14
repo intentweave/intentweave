@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ClaimsGit } from "./git.js";
@@ -44,5 +44,28 @@ describe("ClaimsGit", () => {
     expect(claimsGit.show(base, "session.yaml")).toBe("timeout: 1800");
     expect(claimsGit.show(head, "session.yaml")).toBe("timeout: 3600");
     expect(claimsGit.show(base, "docs.md")).toBeUndefined();
+  });
+
+  it("reports Git-detected rename metadata", () => {
+    const repository = mkdtempSync(path.join(tmpdir(), "intentweave-claims-git-"));
+    repositories.push(repository);
+    const run = (...args: string[]) =>
+      execFileSync("git", args, { cwd: repository, encoding: "utf-8" }).trim();
+    run("init");
+    run("config", "user.email", "claims@example.test");
+    run("config", "user.name", "Claims Test");
+    writeFileSync(path.join(repository, "session.ts"), "export const TIMEOUT = 1800;\n");
+    run("add", "session.ts");
+    run("commit", "-m", "base");
+    const base = run("rev-parse", "HEAD");
+    mkdirSync(path.join(repository, "auth"));
+    renameSync(path.join(repository, "session.ts"), path.join(repository, "auth", "session.ts"));
+    run("add", "-A");
+    run("commit", "-m", "move timeout");
+    const head = run("rev-parse", "HEAD");
+
+    expect(new ClaimsGit(repository).renames(base, head)).toEqual([
+      { fromPath: "session.ts", toPath: "auth/session.ts", similarity: 100 },
+    ]);
   });
 });

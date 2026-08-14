@@ -28,6 +28,7 @@ import {
 } from "../claims/discovery.js";
 import { load as yamlLoad } from "js-yaml";
 import { ClaimsGit, ClaimsGitError } from "../claims/git.js";
+import type { GitRename } from "../claims/git.js";
 
 const contracts = {
   r1RuleContractVersion: "r1-v1",
@@ -43,6 +44,13 @@ const contracts = {
 interface PersistedObservation {
   version: PersistedVersion;
   value: ClaimScalar;
+}
+
+interface EvidenceVersionMetadata {
+  source_kind: string;
+  semantic_location: string;
+  file_path: string | null;
+  normalized_value: string;
 }
 
 const CLAIM_CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
@@ -124,7 +132,10 @@ function persistObservation(
       fingerprint: fingerprint({
         sourceKind: input.sourceKind,
         value: input.value,
-        provenance,
+        semanticLocation: input.semanticLocation,
+        filePath: input.filePath ?? null,
+        symbolId: input.symbolId ?? null,
+        line: input.line ?? null,
       }),
       materialFingerprint: materialFingerprint({
         parameterIdentity: input.parameterKey,
@@ -272,6 +283,45 @@ function isMaterialChange(
   const from = versions.find((version) => version.id === fromEvidenceVersionId);
   const to = versions.find((version) => version.id === toEvidenceVersionId);
   return !from || !to || from.material_fingerprint !== to.material_fingerprint;
+}
+
+function evidenceVersionMetadata(
+  database: Database.Database,
+  versionId: string,
+): EvidenceVersionMetadata | undefined {
+  return database
+    .prepare(
+      `SELECT identity.source_kind, version.semantic_location, version.file_path,
+              version.normalized_value
+       FROM evidence_versions version
+       JOIN evidence_identities identity ON identity.id = version.evidence_identity_id
+       WHERE version.id = ?`,
+    )
+    .get(versionId) as EvidenceVersionMetadata | undefined;
+}
+
+function renamedPredecessor(
+  database: Database.Database,
+  previousEvidence: Map<string, PersistedObservation>,
+  current: PersistedObservation,
+  renames: GitRename[],
+): { identityKey: string; observation: PersistedObservation; rename: GitRename } | undefined {
+  const currentMetadata = evidenceVersionMetadata(database, current.version.id);
+  if (!currentMetadata?.file_path) return undefined;
+  const matchingRenames = renames.filter((rename) => rename.toPath === currentMetadata.file_path);
+  if (matchingRenames.length !== 1) return undefined;
+  const rename = matchingRenames[0]!;
+  const matches = [...previousEvidence.entries()].filter(([_, previous]) => {
+    const previousMetadata = evidenceVersionMetadata(database, previous.version.id);
+    return (
+      previousMetadata?.file_path === rename.fromPath &&
+      previousMetadata.source_kind === currentMetadata.source_kind &&
+      previousMetadata.semantic_location === currentMetadata.semantic_location
+    );
+  });
+  if (matches.length !== 1) return undefined;
+  const [identityKey, observation] = matches[0]!;
+  return { identityKey, observation, rename };
 }
 
 function reopenEvidenceChanges(
@@ -500,7 +550,7 @@ export async function runClaimsCheck(options: {
       ? parseClaimsBindings(yamlLoad(bindingsText))
       : { parameters: {} };
     const registryText = readOptionalCurrentFile("config/environments.yaml");
-    const registryPath = path.join(workspaceRoot, "config", "environments.yaml");
+    const registryPath = "config/environments.yaml";
     const scopes = registryText ? parseScopeRegistry(yamlLoad(registryText)) : [];
     if (options.scope && scopes.length === 0) {
       throw new ClaimsBindingError(
@@ -521,7 +571,8 @@ export async function runClaimsCheck(options: {
       const engine = new ClaimsEngine(store);
       const reviews = new ClaimsReviewStore(database);
       const revision = headRevision ?? currentRevision(workspaceRoot);
-      const readBoundFile = readCurrentFile;
+      const readBoundFile = (filePath: string) =>
+        readOptionalCurrentFile(filePath) ?? "";
       const code = [
         ...extractBoundCodeEvidence(bindings, readBoundFile),
         ...discoveredCode,
@@ -829,8 +880,13 @@ export async function runClaimsCheck(options: {
       }
       if (claimsGit && baseRevision && headRevision) {
         const changedPaths = claimsGit.changedPaths(baseRevision, headRevision);
+        const renames = claimsGit.renames(baseRevision, headRevision);
+        const continuedPreviousIdentityKeys = new Set<string>();
         for (const [identityKey, current] of currentEvidence) {
-          const previous = previousEvidence.get(identityKey);
+          const matchedRename = previousEvidence.has(identityKey)
+            ? undefined
+            : renamedPredecessor(database, previousEvidence, current, renames);
+          const previous = previousEvidence.get(identityKey) ?? matchedRename?.observation;
           if (!previous) {
             const provenance = {
               baseRevision,
@@ -850,6 +906,7 @@ export async function runClaimsCheck(options: {
             }
             continue;
           }
+          if (matchedRename) continuedPreviousIdentityKeys.add(matchedRename.identityKey);
           if (previous.version.id === current.version.id) continue;
           const materialChange = isMaterialChange(
             database,
@@ -861,12 +918,17 @@ export async function runClaimsCheck(options: {
             headRevision,
             changedPaths,
             materialChange,
+            ...(matchedRename ? { rename: matchedRename.rename } : {}),
           };
           store.persistEvidenceContinuity({
             fromEvidenceVersionId: previous.version.id,
             toEvidenceVersionId: current.version.id,
-            basis: "git-merge-base",
-            confidence: "high",
+            basis: matchedRename ? "git-file-rename" : "git-merge-base",
+            confidence: matchedRename
+              ? materialChange
+                ? "probable"
+                : "certain"
+              : "high",
             provenance,
           });
           if (materialChange) {
@@ -883,7 +945,7 @@ export async function runClaimsCheck(options: {
           }
         }
         for (const [identityKey, previous] of previousEvidence) {
-          if (currentEvidence.has(identityKey)) continue;
+          if (currentEvidence.has(identityKey) || continuedPreviousIdentityKeys.has(identityKey)) continue;
           const reopened = reopenBrokenContinuity(
             database,
             reviews,

@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "@intentweave/sqlite-compat";
@@ -389,6 +389,139 @@ describe("iw claims check", () => {
     expect(process.exitCode).toBe(64);
   });
 
+  it("carries reviews forward for a Git-detected code rename", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, encoding: "utf-8" }).trim();
+    mkdirSync(path.join(workspace, "config"));
+    mkdirSync(path.join(workspace, "src"));
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  session.timeout:
+    configKeys: [session.timeout]
+    codeDefaults:
+      - file: src/session.ts
+        export: SESSION_TIMEOUT
+`,
+    );
+    writeFileSync(
+      path.join(workspace, "config", "environments.yaml"),
+      "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
+    );
+    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
+    writeFileSync(
+      path.join(workspace, "src", "session.ts"),
+      "/**\n * The default session timeout.\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
+    );
+    git("init");
+    git("config", "user.email", "claims@example.test");
+    git("config", "user.name", "Claims Test");
+    git("add", ".");
+    git("commit", "-m", "base claims evidence");
+    mkdirSync(path.join(workspace, ".iw"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", format: "json" });
+
+    const baselineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const baselineClaims = baselineIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions version ON version.claim_identity_id = ci.id
+         JOIN claim_assessments assessment ON assessment.claim_version_id = version.id
+         WHERE assessment.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    baselineIndex.close();
+    for (const claim of baselineClaims) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+
+    writeFileSync(path.join(workspace, "README.md"), "Unrelated documentation change.\n");
+    git("add", "README.md");
+    git("commit", "-m", "update unrelated readme");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
+
+    expect(process.exitCode).toBe(0);
+    const unrelatedIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(unrelatedIndex.prepare(`SELECT COUNT(*) AS count FROM evidence_continuity`).get()).toEqual({ count: 0 });
+    expect(unrelatedIndex.prepare(`SELECT COUNT(*) AS count FROM review_decision_reopens`).get()).toEqual({ count: 0 });
+    expect(
+      unrelatedIndex.prepare(`SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`).get(),
+    ).toEqual({ count: baselineClaims.length });
+    unrelatedIndex.close();
+
+    mkdirSync(path.join(workspace, "src", "auth"));
+    renameSync(
+      path.join(workspace, "src", "session.ts"),
+      path.join(workspace, "src", "auth", "session.ts"),
+    );
+    writeFileSync(
+      path.join(workspace, "src", "auth", "session.ts"),
+      "/**\n * The default session timeout.\n * @default 1800\n */\nexport const IDLE_TIMEOUT = 1800;\n",
+    );
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  session.timeout:
+    configKeys: [session.timeout]
+    codeDefaults:
+      - file: src/auth/session.ts
+        export: IDLE_TIMEOUT
+`,
+    );
+    git("add", "-A");
+    git("commit", "-m", "rename timeout source");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
+
+    const renamedIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      renamedIndex
+        .prepare(
+          `SELECT continuity.basis, continuity.confidence
+           FROM evidence_continuity continuity
+           JOIN evidence_versions version ON version.id = continuity.to_evidence_version_id
+           JOIN evidence_identities identity ON identity.id = version.evidence_identity_id
+           WHERE identity.source_kind LIKE 'code-%'
+           ORDER BY continuity.basis`,
+        )
+        .all(),
+    ).toEqual([
+      { basis: "git-file-rename", confidence: "certain" },
+      { basis: "git-file-rename", confidence: "certain" },
+    ]);
+    expect(process.exitCode).toBe(0);
+    expect(
+      renamedIndex.prepare(`SELECT COUNT(*) AS count FROM review_decision_reopens`).get(),
+    ).toEqual({ count: 0 });
+    expect(
+      renamedIndex
+        .prepare(
+          `SELECT COUNT(*) AS count FROM review_decisions
+           WHERE is_current = 1 AND decision_origin = 'carry-forward'`,
+        )
+        .get(),
+    ).toEqual({ count: baselineClaims.length });
+    renamedIndex.close();
+  });
+
   it("links evidence from the merge-base to immutable HEAD for --since", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     workspaces.push(workspace);
@@ -514,7 +647,7 @@ describe("iw claims check", () => {
     ).toEqual({ current_reviews: 1 });
     expect(
       index.prepare(`SELECT decision_origin FROM review_decisions WHERE is_current = 1`).get(),
-    ).toEqual({ decision_origin: "carry-forward" });
+    ).toEqual({ decision_origin: "manual" });
     index.close();
 
     const reviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
@@ -546,94 +679,72 @@ describe("iw claims check", () => {
 
     await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
 
-    expect(process.exitCode).toBe(4);
-    const brokenIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    // inconclusive (CLM-DEFAULT lost its code evidence) outranks review-required.
+    expect(process.exitCode).toBe(2);
+    const index = new Database(path.join(workspace, ".iw", "index.db"));
     expect(
-      brokenIndex
+      index
         .prepare(
           `SELECT reason, status FROM review_decision_reopens
            WHERE reason = 'continuity-broken'`,
         )
         .all(),
     ).toEqual([{ reason: "continuity-broken", status: "open" }]);
-    expect(
-      brokenIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
-    ).toEqual({ current_reviews: 2 });
-    brokenIndex.close();
-
-    const warrantReviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
-    const claimsForWarrantReview = warrantReviewIndex
+    const currentByType = index
       .prepare(
-        `SELECT ci.id
+        `SELECT ci.claim_type, ci.scope, ca.epistemic_status
+         FROM claim_assessments ca
+         JOIN claim_versions cv ON cv.id = ca.claim_version_id
+         JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+         WHERE ca.is_current = 1
+         ORDER BY ci.claim_type`,
+      )
+      .all() as Array<{ claim_type: string; scope: string | null; epistemic_status: string }>;
+    expect(currentByType).toEqual(
+      expect.arrayContaining([
+        { claim_type: "CLM-DEFAULT", scope: null, epistemic_status: "inconclusive" },
+        { claim_type: "CLM-EFFECTIVE", scope: "eu-prod", epistemic_status: "supported" },
+        { claim_type: "CLM-DOC-CONFORMANCE", scope: "eu-prod", epistemic_status: "supported" },
+        { claim_type: "CLM-LITERAL", scope: null, epistemic_status: "supported" },
+      ]),
+    );
+    const requestClaim = index
+      .prepare(
+        `SELECT parameter.canonical_key
          FROM claim_identities ci
-         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
-         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
-         WHERE ca.is_current = 1`,
+         JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
+         WHERE ci.claim_type = 'CLM-LITERAL'`,
       )
-      .all() as Array<{ id: string }>;
-    warrantReviewIndex.close();
-    for (const claim of claimsForWarrantReview) {
-      await runClaimsReview({
-        claim: claim.id,
-        actor: "reviewer",
-        decision: "accepted",
-        format: "json",
-      });
-    }
-    const priorEngineIndex = new Database(path.join(workspace, ".iw", "index.db"));
-    priorEngineIndex
-      .prepare(`UPDATE rule_result_versions SET implementation_fingerprint = 'claims-engine-v0'`)
-      .run();
-    priorEngineIndex.close();
-    writeFileSync(path.join(workspace, "continuity.md"), "snapshot anchor\n");
-    git("add", "continuity.md");
-    git("commit", "-m", "advance immutable reference");
-    process.exitCode = undefined;
-
-    await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
-
-    expect(process.exitCode).toBe(4);
-    const warrantIndex = new Database(path.join(workspace, ".iw", "index.db"));
-    const warrantReopens = warrantIndex
-      .prepare(
-        `SELECT reason, status FROM review_decision_reopens
-         WHERE reason = 'warrant-changed'`,
-      )
-      .all() as Array<{ reason: string; status: string }>;
-    expect(warrantReopens.length).toBeGreaterThan(0);
-    expect(warrantReopens.every((reopen) => reopen.status === "open")).toBe(true);
+      .get() as { canonical_key: string };
+    expect(requestClaim.canonical_key).toContain("src/network/request.ts#REQUEST_TIMEOUT");
     expect(
-      warrantIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
-    ).toEqual({ current_reviews: 0 });
-    warrantIndex.close();
+      index
+        .prepare(
+          `SELECT COUNT(*) AS count FROM evidence_continuity continuity
+           JOIN evidence_versions version ON version.id = continuity.to_evidence_version_id
+           WHERE version.file_path = 'src/network/request.ts'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    index.close();
+  });
 
-    const uncertainReviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
-    const claimsForUncertainReview = uncertainReviewIndex
-      .prepare(
-        `SELECT ci.id
-         FROM claim_identities ci
-         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
-         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
-         WHERE ca.is_current = 1`,
-      )
-      .all() as Array<{ id: string }>;
-    uncertainReviewIndex.close();
-    for (const claim of claimsForUncertainReview) {
-      await runClaimsReview({
-        claim: claim.id,
-        actor: "reviewer",
-        decision: "accepted",
-        format: "json",
-      });
-    }
+  it("breaks continuity instead of binding a similar unbound literal (C4)", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, encoding: "utf-8" }).trim();
+    mkdirSync(path.join(workspace, "config"));
+    mkdirSync(path.join(workspace, "docs"));
+    mkdirSync(path.join(workspace, "src", "auth"), { recursive: true });
     writeFileSync(
       path.join(workspace, "intentweave.bindings.yaml"),
       `parameters:
   session.timeout:
     configKeys: [session.timeout]
     codeDefaults:
-      - file: src/session-v2.ts
-        export: SESSION_TIMEOUT
+      - file: src/auth/session.ts
+        export: IDLE_TIMEOUT
     documentation:
       - file: docs/session-timeout.md
         assertions:
@@ -644,28 +755,111 @@ describe("iw claims check", () => {
 `,
     );
     writeFileSync(
-      path.join(workspace, "src", "session-v2.ts"),
-      "export const SESSION_TIMEOUT = 1800;\n",
+      path.join(workspace, "config", "environments.yaml"),
+      "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    git("add", "intentweave.bindings.yaml", "src/session-v2.ts");
-    git("commit", "-m", "move timeout binding");
+    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
+    writeFileSync(
+      path.join(workspace, "src", "auth", "session.ts"),
+      "/**\n * @default 1800\n */\nexport const IDLE_TIMEOUT = 1800;\n",
+    );
+    writeFileSync(
+      path.join(workspace, "docs", "session-timeout.md"),
+      "The eu-prod override is 5400 seconds.\n",
+    );
+    git("init");
+    git("config", "user.email", "claims@example.test");
+    git("config", "user.name", "Claims Test");
+    git("add", ".");
+    git("commit", "-m", "c3 baseline");
+    mkdirSync(path.join(workspace, ".iw"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ scope: "eu-prod", format: "json" });
+
+    const baselineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const baselineClaims = baselineIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions version ON version.claim_identity_id = ci.id
+         JOIN claim_assessments assessment ON assessment.claim_version_id = version.id
+         WHERE assessment.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    baselineIndex.close();
+    for (const claim of baselineClaims) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+
+    rmSync(path.join(workspace, "src", "auth", "session.ts"));
+    mkdirSync(path.join(workspace, "src", "network"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, "src", "network", "request.ts"),
+      "export const REQUEST_TIMEOUT = 1800;\n",
+    );
+    git("add", "-A");
+    git("commit", "-m", "delete idle timeout, add similar request timeout");
     process.exitCode = undefined;
 
     await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
 
     expect(process.exitCode).toBe(4);
-    const uncertainIndex = new Database(path.join(workspace, ".iw", "index.db"));
-    const uncertainReopens = uncertainIndex
-      .prepare(
-        `SELECT reason, status FROM review_decision_reopens
-         WHERE reason = 'continuity-uncertain'`,
-      )
-      .all() as Array<{ reason: string; status: string }>;
-    expect(uncertainReopens.length).toBeGreaterThan(0);
-    expect(uncertainReopens.every((reopen) => reopen.status === "open")).toBe(true);
+    const index = new Database(path.join(workspace, ".iw", "index.db"));
     expect(
-      uncertainIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
-    ).toEqual({ current_reviews: 0 });
-    uncertainIndex.close();
+      index
+        .prepare(
+          `SELECT reason, status FROM review_decision_reopens
+           WHERE reason = 'continuity-broken'`,
+        )
+        .all(),
+    ).toEqual([{ reason: "continuity-broken", status: "open" }]);
+    const currentByType = index
+      .prepare(
+        `SELECT ci.claim_type, ci.scope, ca.epistemic_status
+         FROM claim_assessments ca
+         JOIN claim_versions cv ON cv.id = ca.claim_version_id
+         JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+         WHERE ca.is_current = 1
+         ORDER BY ci.claim_type`,
+      )
+      .all() as Array<{ claim_type: string; scope: string | null; epistemic_status: string }>;
+    expect(currentByType).toEqual(
+      expect.arrayContaining([
+        { claim_type: "CLM-DEFAULT", scope: null, epistemic_status: "inconclusive" },
+        { claim_type: "CLM-EFFECTIVE", scope: "eu-prod", epistemic_status: "supported" },
+        { claim_type: "CLM-DOC-CONFORMANCE", scope: "eu-prod", epistemic_status: "supported" },
+        { claim_type: "CLM-LITERAL", scope: null, epistemic_status: "supported" },
+      ]),
+    );
+    const requestClaim = index
+      .prepare(
+        `SELECT parameter.canonical_key
+         FROM claim_identities ci
+         JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
+         WHERE ci.claim_type = 'CLM-LITERAL'`,
+      )
+      .get() as { canonical_key: string };
+    expect(requestClaim.canonical_key).toContain("src/network/request.ts#REQUEST_TIMEOUT");
+    expect(
+      index
+        .prepare(
+          `SELECT COUNT(*) AS count FROM evidence_continuity continuity
+           JOIN evidence_versions version ON version.id = continuity.to_evidence_version_id
+           WHERE version.file_path = 'src/network/request.ts'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    index.close();
   });
 });

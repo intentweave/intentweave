@@ -5,6 +5,12 @@ import { execFileSync } from "node:child_process";
 
 export class ClaimsGitError extends Error {}
 
+export interface GitRename {
+  fromPath: string;
+  toPath: string;
+  similarity: number;
+}
+
 function git(workspaceRoot: string, args: string[]): string {
   try {
     return execFileSync("git", args, {
@@ -47,6 +53,25 @@ export class ClaimsGit {
       toRevision,
     ]);
     return output ? output.split("\n").filter(Boolean).sort() : [];
+  }
+
+  renames(fromRevision: string, toRevision: string): GitRename[] {
+    const output = git(this.workspaceRoot, [
+      "diff",
+      "--name-status",
+      "-M",
+      fromRevision,
+      toRevision,
+    ]);
+    return output
+      .split("\n")
+      .flatMap((line) => {
+        const [status, fromPath, toPath] = line.split("\t");
+        const match = status?.match(/^R(\d+)$/);
+        if (!match || !fromPath || !toPath) return [];
+        return [{ fromPath, toPath, similarity: Number(match[1]) }];
+      })
+      .sort((left, right) => left.toPath.localeCompare(right.toPath));
   }
 
   listFiles(revision: string): string[] {
