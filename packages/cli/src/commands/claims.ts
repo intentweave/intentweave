@@ -393,17 +393,21 @@ function reopenBrokenContinuity(
   if (assessmentIds.length === 0) return [];
   const evidence = database
     .prepare(
-      `SELECT source_kind FROM evidence_versions evidence
+      `SELECT source_kind, semantic_location FROM evidence_versions evidence
        JOIN evidence_identities identity ON identity.id = evidence.evidence_identity_id
        WHERE evidence.id = ?`,
     )
-    .get(previousEvidenceVersionId) as { source_kind: string } | undefined;
+    .get(previousEvidenceVersionId) as
+    | { source_kind: string; semantic_location: string | null }
+    | undefined;
   if (!evidence) return [];
   const claimTypes =
     evidence.source_kind === "code-default" || evidence.source_kind === "code-annotation"
       ? ["CLM-DEFAULT"]
       : evidence.source_kind === "documentation"
-        ? ["CLM-DOC-CONFORMANCE"]
+        ? evidence.semantic_location?.endsWith(".default")
+          ? ["CLM-DEFAULT"]
+          : ["CLM-DOC-CONFORMANCE"]
         : ["CLM-EFFECTIVE", "CLM-DOC-CONFORMANCE"];
   const placeholders = assessmentIds.map(() => "?").join(", ");
   const claimTypePlaceholders = claimTypes.map(() => "?").join(", ");

@@ -1066,6 +1066,95 @@ describe("iw claims check", () => {
     c5Index.close();
   });
 
+  it("reopens CLM-DEFAULT when documented default evidence is deleted (P1)", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, encoding: "utf-8" }).trim();
+    mkdirSync(path.join(workspace, "docs"));
+    mkdirSync(path.join(workspace, "src"));
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  session.timeout:
+    codeDefaults:
+      - file: src/options.ts
+        export: PAGE_SIZE
+    documentation:
+      - file: docs/session-timeout.md
+        assertions:
+          - id: default-doc
+            target: default
+            pattern: '^The default application timeout is (?<value>\\d+) seconds\\.$'
+`,
+    );
+    writeFileSync(
+      path.join(workspace, "src", "options.ts"),
+      "/**\n * @default 25\n */\nexport const PAGE_SIZE = 25;\nexport const MAX_RETRIES = 3;\n",
+    );
+    writeFileSync(
+      path.join(workspace, "docs", "session-timeout.md"),
+      "The default application timeout is 25 seconds.\n",
+    );
+    git("init");
+    git("config", "user.email", "claims@example.test");
+    git("config", "user.name", "Claims Test");
+    git("add", ".");
+    git("commit", "-m", "c0 baseline default documentation");
+    mkdirSync(path.join(workspace, ".iw"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    const baselineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const baselineClaims = baselineIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions version ON version.claim_identity_id = ci.id
+         JOIN claim_assessments assessment ON assessment.claim_version_id = version.id
+         WHERE assessment.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    baselineIndex.close();
+    for (const claim of baselineClaims) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+
+    rmSync(path.join(workspace, "docs", "session-timeout.md"));
+    git("add", "-A");
+    git("commit", "-m", "delete default documentation");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json", since: "HEAD~1" });
+
+    expect(process.exitCode).toBe(4);
+    const p1Index = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      p1Index
+        .prepare(
+          `SELECT reason, status
+           FROM review_decision_reopens
+           WHERE reason = 'continuity-broken'`,
+        )
+        .all(),
+    ).toEqual([{ reason: "continuity-broken", status: "open" }]);
+    expect(
+      p1Index.prepare(`SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`).get(),
+    ).toEqual({ count: 1 });
+    p1Index.close();
+  });
+
   it("marks the default contested when literal and annotation conflict (C6)", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     workspaces.push(workspace);
