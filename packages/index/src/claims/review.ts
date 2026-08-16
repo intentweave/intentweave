@@ -199,6 +199,7 @@ export class ClaimsReviewStore {
         return { id: previous.id, carriedForward: false };
       }
 
+      const now = Date.now();
       const id = `review:${fingerprint({
         claimIdentityId: input.claimIdentityId,
         basisAssessmentId: input.basisAssessmentId,
@@ -223,7 +224,7 @@ export class ClaimsReviewStore {
           input.basisAssessmentId,
           input.decision,
           input.actor,
-          Date.now(),
+          now,
         );
       if (previous) {
         this.db
@@ -232,6 +233,13 @@ export class ClaimsReviewStore {
           )
           .run(id, previous.id);
       }
+      this.db
+        .prepare(
+          `UPDATE review_decision_reopens
+           SET status = 'resolved', resolved_by_decision_id = ?, resolved_at = ?
+           WHERE claim_identity_id = ? AND status = 'open'`,
+        )
+        .run(id, now, input.claimIdentityId);
       return { id, carriedForward: false };
     });
 
@@ -300,7 +308,15 @@ export class ClaimsReviewStore {
       const existing = this.db
         .prepare(`SELECT id FROM review_decision_reopens WHERE id = ?`)
         .get(id) as { id: string } | undefined;
-      if (existing) return { id, created: false };
+      if (existing) {
+        this.db
+          .prepare(
+            `UPDATE review_decisions
+             SET is_current = 0, invalidated_by_reopen_id = ? WHERE id = ?`,
+          )
+          .run(id, previous.id);
+        return { id, created: false };
+      }
 
       this.db
         .prepare(

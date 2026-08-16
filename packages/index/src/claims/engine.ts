@@ -84,7 +84,8 @@ export class ClaimsEngine {
       r1,
       codeEvidenceIds,
       input.contracts.r1RuleContractVersion,
-      input.contracts.implementationFingerprint,
+      input.contracts.r1ImplementationFingerprint ??
+        input.contracts.implementationFingerprint,
     );
     ruleResults.push(r1Version);
 
@@ -140,8 +141,8 @@ export class ClaimsEngine {
         normalizedStatement: { value: input.codeDefault?.value ?? null },
         assessmentPolicyId:
           input.claimType === "CLM-LITERAL"
-            ? "literal-binding"
-            : "default-contract",
+            ? (input.contracts.literalPolicyId ?? "literal-binding")
+            : (input.contracts.defaultPolicyId ?? "default-contract"),
         assessmentPolicyVersion:
           input.claimType === "CLM-LITERAL"
             ? input.contracts.literalPolicyVersion
@@ -174,7 +175,8 @@ export class ClaimsEngine {
         (id): id is string => Boolean(id),
       ),
       input.contracts.r7RuleContractVersion,
-      input.contracts.implementationFingerprint,
+      input.contracts.r7ImplementationFingerprint ??
+        input.contracts.implementationFingerprint,
     );
     ruleResults.push(r7Version);
     if (r7.status === "not_applicable") return { ruleResults, assessments };
@@ -182,6 +184,7 @@ export class ClaimsEngine {
     const r3 = r3ConfigResolution(
       input.codeDefault?.value,
       input.configOverride?.value,
+      input.contracts.r3ResolutionPrecedence ?? "override-first",
     );
     const r3Version = resultVersion(
       this.store,
@@ -193,7 +196,8 @@ export class ClaimsEngine {
         (id): id is string => Boolean(id),
       ),
       input.contracts.r3RuleContractVersion,
-      input.contracts.implementationFingerprint,
+      input.contracts.r3ImplementationFingerprint ??
+        input.contracts.implementationFingerprint,
     );
     ruleResults.push(r3Version);
     const effectiveValue = outputValue(r3.output);
@@ -219,7 +223,7 @@ export class ClaimsEngine {
         claimType: "CLM-EFFECTIVE",
         scope: input.scope,
         normalizedStatement: { value: effectiveValue ?? null },
-        assessmentPolicyId: "runtime-resolution",
+        assessmentPolicyId: input.contracts.runtimePolicyId ?? "runtime-resolution",
         assessmentPolicyVersion: input.contracts.runtimePolicyVersion,
         repositoryRevision: input.repositoryRevision,
         status: effectiveAssessment.status,
@@ -244,7 +248,8 @@ export class ClaimsEngine {
           input.configOverride?.versionId,
         ].filter((id): id is string => Boolean(id)),
         input.contracts.r3RuleContractVersion,
-        input.contracts.implementationFingerprint,
+        input.contracts.r3ImplementationFingerprint ??
+          input.contracts.implementationFingerprint,
       );
       ruleResults.push(r3DocVersion);
       const documentationAssessment = assessClaimPolicy([
@@ -265,7 +270,8 @@ export class ClaimsEngine {
             documentedValue: input.documentedOverride.value,
             effectiveValue,
           },
-          assessmentPolicyId: "documentation-conformance",
+          assessmentPolicyId:
+            input.contracts.documentationPolicyId ?? "documentation-conformance",
           assessmentPolicyVersion: input.contracts.documentationPolicyVersion,
           repositoryRevision: input.repositoryRevision,
           status: documentationAssessment.status,

@@ -59,7 +59,16 @@ export function r7ScopeOverride(
 export function r3ConfigResolution(
   defaultValue: ClaimScalar | undefined,
   overrideValue: ClaimScalar | undefined,
+  precedence: "override-first" | "default-first" = "override-first",
 ): NormalizedRuleResult {
+  if (precedence === "default-first" && defaultValue !== undefined) {
+    return {
+      applicability: "applicable",
+      status: "passed",
+      output: { value: defaultValue, source: "code-default" },
+      reasons: ["code-default-precedence"],
+    };
+  }
   if (overrideValue !== undefined) {
     return {
       applicability: "applicable",

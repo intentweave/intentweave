@@ -14,7 +14,11 @@ import {
   materialFingerprint,
   migrateSchema14To15,
 } from "@intentweave/index";
-import type { ClaimScalar, PersistedVersion } from "@intentweave/index";
+import type {
+  ClaimScalar,
+  ClaimsContractVersions,
+  PersistedVersion,
+} from "@intentweave/index";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
@@ -30,7 +34,7 @@ import { load as yamlLoad } from "js-yaml";
 import { ClaimsGit, ClaimsGitError } from "../claims/git.js";
 import type { GitRename } from "../claims/git.js";
 
-const contracts = {
+const defaultContracts: ClaimsContractVersions = {
   r1RuleContractVersion: "r1-v1",
   r3RuleContractVersion: "r3-v1",
   r7RuleContractVersion: "r7-v1",
@@ -40,6 +44,12 @@ const contracts = {
   runtimePolicyVersion: "runtime-resolution-v1",
   documentationPolicyVersion: "documentation-conformance-v1",
 };
+
+function resolveContracts(
+  overrides: Partial<ClaimsContractVersions> = {},
+): ClaimsContractVersions {
+  return { ...defaultContracts, ...overrides };
+}
 
 interface PersistedObservation {
   version: PersistedVersion;
@@ -430,59 +440,268 @@ function reopenBrokenContinuity(
   return reopenedClaims;
 }
 
-function reopenWarrantChange(
+interface RuleDependencySnapshot {
+  dependency_version_id: string;
+  epistemic_role: string;
+  warrant_polarity: string | null;
+  assessment_effect: string;
+  identity_key: string;
+  rule_contract_version: string;
+  implementation_fingerprint: string;
+  normalized_status: string;
+  normalized_output_json: string;
+  normalized_reasons_json: string;
+}
+
+function ruleDependencySnapshots(
+  database: Database.Database,
+  assessmentId: string,
+): Map<string, RuleDependencySnapshot> {
+  const rows = database
+    .prepare(
+      `SELECT dependency.dependency_version_id, dependency.epistemic_role,
+              dependency.warrant_polarity, dependency.assessment_effect,
+              identity.identity_key, result.rule_contract_version,
+              result.implementation_fingerprint, result.normalized_status,
+              result.normalized_output_json, result.normalized_reasons_json
+       FROM claim_assessment_dependencies dependency
+       JOIN rule_result_versions result
+         ON result.id = dependency.dependency_version_id
+       JOIN rule_result_identities identity
+         ON identity.id = result.rule_result_identity_id
+       WHERE dependency.claim_assessment_id = ?
+         AND dependency.dependency_kind = 'rule_result_version'
+       ORDER BY identity.identity_key`,
+    )
+    .all(assessmentId) as RuleDependencySnapshot[];
+  return new Map(rows.map((row) => [row.identity_key, row]));
+}
+
+function contractReferenceAssessmentId(
+  database: Database.Database,
+  claimIdentityId: string,
+  baseRevision?: string,
+  currentAssessmentId?: string,
+  preRunReferenceAssessmentIds?: ReadonlySet<string>,
+): string | undefined {
+  if (baseRevision) {
+    const anchored = database
+      .prepare(
+        `SELECT ca.id
+         FROM claim_assessments ca
+         JOIN claim_versions cv ON cv.id = ca.claim_version_id
+         WHERE cv.claim_identity_id = ? AND ca.reference_key = ?
+           AND ca.id != ?`,
+      )
+      .get(
+        claimIdentityId,
+        `${claimIdentityId}:${baseRevision}`,
+        currentAssessmentId ?? "",
+      ) as
+      | { id: string }
+      | undefined;
+    if (
+      anchored &&
+      (!preRunReferenceAssessmentIds || preRunReferenceAssessmentIds.has(anchored.id))
+    ) {
+      return anchored.id;
+    }
+  }
+  const reviewed = database
+    .prepare(
+      `SELECT basis_assessment_id
+       FROM review_decisions
+       WHERE claim_identity_id = ? AND is_current = 1`,
+    )
+    .get(claimIdentityId) as { basis_assessment_id: string } | undefined;
+  if (reviewed) return reviewed.basis_assessment_id;
+  if (baseRevision) {
+    const observedAtBase = database
+      .prepare(
+        `SELECT ca.id
+         FROM claim_assessments ca
+         JOIN claim_versions cv ON cv.id = ca.claim_version_id
+         WHERE cv.claim_identity_id = ? AND ca.repository_revision = ?
+           AND ca.id != ?
+         ORDER BY ca.created_at DESC
+         LIMIT 1`,
+      )
+      .get(claimIdentityId, baseRevision, currentAssessmentId ?? "") as
+      | { id: string }
+      | undefined;
+    if (observedAtBase) return observedAtBase.id;
+  }
+  return undefined;
+}
+
+function semanticContractDrift(
+  database: Database.Database,
+  currentAssessmentId: string,
+  referenceAssessmentId: string,
+  baseRevision?: string,
+): { dependencyVersionId: string; provenance: Record<string, unknown> } | undefined {
+  const assessmentRow = (assessmentId: string) =>
+    database
+      .prepare(
+        `SELECT cv.id AS claim_version_id, cv.assessment_policy_id,
+                cv.assessment_policy_version, cv.normalized_statement_json
+         FROM claim_assessments ca
+         JOIN claim_versions cv ON cv.id = ca.claim_version_id
+         WHERE ca.id = ?`,
+      )
+      .get(assessmentId) as
+      | {
+          claim_version_id: string;
+          assessment_policy_id: string;
+          assessment_policy_version: string;
+          normalized_statement_json: string;
+        }
+      | undefined;
+  const current = assessmentRow(currentAssessmentId);
+  const reference = assessmentRow(referenceAssessmentId);
+  if (!current || !reference) return undefined;
+
+  const currentRules = ruleDependencySnapshots(database, currentAssessmentId);
+  const referenceRules = ruleDependencySnapshots(database, referenceAssessmentId);
+  const changedRules: Array<Record<string, unknown>> = [];
+  for (const identityKey of [
+    ...new Set([...currentRules.keys(), ...referenceRules.keys()]),
+  ].sort()) {
+    const currentRule = currentRules.get(identityKey);
+    const referenceRule = referenceRules.get(identityKey);
+    if (!currentRule || !referenceRule) {
+      changedRules.push({
+        identityKey,
+        from: referenceRule?.dependency_version_id ?? null,
+        to: currentRule?.dependency_version_id ?? null,
+        reason: "rule-dependency-set",
+      });
+      continue;
+    }
+    const differs =
+      currentRule.epistemic_role !== referenceRule.epistemic_role ||
+      currentRule.warrant_polarity !== referenceRule.warrant_polarity ||
+      currentRule.assessment_effect !== referenceRule.assessment_effect ||
+      currentRule.rule_contract_version !== referenceRule.rule_contract_version ||
+      currentRule.normalized_status !== referenceRule.normalized_status ||
+      currentRule.normalized_output_json !== referenceRule.normalized_output_json ||
+      currentRule.normalized_reasons_json !== referenceRule.normalized_reasons_json;
+    if (differs) {
+      changedRules.push({
+        identityKey,
+        from: {
+          dependencyVersionId: referenceRule.dependency_version_id,
+          ruleContractVersion: referenceRule.rule_contract_version,
+          implementationFingerprint: referenceRule.implementation_fingerprint,
+          normalizedStatus: referenceRule.normalized_status,
+          normalizedOutput: referenceRule.normalized_output_json,
+          normalizedReasons: referenceRule.normalized_reasons_json,
+          assessmentEffect: referenceRule.assessment_effect,
+        },
+        to: {
+          dependencyVersionId: currentRule.dependency_version_id,
+          ruleContractVersion: currentRule.rule_contract_version,
+          implementationFingerprint: currentRule.implementation_fingerprint,
+          normalizedStatus: currentRule.normalized_status,
+          normalizedOutput: currentRule.normalized_output_json,
+          normalizedReasons: currentRule.normalized_reasons_json,
+          assessmentEffect: currentRule.assessment_effect,
+        },
+      });
+    }
+  }
+
+  const policyChanged =
+    current.assessment_policy_id !== reference.assessment_policy_id ||
+    current.assessment_policy_version !== reference.assessment_policy_version;
+  if (changedRules.length === 0 && !policyChanged) return undefined;
+
+  const changedDependency = changedRules.find((rule) => {
+    const to = rule.to;
+    return Boolean(
+      to &&
+        typeof to === "object" &&
+        "dependencyVersionId" in to &&
+        typeof to.dependencyVersionId === "string",
+    );
+  });
+  const dependencyVersionId =
+    changedDependency &&
+    typeof changedDependency.to === "object" &&
+    changedDependency.to !== null &&
+    "dependencyVersionId" in changedDependency.to
+      ? String(changedDependency.to.dependencyVersionId)
+      : [...currentRules.values()][0]?.dependency_version_id;
+  if (!dependencyVersionId) return undefined;
+
+  return {
+    dependencyVersionId,
+    provenance: {
+      baseRevision: baseRevision ?? null,
+      referenceAssessmentId,
+      currentAssessmentId,
+      policy: policyChanged
+        ? {
+            from: {
+              id: reference.assessment_policy_id,
+              version: reference.assessment_policy_version,
+            },
+            to: {
+              id: current.assessment_policy_id,
+              version: current.assessment_policy_version,
+            },
+          }
+        : null,
+      changedRules,
+    },
+  };
+}
+
+function reopenContractChange(
   database: Database.Database,
   reviews: ClaimsReviewStore,
   assessmentId: string,
+  baseRevision?: string,
+  preRunReferenceAssessmentIds?: ReadonlySet<string>,
 ): string | undefined {
-  const changedWarrant = database
+  const current = database
     .prepare(
-      `SELECT ci.id AS claim_identity_id, current_dependency.dependency_version_id
-       FROM claim_assessments current_assessment
-       JOIN claim_versions current_version
-         ON current_version.id = current_assessment.claim_version_id
-       JOIN claim_identities ci ON ci.id = current_version.claim_identity_id
-       JOIN review_decisions review
-         ON review.claim_identity_id = ci.id AND review.is_current = 1
-       JOIN claim_assessment_dependencies current_dependency
-         ON current_dependency.claim_assessment_id = current_assessment.id
-       JOIN rule_result_versions current_result
-         ON current_result.id = current_dependency.dependency_version_id
-       JOIN rule_result_identities current_identity
-         ON current_identity.id = current_result.rule_result_identity_id
-       WHERE current_assessment.id = ?
-         AND current_dependency.dependency_kind = 'rule_result_version'
-         AND EXISTS (
-           SELECT 1
-           FROM claim_assessment_dependencies reviewed_dependency
-           JOIN rule_result_versions reviewed_result
-             ON reviewed_result.id = reviewed_dependency.dependency_version_id
-           JOIN rule_result_identities reviewed_identity
-             ON reviewed_identity.id = reviewed_result.rule_result_identity_id
-           WHERE reviewed_dependency.claim_assessment_id = review.basis_assessment_id
-             AND reviewed_dependency.dependency_kind = 'rule_result_version'
-             AND reviewed_identity.identity_key = current_identity.identity_key
-             AND (
-               reviewed_result.normalized_status != current_result.normalized_status
-               OR reviewed_result.normalized_output_json != current_result.normalized_output_json
-               OR reviewed_result.rule_contract_version != current_result.rule_contract_version
-               OR reviewed_result.implementation_fingerprint != current_result.implementation_fingerprint
-             )
-         )
-       LIMIT 1`,
+      `SELECT ci.id AS claim_identity_id, ci.claim_type, ci.scope
+       FROM claim_assessments ca
+       JOIN claim_versions cv ON cv.id = ca.claim_version_id
+       JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+       WHERE ca.id = ?`,
     )
     .get(assessmentId) as
-    | { claim_identity_id: string; dependency_version_id: string }
+    | { claim_identity_id: string; claim_type: string; scope: string | null }
     | undefined;
-  if (!changedWarrant) return undefined;
+  if (!current) return undefined;
+  const referenceAssessmentId = contractReferenceAssessmentId(
+    database,
+    current.claim_identity_id,
+    baseRevision,
+    assessmentId,
+    preRunReferenceAssessmentIds,
+  );
+  if (!referenceAssessmentId || referenceAssessmentId === assessmentId) {
+    return undefined;
+  }
+  const drift = semanticContractDrift(
+    database,
+    assessmentId,
+    referenceAssessmentId,
+    baseRevision,
+  );
+  if (!drift) return undefined;
   const reopened = reviews.reopen({
-    claimIdentityId: changedWarrant.claim_identity_id,
+    claimIdentityId: current.claim_identity_id,
     basisAssessmentId: assessmentId,
     dependencyKind: "rule_result_version",
-    dependencyVersionId: changedWarrant.dependency_version_id,
+    dependencyVersionId: drift.dependencyVersionId,
     reason: "warrant-changed",
+    secondaryProvenance: drift.provenance,
   });
-  return reopened?.created ? changedWarrant.claim_identity_id : undefined;
+  return reopened?.created ? current.claim_identity_id : undefined;
 }
 
 function promoteDiscoveredClaim(
@@ -525,8 +744,10 @@ export async function runClaimsCheck(options: {
   scope?: string;
   since?: string;
   format: string;
+  contracts?: Partial<ClaimsContractVersions>;
 }): Promise<void> {
   const workspaceRoot = process.cwd();
+  const contracts = resolveContracts(options.contracts);
   try {
     const claimsGit = options.since ? new ClaimsGit(workspaceRoot) : undefined;
     const headRevision = claimsGit?.head();
@@ -570,6 +791,15 @@ export async function runClaimsCheck(options: {
       const store = new ClaimsStore(database);
       const engine = new ClaimsEngine(store);
       const reviews = new ClaimsReviewStore(database);
+      const preRunReferenceAssessmentIds = new Set(
+        (
+          database
+            .prepare(
+              `SELECT id FROM claim_assessments WHERE reference_key IS NOT NULL`,
+            )
+            .all() as Array<{ id: string }>
+        ).map((row) => row.id),
+      );
       const revision = headRevision ?? currentRevision(workspaceRoot);
       const readBoundFile = (filePath: string) =>
         readOptionalCurrentFile(filePath) ?? "";
@@ -1022,7 +1252,13 @@ export async function runClaimsCheck(options: {
         }
       }
       for (const assessmentId of assessmentIds) {
-        const reopenedClaimId = reopenWarrantChange(database, reviews, assessmentId);
+        const reopenedClaimId = reopenContractChange(
+          database,
+          reviews,
+          assessmentId,
+          baseRevision,
+          preRunReferenceAssessmentIds,
+        );
         if (reopenedClaimId) reopenedClaimIds.add(reopenedClaimId);
       }
       for (const assessmentId of assessmentIds) {
@@ -1034,26 +1270,50 @@ export async function runClaimsCheck(options: {
              JOIN claim_identities ci ON ci.id = cv.claim_identity_id
              WHERE ca.id = ?`,
           )
-          .get(assessmentId) as {
-          claim_identity_id: string;
-          epistemic_status: string;
-        };
+          .get(assessmentId) as
+          | { claim_identity_id: string; epistemic_status: string }
+          | undefined;
         if (
+          assessment &&
           assessment.epistemic_status !== "inconclusive" &&
           !reopenedClaimIds.has(assessment.claim_identity_id)
         ) {
-          reviews.carryForward(assessment.claim_identity_id, assessmentId);
+          const openReopen = database
+            .prepare(
+              `SELECT 1 AS present
+               FROM review_decision_reopens
+               WHERE claim_identity_id = ? AND status = 'open'
+               LIMIT 1`,
+            )
+            .get(assessment.claim_identity_id) as { present: number } | undefined;
+          if (!openReopen) {
+            reviews.carryForward(assessment.claim_identity_id, assessmentId);
+          }
         }
       }
       const reviewRequired = assessmentIds.some((assessmentId) => {
         const row = database.prepare(
-          `SELECT ca.epistemic_status, EXISTS(
-             SELECT 1 FROM review_decisions rd
-             WHERE rd.basis_assessment_id = ca.id AND rd.is_current = 1
-           ) AS reviewed
+          `SELECT ca.epistemic_status,
+                  EXISTS(
+                    SELECT 1 FROM review_decisions rd
+                    WHERE rd.basis_assessment_id = ca.id AND rd.is_current = 1
+                  ) AS reviewed,
+                  EXISTS(
+                    SELECT 1 FROM review_decision_reopens reopen
+                    JOIN claim_versions cv ON cv.id = ca.claim_version_id
+                    WHERE reopen.claim_identity_id = cv.claim_identity_id
+                      AND reopen.status = 'open'
+                  ) AS open_reopen
            FROM claim_assessments ca WHERE ca.id = ?`,
-        ).get(assessmentId) as { epistemic_status: string; reviewed: number };
-        return row.epistemic_status !== "inconclusive" && row.reviewed === 0;
+        ).get(assessmentId) as {
+          epistemic_status: string;
+          reviewed: number;
+          open_reopen: number;
+        };
+        return (
+          row.epistemic_status !== "inconclusive" &&
+          (row.reviewed === 0 || row.open_reopen === 1)
+        );
       });
       console.log(options.format === "json" ? JSON.stringify(output, null, 2) : formatText(output));
       process.exitCode = claimsExitCode({

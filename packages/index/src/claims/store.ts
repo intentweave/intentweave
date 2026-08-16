@@ -341,12 +341,28 @@ export class ClaimsStore {
       }
 
       const key = assessmentKey(claimVersionId, input.dependencies);
+      const referenceKey = `${claimIdentityId}:${input.repositoryRevision}`;
+      const ensureReferenceAnchor = (assessmentId: string): void => {
+        const anchored = this.db
+          .prepare(`SELECT id FROM claim_assessments WHERE reference_key = ?`)
+          .get(referenceKey) as { id: string } | undefined;
+        if (!anchored) {
+          this.db
+            .prepare(
+              `UPDATE claim_assessments
+               SET reference_key = ?
+               WHERE id = ? AND reference_key IS NULL`,
+            )
+            .run(referenceKey, assessmentId);
+        }
+      };
       const existing = this.db
         .prepare(
           `SELECT id FROM claim_assessments WHERE assessment_key = ?`,
         )
         .get(key) as { id: string } | undefined;
       if (existing) {
+        ensureReferenceAnchor(existing.id);
         return {
           id: existing.id,
           claimIdentityId,
@@ -398,6 +414,7 @@ export class ClaimsStore {
              )`,
         )
         .run(assessmentId, assessmentId, claimIdentityId);
+      ensureReferenceAnchor(assessmentId);
 
       return {
         id: assessmentId,

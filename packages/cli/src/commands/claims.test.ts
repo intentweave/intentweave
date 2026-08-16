@@ -717,7 +717,7 @@ describe("iw claims check", () => {
     priorEngineIndex
       .prepare(
         `UPDATE rule_result_versions
-         SET implementation_fingerprint = 'claims-engine-v0', fingerprint = 'stale-' || id`,
+         SET rule_contract_version = 'stale-contract', fingerprint = 'stale-' || id`,
       )
       .run();
     priorEngineIndex.close();

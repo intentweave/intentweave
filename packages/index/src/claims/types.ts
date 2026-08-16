@@ -182,15 +182,25 @@ export interface VersionedScopeEvidence {
   capabilities: string[];
 }
 
+export type ClaimsResolutionPrecedence = "override-first" | "default-first";
+
 export interface ClaimsContractVersions {
   r1RuleContractVersion: string;
   r3RuleContractVersion: string;
   r7RuleContractVersion: string;
   implementationFingerprint: string;
+  r1ImplementationFingerprint?: string;
+  r3ImplementationFingerprint?: string;
+  r7ImplementationFingerprint?: string;
+  literalPolicyId?: string;
+  defaultPolicyId?: string;
+  runtimePolicyId?: string;
+  documentationPolicyId?: string;
   literalPolicyVersion: string;
   defaultPolicyVersion: string;
   runtimePolicyVersion: string;
   documentationPolicyVersion: string;
+  r3ResolutionPrecedence?: ClaimsResolutionPrecedence;
 }
 
 export interface ClaimsScopeEvaluationInput {
