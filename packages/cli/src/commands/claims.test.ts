@@ -1149,6 +1149,16 @@ describe("iw claims check", () => {
         )
         .all(),
     ).toEqual([{ reason: "continuity-broken", status: "open" }]);
+    const reopenedClaim = p1Index
+      .prepare(
+        `SELECT ci.claim_type
+         FROM review_decision_reopens reopen
+         JOIN claim_identities ci ON ci.id = reopen.claim_identity_id
+         WHERE reopen.reason = 'continuity-broken'
+         LIMIT 1`,
+      )
+      .get() as { claim_type: string };
+    expect(reopenedClaim.claim_type).toBe("CLM-DEFAULT");
     expect(
       p1Index.prepare(`SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`).get(),
     ).toEqual({ count: 1 });
@@ -1291,8 +1301,9 @@ describe("iw claims check", () => {
     );
     writeFileSync(
       path.join(workspace, "config", "environments.yaml"),
-      "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
+      "environments:\n  - name: dev\n    capabilities: [session-runtime]\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
+    writeFileSync(path.join(workspace, "config", "dev.yaml"), "session:\n  timeout: 1800\n");
     writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
     writeFileSync(
       path.join(workspace, "src", "auth", "session.ts"),

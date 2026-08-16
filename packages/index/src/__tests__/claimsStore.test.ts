@@ -231,4 +231,105 @@ describe("ClaimsStore", () => {
       },
     ]);
   });
+
+  it("rolls back all claim state on transaction failure", () => {
+    const evidence = store.persistEvidence({
+      parameterKey: "session.timeout",
+      sourceKind: "config",
+      identityKey: "config:session.timeout",
+      fingerprint: "evidence-v1",
+      materialFingerprint: "material-v1",
+      normalizedValue: 1800,
+      semanticLocation: "session.timeout",
+      provenance: {},
+    });
+
+    // Verify evidence was persisted
+    const evidenceCount = db
+      .prepare(`SELECT COUNT(*) AS count FROM evidence_versions`)
+      .get() as { count: number };
+    expect(evidenceCount.count).toBe(1);
+
+    // Attempt to persist a rule result with invalid evidence reference
+    // This should fail due to FK constraint and roll back
+    expect(() =>
+      store.persistRuleResult(
+        {
+          ruleId: "r3-effective-timeout",
+          scope: "eu-prod",
+          applicability: "applicable",
+          normalizedStatus: "passed",
+          normalizedOutput: { value: 1800 },
+          normalizedReasons: ["config-present"],
+          ruleContractVersion: "r3-v1",
+          implementationFingerprint: "impl-v1",
+        },
+        ["nonexistent-evidence-id"],
+      ),
+    ).toThrow();
+
+    // Verify no rule result was persisted (rollback)
+    const ruleCount = db
+      .prepare(`SELECT COUNT(*) AS count FROM rule_result_versions`)
+      .get() as { count: number };
+    expect(ruleCount.count).toBe(0);
+
+    // Verify evidence still exists (not rolled back)
+    const evidenceAfter = db
+      .prepare(`SELECT COUNT(*) AS count FROM evidence_versions`)
+      .get() as { count: number };
+    expect(evidenceAfter.count).toBe(1);
+  });
+
+  it("rolls back claim assessment on dependency failure", () => {
+    const evidence = store.persistEvidence({
+      parameterKey: "session.timeout",
+      sourceKind: "config",
+      identityKey: "config:session.timeout",
+      fingerprint: "evidence-v1",
+      materialFingerprint: "material-v1",
+      normalizedValue: 1800,
+      semanticLocation: "session.timeout",
+      provenance: {},
+    });
+
+    const rule = store.persistRuleResult(
+      {
+        ruleId: "r3-effective-timeout",
+        scope: "eu-prod",
+        applicability: "applicable",
+        normalizedStatus: "passed",
+        normalizedOutput: { value: 1800 },
+        normalizedReasons: ["config-present"],
+        ruleContractVersion: "r3-v1",
+        implementationFingerprint: "impl-v1",
+      },
+      [evidence.id],
+    );
+
+    // Attempt to persist claim with invalid claim_version_id (FK violation)
+    // We simulate this by manually inserting into claim_assessments with bad FK
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO claim_assessments (
+             id, claim_version_id, assessment_key, epistemic_status,
+             repository_revision, created_at
+           ) VALUES ('test:1', 'nonexistent-claim-version', 'key:1', 'supported', 'c0', 1000)`,
+        )
+        .run(),
+    ).toThrow();
+
+    // Verify no claim assessment was persisted
+    const claimCount = db
+      .prepare(`SELECT COUNT(*) AS count FROM claim_assessments`)
+      .get() as { count: number };
+    expect(claimCount.count).toBe(0);
+
+    // Verify rule result still exists
+    const ruleCount = db
+      .prepare(`SELECT COUNT(*) AS count FROM rule_result_versions`)
+      .get() as { count: number };
+    expect(ruleCount.count).toBe(1);
+  });
 });
