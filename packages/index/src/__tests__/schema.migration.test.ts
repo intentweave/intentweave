@@ -3,7 +3,18 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "@intentweave/sqlite-compat";
-import { initSchema, migrateSchema14To15 } from "../schema.js";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  discardClaimsHistory,
+  initSchema,
+  migrateSchema14To15,
+  migrateSchema15To16,
+  restoreClaimsHistory,
+  snapshotClaimsHistory,
+} from "../schema.js";
+import { buildIndex } from "../writer.js";
 
 describe("migrateSchema14To15 hardening", () => {
   let db: Database.Database;
@@ -128,7 +139,164 @@ describe("migrateSchema14To15 hardening", () => {
     expect(version.value).toBe("15");
   });
 
-  it("creates all 14 companion tables with correct constraints", () => {
+  it("upgrades legacy schema-15 indexes without references to schema-16", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '15');
+      CREATE TABLE claim_identities (id TEXT PRIMARY KEY);
+      CREATE TABLE claim_versions (
+        id TEXT PRIMARY KEY,
+        claim_identity_id TEXT NOT NULL,
+        repository_revision TEXT NOT NULL
+      );
+      CREATE TABLE claim_assessments (
+        id TEXT PRIMARY KEY,
+        claim_version_id TEXT NOT NULL,
+        repository_revision TEXT NOT NULL,
+        reference_key TEXT,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO claim_identities (id) VALUES ('claim:legacy');
+      INSERT INTO claim_versions (id, claim_identity_id, repository_revision)
+        VALUES ('claim-version:legacy', 'claim:legacy', 'rev:legacy');
+      INSERT INTO claim_assessments (
+        id, claim_version_id, repository_revision, reference_key, created_at
+      ) VALUES ('assessment:legacy', 'claim-version:legacy', 'rev:legacy', 'ref:legacy', 1);
+    `);
+
+    migrateSchema15To16(db);
+
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "16" });
+    expect(
+      db
+        .prepare(
+          `SELECT claim_identity_id, repository_revision, assessment_id
+           FROM claim_assessment_references`,
+        )
+        .get(),
+    ).toEqual({
+      claim_identity_id: "claim:legacy",
+      repository_revision: "rev:legacy",
+      assessment_id: "assessment:legacy",
+    });
+  });
+
+  it("restores Claims history from a WAL-safe snapshot after a fresh rebuild", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "intentweave-claims-history-"));
+    const sourcePath = path.join(directory, "source.db");
+    const source = new Database(sourcePath);
+    initSchema(source);
+    source
+      .prepare(
+        `INSERT INTO parameter_identities (id, canonical_key, created_at)
+         VALUES ('parameter:timeout', 'session.timeout', 1)`,
+      )
+      .run();
+    source
+      .prepare(
+        `INSERT INTO evidence_identities
+           (id, parameter_identity_id, source_kind, identity_key, created_at)
+         VALUES ('evidence:timeout', 'parameter:timeout', 'code-default', 'timeout', 1)`,
+      )
+      .run();
+    source.close();
+
+    const snapshot = snapshotClaimsHistory(sourcePath);
+    const rebuilt = new Database(path.join(directory, "rebuilt.db"));
+    initSchema(rebuilt);
+    restoreClaimsHistory(rebuilt, snapshot);
+
+    expect(
+      rebuilt.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
+    ).toEqual({ canonical_key: "session.timeout" });
+    expect(
+      rebuilt.prepare(`SELECT source_kind FROM evidence_identities`).get(),
+    ).toEqual({ source_kind: "code-default" });
+    rebuilt.close();
+    discardClaimsHistory(snapshot);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("captures and restores legacy schema-15 snapshots without references table", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "intentweave-claims-legacy-snapshot-"));
+    const sourcePath = path.join(directory, "legacy-v15.db");
+    const source = new Database(sourcePath);
+    initSchema(source);
+    source.exec(`DROP TABLE claim_assessment_references`);
+    source
+      .prepare(`UPDATE _meta SET value = '15' WHERE key = 'schema_version'`)
+      .run();
+    source
+      .prepare(
+        `INSERT INTO parameter_identities (id, canonical_key, created_at)
+         VALUES ('parameter:legacy-timeout', 'session.timeout', 1)`,
+      )
+      .run();
+    source.close();
+
+    const snapshot = snapshotClaimsHistory(sourcePath);
+    expect(snapshot).toBeDefined();
+
+    const rebuilt = new Database(path.join(directory, "rebuilt.db"));
+    initSchema(rebuilt);
+    restoreClaimsHistory(rebuilt, snapshot);
+    expect(
+      rebuilt.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
+    ).toEqual({ canonical_key: "session.timeout" });
+    expect(
+      rebuilt
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'claim_assessment_references'`,
+        )
+        .get(),
+    ).toEqual({ name: "claim_assessment_references" });
+    rebuilt.close();
+    discardClaimsHistory(snapshot);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("preserves the existing database when a rebuild fails before atomic replacement", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "intentweave-atomic-build-"));
+    const targetPath = path.join(directory, "index.db");
+    const existing = new Database(targetPath);
+    initSchema(existing);
+    existing
+      .prepare(
+        `INSERT INTO parameter_identities (id, canonical_key, created_at)
+         VALUES ('parameter:timeout', 'session.timeout', 1)`,
+      )
+      .run();
+    existing.close();
+
+    expect(() =>
+      buildIndex(
+        { files: undefined } as never,
+        [],
+        { coOccurrences: [] } as never,
+        { files: [] } as never,
+        [],
+        {
+          session: "atomic-failure",
+          workspaceRoot: directory,
+          depth: "structured",
+          outputPath: targetPath,
+        },
+      ),
+    ).toThrow();
+
+    const preserved = new Database(targetPath);
+    expect(
+      preserved.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
+    ).toEqual({ canonical_key: "session.timeout" });
+    preserved.close();
+    expect(readdirSync(directory).filter((file) => file.includes(".tmp"))).toEqual([]);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("creates all 15 companion tables with correct constraints", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
@@ -148,6 +316,7 @@ describe("migrateSchema14To15 hardening", () => {
       "claim_identities",
       "claim_versions",
       "claim_assessments",
+      "claim_assessment_references",
       "claim_assessment_dependencies",
       "review_decisions",
       "review_decision_reopens",
@@ -174,6 +343,15 @@ describe("migrateSchema14To15 hardening", () => {
     );
     expect(evidenceVersionsConstraints.sql).toContain(
       "UNIQUE (evidence_identity_id, fingerprint)",
+    );
+
+    const referenceConstraints = db
+      .prepare(
+        `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'claim_assessment_references'`,
+      )
+      .get() as { sql: string };
+    expect(referenceConstraints.sql).toContain(
+      "PRIMARY KEY (claim_identity_id, repository_revision)",
     );
   });
 });

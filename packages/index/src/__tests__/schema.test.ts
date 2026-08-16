@@ -3,7 +3,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "@intentweave/sqlite-compat";
-import { initSchema, migrateSchema14To15 } from "../schema.js";
+import {
+  initSchema,
+  migrateSchema14To15,
+  migrateSchema15To16,
+  migrateSchemaToCurrent,
+} from "../schema.js";
 
 describe("initSchema", () => {
   let db: Database.Database;
@@ -86,7 +91,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("15");
+    expect(row?.value).toBe("16");
   });
 
   it("migrates a schema-14 index with the claims companion tables", () => {
@@ -108,14 +113,117 @@ describe("initSchema", () => {
           'evidence_identities', 'evidence_versions', 'evidence_continuity',
           'rule_result_identities', 'rule_result_versions', 'rule_result_evidence',
           'claim_identities', 'claim_versions', 'claim_assessments',
-          'claim_assessment_dependencies', 'review_decisions',
+          'claim_assessment_references', 'claim_assessment_dependencies', 'review_decisions',
           'review_decision_reopens'
         )`,
       )
       .all() as Array<{ name: string }>;
 
     expect(version.value).toBe("15");
-    expect(claimsTables).toHaveLength(14);
+    expect(claimsTables).toHaveLength(15);
+  });
+
+  it("migrates schema-15 indexes to schema-16", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '15');
+      CREATE TABLE claim_identities (id TEXT PRIMARY KEY);
+      CREATE TABLE claim_versions (
+        id TEXT PRIMARY KEY,
+        claim_identity_id TEXT NOT NULL,
+        repository_revision TEXT NOT NULL
+      );
+      CREATE TABLE claim_assessments (
+        id TEXT PRIMARY KEY,
+        claim_version_id TEXT NOT NULL,
+        repository_revision TEXT NOT NULL,
+        reference_key TEXT,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO claim_identities (id) VALUES ('claim:1');
+      INSERT INTO claim_versions (id, claim_identity_id, repository_revision)
+        VALUES ('claim-version:1', 'claim:1', 'rev:1');
+      INSERT INTO claim_assessments (
+        id, claim_version_id, repository_revision, reference_key, created_at
+      ) VALUES ('assessment:1', 'claim-version:1', 'rev:1', 'ref:1', 1);
+    `);
+
+    migrateSchema15To16(db);
+
+    const version = db
+      .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+      .get() as { value: string };
+    expect(version.value).toBe("16");
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'claim_assessment_references'`,
+        )
+        .get(),
+    ).toEqual({ name: "claim_assessment_references" });
+    expect(
+      db
+        .prepare(
+          `SELECT claim_identity_id, repository_revision, assessment_id
+           FROM claim_assessment_references`,
+        )
+        .get(),
+    ).toEqual({
+      claim_identity_id: "claim:1",
+      repository_revision: "rev:1",
+      assessment_id: "assessment:1",
+    });
+  });
+
+  it("runs chained 14->15->16 migration through migrateSchemaToCurrent", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+
+    migrateSchemaToCurrent(db);
+
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "16" });
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'claim_assessment_references'`,
+        )
+        .get(),
+    ).toEqual({ name: "claim_assessment_references" });
+  });
+
+  it("rejects unknown newer schema versions instead of downgrading", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '17');
+      CREATE TABLE future_only (id TEXT PRIMARY KEY);
+    `);
+    const schemaBefore = db
+      .prepare(
+        `SELECT type, name, sql FROM sqlite_master
+         WHERE name NOT LIKE 'sqlite_%'
+         ORDER BY type, name`,
+      )
+      .all();
+
+    expect(() => initSchema(db)).toThrow(/schema version 17 is incompatible/i);
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "17" });
+    expect(
+      db
+        .prepare(
+          `SELECT type, name, sql FROM sqlite_master
+           WHERE name NOT LIKE 'sqlite_%'
+           ORDER BY type, name`,
+        )
+        .all(),
+    ).toEqual(schemaBefore);
   });
 
   it("sets WAL journal mode", () => {

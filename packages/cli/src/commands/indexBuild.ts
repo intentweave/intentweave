@@ -52,8 +52,15 @@ import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
 // Index package — facade + queries
 import {
   buildFromPaths,
+  discardClaimsHistory,
+  discardDatabaseFiles,
   type CariStageProgress,
   annotate,
+  replaceDatabaseAtomically,
+  restoreClaimsHistory,
+  snapshotClaimsHistory,
+  temporaryDatabasePath,
+  migrateSchemaToCurrent,
 } from "@intentweave/index";
 import { detectChanges, applyChanges, hashFile } from "@intentweave/index";
 import {
@@ -608,12 +615,14 @@ const indexBuildSubcommand = new Command("build")
           console.log(chalk.gray(`  ▸ using native binary: ${nativeBinary}\n`));
         }
         const dbPath = resolveDbPath(opts.output);
+        const claimsHistory = snapshotClaimsHistory(dbPath);
+        const temporaryDbPath = temporaryDatabasePath(dbPath);
         const t0 = performance.now();
         try {
           await runCariBuild({
             binaryPath: nativeBinary,
             root: cwd,
-            output: dbPath,
+            output: temporaryDbPath,
             depth: opts.depth,
             paths,
             verbose,
@@ -621,28 +630,26 @@ const indexBuildSubcommand = new Command("build")
           // Released native binaries may still emit schema 14. Upgrade the
           // additive claims companion layer before any helper opens the DB.
           {
-            const db = new Database(dbPath);
+            const db = new Database(temporaryDbPath);
             try {
-              migrateSchema14To15(db);
+              migrateSchemaToCurrent(db);
+              restoreClaimsHistory(db, claimsHistory);
+              db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
             } finally {
               db.close();
             }
           }
-          const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-          console.log(
-            `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
-          );
 
           // Rebuild FTS5 indexes (native binary writes content tables but doesn't sync FTS)
-          rebuildFtsIndexes(dbPath);
+          rebuildFtsIndexes(temporaryDbPath);
 
           // Apply path alias resolution: auto-detect from tsconfig + manual .iw/config.yaml
           {
             const autoAliases = await detectTsPathAliases(cwd);
             const mergedAliases = { ...autoAliases, ...iwConfig?.aliases };
-            resolveImportAliases(dbPath, mergedAliases, verbose);
+            resolveImportAliases(temporaryDbPath, mergedAliases, verbose);
           }
-          normalizeImportExtensions(dbPath, verbose);
+          normalizeImportExtensions(temporaryDbPath, verbose);
 
           // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
           try {
@@ -656,12 +663,23 @@ const indexBuildSubcommand = new Command("build")
               ) as import("@intentweave/index").RulesConfig;
               if (config?.rules?.length) {
                 const snapshotId = `build-${Date.now()}`;
-                snapshotConformance(dbPath, config, snapshotId, Date.now());
+                snapshotConformance(
+                  temporaryDbPath,
+                  config,
+                  snapshotId,
+                  Date.now(),
+                );
               }
             }
           } catch {
             // Snapshot failure must not fail the build
           }
+
+          replaceDatabaseAtomically(temporaryDbPath, dbPath);
+          const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+          console.log(
+            `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
+          );
           return;
         } catch (nativeErr: unknown) {
           const nativeMsg =
@@ -672,6 +690,9 @@ const indexBuildSubcommand = new Command("build")
             ),
           );
           // Fall through to the TypeScript pipeline below
+        } finally {
+          discardDatabaseFiles(temporaryDbPath);
+          discardClaimsHistory(claimsHistory);
         }
       }
       // ── end R1-f ────────────────────────────────────────────────────────────
@@ -814,7 +835,6 @@ import {
   layersFromDecorators,
   rulesTrend,
   snapshotConformance,
-  migrateSchema14To15,
   testIntent,
   livingScore,
   calls,

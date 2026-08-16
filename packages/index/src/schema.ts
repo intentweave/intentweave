@@ -8,7 +8,10 @@
  * code-aware retrieval index. Called once when creating a new index.db.
  */
 
-import type Database from "@intentweave/sqlite-compat";
+import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import Database from "@intentweave/sqlite-compat";
 
 /**
  * SQL statements executed in order to create the CARI schema.
@@ -364,6 +367,171 @@ CREATE TABLE IF NOT EXISTS _meta (
 );
 `;
 
+export const CLAIMS_COMPANION_TABLES = [
+  "parameter_identities",
+  "parameter_evidence_bindings",
+  "evidence_identities",
+  "evidence_versions",
+  "evidence_continuity",
+  "rule_result_identities",
+  "rule_result_versions",
+  "rule_result_evidence",
+  "claim_identities",
+  "claim_versions",
+  "claim_assessments",
+  "claim_assessment_dependencies",
+  "review_decisions",
+  "review_decision_reopens",
+  "claim_assessment_references",
+] as const;
+
+const LEGACY_CLAIMS_COMPANION_TABLES = [
+  "parameter_identities",
+  "parameter_evidence_bindings",
+  "evidence_identities",
+  "evidence_versions",
+  "evidence_continuity",
+  "rule_result_identities",
+  "rule_result_versions",
+  "rule_result_evidence",
+  "claim_identities",
+  "claim_versions",
+  "claim_assessments",
+  "claim_assessment_dependencies",
+  "review_decisions",
+  "review_decision_reopens",
+] as const;
+
+export const CURRENT_SCHEMA_VERSION = "16";
+
+function readSchemaVersion(db: Database.Database): string | undefined {
+  try {
+    const row = db
+      .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+      .get() as { value: string } | undefined;
+    return row?.value;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("_meta")) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function sqliteStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function claimsCompanionTablesInSchema(
+  db: Database.Database,
+  schema = "main",
+): readonly string[] | undefined {
+  const tables = new Set(
+    (
+      db
+        .prepare(`SELECT name FROM ${schema}.sqlite_master WHERE type = 'table'`)
+        .all() as Array<{ name: string }>
+    ).map((row) => row.name),
+  );
+  if (CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return CLAIMS_COMPANION_TABLES;
+  }
+  if (LEGACY_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return LEGACY_CLAIMS_COMPANION_TABLES;
+  }
+  return undefined;
+}
+
+/**
+ * Capture the Claims companion layer before a full CARI rebuild replaces the
+ * index database. `VACUUM INTO` includes committed WAL content atomically.
+ */
+export function snapshotClaimsHistory(dbPath: string): string | undefined {
+  if (!fs.existsSync(dbPath)) return undefined;
+  const db = new Database(dbPath);
+  try {
+    if (!claimsCompanionTablesInSchema(db)) return undefined;
+    const snapshotPath = path.join(
+      path.dirname(dbPath),
+      `.claims-history-${randomUUID()}.db`,
+    );
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    db.exec(`VACUUM INTO ${sqliteStringLiteral(snapshotPath)}`);
+    return snapshotPath;
+  } finally {
+    db.close();
+  }
+}
+
+/** Return a unique temporary database path beside the final index. */
+export function temporaryDatabasePath(dbPath: string): string {
+  return path.join(
+    path.dirname(dbPath),
+    `.${path.basename(dbPath)}.${randomUUID()}.tmp`,
+  );
+}
+
+/** Remove a SQLite database and its WAL sidecars. */
+export function discardDatabaseFiles(dbPath: string): void {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    fs.rmSync(`${dbPath}${suffix}`, { force: true });
+  }
+}
+
+/** Atomically replace a completed database build with its temporary output. */
+export function replaceDatabaseAtomically(
+  sourcePath: string,
+  targetPath: string,
+): void {
+  for (const suffix of ["-wal", "-shm"]) {
+    fs.rmSync(`${targetPath}${suffix}`, { force: true });
+  }
+  fs.renameSync(sourcePath, targetPath);
+  for (const suffix of ["-wal", "-shm"]) {
+    fs.rmSync(`${sourcePath}${suffix}`, { force: true });
+  }
+}
+
+/** Restore a prior Claims companion snapshot into an otherwise fresh index. */
+export function restoreClaimsHistory(
+  db: Database.Database,
+  snapshotPath: string | undefined,
+): void {
+  if (!snapshotPath || !fs.existsSync(snapshotPath)) return;
+  db.exec(`ATTACH DATABASE ${sqliteStringLiteral(snapshotPath)} AS claims_history`);
+  try {
+    const sourceTables = claimsCompanionTablesInSchema(db, "claims_history");
+    if (!sourceTables) return;
+    const restore = db.transaction(() => {
+      db.exec("PRAGMA defer_foreign_keys = ON");
+      for (const table of [...CLAIMS_COMPANION_TABLES].reverse()) {
+        db.exec(`DELETE FROM ${table}`);
+      }
+      for (const table of sourceTables) {
+        db.exec(`INSERT INTO ${table} SELECT * FROM claims_history.${table}`);
+      }
+      // Legacy snapshots (schema v15) do not have this table.
+      db.exec(`
+        INSERT OR IGNORE INTO claim_assessment_references (
+          claim_identity_id, repository_revision, assessment_id, created_at
+        )
+        SELECT cv.claim_identity_id, ca.repository_revision, ca.id, ca.created_at
+        FROM claim_assessments ca
+        JOIN claim_versions cv ON cv.id = ca.claim_version_id
+        WHERE ca.reference_key IS NOT NULL
+      `);
+    });
+    restore();
+  } finally {
+    db.exec("DETACH DATABASE claims_history");
+  }
+}
+
+/** Delete a temporary Claims snapshot after a rebuild has completed. */
+export function discardClaimsHistory(snapshotPath: string | undefined): void {
+  if (snapshotPath) fs.rmSync(snapshotPath, { force: true });
+}
+
 /**
  * Claims companion schema added in version 15.
  *
@@ -490,6 +658,14 @@ CREATE TABLE IF NOT EXISTS claim_assessments (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS claim_assessment_references (
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  repository_revision TEXT NOT NULL,
+  assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (claim_identity_id, repository_revision)
+);
+
 CREATE TABLE IF NOT EXISTS claim_assessment_dependencies (
   claim_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
   dependency_kind TEXT NOT NULL,
@@ -559,6 +735,15 @@ export function migrateSchema14To15(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
   const migrate = db.transaction(() => {
     db.exec(CLAIMS_SCHEMA_SQL);
+    db.exec(`
+      INSERT OR IGNORE INTO claim_assessment_references (
+        claim_identity_id, repository_revision, assessment_id, created_at
+      )
+      SELECT cv.claim_identity_id, ca.repository_revision, ca.id, ca.created_at
+      FROM claim_assessments ca
+      JOIN claim_versions cv ON cv.id = ca.claim_version_id
+      WHERE ca.reference_key IS NOT NULL
+    `);
     db.prepare(
       `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '15')`,
     ).run();
@@ -566,11 +751,83 @@ export function migrateSchema14To15(db: Database.Database): void {
   migrate();
 }
 
+/** Upgrade schema-15 indexes with claim_assessment_references and version 16 metadata. */
+export function migrateSchema15To16(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS claim_assessment_references (
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        repository_revision TEXT NOT NULL,
+        assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (claim_identity_id, repository_revision)
+      )
+    `);
+    db.exec(`
+      INSERT OR IGNORE INTO claim_assessment_references (
+        claim_identity_id, repository_revision, assessment_id, created_at
+      )
+      SELECT cv.claim_identity_id, ca.repository_revision, ca.id, ca.created_at
+      FROM claim_assessments ca
+      JOIN claim_versions cv ON cv.id = ca.claim_version_id
+      WHERE ca.reference_key IS NOT NULL
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)`
+    ).run(CURRENT_SCHEMA_VERSION);
+  });
+  migrate();
+}
+
+/**
+ * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
+ * Supported transitions: 14 -> 15 -> 16 and 15 -> 16.
+ * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
+ */
+export function migrateSchemaToCurrent(db: Database.Database): void {
+  const schemaVersion = readSchemaVersion(db);
+  if (!schemaVersion || schemaVersion === "14") {
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    return;
+  }
+  if (schemaVersion === "15") {
+    migrateSchema15To16(db);
+    return;
+  }
+  if (schemaVersion === CURRENT_SCHEMA_VERSION) {
+    return;
+  }
+  throw new Error(
+    `Index schema version ${schemaVersion} is incompatible with this version of ` +
+      `@intentweave/index (expected ${CURRENT_SCHEMA_VERSION}). Run \`iw index build\` ` +
+      `with a compatible CLI/runtime.`,
+  );
+}
+
+function assertSupportedSchemaVersion(db: Database.Database): void {
+  const schemaVersion = readSchemaVersion(db);
+  if (
+    schemaVersion &&
+    schemaVersion !== "14" &&
+    schemaVersion !== "15" &&
+    schemaVersion !== CURRENT_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `Index schema version ${schemaVersion} is incompatible with this version of ` +
+        `@intentweave/index (expected ${CURRENT_SCHEMA_VERSION}). Run \`iw index build\` ` +
+        `with a compatible CLI/runtime.`,
+    );
+  }
+}
+
 /**
  * Initialize the CARI schema on a fresh database.
  * Safe to call on an existing database (IF NOT EXISTS guards).
  */
 export function initSchema(db: Database.Database): void {
+  assertSupportedSchemaVersion(db);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
@@ -611,5 +868,5 @@ export function initSchema(db: Database.Database): void {
     `);
   }
 
-  migrateSchema14To15(db);
+  migrateSchemaToCurrent(db);
 }

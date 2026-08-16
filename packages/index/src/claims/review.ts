@@ -199,12 +199,23 @@ export class ClaimsReviewStore {
         return { id: previous.id, carriedForward: false };
       }
 
+      const openReopen = this.db
+        .prepare(
+          `SELECT id
+           FROM review_decision_reopens
+           WHERE claim_identity_id = ? AND status = 'open'
+           ORDER BY created_at DESC
+           LIMIT 1`,
+        )
+        .get(input.claimIdentityId) as { id: string } | undefined;
+
       const now = Date.now();
       const id = `review:${fingerprint({
         claimIdentityId: input.claimIdentityId,
         basisAssessmentId: input.basisAssessmentId,
         decision: input.decision,
         actor: input.actor,
+        reopenId: openReopen?.id ?? null,
       })}`;
       if (previous) {
         this.db

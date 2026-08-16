@@ -135,7 +135,7 @@ async function createC2Baseline(): Promise<{ workspace: string; c2Revision: stri
   process.exitCode = undefined;
 
   await runClaimsCheck({ since: "HEAD~1", format: "json" });
-  expect(process.exitCode).toBe(4);
+  expect(process.exitCode).toBe(2);
   await reviewAllCurrentClaims(workspace);
   process.exitCode = undefined;
   await runClaimsCheck({ format: "json" });

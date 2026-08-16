@@ -504,9 +504,18 @@ export function extractDiscoveredCodeEvidence(
     ),
   );
   const observations: CodeEvidenceObservation[] = [];
+  const extractedFiles = [...filePaths]
+    .sort()
+    .map((filePath) => ({ filePath, evidence: extractClaimEvidence(readCode(filePath), filePath) }));
+  const stableKeyCounts = new Map<string, number>();
+  for (const { evidence } of extractedFiles) {
+    for (const literal of evidence.literalBindings) {
+      const stableKey = `code:${literal.kind}:${literal.structureFingerprint}`;
+      stableKeyCounts.set(stableKey, (stableKeyCounts.get(stableKey) ?? 0) + 1);
+    }
+  }
 
-  for (const filePath of [...filePaths].sort()) {
-    const evidence = extractClaimEvidence(readCode(filePath), filePath);
+  for (const { filePath, evidence } of extractedFiles) {
     for (const literal of evidence.literalBindings) {
       if (explicitlyBound.has(`${filePath}\0${literal.name}`)) continue;
       const annotations = evidence.codeAnnotations.filter(
@@ -520,7 +529,9 @@ export function extractDiscoveredCodeEvidence(
         literal.kind === "parameter-default" ||
         literal.kind === "destructuring-default";
       if (!materializeClaim) continue;
-      const parameterKey = `code:${literal.symbolId}:${literal.structureFingerprint.slice(0, 12)}`;
+      const stableKey = `code:${literal.kind}:${literal.structureFingerprint}`;
+      if (stableKeyCounts.get(stableKey) !== 1) continue;
+      const parameterKey = stableKey;
       const claimType =
         annotations.length > 0 ||
         literal.kind === "parameter-default" ||

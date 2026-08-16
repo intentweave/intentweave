@@ -9,7 +9,19 @@
  */
 
 // Phase 1: Core index
-export { initSchema, migrateSchema14To15 } from "./schema.js";
+export {
+  CLAIMS_COMPANION_TABLES,
+  discardClaimsHistory,
+  discardDatabaseFiles,
+  initSchema,
+  migrateSchema14To15,
+  migrateSchema15To16,
+  migrateSchemaToCurrent,
+  replaceDatabaseAtomically,
+  restoreClaimsHistory,
+  snapshotClaimsHistory,
+  temporaryDatabasePath,
+} from "./schema.js";
 export {
   assessmentKey,
   canonicalJson,

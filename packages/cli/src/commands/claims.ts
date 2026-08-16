@@ -3,6 +3,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { Command } from "commander";
 import Database from "@intentweave/sqlite-compat";
 import {
@@ -12,7 +13,7 @@ import {
   claimsExitCode,
   fingerprint,
   materialFingerprint,
-  migrateSchema14To15,
+  migrateSchemaToCurrent,
 } from "@intentweave/index";
 import type {
   ClaimScalar,
@@ -104,9 +105,11 @@ async function discoverWorkingTreeCodeFiles(workspaceRoot: string): Promise<stri
 }
 
 function currentRevision(workspaceRoot: string): string {
-  const headPath = path.join(workspaceRoot, ".git", "HEAD");
   try {
-    return fs.readFileSync(headPath, "utf-8").trim();
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspaceRoot,
+      encoding: "utf-8",
+    }).trim();
   } catch {
     return "working-tree";
   }
@@ -265,6 +268,18 @@ function formatText(result: {
   return lines.join("\n");
 }
 
+function documentationAssertionContext(
+  bindings: ReturnType<typeof parseClaimsBindings>,
+  parameterKey: string,
+  assertionId: string,
+): { scope?: string; pattern?: string } {
+  for (const document of bindings.parameters[parameterKey]?.documentation ?? []) {
+    const assertion = document.assertions.find((candidate) => candidate.id === assertionId);
+    if (assertion) return { scope: assertion.scope, pattern: assertion.pattern };
+  }
+  return {};
+}
+
 function claimsDatabase(workspaceRoot: string): Database.Database {
   const dbPath = path.join(workspaceRoot, ".iw", "index.db");
   if (!fs.existsSync(dbPath)) {
@@ -273,7 +288,7 @@ function claimsDatabase(workspaceRoot: string): Database.Database {
     );
   }
   const database = new Database(dbPath);
-  migrateSchema14To15(database);
+  migrateSchemaToCurrent(database);
   return database;
 }
 
@@ -390,7 +405,6 @@ function reopenBrokenContinuity(
   assessmentIds: string[],
   provenance: unknown,
 ): string[] {
-  if (assessmentIds.length === 0) return [];
   const evidence = database
     .prepare(
       `SELECT source_kind, semantic_location FROM evidence_versions evidence
@@ -409,7 +423,6 @@ function reopenBrokenContinuity(
           ? ["CLM-DEFAULT"]
           : ["CLM-DOC-CONFORMANCE"]
         : ["CLM-EFFECTIVE", "CLM-DOC-CONFORMANCE"];
-  const placeholders = assessmentIds.map(() => "?").join(", ");
   const claimTypePlaceholders = claimTypes.map(() => "?").join(", ");
   const impacted = database
     .prepare(
@@ -422,15 +435,21 @@ function reopenBrokenContinuity(
        JOIN claim_versions cv ON cv.claim_identity_id = ci.id
        JOIN claim_assessments ca ON ca.claim_version_id = cv.id
        WHERE evidence.id = ? AND ca.is_current = 1
-        AND ca.id IN (${placeholders})
         AND ci.claim_type IN (${claimTypePlaceholders})`,
     )
-     .all(previousEvidenceVersionId, ...assessmentIds, ...claimTypes) as Array<{
+     .all(previousEvidenceVersionId, ...claimTypes) as Array<{
     claim_identity_id: string;
     assessment_id: string;
   }>;
   const reopenedClaims: string[] = [];
   for (const assessment of impacted) {
+    database
+      .prepare(
+        `UPDATE claim_assessments
+         SET is_current = 0
+         WHERE id = ?`,
+      )
+      .run(assessment.assessment_id);
     const reopened = reviews.reopen({
       claimIdentityId: assessment.claim_identity_id,
       basisAssessmentId: assessment.assessment_id,
@@ -491,17 +510,11 @@ function contractReferenceAssessmentId(
   if (baseRevision) {
     const anchored = database
       .prepare(
-        `SELECT ca.id
-         FROM claim_assessments ca
-         JOIN claim_versions cv ON cv.id = ca.claim_version_id
-         WHERE cv.claim_identity_id = ? AND ca.reference_key = ?
-           AND ca.id != ?`,
+        `SELECT reference.assessment_id AS id
+         FROM claim_assessment_references reference
+         WHERE reference.claim_identity_id = ? AND reference.repository_revision = ?`,
       )
-      .get(
-        claimIdentityId,
-        `${claimIdentityId}:${baseRevision}`,
-        currentAssessmentId ?? "",
-      ) as
+      .get(claimIdentityId, baseRevision) as
       | { id: string }
       | undefined;
     if (
@@ -510,30 +523,17 @@ function contractReferenceAssessmentId(
     ) {
       return anchored.id;
     }
-  }
-  const reviewed = database
-    .prepare(
-      `SELECT basis_assessment_id
-       FROM review_decisions
-       WHERE claim_identity_id = ? AND is_current = 1`,
-    )
-    .get(claimIdentityId) as { basis_assessment_id: string } | undefined;
-  if (reviewed) return reviewed.basis_assessment_id;
-  if (baseRevision) {
-    const observedAtBase = database
+  } else {
+    const reviewed = database
       .prepare(
-        `SELECT ca.id
-         FROM claim_assessments ca
-         JOIN claim_versions cv ON cv.id = ca.claim_version_id
-         WHERE cv.claim_identity_id = ? AND ca.repository_revision = ?
-           AND ca.id != ?
-         ORDER BY ca.created_at DESC
-         LIMIT 1`,
+        `SELECT basis_assessment_id
+         FROM review_decisions
+         WHERE claim_identity_id = ? AND is_current = 1`,
       )
-      .get(claimIdentityId, baseRevision, currentAssessmentId ?? "") as
-      | { id: string }
-      | undefined;
-    if (observedAtBase) return observedAtBase.id;
+      .get(claimIdentityId) as { basis_assessment_id: string } | undefined;
+    if (reviewed && reviewed.basis_assessment_id !== currentAssessmentId) {
+      return reviewed.basis_assessment_id;
+    }
   }
   return undefined;
 }
@@ -792,6 +792,7 @@ export async function runClaimsCheck(options: {
     );
     const database = claimsDatabase(workspaceRoot);
     try {
+      const runCheck = database.transaction(() => {
       const store = new ClaimsStore(database);
       const engine = new ClaimsEngine(store);
       const reviews = new ClaimsReviewStore(database);
@@ -799,7 +800,7 @@ export async function runClaimsCheck(options: {
         (
           database
             .prepare(
-              `SELECT id FROM claim_assessments WHERE reference_key IS NOT NULL`,
+              `SELECT assessment_id AS id FROM claim_assessment_references`,
             )
             .all() as Array<{ id: string }>
         ).map((row) => row.id),
@@ -812,6 +813,36 @@ export async function runClaimsCheck(options: {
         ...discoveredCode,
       ];
       const docs = extractDocumentationAssertions(bindings, readBoundFile);
+      const documentationInconclusive = docs.filter(
+        (observation) => observation.kind === "inconclusive",
+      );
+      for (const observation of documentationInconclusive) {
+        const assertion = documentationAssertionContext(
+          bindings,
+          observation.parameterKey,
+          observation.assertionId,
+        );
+        store.persistRuleResult(
+          {
+            ruleId: "R3.doc-conformance",
+            subjectKey: observation.parameterKey,
+            scope: assertion.scope,
+            applicability: "applicable",
+            normalizedStatus: "inconclusive",
+            normalizedOutput: {
+              assertionId: observation.assertionId,
+              filePath: observation.filePath,
+              reason: observation.reason,
+            },
+            normalizedReasons: [observation.reason],
+            evidenceVersionIds: [],
+            ruleContractVersion: contracts.r3RuleContractVersion,
+            implementationFingerprint:
+              contracts.r3ImplementationFingerprint ?? contracts.implementationFingerprint,
+          },
+          [],
+        );
+      }
       const previousEvidence = (() => {
         if (!claimsGit || !baseRevision) return new Map<string, PersistedObservation>();
         const baseRegistry = claimsGit.show(baseRevision, "config/environments.yaml");
@@ -885,6 +916,9 @@ export async function runClaimsCheck(options: {
       const allAssessmentStatuses: Array<"supported" | "refuted" | "contested" | "inconclusive"> = [];
       const assessmentIds: string[] = [];
       const reopenedClaimIds = new Set<string>();
+      allRuleStatuses.push(
+        ...documentationInconclusive.map(() => "inconclusive" as const),
+      );
 
       const unscopedParameterKeys = new Set(
         (scopes.length === 0 ? code : discoveredCode).map(
@@ -1169,9 +1203,12 @@ export async function runClaimsCheck(options: {
         const renames = claimsGit.renames(baseRevision, headRevision);
         const continuedPreviousIdentityKeys = new Set<string>();
         for (const [identityKey, current] of currentEvidence) {
-          const matchedRename = previousEvidence.has(identityKey)
-            ? undefined
-            : renamedPredecessor(database, previousEvidence, current, renames);
+          const matchedRename = renamedPredecessor(
+            database,
+            previousEvidence,
+            current,
+            renames,
+          );
           const previous = previousEvidence.get(identityKey) ?? matchedRename?.observation;
           if (!previous) {
             const provenance = {
@@ -1265,6 +1302,30 @@ export async function runClaimsCheck(options: {
         );
         if (reopenedClaimId) reopenedClaimIds.add(reopenedClaimId);
       }
+      if (baseRevision) {
+        for (const assessmentId of assessmentIds) {
+          const assessment = database
+            .prepare(
+              `SELECT cv.claim_identity_id
+               FROM claim_assessments ca
+               JOIN claim_versions cv ON cv.id = ca.claim_version_id
+               WHERE ca.id = ?`,
+            )
+            .get(assessmentId) as { claim_identity_id: string } | undefined;
+          if (
+            assessment &&
+            !contractReferenceAssessmentId(
+              database,
+              assessment.claim_identity_id,
+              baseRevision,
+              assessmentId,
+              preRunReferenceAssessmentIds,
+            )
+          ) {
+            allRuleStatuses.push("inconclusive");
+          }
+        }
+      }
       for (const assessmentId of assessmentIds) {
         const assessment = database
           .prepare(
@@ -1319,13 +1380,23 @@ export async function runClaimsCheck(options: {
           (row.reviewed === 0 || row.open_reopen === 1)
         );
       });
-      console.log(options.format === "json" ? JSON.stringify(output, null, 2) : formatText(output));
-      process.exitCode = claimsExitCode({
-        discoveryEmpty: output.claims.length === 0 && output.scopes.length === 0,
-        ruleStatuses: allRuleStatuses,
-        assessmentStatuses: allAssessmentStatuses,
-        reviewRequired,
+      return {
+        output,
+        exitCode: claimsExitCode({
+          discoveryEmpty: output.claims.length === 0 && output.scopes.length === 0,
+          ruleStatuses: allRuleStatuses,
+          assessmentStatuses: allAssessmentStatuses,
+          reviewRequired,
+        }),
+      };
       });
+      const result = runCheck();
+      console.log(
+        options.format === "json"
+          ? JSON.stringify(result.output, null, 2)
+          : formatText(result.output),
+      );
+      process.exitCode = result.exitCode;
     } finally {
       database.close();
     }
@@ -1353,16 +1424,28 @@ export async function runClaimsReview(options: {
            WHERE cv.claim_identity_id = ? AND ca.is_current = 1`,
         )
         .get(options.claim) as { id: string } | undefined;
-      if (!assessment) {
-        throw new ClaimsBindingError(`No current assessment for claim ${options.claim}`);
+      const openReopenBasis = assessment
+        ? undefined
+        : (database
+            .prepare(
+              `SELECT basis_assessment_id
+               FROM review_decision_reopens
+               WHERE claim_identity_id = ? AND status = 'open'
+               ORDER BY created_at DESC
+               LIMIT 1`,
+            )
+            .get(options.claim) as { basis_assessment_id: string } | undefined);
+      const basisAssessmentId = assessment?.id ?? openReopenBasis?.basis_assessment_id;
+      if (!basisAssessmentId) {
+        throw new ClaimsBindingError(`No reviewable assessment for claim ${options.claim}`);
       }
       const result = new ClaimsReviewStore(database).record({
         claimIdentityId: options.claim,
-        basisAssessmentId: assessment.id,
+        basisAssessmentId,
         decision: options.decision,
         actor: options.actor,
       });
-      const output = { claimIdentityId: options.claim, assessmentId: assessment.id, ...result };
+      const output = { claimIdentityId: options.claim, assessmentId: basisAssessmentId, ...result };
       console.log(options.format === "json" ? JSON.stringify(output, null, 2) : `Review recorded: ${result.id}`);
       process.exitCode = 0;
     } finally {
@@ -1389,13 +1472,34 @@ export async function runClaimsExplain(options: {
     try {
       const assessments = database
         .prepare(
-          `SELECT ci.id AS claim_identity_id, ci.claim_type, ci.scope,
+          `WITH current_assessments AS (
+             SELECT cv.claim_identity_id, ca.id AS assessment_id
+             FROM claim_assessments ca
+             JOIN claim_versions cv ON cv.id = ca.claim_version_id
+             WHERE ca.is_current = 1
+           ),
+           open_reopens AS (
+             SELECT claim_identity_id, basis_assessment_id,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY claim_identity_id
+                      ORDER BY created_at DESC
+                    ) AS row_number
+             FROM review_decision_reopens
+             WHERE status = 'open'
+           )
+           SELECT ci.id AS claim_identity_id, ci.claim_type, ci.scope,
                   ca.id AS assessment_id, ca.epistemic_status,
                   cv.normalized_statement_json
-           FROM claim_assessments ca
+           FROM claim_identities ci
+           LEFT JOIN current_assessments current_assessment
+             ON current_assessment.claim_identity_id = ci.id
+           LEFT JOIN open_reopens open_reopen
+             ON open_reopen.claim_identity_id = ci.id
+            AND open_reopen.row_number = 1
+           JOIN claim_assessments ca
+             ON ca.id = COALESCE(current_assessment.assessment_id, open_reopen.basis_assessment_id)
            JOIN claim_versions cv ON cv.id = ca.claim_version_id
-           JOIN claim_identities ci ON ci.id = cv.claim_identity_id
-           WHERE ca.is_current = 1 AND (? IS NULL OR ci.id = ?)
+           WHERE (? IS NULL OR ci.id = ?)
            ORDER BY ci.claim_type, ci.scope`,
         )
         .all(options.claim ?? null, options.claim ?? null) as Array<{
@@ -1450,6 +1554,21 @@ export async function runClaimsExplain(options: {
           console.log(`  Assessment: ${claim.assessmentId}`);
           if (claim.review) {
             console.log(`  Review: ${(claim.review as { decision: string }).decision}`);
+          }
+          for (const reopen of claim.reopens as Array<{
+            reason: string;
+            status: string;
+            dependency_kind: string;
+            dependency_version_id: string;
+            secondary_provenance_json: string | null;
+          }>) {
+            console.log(`  Reopen: ${reopen.reason} (${reopen.status})`);
+            console.log(
+              `    Dependency: ${reopen.dependency_kind}:${reopen.dependency_version_id}`,
+            );
+            if (reopen.secondary_provenance_json) {
+              console.log(`    Provenance: ${reopen.secondary_provenance_json}`);
+            }
           }
         }
       }

@@ -46,6 +46,16 @@ describe("extractClaimEvidence", () => {
     ]);
   });
 
+  it("distinguishes same-named parameter defaults by their enclosing function", () => {
+    const evidence = extractClaimEvidence(
+      `function readPage(limit = 10) {}
+       function search(limit = 20) {}`,
+      "src/limits.ts",
+    );
+
+    expect(new Set(evidence.literalBindings.map((binding) => binding.structureFingerprint)).size).toBe(2);
+  });
+
   it("extracts a Commander option default only as explicitly bindable evidence", () => {
     const evidence = extractClaimEvidence(
       `build.option("--depth <depth>", "Annotation depth", "full");`,

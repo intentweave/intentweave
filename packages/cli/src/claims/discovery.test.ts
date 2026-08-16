@@ -69,14 +69,14 @@ describe("Claims documentation discovery", () => {
     expect(observations).toHaveLength(2);
     expect(observations).toMatchObject([
       {
-        parameterKey: expect.stringContaining("src/options.ts#PAGE_SIZE"),
+        parameterKey: expect.stringContaining("code:variable:"),
         claimType: "CLM-DEFAULT",
         sourceKind: "code-default",
         normalizedValue: 25,
         bindingBasis: "r1-discovery",
       },
       {
-        parameterKey: expect.stringContaining("src/options.ts#PAGE_SIZE"),
+        parameterKey: expect.stringContaining("code:variable:"),
         claimType: "CLM-DEFAULT",
         sourceKind: "code-annotation",
         normalizedValue: 25,
@@ -119,6 +119,15 @@ describe("Claims documentation discovery", () => {
     expect(observations).toHaveLength(2);
     expect(new Set(observations.map((observation) => observation.parameterKey)).size).toBe(2);
     expect(new Set(observations.map((observation) => observation.identityKey)).size).toBe(2);
+  });
+
+  it("skips structurally ambiguous provisional claims instead of using path-based ids", () => {
+    const observations = extractDiscoveredCodeEvidence(
+      ["src/a.ts", "src/b.ts"],
+      () => "export const REQUEST_TIMEOUT = 1800;",
+    );
+
+    expect(observations).toEqual([]);
   });
 
   it("extracts only explicitly bound single-line assertions", () => {

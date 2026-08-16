@@ -8,14 +8,14 @@
 //!   a) Indexes built by `cari-build` can be opened by `CariIndex.load()`
 //!   b) Indexes built by the TS pipeline can be read by future Rust tooling
 //!
-//! SCHEMA VERSION: 15
-//!   Written to `_meta` table as key='schema_version', value='15'.
+//! SCHEMA VERSION: 16
+//!   Written to `_meta` table as key='schema_version', value='16'.
 //!   The TS `initSchema()` also writes this value. Increment both in sync.
 
 use anyhow::Result;
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: &str = "15";
+pub const SCHEMA_VERSION: &str = "16";
 
 /// Full DDL matching `SCHEMA_SQL` in schema.ts.
 pub const SCHEMA_SQL: &str = r#"
@@ -436,6 +436,13 @@ CREATE TABLE IF NOT EXISTS claim_assessments (
   is_current INTEGER NOT NULL DEFAULT 1,
   superseded_by_assessment_id TEXT REFERENCES claim_assessments(id),
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS claim_assessment_references (
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  repository_revision TEXT NOT NULL,
+  assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (claim_identity_id, repository_revision)
 );
 CREATE TABLE IF NOT EXISTS claim_assessment_dependencies (
   claim_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),

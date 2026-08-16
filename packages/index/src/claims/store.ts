@@ -39,6 +39,16 @@ function nextOrdinal(
   return row.max_ordinal + 1;
 }
 
+const REOBSERVED_MARKER = "#reobserved:";
+
+function logicalFingerprint(value: string): string {
+  return value.split(REOBSERVED_MARKER, 1)[0] ?? value;
+}
+
+function reobservedFingerprint(value: string, ordinal: number): string {
+  return `${value}${REOBSERVED_MARKER}${ordinal}`;
+}
+
 export class ClaimsStore {
   constructor(private readonly db: Database.Database) {}
 
@@ -68,17 +78,23 @@ export class ClaimsStore {
           now,
         );
 
-      const existing = this.db
+      const versions = this.db
         .prepare(
-          `SELECT id, version_ordinal FROM evidence_versions
-           WHERE evidence_identity_id = ? AND fingerprint = ?`,
+          `SELECT id, version_ordinal, fingerprint FROM evidence_versions
+           WHERE evidence_identity_id = ? ORDER BY version_ordinal DESC`,
         )
-        .get(evidenceIdentityId, input.fingerprint) as
-        | { id: string; version_ordinal: number }
-        | undefined;
-      if (existing) {
-        return { id: existing.id, ordinal: existing.version_ordinal, created: false };
+        .all(evidenceIdentityId) as Array<{
+        id: string;
+        version_ordinal: number;
+        fingerprint: string;
+      }>;
+      const current = versions[0];
+      if (current && logicalFingerprint(current.fingerprint) === input.fingerprint) {
+        return { id: current.id, ordinal: current.version_ordinal, created: false };
       }
+      const returning = versions.find(
+        (version) => logicalFingerprint(version.fingerprint) === input.fingerprint,
+      );
 
       const ordinal = nextOrdinal(
         this.db,
@@ -87,6 +103,9 @@ export class ClaimsStore {
         evidenceIdentityId,
       );
       const id = `${evidenceIdentityId}@${ordinal}`;
+      const storedFingerprint = returning
+        ? reobservedFingerprint(input.fingerprint, ordinal)
+        : input.fingerprint;
       this.db
         .prepare(
           `INSERT INTO evidence_versions (
@@ -99,7 +118,7 @@ export class ClaimsStore {
           id,
           evidenceIdentityId,
           ordinal,
-          input.fingerprint,
+          storedFingerprint,
           input.materialFingerprint,
           canonicalJson(input.normalizedValue),
           input.semanticLocation,
@@ -205,17 +224,23 @@ export class ClaimsStore {
         ruleContractVersion: input.ruleContractVersion,
         implementationFingerprint: input.implementationFingerprint,
       });
-      const existing = this.db
+      const versions = this.db
         .prepare(
-          `SELECT id, version_ordinal FROM rule_result_versions
-           WHERE rule_result_identity_id = ? AND fingerprint = ?`,
+          `SELECT id, version_ordinal, fingerprint FROM rule_result_versions
+           WHERE rule_result_identity_id = ? ORDER BY version_ordinal DESC`,
         )
-        .get(identityId, resultFingerprint) as
-        | { id: string; version_ordinal: number }
-        | undefined;
-      if (existing) {
-        return { id: existing.id, ordinal: existing.version_ordinal, created: false };
+        .all(identityId) as Array<{
+        id: string;
+        version_ordinal: number;
+        fingerprint: string;
+      }>;
+      const current = versions[0];
+      if (current && logicalFingerprint(current.fingerprint) === resultFingerprint) {
+        return { id: current.id, ordinal: current.version_ordinal, created: false };
       }
+      const returning = versions.find(
+        (version) => logicalFingerprint(version.fingerprint) === resultFingerprint,
+      );
 
       const ordinal = nextOrdinal(
         this.db,
@@ -224,6 +249,9 @@ export class ClaimsStore {
         identityId,
       );
       const id = `${identityId}@${ordinal}`;
+      const storedFingerprint = returning
+        ? reobservedFingerprint(resultFingerprint, ordinal)
+        : resultFingerprint;
       this.db
         .prepare(
           `INSERT INTO rule_result_versions (
@@ -236,7 +264,7 @@ export class ClaimsStore {
           id,
           identityId,
           ordinal,
-          resultFingerprint,
+          storedFingerprint,
           input.applicability,
           input.normalizedStatus,
           canonicalJson(input.normalizedOutput),
@@ -341,37 +369,44 @@ export class ClaimsStore {
       }
 
       const key = assessmentKey(claimVersionId, input.dependencies);
-      const referenceKey = `${claimIdentityId}:${input.repositoryRevision}`;
       const ensureReferenceAnchor = (assessmentId: string): void => {
-        const anchored = this.db
-          .prepare(`SELECT id FROM claim_assessments WHERE reference_key = ?`)
-          .get(referenceKey) as { id: string } | undefined;
-        if (!anchored) {
-          this.db
-            .prepare(
-              `UPDATE claim_assessments
-               SET reference_key = ?
-               WHERE id = ? AND reference_key IS NULL`,
-            )
-            .run(referenceKey, assessmentId);
-        }
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO claim_assessment_references (
+               claim_identity_id, repository_revision, assessment_id, created_at
+             ) VALUES (?, ?, ?, ?)`,
+          )
+          .run(claimIdentityId, input.repositoryRevision, assessmentId, now);
       };
-      const existing = this.db
+      const assessments = this.db
         .prepare(
-          `SELECT id FROM claim_assessments WHERE assessment_key = ?`,
+          `SELECT ca.id, ca.assessment_key, ca.is_current
+           FROM claim_assessments ca
+           JOIN claim_versions cv ON cv.id = ca.claim_version_id
+           WHERE cv.claim_identity_id = ?`,
         )
-        .get(key) as { id: string } | undefined;
-      if (existing) {
-        ensureReferenceAnchor(existing.id);
+        .all(claimIdentityId) as Array<{
+        id: string;
+        assessment_key: string;
+        is_current: number;
+      }>;
+      const current = assessments.find((assessment) => assessment.is_current === 1);
+      if (current && logicalFingerprint(current.assessment_key) === key) {
+        ensureReferenceAnchor(current.id);
         return {
-          id: existing.id,
+          id: current.id,
           claimIdentityId,
           claimVersionId,
           created: false,
         };
       }
+      const returningCount = assessments.filter(
+        (assessment) => logicalFingerprint(assessment.assessment_key) === key,
+      ).length;
+      const storedKey =
+        returningCount > 0 ? reobservedFingerprint(key, returningCount + 1) : key;
 
-      const assessmentId = `assessment:${key}`;
+      const assessmentId = `assessment:${storedKey}`;
       this.db
         .prepare(
           `INSERT INTO claim_assessments (
@@ -382,7 +417,7 @@ export class ClaimsStore {
         .run(
           assessmentId,
           claimVersionId,
-          key,
+          storedKey,
           input.status,
           input.repositoryRevision,
           now,

@@ -152,6 +152,24 @@ function annotationValue(jsDoc: string): ClaimLiteral | undefined {
   return undefined;
 }
 
+function bindingStructureFingerprint(declaration: Parser.SyntaxNode, name: string): string {
+  const context: string[] = [];
+  for (let current = declaration.parent; current; current = current.parent) {
+    if (
+      current.type === "function_declaration" ||
+      current.type === "method_definition" ||
+      current.type === "function_expression"
+    ) {
+      const name =
+        current.childForFieldName("name")?.text ??
+        current.namedChildren.find((child) => child.type === "identifier")?.text ??
+        "";
+      context.push(`${current.type}:${name}`);
+    }
+  }
+  return hash(`${declaration.type}:${name}:${context.join("/")}`);
+}
+
 /**
  * Extract Claims-specific R1 evidence from one explicitly bound TypeScript file.
  * It deliberately does not perform parameter binding or file-system discovery.
@@ -189,7 +207,7 @@ export function extractClaimEvidence(
       name,
       normalizedValue: value,
       span: range(declaration),
-      structureFingerprint: hash(`${declaration.type}:${name}`),
+      structureFingerprint: bindingStructureFingerprint(declaration, name),
       ...bindingContext(declaration),
     };
     literalBindings.push(binding);

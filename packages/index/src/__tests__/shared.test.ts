@@ -32,13 +32,13 @@ describe("openIndex", () => {
       .get() as { value: string };
     const table = index
       .prepare(
-        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'claim_assessments'`,
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'claim_assessment_references'`,
       )
       .get() as { name: string } | undefined;
     index.close();
 
-    expect(version.value).toBe("15");
-    expect(table?.name).toBe("claim_assessments");
+    expect(version.value).toBe("16");
+    expect(table?.name).toBe("claim_assessment_references");
   });
 
   it("continues for a database that predates schema metadata", () => {

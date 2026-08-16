@@ -113,6 +113,7 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
 
 class Database {
   private readonly _db: DatabaseSync;
+  private transactionDepth = 0;
 
   constructor(path: string, options?: { readonly?: boolean }) {
     this._db = new DatabaseSync(path, { readOnly: options?.readonly ?? false });
@@ -144,13 +145,23 @@ class Database {
    */
   transaction<F extends (...args: unknown[]) => unknown>(fn: F): F {
     return ((...args: unknown[]) => {
-      this._db.exec("BEGIN");
+      const savepoint = `sqlite_compat_transaction_${this.transactionDepth}`;
+      const nested = this.transactionDepth > 0;
+      this._db.exec(nested ? `SAVEPOINT ${savepoint}` : "BEGIN");
+      this.transactionDepth += 1;
       try {
         const result = fn(...args);
-        this._db.exec("COMMIT");
+        this.transactionDepth -= 1;
+        this._db.exec(nested ? `RELEASE SAVEPOINT ${savepoint}` : "COMMIT");
         return result;
       } catch (err) {
-        this._db.exec("ROLLBACK");
+        this.transactionDepth -= 1;
+        if (nested) {
+          this._db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+          this._db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+        } else {
+          this._db.exec("ROLLBACK");
+        }
         throw err;
       }
     }) as F;

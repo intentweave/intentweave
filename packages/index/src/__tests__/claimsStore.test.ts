@@ -62,6 +62,62 @@ describe("ClaimsStore", () => {
     expect(changed).toMatchObject({ ordinal: 2, created: true });
   });
 
+  it("reactivates a returning evidence fingerprint as the highest version", () => {
+    const input = {
+      parameterKey: "session.timeout",
+      sourceKind: "code_default",
+      identityKey: "src/session.ts:SESSION_TIMEOUT",
+      semanticLocation: "SESSION_TIMEOUT",
+      provenance: { extractor: "claims-v1" },
+    };
+    const persist = (value: number) =>
+      store.persistEvidence({
+        ...input,
+        normalizedValue: value,
+        fingerprint: fingerprint({ ...input, value }),
+        materialFingerprint: materialFingerprint({
+          parameterIdentity: input.parameterKey,
+          semanticLocation: input.semanticLocation,
+          normalizedValue: value,
+        }),
+      });
+
+    const first = persist(1800);
+    const changed = persist(3600);
+    const returning = persist(1800);
+
+    expect(returning).toMatchObject({ ordinal: 3, created: true });
+    expect(returning.id).not.toBe(first.id);
+    expect(
+      db
+        .prepare(
+          `SELECT id, version_ordinal, fingerprint, provenance_json
+           FROM evidence_versions
+           WHERE evidence_identity_id = ? ORDER BY version_ordinal`,
+        )
+        .all(first.id.slice(0, first.id.lastIndexOf("@"))),
+    ).toEqual([
+      {
+        id: first.id,
+        version_ordinal: 1,
+        fingerprint: fingerprint({ ...input, value: 1800 }),
+        provenance_json: expect.any(String),
+      },
+      {
+        id: changed.id,
+        version_ordinal: 2,
+        fingerprint: fingerprint({ ...input, value: 3600 }),
+        provenance_json: expect.any(String),
+      },
+      {
+        id: returning.id,
+        version_ordinal: 3,
+        fingerprint: `${fingerprint({ ...input, value: 1800 })}#reobserved:3`,
+        provenance_json: expect.any(String),
+      },
+    ]);
+  });
+
   it("links evidence versions with immutable-anchor provenance and binding lineage", () => {
     const before = store.persistEvidence({
       parameterKey: "session.timeout",

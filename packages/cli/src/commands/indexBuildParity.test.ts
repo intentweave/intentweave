@@ -9,6 +9,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import Database from "@intentweave/sqlite-compat";
+import { initSchema } from "@intentweave/index";
 
 const workspaces: string[] = [];
 const originalCwd = process.cwd();
@@ -66,7 +67,11 @@ export function startServer(): number {
   git(workspace, "commit", "-m", "fixture baseline");
 }
 
-function runIndexBuild(workspace: string, useNative: boolean): { stdout: string; durationMs: number } {
+function runIndexBuild(
+  workspace: string,
+  useNative: boolean,
+  env: NodeJS.ProcessEnv = {},
+): { stdout: string; durationMs: number } {
   const outputDb = path.join(workspace, ".iw", useNative ? "native.db" : "ts.db");
   mkdirSync(path.join(workspace, ".iw"), { recursive: true });
   const args = [
@@ -86,6 +91,7 @@ function runIndexBuild(workspace: string, useNative: boolean): { stdout: string;
     encoding: "utf-8",
     env: {
       ...process.env,
+      ...env,
       IW_SESSION: useNative ? "parity-native" : "parity-ts",
     },
   });
@@ -179,5 +185,43 @@ describe("index build native vs ts parity", () => {
         2,
       ),
     );
+  });
+
+  it("preserves Claims history when the native build fails and TypeScript fallback succeeds", () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-native-fallback-"));
+    workspaces.push(workspace);
+    writeFixture(workspace);
+    const outputDb = path.join(workspace, ".iw", "native.db");
+    mkdirSync(path.join(workspace, ".iw"), { recursive: true });
+    const existing = new Database(outputDb);
+    initSchema(existing);
+    existing
+      .prepare(
+        `INSERT INTO parameter_identities (id, canonical_key, created_at)
+         VALUES ('parameter:timeout', 'session.timeout', 1)`,
+      )
+      .run();
+    existing.close();
+    const failingNative = path.join(workspace, "failing-native.sh");
+    writeFileSync(failingNative, "#!/bin/sh\nexit 17\n");
+    execFileSync("chmod", ["+x", failingNative]);
+
+    const result = runIndexBuild(workspace, true, {
+      CARI_BUILD_PATH: failingNative,
+    });
+
+    expect(result.stdout).toContain("native build failed");
+    expect(result.stdout).toContain("Index built");
+    const preserved = new Database(outputDb);
+    try {
+      expect(
+        preserved.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
+      ).toEqual({ canonical_key: "session.timeout" });
+      expect(
+        preserved.prepare(`SELECT COUNT(*) AS count FROM symbols`).get(),
+      ).toEqual({ count: 2 });
+    } finally {
+      preserved.close();
+    }
   });
 });

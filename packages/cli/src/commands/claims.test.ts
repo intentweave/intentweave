@@ -46,13 +46,13 @@ describe("iw claims check", () => {
     expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
       claims: expect.arrayContaining([
         {
-          parameterKey: expect.stringContaining("src/options.ts#PAGE_SIZE"),
+          parameterKey: expect.stringContaining("code:variable:"),
           claimType: "CLM-DEFAULT",
           ruleStatuses: ["passed"],
           assessmentStatuses: ["supported"],
         },
         {
-          parameterKey: expect.stringContaining("src/options.ts#MAX_RETRIES"),
+          parameterKey: expect.stringContaining("code:variable:"),
           claimType: "CLM-LITERAL",
           ruleStatuses: ["passed"],
           assessmentStatuses: ["supported"],
@@ -982,12 +982,16 @@ describe("iw claims check", () => {
       .all() as Array<{ claim_type: string; scope: string | null; epistemic_status: string }>;
     expect(currentByType).toEqual(
       expect.arrayContaining([
-        { claim_type: "CLM-DEFAULT", scope: null, epistemic_status: "inconclusive" },
         { claim_type: "CLM-EFFECTIVE", scope: "eu-prod", epistemic_status: "supported" },
         { claim_type: "CLM-DOC-CONFORMANCE", scope: "eu-prod", epistemic_status: "supported" },
         { claim_type: "CLM-LITERAL", scope: null, epistemic_status: "supported" },
       ]),
     );
+    expect(
+      currentByType.some(
+        (claim) => claim.claim_type === "CLM-DEFAULT" && claim.scope === null,
+      ),
+    ).toBe(false);
     const requestClaim = c4Index
       .prepare(
         `SELECT parameter.canonical_key
@@ -996,7 +1000,7 @@ describe("iw claims check", () => {
          WHERE ci.claim_type = 'CLM-LITERAL'`,
       )
       .get() as { canonical_key: string };
-    expect(requestClaim.canonical_key).toContain("src/network/request.ts#REQUEST_TIMEOUT");
+    expect(requestClaim.canonical_key).toContain("code:variable:");
     expect(
       c4Index
         .prepare(
@@ -1207,7 +1211,7 @@ describe("iw claims check", () => {
 
     await runClaimsCheck({ format: "json", since: "HEAD~1" });
 
-    expect(process.exitCode).toBe(4);
+    expect(process.exitCode).toBe(2);
     const p1Index = new Database(path.join(workspace, ".iw", "index.db"));
     expect(
       p1Index
@@ -1228,6 +1232,32 @@ describe("iw claims check", () => {
       )
       .get() as { claim_type: string };
     expect(reopenedClaim.claim_type).toBe("CLM-DEFAULT");
+    const documentationRule = p1Index
+      .prepare(
+        `SELECT result.normalized_status, result.normalized_output_json,
+                result.normalized_reasons_json
+         FROM rule_result_versions result
+         JOIN rule_result_identities identity
+           ON identity.id = result.rule_result_identity_id
+         WHERE identity.rule_id = 'R3.doc-conformance'
+           AND identity.identity_key LIKE 'R3.doc-conformance:session.timeout:%'
+         ORDER BY result.version_ordinal DESC
+         LIMIT 1`,
+      )
+      .get() as {
+      normalized_status: string;
+      normalized_output_json: string;
+      normalized_reasons_json: string;
+    };
+    expect(documentationRule.normalized_status).toBe("inconclusive");
+    expect(JSON.parse(documentationRule.normalized_output_json)).toMatchObject({
+      assertionId: "default-doc",
+      filePath: "docs/session-timeout.md",
+      reason: "documentation-assertion-missing",
+    });
+    expect(JSON.parse(documentationRule.normalized_reasons_json)).toEqual([
+      "documentation-assertion-missing",
+    ]);
     expect(
       p1Index
         .prepare(
@@ -1243,6 +1273,222 @@ describe("iw claims check", () => {
       { claim_type: "CLM-LITERAL", scope: null },
     ]);
     p1Index.close();
+  });
+
+  it("retires deleted CLM-DEFAULT even when no review decision exists", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, encoding: "utf-8" }).trim();
+    mkdirSync(path.join(workspace, "docs"));
+    mkdirSync(path.join(workspace, "src"));
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  session.timeout:
+    codeDefaults:
+      - file: src/options.ts
+        export: PAGE_SIZE
+    documentation:
+      - file: docs/session-timeout.md
+        assertions:
+          - id: default-doc
+            target: default
+            pattern: '^The default application timeout is (?<value>\\d+) seconds\\.$'
+`,
+    );
+    writeFileSync(
+      path.join(workspace, "src", "options.ts"),
+      "/**\n * @default 25\n */\nexport const PAGE_SIZE = 25;\n",
+    );
+    writeFileSync(
+      path.join(workspace, "docs", "session-timeout.md"),
+      "The default application timeout is 25 seconds.\n",
+    );
+    git("init");
+    git("config", "user.email", "claims@example.test");
+    git("config", "user.name", "Claims Test");
+    git("add", ".");
+    git("commit", "-m", "baseline default documentation");
+    mkdirSync(path.join(workspace, ".iw"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    rmSync(path.join(workspace, "docs", "session-timeout.md"));
+    git("add", "-A");
+    git("commit", "-m", "delete default documentation before review");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json", since: "HEAD~1" });
+
+    expect(process.exitCode).toBe(2);
+    const index = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      index
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM review_decision_reopens
+           WHERE reason = 'continuity-broken'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      index
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM claim_assessments ca
+           JOIN claim_versions cv ON cv.id = ca.claim_version_id
+           JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+           WHERE ci.claim_type = 'CLM-DEFAULT' AND ca.is_current = 1`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    index.close();
+  });
+
+  it("supports explain and review for open reopens after reviewed delete", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, encoding: "utf-8" }).trim();
+    mkdirSync(path.join(workspace, "docs"));
+    mkdirSync(path.join(workspace, "src"));
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  session.timeout:
+    codeDefaults:
+      - file: src/options.ts
+        export: PAGE_SIZE
+    documentation:
+      - file: docs/session-timeout.md
+        assertions:
+          - id: default-doc
+            target: default
+            pattern: '^The default application timeout is (?<value>\\d+) seconds\\.$'
+`,
+    );
+    writeFileSync(
+      path.join(workspace, "src", "options.ts"),
+      "/**\n * @default 25\n */\nexport const PAGE_SIZE = 25;\n",
+    );
+    writeFileSync(
+      path.join(workspace, "docs", "session-timeout.md"),
+      "The default application timeout is 25 seconds.\n",
+    );
+    git("init");
+    git("config", "user.email", "claims@example.test");
+    git("config", "user.name", "Claims Test");
+    git("add", ".");
+    git("commit", "-m", "baseline for reviewed delete");
+    mkdirSync(path.join(workspace, ".iw"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    const baselineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const claimsToReview = baselineIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
+         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+         WHERE ca.is_current = 1`,
+      )
+      .all() as Array<{ id: string }>;
+    const defaultClaim = baselineIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN claim_versions cv ON cv.claim_identity_id = ci.id
+         JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+         WHERE ca.is_current = 1 AND ci.claim_type = 'CLM-DEFAULT'`,
+      )
+      .get() as { id: string };
+    baselineIndex.close();
+    for (const claim of claimsToReview) {
+      await runClaimsReview({
+        claim: claim.id,
+        actor: "reviewer",
+        decision: "accepted",
+        format: "json",
+      });
+    }
+
+    rmSync(path.join(workspace, "docs", "session-timeout.md"));
+    git("add", "-A");
+    git("commit", "-m", "delete reviewed default documentation");
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json", since: "HEAD~1" });
+
+    expect(process.exitCode).toBe(2);
+    const reopenedIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      reopenedIndex
+        .prepare(
+          `SELECT reason, status
+           FROM review_decision_reopens
+           WHERE claim_identity_id = ? AND reason = 'continuity-broken'`,
+        )
+        .get(defaultClaim.id),
+    ).toEqual({ reason: "continuity-broken", status: "open" });
+    reopenedIndex.close();
+
+    log.mockClear();
+    await runClaimsExplain({ claim: defaultClaim.id, format: "json" });
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject([
+      {
+        claimIdentityId: defaultClaim.id,
+        reopens: expect.arrayContaining([
+          expect.objectContaining({ reason: "continuity-broken", status: "open" }),
+        ]),
+      },
+    ]);
+
+    log.mockClear();
+    await runClaimsExplain({ claim: defaultClaim.id, format: "text" });
+    expect(process.exitCode).toBe(0);
+    expect(log.mock.calls.map(([message]) => String(message))).toEqual(
+      expect.arrayContaining([
+        "  Reopen: continuity-broken (open)",
+        expect.stringContaining("    Dependency: evidence_version:"),
+        expect.stringContaining("    Provenance: "),
+      ]),
+    );
+
+    log.mockClear();
+    await runClaimsReview({
+      claim: defaultClaim.id,
+      actor: "reviewer",
+      decision: "accepted",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(0);
+
+    const resolvedIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      resolvedIndex
+        .prepare(
+          `SELECT status, resolved_by_decision_id
+           FROM review_decision_reopens
+           WHERE claim_identity_id = ? AND reason = 'continuity-broken'`,
+        )
+        .get(defaultClaim.id),
+    ).toMatchObject({ status: "resolved", resolved_by_decision_id: expect.any(String) });
+    resolvedIndex.close();
   });
 
   it("marks the default contested when literal and annotation conflict (C6)", async () => {
@@ -1586,6 +1832,7 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: dev\n    capabilities: [session-runtime]\n  - name: eu-prod\n    capabilities: [session-runtime]\n  - name: mobile-preview\n    capabilities: []\n  - name: staging\n    capabilities: [session-runtime]\n",
     );
+    process.chdir(workspace);
     process.exitCode = undefined;
 
     await runClaimsCheck({ format: "json" });
