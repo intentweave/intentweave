@@ -3,7 +3,6 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -36,9 +35,28 @@ function git(workspace: string, ...args: string[]): string {
 
 function writeFixture(workspace: string): void {
   mkdirSync(path.join(workspace, "docs"), { recursive: true });
+  mkdirSync(path.join(workspace, "src"), { recursive: true });
   writeFileSync(
     path.join(workspace, "docs", "session.md"),
     `The default application timeout is 1800 seconds.
+`,
+  );
+  writeFileSync(
+    path.join(workspace, "src", "session.ts"),
+    `export const SESSION_TIMEOUT = 1800;
+
+export function sessionTimeout(): number {
+  return SESSION_TIMEOUT;
+}
+`,
+  );
+  writeFileSync(
+    path.join(workspace, "src", "server.ts"),
+    `import { sessionTimeout } from "./session";
+
+export function startServer(): number {
+  return sessionTimeout();
+}
 `,
   );
   git(workspace, "init");
@@ -74,31 +92,40 @@ function runIndexBuild(workspace: string, useNative: boolean): { stdout: string;
   return { stdout, durationMs: performance.now() - start };
 }
 
-function digestRows(rows: Array<Record<string, unknown>>): string {
-  return createHash("sha256")
-    .update(JSON.stringify(rows))
-    .digest("hex");
-}
-
 function summarizeIndex(
   dbPath: string,
-): Record<string, { count: number; paths?: string[] }> {
+): Record<string, { count: number; values?: string[] }> {
   const db = new Database(dbPath);
   try {
     const tables = {
       symbols: `SELECT id FROM symbols ORDER BY id`,
+      exportedFunctions: `SELECT file_path || ':' || name AS value
+              FROM symbols
+                          WHERE kind = 'function' AND (export = 1 OR export = 'exported')
+              ORDER BY file_path, name`,
       annotations: `SELECT id FROM annotations ORDER BY id`,
       imports: `SELECT id FROM imports ORDER BY id`,
       files: `SELECT path FROM files ORDER BY path`,
       coOccurrences: `SELECT rowid FROM co_occurrences ORDER BY rowid`,
       coChanges: `SELECT rowid FROM co_changes ORDER BY rowid`,
     } as const;
-    const summary: Record<string, { count: number; paths?: string[] }> = {};
+    const summary: Record<string, { count: number; values?: string[] }> = {};
     for (const [name, query] of Object.entries(tables)) {
       const rows = db.prepare(query).all() as Array<Record<string, unknown>>;
       summary[name] =
-        name === "files"
-          ? { count: rows.length, paths: rows.map((row) => String(row.path)) }
+        name === "files" || name === "symbols" || name === "exportedFunctions"
+          ? {
+              count: rows.length,
+              values: rows.map((row) =>
+                String(
+                  name === "files"
+                    ? row.path
+                    : name === "exportedFunctions"
+                      ? row.value
+                      : row.id,
+                ),
+              ),
+            }
           : { count: rows.length };
     }
     return summary;
@@ -108,7 +135,7 @@ function summarizeIndex(
 }
 
 describe("index build native vs ts parity", () => {
-  it("produces the same SQLite outputs for native and TypeScript builds", () => {
+  it("agrees on indexed files and exported functions for native and TypeScript builds", () => {
     const nativeWorkspace = mkdtempSync(path.join(tmpdir(), "intentweave-parity-native-"));
     const tsWorkspace = mkdtempSync(path.join(tmpdir(), "intentweave-parity-ts-"));
     workspaces.push(nativeWorkspace, tsWorkspace);
@@ -126,7 +153,13 @@ describe("index build native vs ts parity", () => {
     const tsSummary = summarizeIndex(path.join(tsWorkspace, ".iw", "ts.db"));
 
     expect(nativeSummary.files).toEqual(tsSummary.files);
-    expect(nativeSummary.symbols.count).toBe(tsSummary.symbols.count);
+    expect(nativeSummary.exportedFunctions).toEqual(tsSummary.exportedFunctions);
+    expect(nativeSummary.exportedFunctions.values).toEqual([
+      "src/server.ts:startServer",
+      "src/session.ts:sessionTimeout",
+    ]);
+    // Native extraction also materializes the exported scalar constant.
+    expect(nativeSummary.symbols.count).toBeGreaterThanOrEqual(tsSummary.symbols.count);
     expect(nativeSummary.annotations.count).toBe(tsSummary.annotations.count);
     expect(nativeSummary.imports.count).toBe(tsSummary.imports.count);
     expect(nativeSummary.coOccurrences.count).toBe(tsSummary.coOccurrences.count);

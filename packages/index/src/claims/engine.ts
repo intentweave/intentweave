@@ -153,6 +153,50 @@ export class ClaimsEngine {
       }),
     );
 
+    if (input.documentedDefault && input.codeDefault) {
+      const r3Documentation = r3DocumentationConformance(
+        input.documentedDefault.value,
+        input.codeDefault.value,
+      );
+      const r3DocumentationVersion = resultVersion(
+        this.store,
+        "R3.doc-conformance",
+        input.parameterKey,
+        undefined,
+        r3Documentation,
+        [input.documentedDefault.versionId, input.codeDefault.versionId],
+        input.contracts.r3RuleContractVersion,
+        input.contracts.r3ImplementationFingerprint ??
+          input.contracts.implementationFingerprint,
+      );
+      ruleResults.push(r3DocumentationVersion);
+      const documentationAssessment = assessClaimPolicy([
+        {
+          dependencyKind: "rule_result_version" as const,
+          dependencyVersionId: r3DocumentationVersion.id,
+          epistemicRole: "warrant" as const,
+          authoritative: true,
+          ruleStatus: r3Documentation.status,
+        },
+      ]);
+      assessments.push(
+        this.store.persistClaimAssessment({
+          parameterKey: input.parameterKey,
+          claimType: "CLM-DOC-CONFORMANCE",
+          normalizedStatement: {
+            documentedValue: input.documentedDefault.value,
+            effectiveValue: input.codeDefault.value,
+          },
+          assessmentPolicyId:
+            input.contracts.documentationPolicyId ?? "documentation-conformance",
+          assessmentPolicyVersion: input.contracts.documentationPolicyVersion,
+          repositoryRevision: input.repositoryRevision,
+          status: documentationAssessment.status,
+          dependencies: documentationAssessment.dependencies,
+        }),
+      );
+    }
+
     return { ruleResults, assessments };
   }
 

@@ -16,61 +16,34 @@ describe("migrateSchema14To15 hardening", () => {
     db.close();
   });
 
-  it("rolls back migration on failure", () => {
-    // Create schema-14 state
+  it("rolls back companion tables when the migration metadata write fails", () => {
+    // `_meta` is deliberately malformed so the final metadata write fails only
+    // after the companion DDL has been executed inside the migration transaction.
     db.exec(`
-      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+      CREATE TABLE _meta (legacy_version TEXT PRIMARY KEY);
+      INSERT INTO _meta (legacy_version) VALUES ('14');
       CREATE TABLE symbols (id TEXT PRIMARY KEY, name TEXT NOT NULL);
       INSERT INTO symbols (id, name) VALUES ('test:1', 'testSymbol');
     `);
 
-    // Create companion tables with valid structure
-    db.exec(`
-      CREATE TABLE parameter_identities (id TEXT PRIMARY KEY, canonical_key TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
-      INSERT INTO parameter_identities (id, canonical_key, created_at) VALUES ('param:1', 'test.param', 1000);
-    `);
+    expect(() => migrateSchema14To15(db)).toThrow(/no column named key/);
 
-    // Attempt to insert invalid FK reference (should fail)
-    db.exec(`
-      CREATE TABLE evidence_identities (
-        id TEXT PRIMARY KEY,
-        parameter_identity_id TEXT REFERENCES parameter_identities(id),
-        source_kind TEXT NOT NULL,
-        identity_key TEXT NOT NULL UNIQUE,
-        created_at INTEGER NOT NULL
-      );
-    `);
-
-    expect(() =>
-      db
-        .prepare(
-          `INSERT INTO evidence_identities (id, parameter_identity_id, source_kind, identity_key, created_at)
-           VALUES ('ev:1', 'nonexistent-param', 'code-default', 'test:1', 1000)`,
-        )
-        .run(),
-    ).toThrow(/FOREIGN KEY constraint failed/);
-
-    // Migration should succeed (IF NOT EXISTS is idempotent)
-    migrateSchema14To15(db);
-
-    // Verify migration completed
-    const version = db
-      .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
-      .get() as { value: string };
-    expect(version.value).toBe("15");
-
-    // Verify core data unchanged
+    // Core data survives, but no partial companion schema may escape the transaction.
     const symbols = db.prepare(`SELECT COUNT(*) AS count FROM symbols`).get() as {
       count: number;
     };
     expect(symbols.count).toBe(1);
-
-    // Verify no invalid FK data was inserted
-    const evidenceCount = db
-      .prepare(`SELECT COUNT(*) AS count FROM evidence_identities`)
-      .get() as { count: number };
-    expect(evidenceCount.count).toBe(0);
+    expect(
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM sqlite_master
+           WHERE type = 'table' AND name = 'parameter_identities'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare(`SELECT legacy_version FROM _meta`).get(),
+    ).toEqual({ legacy_version: "14" });
   });
 
   it("preserves existing core data during migration", () => {

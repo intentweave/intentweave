@@ -99,4 +99,34 @@ describe("ClaimsEngine", () => {
       db.prepare(`SELECT COUNT(*) AS count FROM claim_identities WHERE claim_type = 'CLM-EFFECTIVE'`).get(),
     ).toMatchObject({ count: 0 });
   });
+
+  it("refutes default documentation that disagrees with implemented evidence", () => {
+    const codeDefault = evidence("code-default", "full");
+    const documentedDefault = evidence("documented-default", "structured");
+
+    const result = new ClaimsEngine(store).evaluateDefault({
+      parameterKey: "cli.index-build.depth",
+      repositoryRevision: "p-001",
+      codeDefault: { versionId: codeDefault.id, value: "full" },
+      documentedDefault: { versionId: documentedDefault.id, value: "structured" },
+      contracts,
+    });
+
+    expect(result.ruleResults).toHaveLength(2);
+    expect(result.assessments).toHaveLength(2);
+    expect(
+      db
+        .prepare(
+          `SELECT ci.claim_type, ca.epistemic_status
+           FROM claim_assessments ca
+           JOIN claim_versions cv ON cv.id = ca.claim_version_id
+           JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+           ORDER BY ci.claim_type`,
+        )
+        .all(),
+    ).toEqual([
+      { claim_type: "CLM-DEFAULT", epistemic_status: "supported" },
+      { claim_type: "CLM-DOC-CONFORMANCE", epistemic_status: "refuted" },
+    ]);
+  });
 });

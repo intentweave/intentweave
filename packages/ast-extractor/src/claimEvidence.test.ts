@@ -46,6 +46,21 @@ describe("extractClaimEvidence", () => {
     ]);
   });
 
+  it("extracts a Commander option default only as explicitly bindable evidence", () => {
+    const evidence = extractClaimEvidence(
+      `build.option("--depth <depth>", "Annotation depth", "full");`,
+      "src/cli.ts",
+    );
+
+    expect(evidence.literalBindings).toMatchObject([
+      {
+        kind: "option-default",
+        name: "--depth <depth>",
+        normalizedValue: "full",
+      },
+    ]);
+  });
+
   it("extracts claims from source files larger than the direct parser limit", () => {
     const evidence = extractClaimEvidence(
       `${"// padding\n".repeat(4_000)}export const LARGE_FILE_DEFAULT = 42;`,

@@ -166,6 +166,37 @@ describe("Claims documentation discovery", () => {
     ]);
   });
 
+  it("extracts an explicitly bound Commander option default", () => {
+    const optionBindings = parseClaimsBindings({
+      parameters: {
+        "cli.index-build.depth": {
+          codeDefaults: [{ file: "src/indexBuild.ts", option: "--depth <depth>" }],
+        },
+      },
+    });
+
+    expect(
+      extractBoundCodeEvidence(
+        optionBindings,
+        () => `build.option("--depth <depth>", "Annotation depth", "full");`,
+      ),
+    ).toEqual([
+      {
+        parameterKey: "cli.index-build.depth",
+        claimType: "CLM-DEFAULT",
+        sourceKind: "code-default",
+        identityKey: "cli.index-build.depth:code-default:src/indexBuild.ts:--depth <depth>",
+        normalizedValue: "full",
+        semanticLocation: "cli.index-build.depth",
+        filePath: "src/indexBuild.ts",
+        symbolId: "src/indexBuild.ts#--depth <depth>@1",
+        line: 1,
+        bindingBasis: "explicit-map",
+        bindingConfidence: "certain",
+      },
+    ]);
+  });
+
   it("normalizes missing and ambiguous assertions to inconclusive", () => {
     const observations = extractDocumentationAssertions(bindings, () =>
       [

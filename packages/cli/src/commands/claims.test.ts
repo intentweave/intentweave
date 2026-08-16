@@ -86,6 +86,75 @@ describe("iw claims check", () => {
     index.close();
   });
 
+  it("reports P-001 when documented and implemented index-depth defaults conflict", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"));
+    mkdirSync(path.join(workspace, "docs"));
+    mkdirSync(path.join(workspace, "packages", "cli", "src", "commands"), {
+      recursive: true,
+    });
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  cli.index-build.depth:
+    codeDefaults:
+      - file: packages/cli/src/commands/indexBuild.ts
+        option: "--depth <depth>"
+    documentation:
+      - file: docs/CLI-USAGE.md
+        assertions:
+          - id: default-depth-doc
+            target: default
+            pattern: '^iw index build\\s+# (?<value>structured) depth \\(default\\)$'
+`,
+    );
+    writeFileSync(
+      path.join(workspace, "packages", "cli", "src", "commands", "indexBuild.ts"),
+      `build.option("--depth <depth>", "Annotation depth", "full");\n`,
+    );
+    writeFileSync(
+      path.join(workspace, "docs", "CLI-USAGE.md"),
+      "iw index build                    # structured depth (default)\n",
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    expect(process.exitCode).toBe(1);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      claims: [
+        {
+          parameterKey: "cli.index-build.depth",
+          claimType: "CLM-DEFAULT",
+          ruleStatuses: ["passed", "failed"],
+          assessmentStatuses: ["supported", "refuted"],
+        },
+      ],
+    });
+    const index = new Database(path.join(workspace, ".iw", "index.db"));
+    expect(
+      index
+        .prepare(
+          `SELECT ci.claim_type, ca.epistemic_status
+           FROM claim_assessments ca
+           JOIN claim_versions cv ON cv.id = ca.claim_version_id
+           JOIN claim_identities ci ON ci.id = cv.claim_identity_id
+           ORDER BY ci.claim_type`,
+        )
+        .all(),
+    ).toEqual([
+      { claim_type: "CLM-DEFAULT", epistemic_status: "supported" },
+      { claim_type: "CLM-DOC-CONFORMANCE", epistemic_status: "refuted" },
+    ]);
+    index.close();
+  });
+
   it("promotes an inferred claim when an explicit binding is later added", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     workspaces.push(workspace);
@@ -1160,8 +1229,19 @@ describe("iw claims check", () => {
       .get() as { claim_type: string };
     expect(reopenedClaim.claim_type).toBe("CLM-DEFAULT");
     expect(
-      p1Index.prepare(`SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`).get(),
-    ).toEqual({ count: 1 });
+      p1Index
+        .prepare(
+          `SELECT ci.claim_type, ci.scope
+           FROM review_decisions review
+           JOIN claim_identities ci ON ci.id = review.claim_identity_id
+           WHERE review.is_current = 1
+           ORDER BY ci.claim_type, ci.scope`,
+        )
+        .all(),
+    ).toEqual([
+      { claim_type: "CLM-DOC-CONFORMANCE", scope: null },
+      { claim_type: "CLM-LITERAL", scope: null },
+    ]);
     p1Index.close();
   });
 
@@ -1382,7 +1462,7 @@ describe("iw claims check", () => {
 
     await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
 
-    expect(process.exitCode).toBe(4);
+    expect(process.exitCode).toBe(1);
     const c7Index = new Database(path.join(workspace, ".iw", "index.db"));
     const codeContinuity = c7Index
       .prepare(

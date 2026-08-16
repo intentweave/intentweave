@@ -277,6 +277,12 @@ function expectC10OpenReviews(workspace: string): void {
   expect(state.reopens).toEqual([
     {
       claim_type: "CLM-DOC-CONFORMANCE",
+      scope: null,
+      reason: "warrant-changed",
+      status: "open",
+    },
+    {
+      claim_type: "CLM-DOC-CONFORMANCE",
       scope: "eu-prod",
       reason: "warrant-changed",
       status: "open",
@@ -332,6 +338,14 @@ describe("claims contract drift (C9/C10)", () => {
         },
         {
           claim_type: "CLM-DOC-CONFORMANCE",
+          scope: null,
+          epistemic_status: "supported",
+          statement: { documentedValue: 1800, effectiveValue: 1800 },
+          assessment_policy_id: "documentation-conformance",
+          assessment_policy_version: "documentation-conformance-v1",
+        },
+        {
+          claim_type: "CLM-DOC-CONFORMANCE",
           scope: "eu-prod",
           epistemic_status: "supported",
           statement: { documentedValue: 5400, effectiveValue: 5400 },
@@ -356,15 +370,16 @@ describe("claims contract drift (C9/C10)", () => {
         },
       ]);
       expect(reviewState(workspace)).toEqual({
-        currentReviews: 4,
+        currentReviews: 5,
         currentReviewClaims: [
           { claim_type: "CLM-DEFAULT", scope: null, decision_origin: "manual" },
+          { claim_type: "CLM-DOC-CONFORMANCE", scope: null, decision_origin: "carry-forward" },
           { claim_type: "CLM-DOC-CONFORMANCE", scope: "eu-prod", decision_origin: "carry-forward" },
           { claim_type: "CLM-EFFECTIVE", scope: "dev", decision_origin: "carry-forward" },
           { claim_type: "CLM-EFFECTIVE", scope: "eu-prod", decision_origin: "carry-forward" },
         ],
         decisionOrigins: [
-          { decision_origin: "carry-forward", count: 3 },
+          { decision_origin: "carry-forward", count: 4 },
           { decision_origin: "manual", count: 1 },
         ],
         reopens: [],
@@ -424,6 +439,14 @@ describe("claims contract drift (C9/C10)", () => {
         },
         {
           claim_type: "CLM-DOC-CONFORMANCE",
+          scope: null,
+          epistemic_status: "supported",
+          statement: { documentedValue: 1800, effectiveValue: 1800 },
+          assessment_policy_id: "documentation-conformance",
+          assessment_policy_version: "documentation-conformance-v1",
+        },
+        {
+          claim_type: "CLM-DOC-CONFORMANCE",
           scope: "eu-prod",
           epistemic_status: "refuted",
           statement: { documentedValue: 5400, effectiveValue: 1800 },
@@ -454,6 +477,12 @@ describe("claims contract drift (C9/C10)", () => {
         ],
         decisionOrigins: [{ decision_origin: "manual", count: 1 }],
         reopens: [
+          {
+            claim_type: "CLM-DOC-CONFORMANCE",
+            scope: null,
+            reason: "warrant-changed",
+            status: "open",
+          },
           {
             claim_type: "CLM-DOC-CONFORMANCE",
             scope: "eu-prod",

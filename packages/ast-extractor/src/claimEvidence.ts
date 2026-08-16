@@ -12,7 +12,8 @@ export type LiteralBindingKind =
   | "assignment"
   | "class-field"
   | "destructuring-default"
-  | "parameter-default";
+  | "parameter-default"
+  | "option-default";
 
 export interface ExtractedLiteralBinding {
   symbolId: string;
@@ -79,6 +80,7 @@ function bindingKind(node: Parser.SyntaxNode): LiteralBindingKind {
   if (node.type === "variable_declarator") return "variable";
   if (node.type === "assignment_expression") return "assignment";
   if (node.type.includes("field_definition")) return "class-field";
+  if (node.type === "call_expression") return "option-default";
   let ancestor = node.parent;
   while (ancestor) {
     if (ancestor.type.includes("formal_parameters")) return "parameter-default";
@@ -169,6 +171,7 @@ export function extractClaimEvidence(
     declaration: Parser.SyntaxNode,
     nameNode: Parser.SyntaxNode | null,
     valueNode: Parser.SyntaxNode | null,
+    bindingName?: string,
   ) => {
     const named = declaration.namedChildren;
     nameNode ??= named.at(0) ?? null;
@@ -176,7 +179,7 @@ export function extractClaimEvidence(
     if (!nameNode || !valueNode || nameNode === valueNode) return;
     const value = normalizedLiteral(valueNode.text);
     if (value === undefined) return;
-    const name = nameNode.text;
+    const name = bindingName ?? nameNode.text;
     const symbolId = `${filePath}#${name}@${nameNode.startPosition.row + 1}`;
     if (seen.has(symbolId)) return;
     seen.add(symbolId);
@@ -233,6 +236,20 @@ export function extractClaimEvidence(
         node.childForFieldName("left") ?? node.childForFieldName("pattern"),
         node.childForFieldName("right") ?? node.childForFieldName("value"),
       );
+    } else if (node.type === "call_expression") {
+      const callee = node.childForFieldName("function");
+      const property = callee?.childForFieldName("property");
+      const argumentsNode = node.childForFieldName("arguments");
+      const [optionNode, , defaultNode] = argumentsNode?.namedChildren ?? [];
+      const option = optionNode && normalizedLiteral(optionNode.text);
+      if (
+        property?.text === "option" &&
+        typeof option === "string" &&
+        option.startsWith("-") &&
+        defaultNode
+      ) {
+        addBinding(node, optionNode, defaultNode, option);
+      }
     }
     for (const child of node.namedChildren) visit(child);
   };

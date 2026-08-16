@@ -22,7 +22,7 @@ export interface DocumentationAssertionBinding {
 
 export interface ParameterBinding {
   configKeys: string[];
-  codeDefaults: Array<{ file: string; export: string }>;
+  codeDefaults: Array<{ file: string; export?: string; option?: string }>;
   documentation: Array<{
     file: string;
     assertions: DocumentationAssertionBinding[];
@@ -75,7 +75,7 @@ export interface CodeInconclusiveObservation {
   parameterKey: string;
   sourceKind: "code-default";
   filePath: string;
-  exportName: string;
+  bindingName: string;
   reason: "code-default-binding-missing";
 }
 
@@ -142,6 +142,7 @@ function parseScalar(value: string): ClaimScalar | undefined {
     return Number(normalized.replaceAll("_", ""));
   }
   if (/^(['"]).*\1$/.test(normalized)) return normalized.slice(1, -1);
+  if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(normalized)) return normalized;
   return undefined;
 }
 
@@ -174,9 +175,22 @@ export function parseClaimsBindings(raw: unknown): ClaimsBindings {
     const codeDefaults = Array.isArray(parameter.codeDefaults)
       ? parameter.codeDefaults.map((entry, index) => {
           const binding = requireRecord(entry, `${parameterKey}.codeDefaults[${index}]`);
+          const exportName =
+            binding.export === undefined
+              ? undefined
+              : requireString(binding.export, `${parameterKey}.codeDefaults[${index}].export`);
+          const option =
+            binding.option === undefined
+              ? undefined
+              : requireString(binding.option, `${parameterKey}.codeDefaults[${index}].option`);
+          if ((exportName === undefined) === (option === undefined)) {
+            throw new ClaimsBindingError(
+              `${parameterKey}.codeDefaults[${index}] must define exactly one of export or option`,
+            );
+          }
           return {
             file: requireString(binding.file, `${parameterKey}.codeDefaults[${index}].file`),
-            export: requireString(binding.export, `${parameterKey}.codeDefaults[${index}].export`),
+            ...(exportName ? { export: exportName } : { option: option! }),
           };
         })
       : [];
@@ -421,16 +435,18 @@ export function extractBoundCodeEvidence(
   const observations: CodeObservation[] = [];
   for (const [parameterKey, parameter] of Object.entries(bindings.parameters)) {
     for (const binding of parameter.codeDefaults) {
+      const bindingName = binding.export ?? binding.option;
+      if (!bindingName) continue;
       const evidence = extractClaimEvidence(readCode(binding.file), binding.file);
       const literal = evidence.literalBindings.find(
-        (candidate) => candidate.name === binding.export,
+        (candidate) => candidate.name === bindingName,
       );
       if (!literal) {
         observations.push({
           parameterKey,
           sourceKind: "code-default",
           filePath: binding.file,
-          exportName: binding.export,
+          bindingName,
           reason: "code-default-binding-missing",
         });
         continue;
@@ -439,7 +455,7 @@ export function extractBoundCodeEvidence(
         parameterKey,
         claimType: "CLM-DEFAULT",
         sourceKind: "code-default",
-        identityKey: `${parameterKey}:code-default:${binding.file}:${binding.export}`,
+        identityKey: `${parameterKey}:code-default:${binding.file}:${bindingName}`,
         semanticLocation: parameterKey,
         normalizedValue: literal.normalizedValue,
         filePath: binding.file,
@@ -481,7 +497,10 @@ export function extractDiscoveredCodeEvidence(
 ): CodeEvidenceObservation[] {
   const explicitlyBound = new Set(
     Object.values(bindings.parameters).flatMap((parameter) =>
-      parameter.codeDefaults.map((binding) => `${binding.file}\0${binding.export}`),
+      parameter.codeDefaults.flatMap((binding) => {
+        const bindingName = binding.export ?? binding.option;
+        return bindingName ? [`${binding.file}\0${bindingName}`] : [];
+      }),
     ),
   );
   const observations: CodeEvidenceObservation[] = [];
