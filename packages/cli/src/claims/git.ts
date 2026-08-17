@@ -23,7 +23,8 @@ function git(workspaceRoot: string, args: string[]): string {
       error && typeof error === "object" && "stderr" in error
         ? String(error.stderr)
         : "";
-    const message = stderr || (error instanceof Error ? error.message : String(error));
+    const message =
+      stderr || (error instanceof Error ? error.message : String(error));
     throw new ClaimsGitError(`git ${args.join(" ")} failed: ${message}`);
   }
 }
@@ -33,7 +34,11 @@ export class ClaimsGit {
   constructor(private readonly workspaceRoot: string) {}
 
   resolveCommit(revision: string): string {
-    return git(this.workspaceRoot, ["rev-parse", "--verify", `${revision}^{commit}`]);
+    return git(this.workspaceRoot, [
+      "rev-parse",
+      "--verify",
+      `${revision}^{commit}`,
+    ]);
   }
 
   head(): string {
@@ -90,7 +95,8 @@ export class ClaimsGit {
     } catch (error) {
       if (
         error instanceof ClaimsGitError &&
-        (error.message.includes("does not exist") || error.message.includes("exists on disk"))
+        (error.message.includes("does not exist") ||
+          error.message.includes("exists on disk"))
       ) {
         return undefined;
       }

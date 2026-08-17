@@ -80,7 +80,9 @@ export function assessmentKey(
       dependency.warrantPolarity,
       dependency.assessmentEffect,
     ])
-    .sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
+    .sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
+    );
 
   return fingerprint({ claimVersionId, dependencies: dependencyTuples });
 }

@@ -23,7 +23,10 @@ afterEach(() => {
 });
 
 function repoRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../");
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../../",
+  );
 }
 
 function cliEntry(): string {
@@ -31,7 +34,10 @@ function cliEntry(): string {
 }
 
 function git(workspace: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd: workspace, encoding: "utf-8" }).trim();
+  return execFileSync("git", args, {
+    cwd: workspace,
+    encoding: "utf-8",
+  }).trim();
 }
 
 function writeFixture(workspace: string): void {
@@ -72,7 +78,11 @@ function runIndexBuild(
   useNative: boolean,
   env: NodeJS.ProcessEnv = {},
 ): { stdout: string; durationMs: number } {
-  const outputDb = path.join(workspace, ".iw", useNative ? "native.db" : "ts.db");
+  const outputDb = path.join(
+    workspace,
+    ".iw",
+    useNative ? "native.db" : "ts.db",
+  );
   mkdirSync(path.join(workspace, ".iw"), { recursive: true });
   const args = [
     cliEntry(),
@@ -142,8 +152,12 @@ function summarizeIndex(
 
 describe("index build native vs ts parity", () => {
   it("agrees on indexed files and exported functions for native and TypeScript builds", () => {
-    const nativeWorkspace = mkdtempSync(path.join(tmpdir(), "intentweave-parity-native-"));
-    const tsWorkspace = mkdtempSync(path.join(tmpdir(), "intentweave-parity-ts-"));
+    const nativeWorkspace = mkdtempSync(
+      path.join(tmpdir(), "intentweave-parity-native-"),
+    );
+    const tsWorkspace = mkdtempSync(
+      path.join(tmpdir(), "intentweave-parity-ts-"),
+    );
     workspaces.push(nativeWorkspace, tsWorkspace);
     writeFixture(nativeWorkspace);
     writeFixture(tsWorkspace);
@@ -155,20 +169,28 @@ describe("index build native vs ts parity", () => {
     expect(ts.stdout).toContain("Index built");
     expect(ts.stdout).not.toContain("(native)");
 
-    const nativeSummary = summarizeIndex(path.join(nativeWorkspace, ".iw", "native.db"));
+    const nativeSummary = summarizeIndex(
+      path.join(nativeWorkspace, ".iw", "native.db"),
+    );
     const tsSummary = summarizeIndex(path.join(tsWorkspace, ".iw", "ts.db"));
 
     expect(nativeSummary.files).toEqual(tsSummary.files);
-    expect(nativeSummary.exportedFunctions).toEqual(tsSummary.exportedFunctions);
+    expect(nativeSummary.exportedFunctions).toEqual(
+      tsSummary.exportedFunctions,
+    );
     expect(nativeSummary.exportedFunctions.values).toEqual([
       "src/server.ts:startServer",
       "src/session.ts:sessionTimeout",
     ]);
     // Native extraction also materializes the exported scalar constant.
-    expect(nativeSummary.symbols.count).toBeGreaterThanOrEqual(tsSummary.symbols.count);
+    expect(nativeSummary.symbols.count).toBeGreaterThanOrEqual(
+      tsSummary.symbols.count,
+    );
     expect(nativeSummary.annotations.count).toBe(tsSummary.annotations.count);
     expect(nativeSummary.imports.count).toBe(tsSummary.imports.count);
-    expect(nativeSummary.coOccurrences.count).toBe(tsSummary.coOccurrences.count);
+    expect(nativeSummary.coOccurrences.count).toBe(
+      tsSummary.coOccurrences.count,
+    );
     expect(nativeSummary.coChanges.count).toBe(tsSummary.coChanges.count);
     expect(native.durationMs).toBeGreaterThan(0);
     expect(ts.durationMs).toBeGreaterThan(0);
@@ -188,7 +210,9 @@ describe("index build native vs ts parity", () => {
   });
 
   it("preserves Claims history when the native build fails and TypeScript fallback succeeds", () => {
-    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-native-fallback-"));
+    const workspace = mkdtempSync(
+      path.join(tmpdir(), "intentweave-native-fallback-"),
+    );
     workspaces.push(workspace);
     writeFixture(workspace);
     const outputDb = path.join(workspace, ".iw", "native.db");
@@ -215,7 +239,9 @@ describe("index build native vs ts parity", () => {
     const preserved = new Database(outputDb);
     try {
       expect(
-        preserved.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
+        preserved
+          .prepare(`SELECT canonical_key FROM parameter_identities`)
+          .get(),
       ).toEqual({ canonical_key: "session.timeout" });
       expect(
         preserved.prepare(`SELECT COUNT(*) AS count FROM symbols`).get(),

@@ -3,7 +3,13 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ClaimsGit } from "./git.js";
@@ -18,7 +24,9 @@ describe("ClaimsGit", () => {
   });
 
   it("uses immutable commit anchors for merge-base, diff, and historical content", () => {
-    const repository = mkdtempSync(path.join(tmpdir(), "intentweave-claims-git-"));
+    const repository = mkdtempSync(
+      path.join(tmpdir(), "intentweave-claims-git-"),
+    );
     repositories.push(repository);
     const run = (...args: string[]) =>
       execFileSync("git", args, { cwd: repository, encoding: "utf-8" }).trim();
@@ -39,7 +47,10 @@ describe("ClaimsGit", () => {
     expect(claimsGit.head()).toBe(head);
     expect(claimsGit.resolveCommit("HEAD~1")).toBe(base);
     expect(claimsGit.mergeBase("HEAD~1")).toBe(base);
-    expect(claimsGit.changedPaths(base, head)).toEqual(["docs.md", "session.yaml"]);
+    expect(claimsGit.changedPaths(base, head)).toEqual([
+      "docs.md",
+      "session.yaml",
+    ]);
     expect(claimsGit.listFiles(head)).toEqual(["docs.md", "session.yaml"]);
     expect(claimsGit.show(base, "session.yaml")).toBe("timeout: 1800");
     expect(claimsGit.show(head, "session.yaml")).toBe("timeout: 3600");
@@ -47,19 +58,27 @@ describe("ClaimsGit", () => {
   });
 
   it("reports Git-detected rename metadata", () => {
-    const repository = mkdtempSync(path.join(tmpdir(), "intentweave-claims-git-"));
+    const repository = mkdtempSync(
+      path.join(tmpdir(), "intentweave-claims-git-"),
+    );
     repositories.push(repository);
     const run = (...args: string[]) =>
       execFileSync("git", args, { cwd: repository, encoding: "utf-8" }).trim();
     run("init");
     run("config", "user.email", "claims@example.test");
     run("config", "user.name", "Claims Test");
-    writeFileSync(path.join(repository, "session.ts"), "export const TIMEOUT = 1800;\n");
+    writeFileSync(
+      path.join(repository, "session.ts"),
+      "export const TIMEOUT = 1800;\n",
+    );
     run("add", "session.ts");
     run("commit", "-m", "base");
     const base = run("rev-parse", "HEAD");
     mkdirSync(path.join(repository, "auth"));
-    renameSync(path.join(repository, "session.ts"), path.join(repository, "auth", "session.ts"));
+    renameSync(
+      path.join(repository, "session.ts"),
+      path.join(repository, "auth", "session.ts"),
+    );
     run("add", "-A");
     run("commit", "-m", "move timeout");
     const head = run("rev-parse", "HEAD");

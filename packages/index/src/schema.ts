@@ -429,7 +429,9 @@ function claimsCompanionTablesInSchema(
   const tables = new Set(
     (
       db
-        .prepare(`SELECT name FROM ${schema}.sqlite_master WHERE type = 'table'`)
+        .prepare(
+          `SELECT name FROM ${schema}.sqlite_master WHERE type = 'table'`,
+        )
         .all() as Array<{ name: string }>
     ).map((row) => row.name),
   );
@@ -498,7 +500,9 @@ export function restoreClaimsHistory(
   snapshotPath: string | undefined,
 ): void {
   if (!snapshotPath || !fs.existsSync(snapshotPath)) return;
-  db.exec(`ATTACH DATABASE ${sqliteStringLiteral(snapshotPath)} AS claims_history`);
+  db.exec(
+    `ATTACH DATABASE ${sqliteStringLiteral(snapshotPath)} AS claims_history`,
+  );
   try {
     const sourceTables = claimsCompanionTablesInSchema(db, "claims_history");
     if (!sourceTables) return;
@@ -774,7 +778,7 @@ export function migrateSchema15To16(db: Database.Database): void {
       WHERE ca.reference_key IS NOT NULL
     `);
     db.prepare(
-      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)`
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)`,
     ).run(CURRENT_SCHEMA_VERSION);
   });
   migrate();

@@ -53,7 +53,11 @@ describe("extractClaimEvidence", () => {
       "src/limits.ts",
     );
 
-    expect(new Set(evidence.literalBindings.map((binding) => binding.structureFingerprint)).size).toBe(2);
+    expect(
+      new Set(
+        evidence.literalBindings.map((binding) => binding.structureFingerprint),
+      ).size,
+    ).toBe(2);
   });
 
   it("extracts a Commander option default only as explicitly bindable evidence", () => {

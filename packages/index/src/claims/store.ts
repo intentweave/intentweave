@@ -89,11 +89,19 @@ export class ClaimsStore {
         fingerprint: string;
       }>;
       const current = versions[0];
-      if (current && logicalFingerprint(current.fingerprint) === input.fingerprint) {
-        return { id: current.id, ordinal: current.version_ordinal, created: false };
+      if (
+        current &&
+        logicalFingerprint(current.fingerprint) === input.fingerprint
+      ) {
+        return {
+          id: current.id,
+          ordinal: current.version_ordinal,
+          created: false,
+        };
       }
       const returning = versions.find(
-        (version) => logicalFingerprint(version.fingerprint) === input.fingerprint,
+        (version) =>
+          logicalFingerprint(version.fingerprint) === input.fingerprint,
       );
 
       const ordinal = nextOrdinal(
@@ -235,11 +243,19 @@ export class ClaimsStore {
         fingerprint: string;
       }>;
       const current = versions[0];
-      if (current && logicalFingerprint(current.fingerprint) === resultFingerprint) {
-        return { id: current.id, ordinal: current.version_ordinal, created: false };
+      if (
+        current &&
+        logicalFingerprint(current.fingerprint) === resultFingerprint
+      ) {
+        return {
+          id: current.id,
+          ordinal: current.version_ordinal,
+          created: false,
+        };
       }
       const returning = versions.find(
-        (version) => logicalFingerprint(version.fingerprint) === resultFingerprint,
+        (version) =>
+          logicalFingerprint(version.fingerprint) === resultFingerprint,
       );
 
       const ordinal = nextOrdinal(
@@ -300,7 +316,11 @@ export class ClaimsStore {
         )
         .run(parameterId, input.parameterKey, now);
 
-      const identityKey = [input.parameterKey, input.claimType, input.scope ?? ""].join(":");
+      const identityKey = [
+        input.parameterKey,
+        input.claimType,
+        input.scope ?? "",
+      ].join(":");
       const claimIdentityId = idFor("claim", identityKey);
       this.db
         .prepare(
@@ -339,7 +359,8 @@ export class ClaimsStore {
         latestVersion &&
         latestVersion.normalized_statement_json === statementJson &&
         latestVersion.assessment_policy_id === input.assessmentPolicyId &&
-        latestVersion.assessment_policy_version === input.assessmentPolicyVersion;
+        latestVersion.assessment_policy_version ===
+          input.assessmentPolicyVersion;
       const claimVersionId = unchangedClaim
         ? latestVersion.id
         : `${claimIdentityId}@${nextOrdinal(
@@ -390,7 +411,9 @@ export class ClaimsStore {
         assessment_key: string;
         is_current: number;
       }>;
-      const current = assessments.find((assessment) => assessment.is_current === 1);
+      const current = assessments.find(
+        (assessment) => assessment.is_current === 1,
+      );
       if (current && logicalFingerprint(current.assessment_key) === key) {
         ensureReferenceAnchor(current.id);
         return {
@@ -404,7 +427,9 @@ export class ClaimsStore {
         (assessment) => logicalFingerprint(assessment.assessment_key) === key,
       ).length;
       const storedKey =
-        returningCount > 0 ? reobservedFingerprint(key, returningCount + 1) : key;
+        returningCount > 0
+          ? reobservedFingerprint(key, returningCount + 1)
+          : key;
 
       const assessmentId = `assessment:${storedKey}`;
       this.db

@@ -19,7 +19,10 @@ describe("ClaimsEngine", () => {
   });
   afterEach(() => db.close());
 
-  function evidence(identityKey: string, value: string | number | boolean | null) {
+  function evidence(
+    identityKey: string,
+    value: string | number | boolean | null,
+  ) {
     return store.persistEvidence({
       parameterKey: "session.timeout",
       sourceKind: "fixture",
@@ -69,13 +72,17 @@ describe("ClaimsEngine", () => {
     const first = engine.evaluateScope(input);
     const repeated = engine.evaluateScope(input);
     const statuses = db
-      .prepare(`SELECT epistemic_status FROM claim_assessments ORDER BY claim_version_id`)
+      .prepare(
+        `SELECT epistemic_status FROM claim_assessments ORDER BY claim_version_id`,
+      )
       .all() as Array<{ epistemic_status: string }>;
 
     expect(first.ruleResults).toHaveLength(4);
     expect(first.assessments).toHaveLength(3);
     expect(repeated.ruleResults.every((result) => !result.created)).toBe(true);
-    expect(repeated.assessments.every((assessment) => !assessment.created)).toBe(true);
+    expect(
+      repeated.assessments.every((assessment) => !assessment.created),
+    ).toBe(true);
     expect(statuses).toEqual([
       { epistemic_status: "supported" },
       { epistemic_status: "supported" },
@@ -96,7 +103,11 @@ describe("ClaimsEngine", () => {
     expect(result.ruleResults).toHaveLength(2);
     expect(result.assessments).toHaveLength(1);
     expect(
-      db.prepare(`SELECT COUNT(*) AS count FROM claim_identities WHERE claim_type = 'CLM-EFFECTIVE'`).get(),
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM claim_identities WHERE claim_type = 'CLM-EFFECTIVE'`,
+        )
+        .get(),
     ).toMatchObject({ count: 0 });
   });
 
@@ -108,7 +119,10 @@ describe("ClaimsEngine", () => {
       parameterKey: "cli.index-build.depth",
       repositoryRevision: "p-001",
       codeDefault: { versionId: codeDefault.id, value: "full" },
-      documentedDefault: { versionId: documentedDefault.id, value: "structured" },
+      documentedDefault: {
+        versionId: documentedDefault.id,
+        value: "structured",
+      },
       contracts,
     });
 

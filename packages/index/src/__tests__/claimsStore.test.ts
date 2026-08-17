@@ -161,11 +161,19 @@ describe("ClaimsStore", () => {
       }),
     ).toBe(false);
     expect(
-      db.prepare(`SELECT basis, confidence, provenance_json FROM evidence_continuity`).get(),
+      db
+        .prepare(
+          `SELECT basis, confidence, provenance_json FROM evidence_continuity`,
+        )
+        .get(),
     ).toMatchObject({
       basis: "git-merge-base",
       confidence: "high",
-      provenance_json: JSON.stringify({ base: "base", head: "head", materialChange: true }),
+      provenance_json: JSON.stringify({
+        base: "base",
+        head: "head",
+        materialChange: true,
+      }),
     });
     expect(
       db

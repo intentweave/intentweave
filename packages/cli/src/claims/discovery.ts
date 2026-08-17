@@ -79,7 +79,9 @@ export interface CodeInconclusiveObservation {
   reason: "code-default-binding-missing";
 }
 
-export type CodeObservation = CodeEvidenceObservation | CodeInconclusiveObservation;
+export type CodeObservation =
+  | CodeEvidenceObservation
+  | CodeInconclusiveObservation;
 
 export interface ScopeRegistryEntry {
   name: string;
@@ -147,7 +149,12 @@ function parseScalar(value: string): ClaimScalar | undefined {
 }
 
 function scalarFromYaml(value: unknown): ClaimScalar | undefined {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return value;
   }
   return undefined;
@@ -155,7 +162,8 @@ function scalarFromYaml(value: unknown): ClaimScalar | undefined {
 
 function getKeyPath(value: unknown, keyPath: string): unknown {
   return keyPath.split(".").reduce<unknown>((current, segment) => {
-    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    if (!current || typeof current !== "object" || Array.isArray(current))
+      return undefined;
     return (current as Record<string, unknown>)[segment];
   }, value);
 }
@@ -174,22 +182,34 @@ export function parseClaimsBindings(raw: unknown): ClaimsBindings {
       : [];
     const codeDefaults = Array.isArray(parameter.codeDefaults)
       ? parameter.codeDefaults.map((entry, index) => {
-          const binding = requireRecord(entry, `${parameterKey}.codeDefaults[${index}]`);
+          const binding = requireRecord(
+            entry,
+            `${parameterKey}.codeDefaults[${index}]`,
+          );
           const exportName =
             binding.export === undefined
               ? undefined
-              : requireString(binding.export, `${parameterKey}.codeDefaults[${index}].export`);
+              : requireString(
+                  binding.export,
+                  `${parameterKey}.codeDefaults[${index}].export`,
+                );
           const option =
             binding.option === undefined
               ? undefined
-              : requireString(binding.option, `${parameterKey}.codeDefaults[${index}].option`);
+              : requireString(
+                  binding.option,
+                  `${parameterKey}.codeDefaults[${index}].option`,
+                );
           if ((exportName === undefined) === (option === undefined)) {
             throw new ClaimsBindingError(
               `${parameterKey}.codeDefaults[${index}] must define exactly one of export or option`,
             );
           }
           return {
-            file: requireString(binding.file, `${parameterKey}.codeDefaults[${index}].file`),
+            file: requireString(
+              binding.file,
+              `${parameterKey}.codeDefaults[${index}].file`,
+            ),
             ...(exportName ? { export: exportName } : { option: option! }),
           };
         })
@@ -206,45 +226,63 @@ export function parseClaimsBindings(raw: unknown): ClaimsBindings {
             `${parameterKey}.documentation[${documentIndex}].file`,
           );
           if (!Array.isArray(document.assertions)) {
-            throw new ClaimsBindingError(`${parameterKey}.${file}.assertions must be an array`);
-          }
-          const assertions = document.assertions.map((assertion, assertionIndex) => {
-            const parsedAssertion = requireRecord(
-              assertion,
-              `${parameterKey}.${file}.assertions[${assertionIndex}]`,
+            throw new ClaimsBindingError(
+              `${parameterKey}.${file}.assertions must be an array`,
             );
-            const id = requireString(parsedAssertion.id, "assertion.id");
-            if (assertionIds.has(id)) {
-              throw new ClaimsBindingError(
-                `Assertion id ${id} must be unique within ${parameterKey}`,
+          }
+          const assertions = document.assertions.map(
+            (assertion, assertionIndex) => {
+              const parsedAssertion = requireRecord(
+                assertion,
+                `${parameterKey}.${file}.assertions[${assertionIndex}]`,
               );
-            }
-            assertionIds.add(id);
-            const targetValue = requireString(parsedAssertion.target, "assertion.target");
-            if (targetValue !== "default" && targetValue !== "effective") {
-              throw new ClaimsBindingError(`Unknown documentation target ${targetValue}`);
-            }
-            const target: DocumentationTarget = targetValue;
-            const scope = parsedAssertion.scope;
-            if (scope !== undefined && typeof scope !== "string") {
-              throw new ClaimsBindingError("assertion.scope must be a string");
-            }
-            if (target === "effective" && !scope) {
-              throw new ClaimsBindingError("target effective requires assertion.scope");
-            }
-            const pattern = requireString(parsedAssertion.pattern, "assertion.pattern");
-            if (!pattern.includes("(?<value>")) {
-              throw new ClaimsBindingError("assertion.pattern must define a named value capture");
-            }
-            try {
-              new RegExp(pattern);
-            } catch (error) {
-              throw new ClaimsBindingError(
-                `Invalid documentation pattern: ${(error as Error).message}`,
+              const id = requireString(parsedAssertion.id, "assertion.id");
+              if (assertionIds.has(id)) {
+                throw new ClaimsBindingError(
+                  `Assertion id ${id} must be unique within ${parameterKey}`,
+                );
+              }
+              assertionIds.add(id);
+              const targetValue = requireString(
+                parsedAssertion.target,
+                "assertion.target",
               );
-            }
-            return { id, target, scope, pattern };
-          });
+              if (targetValue !== "default" && targetValue !== "effective") {
+                throw new ClaimsBindingError(
+                  `Unknown documentation target ${targetValue}`,
+                );
+              }
+              const target: DocumentationTarget = targetValue;
+              const scope = parsedAssertion.scope;
+              if (scope !== undefined && typeof scope !== "string") {
+                throw new ClaimsBindingError(
+                  "assertion.scope must be a string",
+                );
+              }
+              if (target === "effective" && !scope) {
+                throw new ClaimsBindingError(
+                  "target effective requires assertion.scope",
+                );
+              }
+              const pattern = requireString(
+                parsedAssertion.pattern,
+                "assertion.pattern",
+              );
+              if (!pattern.includes("(?<value>")) {
+                throw new ClaimsBindingError(
+                  "assertion.pattern must define a named value capture",
+                );
+              }
+              try {
+                new RegExp(pattern);
+              } catch (error) {
+                throw new ClaimsBindingError(
+                  `Invalid documentation pattern: ${(error as Error).message}`,
+                );
+              }
+              return { id, target, scope, pattern };
+            },
+          );
           return { file, assertions };
         })
       : [];
@@ -256,9 +294,7 @@ export function parseClaimsBindings(raw: unknown): ClaimsBindings {
 export function loadClaimsBindings(workspaceRoot: string): ClaimsBindings {
   const filePath = path.join(workspaceRoot, "intentweave.bindings.yaml");
   if (!existsSync(filePath)) {
-    throw new ClaimsBindingError(
-      `Claims bindings not found at ${filePath}`,
-    );
+    throw new ClaimsBindingError(`Claims bindings not found at ${filePath}`);
   }
   return parseClaimsBindings(yamlLoad(readFileSync(filePath, "utf-8")));
 }
@@ -276,7 +312,9 @@ export function loadOptionalClaimsBindings(
 export function parseScopeRegistry(raw: unknown): ScopeRegistryEntry[] {
   const root = requireRecord(raw, "Scope registry");
   if (!Array.isArray(root.environments)) {
-    throw new ClaimsBindingError("Scope registry environments must be an array");
+    throw new ClaimsBindingError(
+      "Scope registry environments must be an array",
+    );
   }
   const seen = new Set<string>();
   return root.environments.map((entry, index) => {
@@ -287,7 +325,9 @@ export function parseScopeRegistry(raw: unknown): ScopeRegistryEntry[] {
     }
     seen.add(name);
     if (!Array.isArray(environment.capabilities)) {
-      throw new ClaimsBindingError(`environments[${index}].capabilities must be an array`);
+      throw new ClaimsBindingError(
+        `environments[${index}].capabilities must be an array`,
+      );
     }
     const capabilities = environment.capabilities
       .map((capability, capabilityIndex) =>
@@ -340,7 +380,9 @@ export function extractScopeConfigEvidence(
         `Invalid configuration for ${scope.name}: ${(error as Error).message}`,
       );
     }
-    for (const [parameterKey, parameter] of Object.entries(bindings.parameters)) {
+    for (const [parameterKey, parameter] of Object.entries(
+      bindings.parameters,
+    )) {
       for (const configKey of parameter.configKeys) {
         const value = getKeyPath(config, configKey);
         const normalizedValue = scalarFromYaml(value);
@@ -350,7 +392,10 @@ export function extractScopeConfigEvidence(
             parameterKey,
             sourceKind: "config",
             scope: scope.name,
-            reason: value === undefined ? "config-value-missing" : "config-value-invalid",
+            reason:
+              value === undefined
+                ? "config-value-missing"
+                : "config-value-invalid",
           });
           continue;
         }
@@ -437,7 +482,10 @@ export function extractBoundCodeEvidence(
     for (const binding of parameter.codeDefaults) {
       const bindingName = binding.export ?? binding.option;
       if (!bindingName) continue;
-      const evidence = extractClaimEvidence(readCode(binding.file), binding.file);
+      const evidence = extractClaimEvidence(
+        readCode(binding.file),
+        binding.file,
+      );
       const literal = evidence.literalBindings.find(
         (candidate) => candidate.name === bindingName,
       );
@@ -506,7 +554,10 @@ export function extractDiscoveredCodeEvidence(
   const observations: CodeEvidenceObservation[] = [];
   const extractedFiles = [...filePaths]
     .sort()
-    .map((filePath) => ({ filePath, evidence: extractClaimEvidence(readCode(filePath), filePath) }));
+    .map((filePath) => ({
+      filePath,
+      evidence: extractClaimEvidence(readCode(filePath), filePath),
+    }));
   const stableKeyCounts = new Map<string, number>();
   for (const { evidence } of extractedFiles) {
     for (const literal of evidence.literalBindings) {
@@ -536,8 +587,8 @@ export function extractDiscoveredCodeEvidence(
         annotations.length > 0 ||
         literal.kind === "parameter-default" ||
         literal.kind === "destructuring-default" ||
-        (/(?:^|_)DEFAULT(?:_|$)/.test(literal.name) ||
-          /(?:^|_)default(?:_|[A-Z]|$)/.test(literal.name))
+        /(?:^|_)DEFAULT(?:_|$)/.test(literal.name) ||
+        /(?:^|_)default(?:_|[A-Z]|$)/.test(literal.name)
           ? "CLM-DEFAULT"
           : "CLM-LITERAL";
       observations.push({

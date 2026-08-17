@@ -25,7 +25,10 @@ afterEach(() => {
 });
 
 function git(workspace: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd: workspace, encoding: "utf-8" }).trim();
+  return execFileSync("git", args, {
+    cwd: workspace,
+    encoding: "utf-8",
+  }).trim();
 }
 
 function writeC0Files(workspace: string): void {
@@ -56,8 +59,14 @@ function writeC0Files(workspace: string): void {
     path.join(workspace, "config", "environments.yaml"),
     "environments:\n  - name: dev\n    capabilities: [session-runtime]\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
   );
-  writeFileSync(path.join(workspace, "config", "dev.yaml"), "session:\n  timeout: 1800\n");
-  writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
+  writeFileSync(
+    path.join(workspace, "config", "dev.yaml"),
+    "session:\n  timeout: 1800\n",
+  );
+  writeFileSync(
+    path.join(workspace, "config", "eu-prod.yaml"),
+    "session:\n  timeout: 3600\n",
+  );
   writeFileSync(
     path.join(workspace, "src", "session.ts"),
     "/**\n * @default 1800\n * @example SESSION_TIMEOUT = 7200\n */\nexport const SESSION_TIMEOUT = 1800;\n",
@@ -91,8 +100,13 @@ async function reviewAllCurrentClaims(workspace: string): Promise<void> {
   }
 }
 
-async function createC2Baseline(): Promise<{ workspace: string; c2Revision: string }> {
-  const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-contracts-"));
+async function createC2Baseline(): Promise<{
+  workspace: string;
+  c2Revision: string;
+}> {
+  const workspace = mkdtempSync(
+    path.join(tmpdir(), "intentweave-claims-contracts-"),
+  );
   workspaces.push(workspace);
   writeC0Files(workspace);
   git(workspace, "init");
@@ -124,7 +138,10 @@ async function createC2Baseline(): Promise<{ workspace: string; c2Revision: stri
   git(workspace, "add", "README.md", "src/metrics.ts");
   git(workspace, "commit", "-m", "c1 unrelated");
 
-  writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
+  writeFileSync(
+    path.join(workspace, "config", "eu-prod.yaml"),
+    "session:\n  timeout: 5400\n",
+  );
   writeFileSync(
     path.join(workspace, "docs", "session-timeout.md"),
     "The default application timeout is 1800 seconds.\nThe eu-prod override is 5400 seconds.\n",
@@ -193,13 +210,24 @@ function currentClaims(workspace: string): Array<{
 
 function reviewState(workspace: string): {
   currentReviews: number;
-  currentReviewClaims: Array<{ claim_type: string; scope: string | null; decision_origin: string }>;
+  currentReviewClaims: Array<{
+    claim_type: string;
+    scope: string | null;
+    decision_origin: string;
+  }>;
   decisionOrigins: Array<{ decision_origin: string; count: number }>;
-  reopens: Array<{ claim_type: string; scope: string | null; reason: string; status: string }>;
+  reopens: Array<{
+    claim_type: string;
+    scope: string | null;
+    reason: string;
+    status: string;
+  }>;
 } {
   const index = new Database(path.join(workspace, ".iw", "index.db"));
   const currentReviews = index
-    .prepare(`SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`)
+    .prepare(
+      `SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`,
+    )
     .get() as { count: number };
   const currentReviewClaims = index
     .prepare(
@@ -209,7 +237,11 @@ function reviewState(workspace: string): {
        WHERE review.is_current = 1
        ORDER BY ci.claim_type, ci.scope`,
     )
-    .all() as Array<{ claim_type: string; scope: string | null; decision_origin: string }>;
+    .all() as Array<{
+    claim_type: string;
+    scope: string | null;
+    decision_origin: string;
+  }>;
   const decisionOrigins = index
     .prepare(
       `SELECT decision_origin, COUNT(*) AS count
@@ -227,7 +259,12 @@ function reviewState(workspace: string): {
        WHERE reopen.status = 'open'
        ORDER BY ci.claim_type, ci.scope, reopen.reason`,
     )
-    .all() as Array<{ claim_type: string; scope: string | null; reason: string; status: string }>;
+    .all() as Array<{
+    claim_type: string;
+    scope: string | null;
+    reason: string;
+    status: string;
+  }>;
   index.close();
   return {
     currentReviews: currentReviews.count,
@@ -373,10 +410,26 @@ describe("claims contract drift (C9/C10)", () => {
         currentReviews: 5,
         currentReviewClaims: [
           { claim_type: "CLM-DEFAULT", scope: null, decision_origin: "manual" },
-          { claim_type: "CLM-DOC-CONFORMANCE", scope: null, decision_origin: "carry-forward" },
-          { claim_type: "CLM-DOC-CONFORMANCE", scope: "eu-prod", decision_origin: "carry-forward" },
-          { claim_type: "CLM-EFFECTIVE", scope: "dev", decision_origin: "carry-forward" },
-          { claim_type: "CLM-EFFECTIVE", scope: "eu-prod", decision_origin: "carry-forward" },
+          {
+            claim_type: "CLM-DOC-CONFORMANCE",
+            scope: null,
+            decision_origin: "carry-forward",
+          },
+          {
+            claim_type: "CLM-DOC-CONFORMANCE",
+            scope: "eu-prod",
+            decision_origin: "carry-forward",
+          },
+          {
+            claim_type: "CLM-EFFECTIVE",
+            scope: "dev",
+            decision_origin: "carry-forward",
+          },
+          {
+            claim_type: "CLM-EFFECTIVE",
+            scope: "eu-prod",
+            decision_origin: "carry-forward",
+          },
         ],
         decisionOrigins: [
           { decision_origin: "carry-forward", count: 4 },
@@ -388,12 +441,16 @@ describe("claims contract drift (C9/C10)", () => {
       expect(
         ruleContracts
           .filter((rule) => rule.rule_id.startsWith("R3."))
-          .every((rule) => rule.implementation_fingerprint === "claims-engine-r3-v2"),
+          .every(
+            (rule) => rule.implementation_fingerprint === "claims-engine-r3-v2",
+          ),
       ).toBe(true);
       expect(
         ruleContracts
           .filter((rule) => !rule.rule_id.startsWith("R3."))
-          .every((rule) => rule.implementation_fingerprint === "claims-engine-v1"),
+          .every(
+            (rule) => rule.implementation_fingerprint === "claims-engine-v1",
+          ),
       ).toBe(true);
     },
   );

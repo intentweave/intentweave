@@ -111,7 +111,9 @@ describe("WAL safety", () => {
     // Verify claims data in backup
     const backupDb = new Database(backupPath);
     const param = backupDb
-      .prepare(`SELECT canonical_key FROM parameter_identities WHERE id = 'param:1'`)
+      .prepare(
+        `SELECT canonical_key FROM parameter_identities WHERE id = 'param:1'`,
+      )
       .get() as { canonical_key: string };
     expect(param.canonical_key).toBe("session.timeout");
 

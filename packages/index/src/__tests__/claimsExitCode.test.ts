@@ -36,12 +36,12 @@ describe("claimsExitCode", () => {
         reviewRequired: true,
       }),
     ).toBe(CLAIMS_EXIT_CODE.inconclusive);
-    expect(
-      claimsExitCode({ ...base, reviewRequired: true }),
-    ).toBe(CLAIMS_EXIT_CODE.reviewRequired);
-    expect(
-      claimsExitCode({ ...base, ruleStatuses: ["not_applicable"] }),
-    ).toBe(CLAIMS_EXIT_CODE.notApplicable);
+    expect(claimsExitCode({ ...base, reviewRequired: true })).toBe(
+      CLAIMS_EXIT_CODE.reviewRequired,
+    );
+    expect(claimsExitCode({ ...base, ruleStatuses: ["not_applicable"] })).toBe(
+      CLAIMS_EXIT_CODE.notApplicable,
+    );
     expect(claimsExitCode(base)).toBe(CLAIMS_EXIT_CODE.success);
   });
 });

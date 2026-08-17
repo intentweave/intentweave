@@ -50,7 +50,9 @@ describe("Claims documentation discovery", () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     try {
       expect(loadOptionalClaimsBindings(workspace)).toBeUndefined();
-      expect(() => loadClaimsBindings(workspace)).toThrow("Claims bindings not found");
+      expect(() => loadClaimsBindings(workspace)).toThrow(
+        "Claims bindings not found",
+      );
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
@@ -117,8 +119,12 @@ describe("Claims documentation discovery", () => {
     );
 
     expect(observations).toHaveLength(2);
-    expect(new Set(observations.map((observation) => observation.parameterKey)).size).toBe(2);
-    expect(new Set(observations.map((observation) => observation.identityKey)).size).toBe(2);
+    expect(
+      new Set(observations.map((observation) => observation.parameterKey)).size,
+    ).toBe(2);
+    expect(
+      new Set(observations.map((observation) => observation.identityKey)).size,
+    ).toBe(2);
   });
 
   it("skips structurally ambiguous provisional claims instead of using path-based ids", () => {
@@ -179,7 +185,9 @@ describe("Claims documentation discovery", () => {
     const optionBindings = parseClaimsBindings({
       parameters: {
         "cli.index-build.depth": {
-          codeDefaults: [{ file: "src/indexBuild.ts", option: "--depth <depth>" }],
+          codeDefaults: [
+            { file: "src/indexBuild.ts", option: "--depth <depth>" },
+          ],
         },
       },
     });
@@ -194,7 +202,8 @@ describe("Claims documentation discovery", () => {
         parameterKey: "cli.index-build.depth",
         claimType: "CLM-DEFAULT",
         sourceKind: "code-default",
-        identityKey: "cli.index-build.depth:code-default:src/indexBuild.ts:--depth <depth>",
+        identityKey:
+          "cli.index-build.depth:code-default:src/indexBuild.ts:--depth <depth>",
         normalizedValue: "full",
         semanticLocation: "cli.index-build.depth",
         filePath: "src/indexBuild.ts",
@@ -230,7 +239,12 @@ describe("Claims documentation discovery", () => {
                 file: "docs/a.md",
                 assertions: [
                   { id: "same", target: "default", pattern: "^value$" },
-                  { id: "same", target: "effective", scope: "eu", pattern: "(?<value>1)" },
+                  {
+                    id: "same",
+                    target: "effective",
+                    scope: "eu",
+                    pattern: "(?<value>1)",
+                  },
                 ],
               },
             ],
@@ -276,7 +290,8 @@ describe("Claims documentation discovery", () => {
     const observations = extractScopeConfigEvidence(
       bindings,
       scopes,
-      (scope) => (scope === "eu-prod" ? "session:\n  timeout: 3600\n" : undefined),
+      (scope) =>
+        scope === "eu-prod" ? "session:\n  timeout: 3600\n" : undefined,
     );
 
     expect(observations).toEqual([
@@ -306,7 +321,12 @@ describe("Claims documentation discovery", () => {
     });
 
     expect(() =>
-      extractScopeConfigEvidence(bindings, scopes, () => undefined, "does-not-exist"),
+      extractScopeConfigEvidence(
+        bindings,
+        scopes,
+        () => undefined,
+        "does-not-exist",
+      ),
     ).toThrow("Unknown scope does-not-exist");
   });
 });

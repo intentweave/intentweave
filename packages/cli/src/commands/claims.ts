@@ -84,7 +84,9 @@ function isClaimCodeFile(filePath: string): boolean {
   );
 }
 
-async function discoverWorkingTreeCodeFiles(workspaceRoot: string): Promise<string[]> {
+async function discoverWorkingTreeCodeFiles(
+  workspaceRoot: string,
+): Promise<string[]> {
   const { glob } = await import("tinyglobby");
   return (
     await glob(["**/*.{ts,tsx,js,jsx}"], {
@@ -101,7 +103,9 @@ async function discoverWorkingTreeCodeFiles(workspaceRoot: string): Promise<stri
         "**/*.spec.*",
       ],
     })
-  ).filter(isClaimCodeFile).sort();
+  )
+    .filter(isClaimCodeFile)
+    .sort();
 }
 
 function currentRevision(workspaceRoot: string): string {
@@ -180,7 +184,10 @@ function persistSnapshotEvidence(
   discoveredCode: ReturnType<typeof extractDiscoveredCodeEvidence> = [],
 ): Map<string, PersistedObservation> {
   const observations = new Map<string, PersistedObservation>();
-  const persist = (identityKey: string, input: Parameters<typeof persistObservation>[1]) => {
+  const persist = (
+    identityKey: string,
+    input: Parameters<typeof persistObservation>[1],
+  ) => {
     observations.set(identityKey, persistObservation(store, input));
   };
   for (const observation of [
@@ -202,7 +209,10 @@ function persistSnapshotEvidence(
       revision,
     });
   }
-  for (const observation of extractDocumentationAssertions(bindings, readBoundFile)) {
+  for (const observation of extractDocumentationAssertions(
+    bindings,
+    readBoundFile,
+  )) {
     if (observation.kind !== "evidence") continue;
     persist(observation.identityKey, {
       parameterKey: observation.parameterKey,
@@ -226,7 +236,11 @@ function persistSnapshotEvidence(
       revision,
     });
   }
-  for (const observation of extractScopeConfigEvidence(bindings, scopes, readScopeConfig)) {
+  for (const observation of extractScopeConfigEvidence(
+    bindings,
+    scopes,
+    readScopeConfig,
+  )) {
     if (observation.kind !== "evidence") continue;
     persist(observation.identityKey, {
       parameterKey: observation.parameterKey,
@@ -258,12 +272,16 @@ function formatText(result: {
   for (const claim of result.claims) {
     lines.push(`Claim: ${claim.parameterKey} (${claim.claimType})`);
     lines.push(`  Rule results: ${claim.ruleStatuses.join(", ")}`);
-    lines.push(`  Assessments: ${claim.assessmentStatuses.join(", ") || "none"}`);
+    lines.push(
+      `  Assessments: ${claim.assessmentStatuses.join(", ") || "none"}`,
+    );
   }
   for (const scope of result.scopes) {
     lines.push(`Scope: ${scope.scope}`);
     lines.push(`  Rule results: ${scope.ruleStatuses.join(", ")}`);
-    lines.push(`  Assessments: ${scope.assessmentStatuses.join(", ") || "none"}`);
+    lines.push(
+      `  Assessments: ${scope.assessmentStatuses.join(", ") || "none"}`,
+    );
   }
   return lines.join("\n");
 }
@@ -273,9 +291,13 @@ function documentationAssertionContext(
   parameterKey: string,
   assertionId: string,
 ): { scope?: string; pattern?: string } {
-  for (const document of bindings.parameters[parameterKey]?.documentation ?? []) {
-    const assertion = document.assertions.find((candidate) => candidate.id === assertionId);
-    if (assertion) return { scope: assertion.scope, pattern: assertion.pattern };
+  for (const document of bindings.parameters[parameterKey]?.documentation ??
+    []) {
+    const assertion = document.assertions.find(
+      (candidate) => candidate.id === assertionId,
+    );
+    if (assertion)
+      return { scope: assertion.scope, pattern: assertion.pattern };
   }
   return {};
 }
@@ -330,14 +352,25 @@ function renamedPredecessor(
   previousEvidence: Map<string, PersistedObservation>,
   current: PersistedObservation,
   renames: GitRename[],
-): { identityKey: string; observation: PersistedObservation; rename: GitRename } | undefined {
+):
+  | {
+      identityKey: string;
+      observation: PersistedObservation;
+      rename: GitRename;
+    }
+  | undefined {
   const currentMetadata = evidenceVersionMetadata(database, current.version.id);
   if (!currentMetadata?.file_path) return undefined;
-  const matchingRenames = renames.filter((rename) => rename.toPath === currentMetadata.file_path);
+  const matchingRenames = renames.filter(
+    (rename) => rename.toPath === currentMetadata.file_path,
+  );
   if (matchingRenames.length !== 1) return undefined;
   const rename = matchingRenames[0]!;
   const matches = [...previousEvidence.entries()].filter(([_, previous]) => {
-    const previousMetadata = evidenceVersionMetadata(database, previous.version.id);
+    const previousMetadata = evidenceVersionMetadata(
+      database,
+      previous.version.id,
+    );
     return (
       previousMetadata?.file_path === rename.fromPath &&
       previousMetadata.source_kind === currentMetadata.source_kind &&
@@ -416,7 +449,8 @@ function reopenBrokenContinuity(
     | undefined;
   if (!evidence) return [];
   const claimTypes =
-    evidence.source_kind === "code-default" || evidence.source_kind === "code-annotation"
+    evidence.source_kind === "code-default" ||
+    evidence.source_kind === "code-annotation"
       ? ["CLM-DEFAULT"]
       : evidence.source_kind === "documentation"
         ? evidence.semantic_location?.endsWith(".default")
@@ -437,7 +471,7 @@ function reopenBrokenContinuity(
        WHERE evidence.id = ? AND ca.is_current = 1
         AND ci.claim_type IN (${claimTypePlaceholders})`,
     )
-     .all(previousEvidenceVersionId, ...claimTypes) as Array<{
+    .all(previousEvidenceVersionId, ...claimTypes) as Array<{
     claim_identity_id: string;
     assessment_id: string;
   }>;
@@ -514,12 +548,11 @@ function contractReferenceAssessmentId(
          FROM claim_assessment_references reference
          WHERE reference.claim_identity_id = ? AND reference.repository_revision = ?`,
       )
-      .get(claimIdentityId, baseRevision) as
-      | { id: string }
-      | undefined;
+      .get(claimIdentityId, baseRevision) as { id: string } | undefined;
     if (
       anchored &&
-      (!preRunReferenceAssessmentIds || preRunReferenceAssessmentIds.has(anchored.id))
+      (!preRunReferenceAssessmentIds ||
+        preRunReferenceAssessmentIds.has(anchored.id))
     ) {
       return anchored.id;
     }
@@ -543,7 +576,9 @@ function semanticContractDrift(
   currentAssessmentId: string,
   referenceAssessmentId: string,
   baseRevision?: string,
-): { dependencyVersionId: string; provenance: Record<string, unknown> } | undefined {
+):
+  | { dependencyVersionId: string; provenance: Record<string, unknown> }
+  | undefined {
   const assessmentRow = (assessmentId: string) =>
     database
       .prepare(
@@ -566,7 +601,10 @@ function semanticContractDrift(
   if (!current || !reference) return undefined;
 
   const currentRules = ruleDependencySnapshots(database, currentAssessmentId);
-  const referenceRules = ruleDependencySnapshots(database, referenceAssessmentId);
+  const referenceRules = ruleDependencySnapshots(
+    database,
+    referenceAssessmentId,
+  );
   const changedRules: Array<Record<string, unknown>> = [];
   for (const identityKey of [
     ...new Set([...currentRules.keys(), ...referenceRules.keys()]),
@@ -586,10 +624,13 @@ function semanticContractDrift(
       currentRule.epistemic_role !== referenceRule.epistemic_role ||
       currentRule.warrant_polarity !== referenceRule.warrant_polarity ||
       currentRule.assessment_effect !== referenceRule.assessment_effect ||
-      currentRule.rule_contract_version !== referenceRule.rule_contract_version ||
+      currentRule.rule_contract_version !==
+        referenceRule.rule_contract_version ||
       currentRule.normalized_status !== referenceRule.normalized_status ||
-      currentRule.normalized_output_json !== referenceRule.normalized_output_json ||
-      currentRule.normalized_reasons_json !== referenceRule.normalized_reasons_json;
+      currentRule.normalized_output_json !==
+        referenceRule.normalized_output_json ||
+      currentRule.normalized_reasons_json !==
+        referenceRule.normalized_reasons_json;
     if (differs) {
       changedRules.push({
         identityKey,
@@ -624,9 +665,9 @@ function semanticContractDrift(
     const to = rule.to;
     return Boolean(
       to &&
-        typeof to === "object" &&
-        "dependencyVersionId" in to &&
-        typeof to.dependencyVersionId === "string",
+      typeof to === "object" &&
+      "dependencyVersionId" in to &&
+      typeof to.dependencyVersionId === "string",
     );
   });
   const dependencyVersionId =
@@ -711,7 +752,10 @@ function reopenContractChange(
 function promoteDiscoveredClaim(
   database: Database.Database,
   reviews: ClaimsReviewStore,
-  codeDefault: Extract<ReturnType<typeof extractBoundCodeEvidence>[number], { identityKey: string }>,
+  codeDefault: Extract<
+    ReturnType<typeof extractBoundCodeEvidence>[number],
+    { identityKey: string }
+  >,
   targetClaimIdentityId: string,
   targetAssessmentId: string,
   dependencyVersionId: string,
@@ -755,9 +799,12 @@ export async function runClaimsCheck(options: {
   try {
     const claimsGit = options.since ? new ClaimsGit(workspaceRoot) : undefined;
     const headRevision = claimsGit?.head();
-    const baseRevision = options.since ? claimsGit!.mergeBase(options.since) : undefined;
+    const baseRevision = options.since
+      ? claimsGit!.mergeBase(options.since)
+      : undefined;
     const readOptionalCurrentFile = (filePath: string): string | undefined => {
-      if (claimsGit && headRevision) return claimsGit.show(headRevision, filePath);
+      if (claimsGit && headRevision)
+        return claimsGit.show(headRevision, filePath);
       const absolutePath = path.join(workspaceRoot, filePath);
       return fs.existsSync(absolutePath)
         ? fs.readFileSync(absolutePath, "utf-8")
@@ -766,7 +813,9 @@ export async function runClaimsCheck(options: {
     const readCurrentFile = (filePath: string): string => {
       const content = readOptionalCurrentFile(filePath);
       if (content === undefined) {
-        throw new ClaimsBindingError(`Configured Claims source not found: ${filePath}`);
+        throw new ClaimsBindingError(
+          `Configured Claims source not found: ${filePath}`,
+        );
       }
       return content;
     };
@@ -776,15 +825,18 @@ export async function runClaimsCheck(options: {
       : { parameters: {} };
     const registryText = readOptionalCurrentFile("config/environments.yaml");
     const registryPath = "config/environments.yaml";
-    const scopes = registryText ? parseScopeRegistry(yamlLoad(registryText)) : [];
+    const scopes = registryText
+      ? parseScopeRegistry(yamlLoad(registryText))
+      : [];
     if (options.scope && scopes.length === 0) {
       throw new ClaimsBindingError(
         `Scope ${options.scope} cannot be evaluated because no scope registry was discovered`,
       );
     }
-    const currentCodeFiles = claimsGit && headRevision
-      ? claimsGit.listFiles(headRevision).filter(isClaimCodeFile)
-      : await discoverWorkingTreeCodeFiles(workspaceRoot);
+    const currentCodeFiles =
+      claimsGit && headRevision
+        ? claimsGit.listFiles(headRevision).filter(isClaimCodeFile)
+        : await discoverWorkingTreeCodeFiles(workspaceRoot);
     const discoveredCode = extractDiscoveredCodeEvidence(
       currentCodeFiles,
       readCurrentFile,
@@ -793,287 +845,186 @@ export async function runClaimsCheck(options: {
     const database = claimsDatabase(workspaceRoot);
     try {
       const runCheck = database.transaction(() => {
-      const store = new ClaimsStore(database);
-      const engine = new ClaimsEngine(store);
-      const reviews = new ClaimsReviewStore(database);
-      const preRunReferenceAssessmentIds = new Set(
-        (
-          database
-            .prepare(
-              `SELECT assessment_id AS id FROM claim_assessment_references`,
-            )
-            .all() as Array<{ id: string }>
-        ).map((row) => row.id),
-      );
-      const revision = headRevision ?? currentRevision(workspaceRoot);
-      const readBoundFile = (filePath: string) =>
-        readOptionalCurrentFile(filePath) ?? "";
-      const code = [
-        ...extractBoundCodeEvidence(bindings, readBoundFile),
-        ...discoveredCode,
-      ];
-      const docs = extractDocumentationAssertions(bindings, readBoundFile);
-      const documentationInconclusive = docs.filter(
-        (observation) => observation.kind === "inconclusive",
-      );
-      for (const observation of documentationInconclusive) {
-        const assertion = documentationAssertionContext(
-          bindings,
-          observation.parameterKey,
-          observation.assertionId,
+        const store = new ClaimsStore(database);
+        const engine = new ClaimsEngine(store);
+        const reviews = new ClaimsReviewStore(database);
+        const preRunReferenceAssessmentIds = new Set(
+          (
+            database
+              .prepare(
+                `SELECT assessment_id AS id FROM claim_assessment_references`,
+              )
+              .all() as Array<{ id: string }>
+          ).map((row) => row.id),
         );
-        store.persistRuleResult(
-          {
-            ruleId: "R3.doc-conformance",
-            subjectKey: observation.parameterKey,
-            scope: assertion.scope,
-            applicability: "applicable",
-            normalizedStatus: "inconclusive",
-            normalizedOutput: {
-              assertionId: observation.assertionId,
-              filePath: observation.filePath,
-              reason: observation.reason,
+        const revision = headRevision ?? currentRevision(workspaceRoot);
+        const readBoundFile = (filePath: string) =>
+          readOptionalCurrentFile(filePath) ?? "";
+        const code = [
+          ...extractBoundCodeEvidence(bindings, readBoundFile),
+          ...discoveredCode,
+        ];
+        const docs = extractDocumentationAssertions(bindings, readBoundFile);
+        const documentationInconclusive = docs.filter(
+          (observation) => observation.kind === "inconclusive",
+        );
+        for (const observation of documentationInconclusive) {
+          const assertion = documentationAssertionContext(
+            bindings,
+            observation.parameterKey,
+            observation.assertionId,
+          );
+          store.persistRuleResult(
+            {
+              ruleId: "R3.doc-conformance",
+              subjectKey: observation.parameterKey,
+              scope: assertion.scope,
+              applicability: "applicable",
+              normalizedStatus: "inconclusive",
+              normalizedOutput: {
+                assertionId: observation.assertionId,
+                filePath: observation.filePath,
+                reason: observation.reason,
+              },
+              normalizedReasons: [observation.reason],
+              evidenceVersionIds: [],
+              ruleContractVersion: contracts.r3RuleContractVersion,
+              implementationFingerprint:
+                contracts.r3ImplementationFingerprint ??
+                contracts.implementationFingerprint,
             },
-            normalizedReasons: [observation.reason],
-            evidenceVersionIds: [],
-            ruleContractVersion: contracts.r3RuleContractVersion,
-            implementationFingerprint:
-              contracts.r3ImplementationFingerprint ?? contracts.implementationFingerprint,
-          },
-          [],
-        );
-      }
-      const previousEvidence = (() => {
-        if (!claimsGit || !baseRevision) return new Map<string, PersistedObservation>();
-        const baseRegistry = claimsGit.show(baseRevision, "config/environments.yaml");
-        const baseBindingsText = claimsGit.show(baseRevision, "intentweave.bindings.yaml");
-        const baseBindings = baseBindingsText
-          ? parseClaimsBindings(yamlLoad(baseBindingsText))
-          : { parameters: {} };
-        const baseCodeFiles = claimsGit.listFiles(baseRevision).filter(isClaimCodeFile);
-        const readBaseFile = (filePath: string) =>
-          claimsGit.show(baseRevision, filePath) ?? "";
-        const baseDiscoveredCode = extractDiscoveredCodeEvidence(
-          baseCodeFiles,
-          readBaseFile,
-          baseBindings,
-        );
-        return persistSnapshotEvidence(
-          store,
-          baseBindings,
-          baseRegistry ? parseScopeRegistry(yamlLoad(baseRegistry)) : [],
-          readBaseFile,
-          (scope) => claimsGit.show(baseRevision, `config/${scope}.yaml`),
-          baseRevision,
-          baseDiscoveredCode,
-        );
-      })();
-      const currentEvidence = new Map<string, PersistedObservation>();
-      const scopeEvidence = new Map(
-        extractScopeRegistryEvidence(scopes).map((observation) => {
-          const persisted = persistObservation(store, {
-            parameterKey: "scope.registry",
-            sourceKind: observation.sourceKind,
-            identityKey: observation.identityKey,
-            semanticLocation: observation.semanticLocation,
-            value: observation.normalizedValue,
-            filePath: registryPath,
-            revision,
-          });
-          currentEvidence.set(observation.identityKey, persisted);
-          return [observation.scope, persisted] as const;
-        }),
-      );
-      const config = extractScopeConfigEvidence(
-        bindings,
-        scopes,
-        (scope) => {
-          if (claimsGit && headRevision) {
-            return claimsGit.show(headRevision, `config/${scope}.yaml`);
-          }
-          const filePath = path.join(workspaceRoot, "config", `${scope}.yaml`);
-          return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf-8") : undefined;
-        },
-        options.scope,
-      );
-      const selectedScopes = options.scope
-        ? scopes.filter((scope) => scope.name === options.scope)
-        : scopes;
-      const output = {
-        claims: [] as Array<{
-          parameterKey: string;
-          claimType: string;
-          ruleStatuses: string[];
-          assessmentStatuses: string[];
-        }>,
-        scopes: [] as Array<{
-          scope: string;
-          ruleStatuses: string[];
-          assessmentStatuses: string[];
-        }>,
-      };
-      const allRuleStatuses: Array<"passed" | "failed" | "inconclusive" | "not_applicable"> = [];
-      const allAssessmentStatuses: Array<"supported" | "refuted" | "contested" | "inconclusive"> = [];
-      const assessmentIds: string[] = [];
-      const reopenedClaimIds = new Set<string>();
-      allRuleStatuses.push(
-        ...documentationInconclusive.map(() => "inconclusive" as const),
-      );
-
-      const unscopedParameterKeys = new Set(
-        (scopes.length === 0 ? code : discoveredCode).map(
-          (observation) => observation.parameterKey,
-        ),
-      );
-      for (const parameterKey of [...unscopedParameterKeys].sort()) {
-        const codeDefault = code.find(
-          (observation) =>
-            observation.parameterKey === parameterKey &&
-            observation.sourceKind === "code-default" &&
-            "identityKey" in observation,
-        );
-        const codeAnnotation = code.find(
-          (observation) =>
-            observation.parameterKey === parameterKey &&
-            observation.sourceKind === "code-annotation" &&
-            "identityKey" in observation,
-        );
-        if (!codeDefault || !("identityKey" in codeDefault)) continue;
-        const persistedCodeDefault = persistObservation(store, {
-          parameterKey,
-          sourceKind: codeDefault.sourceKind,
-          identityKey: codeDefault.identityKey,
-          semanticLocation: codeDefault.semanticLocation,
-          value: codeDefault.normalizedValue,
-          filePath: codeDefault.filePath,
-          symbolId: codeDefault.symbolId,
-          line: codeDefault.line,
-          bindingBasis: codeDefault.bindingBasis,
-          bindingConfidence: codeDefault.bindingConfidence,
-          revision,
-        });
-        currentEvidence.set(codeDefault.identityKey, persistedCodeDefault);
-        const persistedAnnotation =
-          codeAnnotation && "identityKey" in codeAnnotation
-            ? persistObservation(store, {
-                parameterKey,
-                sourceKind: codeAnnotation.sourceKind,
-                identityKey: codeAnnotation.identityKey,
-                semanticLocation: codeAnnotation.semanticLocation,
-                value: codeAnnotation.normalizedValue,
-                filePath: codeAnnotation.filePath,
-                symbolId: codeAnnotation.symbolId,
-                line: codeAnnotation.line,
-                bindingBasis: codeAnnotation.bindingBasis,
-                bindingConfidence: codeAnnotation.bindingConfidence,
-                revision,
-              })
-            : undefined;
-        if (persistedAnnotation && codeAnnotation && "identityKey" in codeAnnotation) {
-          currentEvidence.set(codeAnnotation.identityKey, persistedAnnotation);
+            [],
+          );
         }
-        const documentedDefault = docs.find(
-          (observation) =>
-            observation.parameterKey === parameterKey &&
-            observation.kind === "evidence" &&
-            observation.semanticLocation === `${parameterKey}.default`,
+        const previousEvidence = (() => {
+          if (!claimsGit || !baseRevision)
+            return new Map<string, PersistedObservation>();
+          const baseRegistry = claimsGit.show(
+            baseRevision,
+            "config/environments.yaml",
+          );
+          const baseBindingsText = claimsGit.show(
+            baseRevision,
+            "intentweave.bindings.yaml",
+          );
+          const baseBindings = baseBindingsText
+            ? parseClaimsBindings(yamlLoad(baseBindingsText))
+            : { parameters: {} };
+          const baseCodeFiles = claimsGit
+            .listFiles(baseRevision)
+            .filter(isClaimCodeFile);
+          const readBaseFile = (filePath: string) =>
+            claimsGit.show(baseRevision, filePath) ?? "";
+          const baseDiscoveredCode = extractDiscoveredCodeEvidence(
+            baseCodeFiles,
+            readBaseFile,
+            baseBindings,
+          );
+          return persistSnapshotEvidence(
+            store,
+            baseBindings,
+            baseRegistry ? parseScopeRegistry(yamlLoad(baseRegistry)) : [],
+            readBaseFile,
+            (scope) => claimsGit.show(baseRevision, `config/${scope}.yaml`),
+            baseRevision,
+            baseDiscoveredCode,
+          );
+        })();
+        const currentEvidence = new Map<string, PersistedObservation>();
+        const scopeEvidence = new Map(
+          extractScopeRegistryEvidence(scopes).map((observation) => {
+            const persisted = persistObservation(store, {
+              parameterKey: "scope.registry",
+              sourceKind: observation.sourceKind,
+              identityKey: observation.identityKey,
+              semanticLocation: observation.semanticLocation,
+              value: observation.normalizedValue,
+              filePath: registryPath,
+              revision,
+            });
+            currentEvidence.set(observation.identityKey, persisted);
+            return [observation.scope, persisted] as const;
+          }),
         );
-        const persistedDocumentedDefault =
-          documentedDefault && documentedDefault.kind === "evidence"
-            ? persistObservation(store, {
-                parameterKey,
-                sourceKind: "documentation",
-                identityKey: documentedDefault.identityKey,
-                semanticLocation: documentedDefault.semanticLocation,
-                value: documentedDefault.normalizedValue,
-                filePath: documentedDefault.filePath,
-                line: documentedDefault.line,
-                revision,
-              })
-            : undefined;
-        if (documentedDefault && documentedDefault.kind === "evidence" && persistedDocumentedDefault) {
-          currentEvidence.set(documentedDefault.identityKey, persistedDocumentedDefault);
-        }
-        const result = engine.evaluateDefault({
-          parameterKey,
-          claimType: codeDefault.claimType,
-          repositoryRevision: revision,
-          codeDefault: {
-            versionId: persistedCodeDefault.version.id,
-            value: persistedCodeDefault.value,
+        const config = extractScopeConfigEvidence(
+          bindings,
+          scopes,
+          (scope) => {
+            if (claimsGit && headRevision) {
+              return claimsGit.show(headRevision, `config/${scope}.yaml`);
+            }
+            const filePath = path.join(
+              workspaceRoot,
+              "config",
+              `${scope}.yaml`,
+            );
+            return fs.existsSync(filePath)
+              ? fs.readFileSync(filePath, "utf-8")
+              : undefined;
           },
-          codeAnnotation: persistedAnnotation && {
-            versionId: persistedAnnotation.version.id,
-            value: persistedAnnotation.value,
-          },
-          documentedDefault: persistedDocumentedDefault && {
-            versionId: persistedDocumentedDefault.version.id,
-            value: persistedDocumentedDefault.value,
-          },
-          contracts,
-        });
-        promoteDiscoveredClaim(
-          database,
-          reviews,
-          codeDefault,
-          result.assessments[0]!.claimIdentityId,
-          result.assessments[0]!.id,
-          result.ruleResults[0]!.id,
+          options.scope,
         );
-        const ruleStatuses = result.ruleResults.map((rule) =>
-          (database.prepare(`SELECT normalized_status FROM rule_result_versions WHERE id = ?`).get(rule.id) as { normalized_status: "passed" | "failed" | "inconclusive" | "not_applicable" }).normalized_status,
+        const selectedScopes = options.scope
+          ? scopes.filter((scope) => scope.name === options.scope)
+          : scopes;
+        const output = {
+          claims: [] as Array<{
+            parameterKey: string;
+            claimType: string;
+            ruleStatuses: string[];
+            assessmentStatuses: string[];
+          }>,
+          scopes: [] as Array<{
+            scope: string;
+            ruleStatuses: string[];
+            assessmentStatuses: string[];
+          }>,
+        };
+        const allRuleStatuses: Array<
+          "passed" | "failed" | "inconclusive" | "not_applicable"
+        > = [];
+        const allAssessmentStatuses: Array<
+          "supported" | "refuted" | "contested" | "inconclusive"
+        > = [];
+        const assessmentIds: string[] = [];
+        const reopenedClaimIds = new Set<string>();
+        allRuleStatuses.push(
+          ...documentationInconclusive.map(() => "inconclusive" as const),
         );
-        const assessmentStatuses = result.assessments.map((assessment) =>
-          (database.prepare(`SELECT epistemic_status FROM claim_assessments WHERE id = ?`).get(assessment.id) as { epistemic_status: "supported" | "refuted" | "contested" | "inconclusive" }).epistemic_status,
-        );
-        allRuleStatuses.push(...ruleStatuses);
-        allAssessmentStatuses.push(...assessmentStatuses);
-        assessmentIds.push(...result.assessments.map((assessment) => assessment.id));
-        output.claims.push({
-          parameterKey,
-          claimType: codeDefault.claimType,
-          ruleStatuses,
-          assessmentStatuses,
-        });
-      }
 
-      for (const scope of selectedScopes) {
-        for (const [parameterKey] of Object.entries(bindings.parameters)) {
+        const unscopedParameterKeys = new Set(
+          (scopes.length === 0 ? code : discoveredCode).map(
+            (observation) => observation.parameterKey,
+          ),
+        );
+        for (const parameterKey of [...unscopedParameterKeys].sort()) {
           const codeDefault = code.find(
             (observation) =>
-              observation.parameterKey === parameterKey && observation.sourceKind === "code-default" && "identityKey" in observation,
+              observation.parameterKey === parameterKey &&
+              observation.sourceKind === "code-default" &&
+              "identityKey" in observation,
           );
           const codeAnnotation = code.find(
             (observation) =>
-              observation.parameterKey === parameterKey && observation.sourceKind === "code-annotation" && "identityKey" in observation,
+              observation.parameterKey === parameterKey &&
+              observation.sourceKind === "code-annotation" &&
+              "identityKey" in observation,
           );
-          const configValue = config.find(
-            (observation) =>
-              observation.parameterKey === parameterKey && observation.scope === scope.name && observation.kind === "evidence",
-          );
-          const documentedValue = docs.find(
-            (observation) =>
-              observation.parameterKey === parameterKey && observation.kind === "evidence" && observation.semanticLocation === `${parameterKey}.override[${scope.name}]`,
-          );
-          const persistedCodeDefault =
-            codeDefault && "identityKey" in codeDefault
-              ? persistObservation(store, {
-                  parameterKey,
-                  sourceKind: codeDefault.sourceKind,
-                  identityKey: codeDefault.identityKey,
-                  semanticLocation: codeDefault.semanticLocation,
-                  value: codeDefault.normalizedValue,
-                  filePath: codeDefault.filePath,
-                  symbolId: codeDefault.symbolId,
-                  line: codeDefault.line,
-                  bindingBasis: codeDefault.bindingBasis,
-                  bindingConfidence: codeDefault.bindingConfidence,
-                  revision,
-                })
-              : undefined;
-          if (codeDefault && "identityKey" in codeDefault && persistedCodeDefault) {
-            currentEvidence.set(codeDefault.identityKey, persistedCodeDefault);
-          }
+          if (!codeDefault || !("identityKey" in codeDefault)) continue;
+          const persistedCodeDefault = persistObservation(store, {
+            parameterKey,
+            sourceKind: codeDefault.sourceKind,
+            identityKey: codeDefault.identityKey,
+            semanticLocation: codeDefault.semanticLocation,
+            value: codeDefault.normalizedValue,
+            filePath: codeDefault.filePath,
+            symbolId: codeDefault.symbolId,
+            line: codeDefault.line,
+            bindingBasis: codeDefault.bindingBasis,
+            bindingConfidence: codeDefault.bindingConfidence,
+            revision,
+          });
+          currentEvidence.set(codeDefault.identityKey, persistedCodeDefault);
           const persistedAnnotation =
             codeAnnotation && "identityKey" in codeAnnotation
               ? persistObservation(store, {
@@ -1090,67 +1041,50 @@ export async function runClaimsCheck(options: {
                   revision,
                 })
               : undefined;
-          if (codeAnnotation && "identityKey" in codeAnnotation && persistedAnnotation) {
-            currentEvidence.set(codeAnnotation.identityKey, persistedAnnotation);
+          if (
+            persistedAnnotation &&
+            codeAnnotation &&
+            "identityKey" in codeAnnotation
+          ) {
+            currentEvidence.set(
+              codeAnnotation.identityKey,
+              persistedAnnotation,
+            );
           }
-          const persistedConfig =
-            configValue && configValue.kind === "evidence"
-              ? persistObservation(store, {
-                  parameterKey,
-                  sourceKind: configValue.sourceKind,
-                  identityKey: configValue.identityKey,
-                  semanticLocation: configValue.semanticLocation,
-                  value: configValue.normalizedValue,
-                  filePath: configValue.filePath,
-                  revision,
-                })
-              : undefined;
-          if (configValue && configValue.kind === "evidence" && persistedConfig) {
-            currentEvidence.set(configValue.identityKey, persistedConfig);
-          }
-          const persistedDocumentation =
-            documentedValue && documentedValue.kind === "evidence"
-              ? persistObservation(store, {
-                  parameterKey,
-                  sourceKind: "documentation",
-                  identityKey: documentedValue.identityKey,
-                  semanticLocation: documentedValue.semanticLocation,
-                  value: documentedValue.normalizedValue,
-                  filePath: documentedValue.filePath,
-                  line: documentedValue.line,
-                  revision,
-                })
-              : undefined;
-          if (documentedValue && documentedValue.kind === "evidence" && persistedDocumentation) {
-            currentEvidence.set(documentedValue.identityKey, persistedDocumentation);
-          }
-          const documentedDefaultValue = docs.find(
+          const documentedDefault = docs.find(
             (observation) =>
               observation.parameterKey === parameterKey &&
               observation.kind === "evidence" &&
               observation.semanticLocation === `${parameterKey}.default`,
           );
           const persistedDocumentedDefault =
-            documentedDefaultValue && documentedDefaultValue.kind === "evidence"
+            documentedDefault && documentedDefault.kind === "evidence"
               ? persistObservation(store, {
                   parameterKey,
                   sourceKind: "documentation",
-                  identityKey: documentedDefaultValue.identityKey,
-                  semanticLocation: documentedDefaultValue.semanticLocation,
-                  value: documentedDefaultValue.normalizedValue,
-                  filePath: documentedDefaultValue.filePath,
-                  line: documentedDefaultValue.line,
+                  identityKey: documentedDefault.identityKey,
+                  semanticLocation: documentedDefault.semanticLocation,
+                  value: documentedDefault.normalizedValue,
+                  filePath: documentedDefault.filePath,
+                  line: documentedDefault.line,
                   revision,
                 })
               : undefined;
-          if (documentedDefaultValue && documentedDefaultValue.kind === "evidence" && persistedDocumentedDefault) {
-            currentEvidence.set(documentedDefaultValue.identityKey, persistedDocumentedDefault);
+          if (
+            documentedDefault &&
+            documentedDefault.kind === "evidence" &&
+            persistedDocumentedDefault
+          ) {
+            currentEvidence.set(
+              documentedDefault.identityKey,
+              persistedDocumentedDefault,
+            );
           }
-          const result = engine.evaluateScope({
+          const result = engine.evaluateDefault({
             parameterKey,
-            scope: scope.name,
+            claimType: codeDefault.claimType,
             repositoryRevision: revision,
-            codeDefault: persistedCodeDefault && {
+            codeDefault: {
               versionId: persistedCodeDefault.version.id,
               value: persistedCodeDefault.value,
             },
@@ -1162,203 +1096,471 @@ export async function runClaimsCheck(options: {
               versionId: persistedDocumentedDefault.version.id,
               value: persistedDocumentedDefault.value,
             },
-            configOverride: persistedConfig && {
-              versionId: persistedConfig.version.id,
-              value: persistedConfig.value,
-            },
-            documentedOverride: persistedDocumentation && {
-              versionId: persistedDocumentation.version.id,
-              value: persistedDocumentation.value,
-            },
-            scopeEvidence: {
-              versionId: scopeEvidence.get(scope.name)!.version.id,
-              capabilities: scope.capabilities,
-            },
             contracts,
           });
-          if (codeDefault && "identityKey" in codeDefault) {
-            promoteDiscoveredClaim(
-              database,
-              reviews,
-              codeDefault,
-              result.assessments[0]!.claimIdentityId,
-              result.assessments[0]!.id,
-              result.ruleResults[0]!.id,
-            );
-          }
-          const ruleStatuses = result.ruleResults.map((rule) =>
-            (database.prepare(`SELECT normalized_status FROM rule_result_versions WHERE id = ?`).get(rule.id) as { normalized_status: "passed" | "failed" | "inconclusive" | "not_applicable" }).normalized_status,
+          promoteDiscoveredClaim(
+            database,
+            reviews,
+            codeDefault,
+            result.assessments[0]!.claimIdentityId,
+            result.assessments[0]!.id,
+            result.ruleResults[0]!.id,
           );
-          const assessmentStatuses = result.assessments.map((assessment) =>
-            (database.prepare(`SELECT epistemic_status FROM claim_assessments WHERE id = ?`).get(assessment.id) as { epistemic_status: "supported" | "refuted" | "contested" | "inconclusive" }).epistemic_status,
+          const ruleStatuses = result.ruleResults.map(
+            (rule) =>
+              (
+                database
+                  .prepare(
+                    `SELECT normalized_status FROM rule_result_versions WHERE id = ?`,
+                  )
+                  .get(rule.id) as {
+                  normalized_status:
+                    | "passed"
+                    | "failed"
+                    | "inconclusive"
+                    | "not_applicable";
+                }
+              ).normalized_status,
+          );
+          const assessmentStatuses = result.assessments.map(
+            (assessment) =>
+              (
+                database
+                  .prepare(
+                    `SELECT epistemic_status FROM claim_assessments WHERE id = ?`,
+                  )
+                  .get(assessment.id) as {
+                  epistemic_status:
+                    | "supported"
+                    | "refuted"
+                    | "contested"
+                    | "inconclusive";
+                }
+              ).epistemic_status,
           );
           allRuleStatuses.push(...ruleStatuses);
           allAssessmentStatuses.push(...assessmentStatuses);
-          assessmentIds.push(...result.assessments.map((assessment) => assessment.id));
-          output.scopes.push({ scope: scope.name, ruleStatuses, assessmentStatuses });
-        }
-      }
-      if (claimsGit && baseRevision && headRevision) {
-        const changedPaths = claimsGit.changedPaths(baseRevision, headRevision);
-        const renames = claimsGit.renames(baseRevision, headRevision);
-        const continuedPreviousIdentityKeys = new Set<string>();
-        for (const [identityKey, current] of currentEvidence) {
-          const matchedRename = renamedPredecessor(
-            database,
-            previousEvidence,
-            current,
-            renames,
+          assessmentIds.push(
+            ...result.assessments.map((assessment) => assessment.id),
           );
-          const previous = previousEvidence.get(identityKey) ?? matchedRename?.observation;
-          if (!previous) {
+          output.claims.push({
+            parameterKey,
+            claimType: codeDefault.claimType,
+            ruleStatuses,
+            assessmentStatuses,
+          });
+        }
+
+        for (const scope of selectedScopes) {
+          for (const [parameterKey] of Object.entries(bindings.parameters)) {
+            const codeDefault = code.find(
+              (observation) =>
+                observation.parameterKey === parameterKey &&
+                observation.sourceKind === "code-default" &&
+                "identityKey" in observation,
+            );
+            const codeAnnotation = code.find(
+              (observation) =>
+                observation.parameterKey === parameterKey &&
+                observation.sourceKind === "code-annotation" &&
+                "identityKey" in observation,
+            );
+            const configValue = config.find(
+              (observation) =>
+                observation.parameterKey === parameterKey &&
+                observation.scope === scope.name &&
+                observation.kind === "evidence",
+            );
+            const documentedValue = docs.find(
+              (observation) =>
+                observation.parameterKey === parameterKey &&
+                observation.kind === "evidence" &&
+                observation.semanticLocation ===
+                  `${parameterKey}.override[${scope.name}]`,
+            );
+            const persistedCodeDefault =
+              codeDefault && "identityKey" in codeDefault
+                ? persistObservation(store, {
+                    parameterKey,
+                    sourceKind: codeDefault.sourceKind,
+                    identityKey: codeDefault.identityKey,
+                    semanticLocation: codeDefault.semanticLocation,
+                    value: codeDefault.normalizedValue,
+                    filePath: codeDefault.filePath,
+                    symbolId: codeDefault.symbolId,
+                    line: codeDefault.line,
+                    bindingBasis: codeDefault.bindingBasis,
+                    bindingConfidence: codeDefault.bindingConfidence,
+                    revision,
+                  })
+                : undefined;
+            if (
+              codeDefault &&
+              "identityKey" in codeDefault &&
+              persistedCodeDefault
+            ) {
+              currentEvidence.set(
+                codeDefault.identityKey,
+                persistedCodeDefault,
+              );
+            }
+            const persistedAnnotation =
+              codeAnnotation && "identityKey" in codeAnnotation
+                ? persistObservation(store, {
+                    parameterKey,
+                    sourceKind: codeAnnotation.sourceKind,
+                    identityKey: codeAnnotation.identityKey,
+                    semanticLocation: codeAnnotation.semanticLocation,
+                    value: codeAnnotation.normalizedValue,
+                    filePath: codeAnnotation.filePath,
+                    symbolId: codeAnnotation.symbolId,
+                    line: codeAnnotation.line,
+                    bindingBasis: codeAnnotation.bindingBasis,
+                    bindingConfidence: codeAnnotation.bindingConfidence,
+                    revision,
+                  })
+                : undefined;
+            if (
+              codeAnnotation &&
+              "identityKey" in codeAnnotation &&
+              persistedAnnotation
+            ) {
+              currentEvidence.set(
+                codeAnnotation.identityKey,
+                persistedAnnotation,
+              );
+            }
+            const persistedConfig =
+              configValue && configValue.kind === "evidence"
+                ? persistObservation(store, {
+                    parameterKey,
+                    sourceKind: configValue.sourceKind,
+                    identityKey: configValue.identityKey,
+                    semanticLocation: configValue.semanticLocation,
+                    value: configValue.normalizedValue,
+                    filePath: configValue.filePath,
+                    revision,
+                  })
+                : undefined;
+            if (
+              configValue &&
+              configValue.kind === "evidence" &&
+              persistedConfig
+            ) {
+              currentEvidence.set(configValue.identityKey, persistedConfig);
+            }
+            const persistedDocumentation =
+              documentedValue && documentedValue.kind === "evidence"
+                ? persistObservation(store, {
+                    parameterKey,
+                    sourceKind: "documentation",
+                    identityKey: documentedValue.identityKey,
+                    semanticLocation: documentedValue.semanticLocation,
+                    value: documentedValue.normalizedValue,
+                    filePath: documentedValue.filePath,
+                    line: documentedValue.line,
+                    revision,
+                  })
+                : undefined;
+            if (
+              documentedValue &&
+              documentedValue.kind === "evidence" &&
+              persistedDocumentation
+            ) {
+              currentEvidence.set(
+                documentedValue.identityKey,
+                persistedDocumentation,
+              );
+            }
+            const documentedDefaultValue = docs.find(
+              (observation) =>
+                observation.parameterKey === parameterKey &&
+                observation.kind === "evidence" &&
+                observation.semanticLocation === `${parameterKey}.default`,
+            );
+            const persistedDocumentedDefault =
+              documentedDefaultValue &&
+              documentedDefaultValue.kind === "evidence"
+                ? persistObservation(store, {
+                    parameterKey,
+                    sourceKind: "documentation",
+                    identityKey: documentedDefaultValue.identityKey,
+                    semanticLocation: documentedDefaultValue.semanticLocation,
+                    value: documentedDefaultValue.normalizedValue,
+                    filePath: documentedDefaultValue.filePath,
+                    line: documentedDefaultValue.line,
+                    revision,
+                  })
+                : undefined;
+            if (
+              documentedDefaultValue &&
+              documentedDefaultValue.kind === "evidence" &&
+              persistedDocumentedDefault
+            ) {
+              currentEvidence.set(
+                documentedDefaultValue.identityKey,
+                persistedDocumentedDefault,
+              );
+            }
+            const result = engine.evaluateScope({
+              parameterKey,
+              scope: scope.name,
+              repositoryRevision: revision,
+              codeDefault: persistedCodeDefault && {
+                versionId: persistedCodeDefault.version.id,
+                value: persistedCodeDefault.value,
+              },
+              codeAnnotation: persistedAnnotation && {
+                versionId: persistedAnnotation.version.id,
+                value: persistedAnnotation.value,
+              },
+              documentedDefault: persistedDocumentedDefault && {
+                versionId: persistedDocumentedDefault.version.id,
+                value: persistedDocumentedDefault.value,
+              },
+              configOverride: persistedConfig && {
+                versionId: persistedConfig.version.id,
+                value: persistedConfig.value,
+              },
+              documentedOverride: persistedDocumentation && {
+                versionId: persistedDocumentation.version.id,
+                value: persistedDocumentation.value,
+              },
+              scopeEvidence: {
+                versionId: scopeEvidence.get(scope.name)!.version.id,
+                capabilities: scope.capabilities,
+              },
+              contracts,
+            });
+            if (codeDefault && "identityKey" in codeDefault) {
+              promoteDiscoveredClaim(
+                database,
+                reviews,
+                codeDefault,
+                result.assessments[0]!.claimIdentityId,
+                result.assessments[0]!.id,
+                result.ruleResults[0]!.id,
+              );
+            }
+            const ruleStatuses = result.ruleResults.map(
+              (rule) =>
+                (
+                  database
+                    .prepare(
+                      `SELECT normalized_status FROM rule_result_versions WHERE id = ?`,
+                    )
+                    .get(rule.id) as {
+                    normalized_status:
+                      | "passed"
+                      | "failed"
+                      | "inconclusive"
+                      | "not_applicable";
+                  }
+                ).normalized_status,
+            );
+            const assessmentStatuses = result.assessments.map(
+              (assessment) =>
+                (
+                  database
+                    .prepare(
+                      `SELECT epistemic_status FROM claim_assessments WHERE id = ?`,
+                    )
+                    .get(assessment.id) as {
+                    epistemic_status:
+                      | "supported"
+                      | "refuted"
+                      | "contested"
+                      | "inconclusive";
+                  }
+                ).epistemic_status,
+            );
+            allRuleStatuses.push(...ruleStatuses);
+            allAssessmentStatuses.push(...assessmentStatuses);
+            assessmentIds.push(
+              ...result.assessments.map((assessment) => assessment.id),
+            );
+            output.scopes.push({
+              scope: scope.name,
+              ruleStatuses,
+              assessmentStatuses,
+            });
+          }
+        }
+        if (claimsGit && baseRevision && headRevision) {
+          const changedPaths = claimsGit.changedPaths(
+            baseRevision,
+            headRevision,
+          );
+          const renames = claimsGit.renames(baseRevision, headRevision);
+          const continuedPreviousIdentityKeys = new Set<string>();
+          for (const [identityKey, current] of currentEvidence) {
+            const matchedRename = renamedPredecessor(
+              database,
+              previousEvidence,
+              current,
+              renames,
+            );
+            const previous =
+              previousEvidence.get(identityKey) ?? matchedRename?.observation;
+            if (!previous) {
+              const provenance = {
+                baseRevision,
+                headRevision,
+                changedPaths,
+                missingPredecessorIdentity: identityKey,
+              };
+              const reopened = reopenEvidenceChanges(
+                database,
+                reviews,
+                current.version.id,
+                "continuity-uncertain",
+                provenance,
+              );
+              for (const claimIdentityId of reopened) {
+                reopenedClaimIds.add(claimIdentityId);
+              }
+              continue;
+            }
+            if (matchedRename)
+              continuedPreviousIdentityKeys.add(matchedRename.identityKey);
+            if (previous.version.id === current.version.id) continue;
+            const materialChange = isMaterialChange(
+              database,
+              previous.version.id,
+              current.version.id,
+            );
             const provenance = {
               baseRevision,
               headRevision,
               changedPaths,
-              missingPredecessorIdentity: identityKey,
+              materialChange,
+              ...(matchedRename
+                ? {
+                    rename: matchedRename.rename,
+                    continuityBasis: "git-file-rename",
+                    continuityConfidence: materialChange
+                      ? "probable"
+                      : "certain",
+                  }
+                : {}),
             };
-            const reopened = reopenEvidenceChanges(
-              database,
-              reviews,
-              current.version.id,
-              "continuity-uncertain",
+            store.persistEvidenceContinuity({
+              fromEvidenceVersionId: previous.version.id,
+              toEvidenceVersionId: current.version.id,
+              basis: matchedRename ? "git-file-rename" : "git-merge-base",
+              confidence: matchedRename
+                ? materialChange
+                  ? "probable"
+                  : "certain"
+                : "high",
               provenance,
-            );
-            for (const claimIdentityId of reopened) {
-              reopenedClaimIds.add(claimIdentityId);
+            });
+            if (materialChange) {
+              const reopened = reopenEvidenceChanges(
+                database,
+                reviews,
+                current.version.id,
+                "material-change",
+                provenance,
+              );
+              for (const claimIdentityId of reopened) {
+                reopenedClaimIds.add(claimIdentityId);
+              }
             }
-            continue;
           }
-          if (matchedRename) continuedPreviousIdentityKeys.add(matchedRename.identityKey);
-          if (previous.version.id === current.version.id) continue;
-          const materialChange = isMaterialChange(
-            database,
-            previous.version.id,
-            current.version.id,
-          );
-          const provenance = {
-            baseRevision,
-            headRevision,
-            changedPaths,
-            materialChange,
-            ...(matchedRename
-              ? {
-                  rename: matchedRename.rename,
-                  continuityBasis: "git-file-rename",
-                  continuityConfidence: materialChange ? "probable" : "certain",
-                }
-              : {}),
-          };
-          store.persistEvidenceContinuity({
-            fromEvidenceVersionId: previous.version.id,
-            toEvidenceVersionId: current.version.id,
-            basis: matchedRename ? "git-file-rename" : "git-merge-base",
-            confidence: matchedRename
-              ? materialChange
-                ? "probable"
-                : "certain"
-              : "high",
-            provenance,
-          });
-          if (materialChange) {
-            const reopened = reopenEvidenceChanges(
+          for (const [identityKey, previous] of previousEvidence) {
+            if (
+              currentEvidence.has(identityKey) ||
+              continuedPreviousIdentityKeys.has(identityKey)
+            )
+              continue;
+            const reopened = reopenBrokenContinuity(
               database,
               reviews,
-              current.version.id,
-              "material-change",
-              provenance,
+              previous.version.id,
+              assessmentIds,
+              {
+                baseRevision,
+                headRevision,
+                changedPaths,
+                missingCurrentIdentity: identityKey,
+              },
             );
             for (const claimIdentityId of reopened) {
               reopenedClaimIds.add(claimIdentityId);
             }
           }
         }
-        for (const [identityKey, previous] of previousEvidence) {
-          if (currentEvidence.has(identityKey) || continuedPreviousIdentityKeys.has(identityKey)) continue;
-          const reopened = reopenBrokenContinuity(
+        for (const assessmentId of assessmentIds) {
+          const reopenedClaimId = reopenContractChange(
             database,
             reviews,
-            previous.version.id,
-            assessmentIds,
-            {
-              baseRevision,
-              headRevision,
-              changedPaths,
-              missingCurrentIdentity: identityKey,
-            },
+            assessmentId,
+            baseRevision,
+            preRunReferenceAssessmentIds,
           );
-          for (const claimIdentityId of reopened) {
-            reopenedClaimIds.add(claimIdentityId);
-          }
+          if (reopenedClaimId) reopenedClaimIds.add(reopenedClaimId);
         }
-      }
-      for (const assessmentId of assessmentIds) {
-        const reopenedClaimId = reopenContractChange(
-          database,
-          reviews,
-          assessmentId,
-          baseRevision,
-          preRunReferenceAssessmentIds,
-        );
-        if (reopenedClaimId) reopenedClaimIds.add(reopenedClaimId);
-      }
-      if (baseRevision) {
-        for (const assessmentId of assessmentIds) {
-          const assessment = database
-            .prepare(
-              `SELECT cv.claim_identity_id
+        if (baseRevision) {
+          for (const assessmentId of assessmentIds) {
+            const assessment = database
+              .prepare(
+                `SELECT cv.claim_identity_id
                FROM claim_assessments ca
                JOIN claim_versions cv ON cv.id = ca.claim_version_id
                WHERE ca.id = ?`,
-            )
-            .get(assessmentId) as { claim_identity_id: string } | undefined;
-          if (
-            assessment &&
-            !contractReferenceAssessmentId(
-              database,
-              assessment.claim_identity_id,
-              baseRevision,
-              assessmentId,
-              preRunReferenceAssessmentIds,
-            )
-          ) {
-            allRuleStatuses.push("inconclusive");
+              )
+              .get(assessmentId) as { claim_identity_id: string } | undefined;
+            if (
+              assessment &&
+              !contractReferenceAssessmentId(
+                database,
+                assessment.claim_identity_id,
+                baseRevision,
+                assessmentId,
+                preRunReferenceAssessmentIds,
+              )
+            ) {
+              allRuleStatuses.push("inconclusive");
+            }
           }
         }
-      }
-      for (const assessmentId of assessmentIds) {
-        const assessment = database
-          .prepare(
-            `SELECT ci.id AS claim_identity_id, ca.epistemic_status
+        for (const assessmentId of assessmentIds) {
+          const assessment = database
+            .prepare(
+              `SELECT ci.id AS claim_identity_id, ca.epistemic_status
              FROM claim_assessments ca
              JOIN claim_versions cv ON cv.id = ca.claim_version_id
              JOIN claim_identities ci ON ci.id = cv.claim_identity_id
              WHERE ca.id = ?`,
-          )
-          .get(assessmentId) as
-          | { claim_identity_id: string; epistemic_status: string }
-          | undefined;
-        if (
-          assessment &&
-          assessment.epistemic_status !== "inconclusive" &&
-          !reopenedClaimIds.has(assessment.claim_identity_id)
-        ) {
-          const openReopen = database
-            .prepare(
-              `SELECT 1 AS present
+            )
+            .get(assessmentId) as
+            | { claim_identity_id: string; epistemic_status: string }
+            | undefined;
+          if (
+            assessment &&
+            assessment.epistemic_status !== "inconclusive" &&
+            !reopenedClaimIds.has(assessment.claim_identity_id)
+          ) {
+            const openReopen = database
+              .prepare(
+                `SELECT 1 AS present
                FROM review_decision_reopens
                WHERE claim_identity_id = ? AND status = 'open'
                LIMIT 1`,
-            )
-            .get(assessment.claim_identity_id) as { present: number } | undefined;
-          if (!openReopen) {
-            reviews.carryForward(assessment.claim_identity_id, assessmentId);
+              )
+              .get(assessment.claim_identity_id) as
+              | { present: number }
+              | undefined;
+            if (!openReopen) {
+              reviews.carryForward(assessment.claim_identity_id, assessmentId);
+            }
           }
         }
-      }
-      const reviewRequired = assessmentIds.some((assessmentId) => {
-        const row = database.prepare(
-          `SELECT ca.epistemic_status,
+        const reviewRequired = assessmentIds.some((assessmentId) => {
+          const row = database
+            .prepare(
+              `SELECT ca.epistemic_status,
                   EXISTS(
                     SELECT 1 FROM review_decisions rd
                     WHERE rd.basis_assessment_id = ca.id AND rd.is_current = 1
@@ -1370,25 +1572,27 @@ export async function runClaimsCheck(options: {
                       AND reopen.status = 'open'
                   ) AS open_reopen
            FROM claim_assessments ca WHERE ca.id = ?`,
-        ).get(assessmentId) as {
-          epistemic_status: string;
-          reviewed: number;
-          open_reopen: number;
+            )
+            .get(assessmentId) as {
+            epistemic_status: string;
+            reviewed: number;
+            open_reopen: number;
+          };
+          return (
+            row.epistemic_status !== "inconclusive" &&
+            (row.reviewed === 0 || row.open_reopen === 1)
+          );
+        });
+        return {
+          output,
+          exitCode: claimsExitCode({
+            discoveryEmpty:
+              output.claims.length === 0 && output.scopes.length === 0,
+            ruleStatuses: allRuleStatuses,
+            assessmentStatuses: allAssessmentStatuses,
+            reviewRequired,
+          }),
         };
-        return (
-          row.epistemic_status !== "inconclusive" &&
-          (row.reviewed === 0 || row.open_reopen === 1)
-        );
-      });
-      return {
-        output,
-        exitCode: claimsExitCode({
-          discoveryEmpty: output.claims.length === 0 && output.scopes.length === 0,
-          ruleStatuses: allRuleStatuses,
-          assessmentStatuses: allAssessmentStatuses,
-          reviewRequired,
-        }),
-      };
       });
       const result = runCheck();
       console.log(
@@ -1403,7 +1607,10 @@ export async function runClaimsCheck(options: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
-    process.exitCode = error instanceof ClaimsBindingError || error instanceof ClaimsGitError ? 64 : 1;
+    process.exitCode =
+      error instanceof ClaimsBindingError || error instanceof ClaimsGitError
+        ? 64
+        : 1;
   }
 }
 
@@ -1435,9 +1642,12 @@ export async function runClaimsReview(options: {
                LIMIT 1`,
             )
             .get(options.claim) as { basis_assessment_id: string } | undefined);
-      const basisAssessmentId = assessment?.id ?? openReopenBasis?.basis_assessment_id;
+      const basisAssessmentId =
+        assessment?.id ?? openReopenBasis?.basis_assessment_id;
       if (!basisAssessmentId) {
-        throw new ClaimsBindingError(`No reviewable assessment for claim ${options.claim}`);
+        throw new ClaimsBindingError(
+          `No reviewable assessment for claim ${options.claim}`,
+        );
       }
       const result = new ClaimsReviewStore(database).record({
         claimIdentityId: options.claim,
@@ -1445,8 +1655,16 @@ export async function runClaimsReview(options: {
         decision: options.decision,
         actor: options.actor,
       });
-      const output = { claimIdentityId: options.claim, assessmentId: basisAssessmentId, ...result };
-      console.log(options.format === "json" ? JSON.stringify(output, null, 2) : `Review recorded: ${result.id}`);
+      const output = {
+        claimIdentityId: options.claim,
+        assessmentId: basisAssessmentId,
+        ...result,
+      };
+      console.log(
+        options.format === "json"
+          ? JSON.stringify(output, null, 2)
+          : `Review recorded: ${result.id}`,
+      );
       process.exitCode = 0;
     } finally {
       database.close();
@@ -1511,7 +1729,9 @@ export async function runClaimsExplain(options: {
         normalized_statement_json: string;
       }>;
       if (options.claim && assessments.length === 0) {
-        throw new ClaimsBindingError(`No current assessment for claim ${options.claim}`);
+        throw new ClaimsBindingError(
+          `No current assessment for claim ${options.claim}`,
+        );
       }
       const output = assessments.map((assessment) => ({
         claimIdentityId: assessment.claim_identity_id,
@@ -1549,11 +1769,15 @@ export async function runClaimsExplain(options: {
         console.log("No current claims.");
       } else {
         for (const claim of output) {
-          console.log(`${claim.claimType}${claim.scope ? ` (${claim.scope})` : ""}: ${claim.status}`);
+          console.log(
+            `${claim.claimType}${claim.scope ? ` (${claim.scope})` : ""}: ${claim.status}`,
+          );
           console.log(`  Claim: ${claim.claimIdentityId}`);
           console.log(`  Assessment: ${claim.assessmentId}`);
           if (claim.review) {
-            console.log(`  Review: ${(claim.review as { decision: string }).decision}`);
+            console.log(
+              `  Review: ${(claim.review as { decision: string }).decision}`,
+            );
           }
           for (const reopen of claim.reopens as Array<{
             reason: string;
@@ -1567,7 +1791,9 @@ export async function runClaimsExplain(options: {
               `    Dependency: ${reopen.dependency_kind}:${reopen.dependency_version_id}`,
             );
             if (reopen.secondary_provenance_json) {
-              console.log(`    Provenance: ${reopen.secondary_provenance_json}`);
+              console.log(
+                `    Provenance: ${reopen.secondary_provenance_json}`,
+              );
             }
           }
         }
@@ -1586,16 +1812,26 @@ export const claimsCommand = new Command("claims")
   .description("Discover, assess, explain, and review repository claims")
   .addCommand(
     new Command("check")
-      .description("Discover and evaluate claims, optionally for a registered scope")
+      .description(
+        "Discover and evaluate claims, optionally for a registered scope",
+      )
       .option("--scope <scope>", "Registered scope to evaluate")
-      .option("--since <ref>", "Compare immutable HEAD evidence with the merge-base of a Git ref")
+      .option(
+        "--since <ref>",
+        "Compare immutable HEAD evidence with the merge-base of a Git ref",
+      )
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsCheck),
   )
   .addCommand(
     new Command("review")
-      .description("Record a human decision against a claim's current assessment")
-      .requiredOption("--claim <claimIdentityId>", "Claim identity ID from claims explain")
+      .description(
+        "Record a human decision against a claim's current assessment",
+      )
+      .requiredOption(
+        "--claim <claimIdentityId>",
+        "Claim identity ID from claims explain",
+      )
       .requiredOption("--actor <name>", "Review decision actor")
       .requiredOption("--decision <decision>", "Review disposition")
       .option("-f, --format <format>", "Output format: text or json", "text")
@@ -1603,8 +1839,13 @@ export const claimsCommand = new Command("claims")
   )
   .addCommand(
     new Command("explain")
-      .description("Show current claims with their versioned dependencies and reopens")
-      .option("--claim <claimIdentityId>", "Restrict explanation to one claim identity")
+      .description(
+        "Show current claims with their versioned dependencies and reopens",
+      )
+      .option(
+        "--claim <claimIdentityId>",
+        "Restrict explanation to one claim identity",
+      )
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsExplain),
   );

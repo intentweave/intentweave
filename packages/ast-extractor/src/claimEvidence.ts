@@ -40,9 +40,11 @@ export interface ClaimEvidenceExtraction {
 
 function parseSafe(parser: Parser, content: string): Parser.Tree {
   if (content.length <= 32_000) return parser.parse(content);
-  return (parser as unknown as {
-    parse(reader: (startIndex: number) => string | null): Parser.Tree;
-  }).parse((startIndex: number) =>
+  return (
+    parser as unknown as {
+      parse(reader: (startIndex: number) => string | null): Parser.Tree;
+    }
+  ).parse((startIndex: number) =>
     startIndex >= content.length
       ? null
       : content.slice(startIndex, startIndex + 4096),
@@ -152,7 +154,10 @@ function annotationValue(jsDoc: string): ClaimLiteral | undefined {
   return undefined;
 }
 
-function bindingStructureFingerprint(declaration: Parser.SyntaxNode, name: string): string {
+function bindingStructureFingerprint(
+  declaration: Parser.SyntaxNode,
+  name: string,
+): string {
   const context: string[] = [];
   for (let current = declaration.parent; current; current = current.parent) {
     if (
@@ -162,7 +167,8 @@ function bindingStructureFingerprint(declaration: Parser.SyntaxNode, name: strin
     ) {
       const name =
         current.childForFieldName("name")?.text ??
-        current.namedChildren.find((child) => child.type === "identifier")?.text ??
+        current.namedChildren.find((child) => child.type === "identifier")
+          ?.text ??
         "";
       context.push(`${current.type}:${name}`);
     }
@@ -179,7 +185,9 @@ export function extractClaimEvidence(
   filePath: string,
 ): ClaimEvidenceExtraction {
   const parser = new Parser();
-  parser.setLanguage(/\.[jt]sx$/i.test(filePath) ? TypeScript.tsx : TypeScript.typescript);
+  parser.setLanguage(
+    /\.[jt]sx$/i.test(filePath) ? TypeScript.tsx : TypeScript.typescript,
+  );
   const tree = parseSafe(parser, content);
   const literalBindings: ExtractedLiteralBinding[] = [];
   const codeAnnotations: ExtractedCodeAnnotation[] = [];
@@ -231,7 +239,10 @@ export function extractClaimEvidence(
   };
 
   const visit = (node: Parser.SyntaxNode) => {
-    if (node.type === "variable_declarator" || node.type === "assignment_expression") {
+    if (
+      node.type === "variable_declarator" ||
+      node.type === "assignment_expression"
+    ) {
       addBinding(
         node,
         node.childForFieldName("name") ?? node.childForFieldName("left"),

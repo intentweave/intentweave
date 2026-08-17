@@ -92,7 +92,9 @@ describe("ClaimsReviewStore", () => {
       reason: "material-change",
     });
     const review = db
-      .prepare(`SELECT is_current, invalidated_by_reopen_id FROM review_decisions`)
+      .prepare(
+        `SELECT is_current, invalidated_by_reopen_id FROM review_decisions`,
+      )
       .get() as { is_current: number; invalidated_by_reopen_id: string | null };
 
     expect(reopen).toMatchObject({ created: true });

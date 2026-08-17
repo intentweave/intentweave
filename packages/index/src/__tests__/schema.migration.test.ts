@@ -40,7 +40,9 @@ describe("migrateSchema14To15 hardening", () => {
     expect(() => migrateSchema14To15(db)).toThrow(/no column named key/);
 
     // Core data survives, but no partial companion schema may escape the transaction.
-    const symbols = db.prepare(`SELECT COUNT(*) AS count FROM symbols`).get() as {
+    const symbols = db
+      .prepare(`SELECT COUNT(*) AS count FROM symbols`)
+      .get() as {
       count: number;
     };
     expect(symbols.count).toBe(1);
@@ -52,9 +54,9 @@ describe("migrateSchema14To15 hardening", () => {
         )
         .get(),
     ).toEqual({ count: 0 });
-    expect(
-      db.prepare(`SELECT legacy_version FROM _meta`).get(),
-    ).toEqual({ legacy_version: "14" });
+    expect(db.prepare(`SELECT legacy_version FROM _meta`).get()).toEqual({
+      legacy_version: "14",
+    });
   });
 
   it("preserves existing core data during migration", () => {
@@ -94,7 +96,9 @@ describe("migrateSchema14To15 hardening", () => {
     expect(symbol).toEqual({ name: "authService", kind: "function" });
 
     const annotation = db
-      .prepare(`SELECT text, symbol_id FROM annotations WHERE doc_path = 'docs/auth.md'`)
+      .prepare(
+        `SELECT text, symbol_id FROM annotations WHERE doc_path = 'docs/auth.md'`,
+      )
       .get() as { text: string; symbol_id: string };
     expect(annotation).toEqual({ text: "AuthService", symbol_id: "test:1" });
 
@@ -184,7 +188,9 @@ describe("migrateSchema14To15 hardening", () => {
   });
 
   it("restores Claims history from a WAL-safe snapshot after a fresh rebuild", () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "intentweave-claims-history-"));
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-claims-history-"),
+    );
     const sourcePath = path.join(directory, "source.db");
     const source = new Database(sourcePath);
     initSchema(source);
@@ -220,7 +226,9 @@ describe("migrateSchema14To15 hardening", () => {
   });
 
   it("captures and restores legacy schema-15 snapshots without references table", () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "intentweave-claims-legacy-snapshot-"));
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-claims-legacy-snapshot-"),
+    );
     const sourcePath = path.join(directory, "legacy-v15.db");
     const source = new Database(sourcePath);
     initSchema(source);
@@ -259,7 +267,9 @@ describe("migrateSchema14To15 hardening", () => {
   });
 
   it("preserves the existing database when a rebuild fails before atomic replacement", () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "intentweave-atomic-build-"));
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-atomic-build-"),
+    );
     const targetPath = path.join(directory, "index.db");
     const existing = new Database(targetPath);
     initSchema(existing);
@@ -292,7 +302,9 @@ describe("migrateSchema14To15 hardening", () => {
       preserved.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
     ).toEqual({ canonical_key: "session.timeout" });
     preserved.close();
-    expect(readdirSync(directory).filter((file) => file.includes(".tmp"))).toEqual([]);
+    expect(
+      readdirSync(directory).filter((file) => file.includes(".tmp")),
+    ).toEqual([]);
     rmSync(directory, { recursive: true, force: true });
   });
 

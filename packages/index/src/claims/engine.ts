@@ -73,8 +73,9 @@ export class ClaimsEngine {
   evaluateDefault(input: ClaimsDefaultEvaluationInput): ClaimsScopeEvaluation {
     const ruleResults: PersistedVersion[] = [];
     const assessments = [];
-    const codeEvidenceIds = [input.codeDefault, input.codeAnnotation]
-      .flatMap((evidence) => (evidence ? [evidence.versionId] : []));
+    const codeEvidenceIds = [input.codeDefault, input.codeAnnotation].flatMap(
+      (evidence) => (evidence ? [evidence.versionId] : []),
+    );
     const r1 = r1LiteralBinding(input.codeDefault?.value);
     const r1Version = resultVersion(
       this.store,
@@ -188,7 +189,8 @@ export class ClaimsEngine {
             effectiveValue: input.codeDefault.value,
           },
           assessmentPolicyId:
-            input.contracts.documentationPolicyId ?? "documentation-conformance",
+            input.contracts.documentationPolicyId ??
+            "documentation-conformance",
           assessmentPolicyVersion: input.contracts.documentationPolicyVersion,
           repositoryRevision: input.repositoryRevision,
           status: documentationAssessment.status,
@@ -267,7 +269,8 @@ export class ClaimsEngine {
         claimType: "CLM-EFFECTIVE",
         scope: input.scope,
         normalizedStatement: { value: effectiveValue ?? null },
-        assessmentPolicyId: input.contracts.runtimePolicyId ?? "runtime-resolution",
+        assessmentPolicyId:
+          input.contracts.runtimePolicyId ?? "runtime-resolution",
         assessmentPolicyVersion: input.contracts.runtimePolicyVersion,
         repositoryRevision: input.repositoryRevision,
         status: effectiveAssessment.status,
@@ -315,7 +318,8 @@ export class ClaimsEngine {
             effectiveValue,
           },
           assessmentPolicyId:
-            input.contracts.documentationPolicyId ?? "documentation-conformance",
+            input.contracts.documentationPolicyId ??
+            "documentation-conformance",
           assessmentPolicyVersion: input.contracts.documentationPolicyVersion,
           repositoryRevision: input.repositoryRevision,
           status: documentationAssessment.status,

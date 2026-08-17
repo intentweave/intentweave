@@ -3,7 +3,13 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "@intentweave/sqlite-compat";
@@ -65,7 +71,9 @@ describe("iw claims check", () => {
       index.prepare("SELECT COUNT(*) AS count FROM claim_identities").get(),
     ).toEqual({ count: 2 });
     expect(
-      index.prepare("SELECT COUNT(*) AS count FROM rule_result_identities").get(),
+      index
+        .prepare("SELECT COUNT(*) AS count FROM rule_result_identities")
+        .get(),
     ).toEqual({ count: 2 });
     expect(
       index
@@ -113,7 +121,14 @@ describe("iw claims check", () => {
 `,
     );
     writeFileSync(
-      path.join(workspace, "packages", "cli", "src", "commands", "indexBuild.ts"),
+      path.join(
+        workspace,
+        "packages",
+        "cli",
+        "src",
+        "commands",
+        "indexBuild.ts",
+      ),
       `build.option("--depth <depth>", "Annotation depth", "full");\n`,
     );
     writeFileSync(
@@ -229,7 +244,10 @@ describe("iw claims check", () => {
            WHERE ci.id = ?`,
         )
         .get(inferred.id),
-    ).toMatchObject({ is_current: 0, superseded_by_assessment_id: expect.any(String) });
+    ).toMatchObject({
+      is_current: 0,
+      superseded_by_assessment_id: expect.any(String),
+    });
     expect(
       promotedIndex
         .prepare(
@@ -356,7 +374,10 @@ describe("iw claims check", () => {
     capabilities: [session-runtime]
 `,
     );
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 3600\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "session.ts"),
       "/**\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
@@ -444,7 +465,10 @@ describe("iw claims check", () => {
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
     database.close();
-    writeFileSync(path.join(workspace, "intentweave.bindings.yaml"), "parameters: {}\n");
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      "parameters: {}\n",
+    );
     writeFileSync(
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
@@ -479,7 +503,10 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 3600\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "session.ts"),
       "/**\n * The default session timeout.\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
@@ -519,7 +546,10 @@ describe("iw claims check", () => {
       });
     }
 
-    writeFileSync(path.join(workspace, "README.md"), "Unrelated documentation change.\n");
+    writeFileSync(
+      path.join(workspace, "README.md"),
+      "Unrelated documentation change.\n",
+    );
     git("add", "README.md");
     git("commit", "-m", "update unrelated readme");
     process.exitCode = undefined;
@@ -527,11 +557,25 @@ describe("iw claims check", () => {
     await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
 
     expect(process.exitCode).toBe(0);
-    const unrelatedIndex = new Database(path.join(workspace, ".iw", "index.db"));
-    expect(unrelatedIndex.prepare(`SELECT COUNT(*) AS count FROM evidence_continuity`).get()).toEqual({ count: 0 });
-    expect(unrelatedIndex.prepare(`SELECT COUNT(*) AS count FROM review_decision_reopens`).get()).toEqual({ count: 0 });
+    const unrelatedIndex = new Database(
+      path.join(workspace, ".iw", "index.db"),
+    );
     expect(
-      unrelatedIndex.prepare(`SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`).get(),
+      unrelatedIndex
+        .prepare(`SELECT COUNT(*) AS count FROM evidence_continuity`)
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      unrelatedIndex
+        .prepare(`SELECT COUNT(*) AS count FROM review_decision_reopens`)
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      unrelatedIndex
+        .prepare(
+          `SELECT COUNT(*) AS count FROM review_decisions WHERE is_current = 1`,
+        )
+        .get(),
     ).toEqual({ count: baselineClaims.length });
     unrelatedIndex.close();
 
@@ -578,7 +622,9 @@ describe("iw claims check", () => {
     ]);
     expect(process.exitCode).toBe(0);
     expect(
-      renamedIndex.prepare(`SELECT COUNT(*) AS count FROM review_decision_reopens`).get(),
+      renamedIndex
+        .prepare(`SELECT COUNT(*) AS count FROM review_decision_reopens`)
+        .get(),
     ).toEqual({ count: 0 });
     expect(
       renamedIndex
@@ -620,7 +666,10 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 1800\n");
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 1800\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "session.ts"),
       "/**\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
@@ -664,7 +713,10 @@ describe("iw claims check", () => {
       });
     }
 
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 3600\n");
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 3600\n",
+    );
     writeFileSync(
       path.join(workspace, "docs", "session-timeout.md"),
       "The eu-prod override is 3600 seconds.\n",
@@ -687,10 +739,18 @@ describe("iw claims check", () => {
          JOIN evidence_versions previous ON previous.id = continuity.from_evidence_version_id
          JOIN evidence_versions current ON current.id = continuity.to_evidence_version_id`,
       )
-      .all() as Array<{ from_ordinal: number; to_ordinal: number; provenance_json: string }>;
+      .all() as Array<{
+      from_ordinal: number;
+      to_ordinal: number;
+      provenance_json: string;
+    }>;
     expect(continuity.length).toBeGreaterThan(0);
-    expect(continuity.every((link) => link.from_ordinal < link.to_ordinal)).toBe(true);
-    expect(continuity.map((link) => JSON.parse(link.provenance_json))).toContainEqual(
+    expect(
+      continuity.every((link) => link.from_ordinal < link.to_ordinal),
+    ).toBe(true);
+    expect(
+      continuity.map((link) => JSON.parse(link.provenance_json)),
+    ).toContainEqual(
       expect.objectContaining({
         baseRevision,
         headRevision,
@@ -712,10 +772,18 @@ describe("iw claims check", () => {
       ]),
     );
     expect(
-      index.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+      index
+        .prepare(
+          `SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`,
+        )
+        .get(),
     ).toEqual({ current_reviews: 1 });
     expect(
-      index.prepare(`SELECT decision_origin FROM review_decisions WHERE is_current = 1`).get(),
+      index
+        .prepare(
+          `SELECT decision_origin FROM review_decisions WHERE is_current = 1`,
+        )
+        .get(),
     ).toEqual({ decision_origin: "manual" });
     index.close();
 
@@ -759,11 +827,17 @@ describe("iw claims check", () => {
         .all(),
     ).toEqual([{ reason: "continuity-broken", status: "open" }]);
     expect(
-      brokenIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+      brokenIndex
+        .prepare(
+          `SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`,
+        )
+        .get(),
     ).toEqual({ current_reviews: 2 });
     brokenIndex.close();
 
-    const warrantReviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const warrantReviewIndex = new Database(
+      path.join(workspace, ".iw", "index.db"),
+    );
     const claimsForWarrantReview = warrantReviewIndex
       .prepare(
         `SELECT ci.id
@@ -782,7 +856,9 @@ describe("iw claims check", () => {
         format: "json",
       });
     }
-    const priorEngineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const priorEngineIndex = new Database(
+      path.join(workspace, ".iw", "index.db"),
+    );
     priorEngineIndex
       .prepare(
         `UPDATE rule_result_versions
@@ -806,13 +882,21 @@ describe("iw claims check", () => {
       )
       .all() as Array<{ reason: string; status: string }>;
     expect(warrantReopens.length).toBeGreaterThan(0);
-    expect(warrantReopens.every((reopen) => reopen.status === "open")).toBe(true);
+    expect(warrantReopens.every((reopen) => reopen.status === "open")).toBe(
+      true,
+    );
     expect(
-      warrantIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+      warrantIndex
+        .prepare(
+          `SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`,
+        )
+        .get(),
     ).toEqual({ current_reviews: 0 });
     warrantIndex.close();
 
-    const uncertainReviewIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const uncertainReviewIndex = new Database(
+      path.join(workspace, ".iw", "index.db"),
+    );
     const claimsForUncertainReview = uncertainReviewIndex
       .prepare(
         `SELECT ci.id
@@ -859,7 +943,9 @@ describe("iw claims check", () => {
     await runClaimsCheck({ scope: "eu-prod", since: "HEAD~1", format: "json" });
 
     expect(process.exitCode).toBe(4);
-    const uncertainIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const uncertainIndex = new Database(
+      path.join(workspace, ".iw", "index.db"),
+    );
     const uncertainReopens = uncertainIndex
       .prepare(
         `SELECT reason, status FROM review_decision_reopens
@@ -867,9 +953,15 @@ describe("iw claims check", () => {
       )
       .all() as Array<{ reason: string; status: string }>;
     expect(uncertainReopens.length).toBeGreaterThan(0);
-    expect(uncertainReopens.every((reopen) => reopen.status === "open")).toBe(true);
+    expect(uncertainReopens.every((reopen) => reopen.status === "open")).toBe(
+      true,
+    );
     expect(
-      uncertainIndex.prepare(`SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`).get(),
+      uncertainIndex
+        .prepare(
+          `SELECT COUNT(*) AS current_reviews FROM review_decisions WHERE is_current = 1`,
+        )
+        .get(),
     ).toEqual({ current_reviews: 0 });
     uncertainIndex.close();
   });
@@ -903,7 +995,10 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 5400\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "auth", "session.ts"),
       "/**\n * @default 1800\n */\nexport const IDLE_TIMEOUT = 1800;\n",
@@ -979,12 +1074,28 @@ describe("iw claims check", () => {
          WHERE ca.is_current = 1
          ORDER BY ci.claim_type`,
       )
-      .all() as Array<{ claim_type: string; scope: string | null; epistemic_status: string }>;
+      .all() as Array<{
+      claim_type: string;
+      scope: string | null;
+      epistemic_status: string;
+    }>;
     expect(currentByType).toEqual(
       expect.arrayContaining([
-        { claim_type: "CLM-EFFECTIVE", scope: "eu-prod", epistemic_status: "supported" },
-        { claim_type: "CLM-DOC-CONFORMANCE", scope: "eu-prod", epistemic_status: "supported" },
-        { claim_type: "CLM-LITERAL", scope: null, epistemic_status: "supported" },
+        {
+          claim_type: "CLM-EFFECTIVE",
+          scope: "eu-prod",
+          epistemic_status: "supported",
+        },
+        {
+          claim_type: "CLM-DOC-CONFORMANCE",
+          scope: "eu-prod",
+          epistemic_status: "supported",
+        },
+        {
+          claim_type: "CLM-LITERAL",
+          scope: null,
+          epistemic_status: "supported",
+        },
       ]),
     );
     expect(
@@ -1042,7 +1153,10 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 5400\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "session.ts"),
       "/**\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
@@ -1124,9 +1238,17 @@ describe("iw claims check", () => {
          WHERE ca.is_current = 1 AND ci.claim_type = 'CLM-DOC-CONFORMANCE'
            AND dependency.dependency_kind = 'rule_result_version'`,
       )
-      .all() as Array<{ normalized_status: string; epistemic_role: string; assessment_effect: string }>;
+      .all() as Array<{
+      normalized_status: string;
+      epistemic_role: string;
+      assessment_effect: string;
+    }>;
     expect(failedWarrant).toEqual([
-      { normalized_status: "failed", epistemic_role: "warrant", assessment_effect: "contradicts" },
+      {
+        normalized_status: "failed",
+        epistemic_role: "warrant",
+        assessment_effect: "contradicts",
+      },
     ]);
     expect(
       c5Index
@@ -1453,7 +1575,10 @@ describe("iw claims check", () => {
       {
         claimIdentityId: defaultClaim.id,
         reopens: expect.arrayContaining([
-          expect.objectContaining({ reason: "continuity-broken", status: "open" }),
+          expect.objectContaining({
+            reason: "continuity-broken",
+            status: "open",
+          }),
         ]),
       },
     ]);
@@ -1487,7 +1612,10 @@ describe("iw claims check", () => {
            WHERE claim_identity_id = ? AND reason = 'continuity-broken'`,
         )
         .get(defaultClaim.id),
-    ).toMatchObject({ status: "resolved", resolved_by_decision_id: expect.any(String) });
+    ).toMatchObject({
+      status: "resolved",
+      resolved_by_decision_id: expect.any(String),
+    });
     resolvedIndex.close();
   });
 
@@ -1512,7 +1640,10 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 5400\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "auth", "session.ts"),
       "/**\n * @default 1800\n * @example IDLE_TIMEOUT = 7200\n */\nexport const IDLE_TIMEOUT = 1800;\n",
@@ -1574,7 +1705,9 @@ describe("iw claims check", () => {
       )
       .get() as { epistemic_status: string; normalized_statement_json: string };
     expect(defaultClaim.epistemic_status).toBe("contested");
-    expect(JSON.parse(defaultClaim.normalized_statement_json)).toEqual({ value: 1800 });
+    expect(JSON.parse(defaultClaim.normalized_statement_json)).toEqual({
+      value: 1800,
+    });
     const codeEvidenceValues = c6Index
       .prepare(
         `SELECT DISTINCT version.normalized_value
@@ -1585,7 +1718,9 @@ describe("iw claims check", () => {
            AND identity.source_kind LIKE 'code-%'`,
       )
       .all() as Array<{ normalized_value: string }>;
-    expect(codeEvidenceValues.map((row) => row.normalized_value).sort()).toEqual(["1800", "3600"]);
+    expect(
+      codeEvidenceValues.map((row) => row.normalized_value).sort(),
+    ).toEqual(["1800", "3600"]);
     expect(
       c6Index
         .prepare(
@@ -1629,8 +1764,14 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: dev\n    capabilities: [session-runtime]\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    writeFileSync(path.join(workspace, "config", "dev.yaml"), "session:\n  timeout: 1800\n");
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
+    writeFileSync(
+      path.join(workspace, "config", "dev.yaml"),
+      "session:\n  timeout: 1800\n",
+    );
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 5400\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "auth", "session.ts"),
       "/**\n * The default session timeout for authenticated users.\n * Applies to idle sessions across all regions.\n * @default 1800\n */\nexport const IDLE_TIMEOUT = 1800;\n",
@@ -1732,9 +1873,15 @@ describe("iw claims check", () => {
          JOIN claim_identities ci ON ci.id = cv.claim_identity_id
          WHERE ca.is_current = 1 AND ci.claim_type = 'CLM-DEFAULT'`,
       )
-      .get() as { id: string; epistemic_status: string; normalized_statement_json: string };
+      .get() as {
+      id: string;
+      epistemic_status: string;
+      normalized_statement_json: string;
+    };
     expect(defaultClaim.epistemic_status).toBe("supported");
-    expect(JSON.parse(defaultClaim.normalized_statement_json)).toEqual({ value: 2400 });
+    expect(JSON.parse(defaultClaim.normalized_statement_json)).toEqual({
+      value: 2400,
+    });
     const docDependency = c7Index
       .prepare(
         `SELECT dependency.epistemic_role, dependency.assessment_effect
@@ -1745,7 +1892,10 @@ describe("iw claims check", () => {
            AND dependency.dependency_kind = 'evidence_version'
            AND identity.source_kind = 'documentation'`,
       )
-      .all(defaultClaim.id) as Array<{ epistemic_role: string; assessment_effect: string }>;
+      .all(defaultClaim.id) as Array<{
+      epistemic_role: string;
+      assessment_effect: string;
+    }>;
     expect(docDependency).toEqual([
       { epistemic_role: "assertion", assessment_effect: "contradicts" },
     ]);
@@ -1754,12 +1904,18 @@ describe("iw claims check", () => {
         `SELECT reason, status, secondary_provenance_json FROM review_decision_reopens
          WHERE reason = 'material-change'`,
       )
-      .all() as Array<{ reason: string; status: string; secondary_provenance_json: string | null }>;
+      .all() as Array<{
+      reason: string;
+      status: string;
+      secondary_provenance_json: string | null;
+    }>;
     expect(reopens.length).toBeGreaterThan(0);
     expect(reopens.every((reopen) => reopen.status === "open")).toBe(true);
     expect(
       reopens.some((reopen) =>
-        reopen.secondary_provenance_json?.includes('"continuityConfidence":"probable"'),
+        reopen.secondary_provenance_json?.includes(
+          '"continuityConfidence":"probable"',
+        ),
       ),
     ).toBe(true);
     c7Index.close();
@@ -1796,8 +1952,14 @@ describe("iw claims check", () => {
       path.join(workspace, "config", "environments.yaml"),
       "environments:\n  - name: dev\n    capabilities: [session-runtime]\n  - name: eu-prod\n    capabilities: [session-runtime]\n",
     );
-    writeFileSync(path.join(workspace, "config", "dev.yaml"), "session:\n  timeout: 1800\n");
-    writeFileSync(path.join(workspace, "config", "eu-prod.yaml"), "session:\n  timeout: 5400\n");
+    writeFileSync(
+      path.join(workspace, "config", "dev.yaml"),
+      "session:\n  timeout: 1800\n",
+    );
+    writeFileSync(
+      path.join(workspace, "config", "eu-prod.yaml"),
+      "session:\n  timeout: 5400\n",
+    );
     writeFileSync(
       path.join(workspace, "src", "session.ts"),
       "/**\n * @default 1800\n */\nexport const SESSION_TIMEOUT = 1800;\n",
@@ -1821,7 +1983,11 @@ describe("iw claims check", () => {
          WHERE identity.source_kind = 'scope-registry'
          ORDER BY identity.identity_key`,
       )
-      .all() as Array<{ identity_key: string; id: string; version_ordinal: number }>;
+      .all() as Array<{
+      identity_key: string;
+      id: string;
+      version_ordinal: number;
+    }>;
     baselineIndex.close();
     expect(baselineScopeEvidence.map((row) => row.identity_key)).toEqual([
       "scope-registry:dev",
@@ -1847,7 +2013,11 @@ describe("iw claims check", () => {
          WHERE identity.source_kind = 'scope-registry'
          ORDER BY identity.identity_key`,
       )
-      .all() as Array<{ identity_key: string; id: string; version_ordinal: number }>;
+      .all() as Array<{
+      identity_key: string;
+      id: string;
+      version_ordinal: number;
+    }>;
     expect(scopeEvidence.map((row) => row.identity_key)).toEqual([
       "scope-registry:dev",
       "scope-registry:eu-prod",
@@ -1855,7 +2025,9 @@ describe("iw claims check", () => {
       "scope-registry:staging",
     ]);
     for (const baseline of baselineScopeEvidence) {
-      const current = scopeEvidence.find((row) => row.identity_key === baseline.identity_key);
+      const current = scopeEvidence.find(
+        (row) => row.identity_key === baseline.identity_key,
+      );
       expect(current).toMatchObject({ id: baseline.id, version_ordinal: 1 });
     }
     const r7Mobile = c8Index
@@ -1865,8 +2037,13 @@ describe("iw claims check", () => {
          JOIN rule_result_identities identity ON identity.id = result.rule_result_identity_id
          WHERE identity.rule_id = 'R7.scope-override' AND identity.scope = 'mobile-preview'`,
       )
-      .get() as { normalized_status: string; applicability: string } | undefined;
-    expect(r7Mobile).toEqual({ normalized_status: "not_applicable", applicability: "not_applicable" });
+      .get() as
+      | { normalized_status: string; applicability: string }
+      | undefined;
+    expect(r7Mobile).toEqual({
+      normalized_status: "not_applicable",
+      applicability: "not_applicable",
+    });
     expect(
       c8Index
         .prepare(

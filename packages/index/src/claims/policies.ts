@@ -59,7 +59,8 @@ export function assessRuleResults(
 
   if (supports && contradicts) return { status: "contested", dependencies };
   if (contradicts) return { status: "refuted", dependencies };
-  if (inconclusive || !supports) return { status: "inconclusive", dependencies };
+  if (inconclusive || !supports)
+    return { status: "inconclusive", dependencies };
   return { status: "supported", dependencies };
 }
 
@@ -93,7 +94,11 @@ function policyDependencyFor(
     dependencyVersionId: input.dependencyVersionId,
     epistemicRole: "warrant",
     warrantPolarity:
-      effect === "supports" ? "supports" : effect === "contradicts" ? "contradicts" : null,
+      effect === "supports"
+        ? "supports"
+        : effect === "contradicts"
+          ? "contradicts"
+          : null,
     assessmentEffect: effect,
   };
 }
@@ -108,7 +113,9 @@ export function assessClaimPolicy(
   inputs: ClaimPolicyDependencyInput[],
 ): AssessmentResult {
   const dependencies = inputs.map(policyDependencyFor);
-  const authoritative = dependencies.filter((_, index) => inputs[index].authoritative);
+  const authoritative = dependencies.filter(
+    (_, index) => inputs[index].authoritative,
+  );
   const supports = authoritative.some(
     (dependency) => dependency.assessmentEffect === "supports",
   );
