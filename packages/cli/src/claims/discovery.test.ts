@@ -106,6 +106,21 @@ describe("Claims documentation discovery", () => {
     expect(observations).toEqual([]);
   });
 
+  it("does not surface technical sentinel strings as provisional claims", () => {
+    const observations = extractDiscoveredCodeEvidence(
+      ["src/parser.ts"],
+      () =>
+        `export const COMMIT_START = "---COMMIT_START---";
+         export const MAX_RETRIES = 3;`,
+    );
+
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toMatchObject({
+      normalizedValue: 3,
+      claimType: "CLM-LITERAL",
+    });
+  });
+
   it("keeps same-named parameter defaults as distinct provisional claims", () => {
     const observations = extractDiscoveredCodeEvidence(
       ["src/limits.ts"],

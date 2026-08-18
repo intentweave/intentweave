@@ -83,6 +83,15 @@ export type CodeObservation =
   | CodeEvidenceObservation
   | CodeInconclusiveObservation;
 
+function isTechnicalSentinelLiteral(value: ClaimScalar): boolean {
+  return (
+    typeof value === "string" &&
+    /^(?:-{2,}|_{2,}|={2,})[A-Z0-9][A-Z0-9_ -]*(?:-{2,}|_{2,}|={2,})$/.test(
+      value,
+    )
+  );
+}
+
 export interface ScopeRegistryEntry {
   name: string;
   capabilities: string[];
@@ -552,12 +561,10 @@ export function extractDiscoveredCodeEvidence(
     ),
   );
   const observations: CodeEvidenceObservation[] = [];
-  const extractedFiles = [...filePaths]
-    .sort()
-    .map((filePath) => ({
-      filePath,
-      evidence: extractClaimEvidence(readCode(filePath), filePath),
-    }));
+  const extractedFiles = [...filePaths].sort().map((filePath) => ({
+    filePath,
+    evidence: extractClaimEvidence(readCode(filePath), filePath),
+  }));
   const stableKeyCounts = new Map<string, number>();
   for (const { evidence } of extractedFiles) {
     for (const literal of evidence.literalBindings) {
@@ -569,6 +576,7 @@ export function extractDiscoveredCodeEvidence(
   for (const { filePath, evidence } of extractedFiles) {
     for (const literal of evidence.literalBindings) {
       if (explicitlyBound.has(`${filePath}\0${literal.name}`)) continue;
+      if (isTechnicalSentinelLiteral(literal.normalizedValue)) continue;
       const annotations = evidence.codeAnnotations.filter(
         (annotation) => annotation.targetSymbolId === literal.symbolId,
       );

@@ -520,8 +520,20 @@ evidence chain:
 ```bash
 iw claims check --scope production
 iw claims explain
+iw claims explain --claim session.timeout --type CLM-DEFAULT
 iw claims check --scope production --since origin/main
+iw claims check --refresh
 ```
+
+`--claim` accepts either the stable `claim:<sha256>` identity or a canonical
+parameter key. A parameter can have several claims, so use `--type` and, for
+scoped claims, `--scope` when selecting exactly one claim for review.
+
+`--refresh` reconciles the current automatic discovery result with previously
+current provisional `code:*` claims. Claims that no longer pass discovery are
+retired from the current assessment lifecycle without deleting their history.
+An existing review is reopened with `continuity-broken`; explicitly bound
+parameter claims are not retired by this cleanup.
 
 ### `.iw/rules.yaml`
 

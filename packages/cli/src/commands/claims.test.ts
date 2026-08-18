@@ -94,6 +94,199 @@ describe("iw claims check", () => {
     index.close();
   });
 
+  it("refresh retires stale auto claims but preserves explicit claims", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"));
+    mkdirSync(path.join(workspace, "src"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    writeFileSync(
+      path.join(workspace, "intentweave.bindings.yaml"),
+      `parameters:
+  session.timeout:
+    codeDefaults:
+      - file: src/session.ts
+        export: SESSION_TIMEOUT
+`,
+    );
+    writeFileSync(
+      path.join(workspace, "src", "session.ts"),
+      "export const SESSION_TIMEOUT = 1800;\n",
+    );
+    writeFileSync(
+      path.join(workspace, "src", "parser.ts"),
+      'export const COMMIT_START = "ACTIVE";\n',
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    const baselineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const autoClaim = baselineIndex
+      .prepare(
+        `SELECT ci.id
+         FROM claim_identities ci
+         JOIN parameter_identities parameter
+           ON parameter.id = ci.parameter_identity_id
+         WHERE parameter.canonical_key LIKE 'code:%'`,
+      )
+      .get() as { id: string };
+    baselineIndex.close();
+
+    writeFileSync(
+      path.join(workspace, "src", "parser.ts"),
+      'export const COMMIT_START = "---COMMIT_START---";\n',
+    );
+    log.mockClear();
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ refresh: true, format: "json" });
+
+    expect(process.exitCode).toBe(4);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      retiredClaims: [
+        {
+          claimIdentityId: autoClaim.id,
+          claimType: "CLM-LITERAL",
+          reviewReopened: false,
+        },
+      ],
+    });
+    const refreshedIndex = new Database(
+      path.join(workspace, ".iw", "index.db"),
+    );
+    expect(
+      refreshedIndex
+        .prepare(
+          `SELECT parameter.canonical_key, assessment.is_current
+           FROM claim_assessments assessment
+           JOIN claim_versions version ON version.id = assessment.claim_version_id
+           JOIN claim_identities ci ON ci.id = version.claim_identity_id
+           JOIN parameter_identities parameter
+             ON parameter.id = ci.parameter_identity_id
+           ORDER BY parameter.canonical_key`,
+        )
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          canonical_key: "session.timeout",
+          is_current: 1,
+        }),
+        expect.objectContaining({
+          canonical_key: expect.stringContaining("code:variable:"),
+          is_current: 0,
+        }),
+      ]),
+    );
+    refreshedIndex.close();
+
+    log.mockClear();
+    process.exitCode = undefined;
+    await runClaimsCheck({ refresh: true, format: "json" });
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      retiredClaims: [],
+    });
+  });
+
+  it("refresh reopens a reviewed auto claim while preserving its explanation", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"));
+    mkdirSync(path.join(workspace, "src"));
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+    writeFileSync(
+      path.join(workspace, "src", "parser.ts"),
+      'export const COMMIT_START = "ACTIVE";\n',
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    const baselineIndex = new Database(path.join(workspace, ".iw", "index.db"));
+    const claim = baselineIndex
+      .prepare("SELECT id FROM claim_identities")
+      .get() as { id: string };
+    baselineIndex.close();
+    await runClaimsReview({
+      claim: claim.id,
+      actor: "reviewer",
+      decision: "accepted",
+      format: "json",
+    });
+    writeFileSync(
+      path.join(workspace, "src", "parser.ts"),
+      'export const COMMIT_START = "---COMMIT_START---";\n',
+    );
+    log.mockClear();
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ refresh: true, format: "json" });
+
+    expect(process.exitCode).toBe(2);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      retiredClaims: [
+        {
+          claimIdentityId: claim.id,
+          reviewReopened: true,
+        },
+      ],
+    });
+    const refreshedIndex = new Database(
+      path.join(workspace, ".iw", "index.db"),
+    );
+    expect(
+      refreshedIndex
+        .prepare(
+          `SELECT reason, status, secondary_provenance_json
+           FROM review_decision_reopens
+           WHERE claim_identity_id = ?`,
+        )
+        .get(claim.id),
+    ).toMatchObject({
+      reason: "continuity-broken",
+      status: "open",
+      secondary_provenance_json: expect.stringContaining(
+        "refresh-reconciliation",
+      ),
+    });
+    expect(
+      refreshedIndex
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM claim_assessments assessment
+           JOIN claim_versions version ON version.id = assessment.claim_version_id
+           WHERE version.claim_identity_id = ? AND assessment.is_current = 1`,
+        )
+        .get(claim.id),
+    ).toEqual({ count: 0 });
+    refreshedIndex.close();
+
+    log.mockClear();
+    process.exitCode = undefined;
+    await runClaimsExplain({ claim: claim.id, format: "json" });
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject([
+      {
+        claimIdentityId: claim.id,
+        reopens: [
+          expect.objectContaining({
+            reason: "continuity-broken",
+            status: "open",
+          }),
+        ],
+      },
+    ]);
+  });
+
   it("reports P-001 when documented and implemented index-depth defaults conflict", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     workspaces.push(workspace);
@@ -168,6 +361,70 @@ describe("iw claims check", () => {
       { claim_type: "CLM-DOC-CONFORMANCE", epistemic_status: "refuted" },
     ]);
     index.close();
+
+    log.mockClear();
+    process.exitCode = undefined;
+    await runClaimsExplain({
+      claim: "cli.index-build.depth",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject([
+      {
+        parameterKey: "cli.index-build.depth",
+        claimType: "CLM-DEFAULT",
+        status: "supported",
+      },
+      {
+        parameterKey: "cli.index-build.depth",
+        claimType: "CLM-DOC-CONFORMANCE",
+        status: "refuted",
+      },
+    ]);
+
+    log.mockClear();
+    await runClaimsExplain({
+      claim: "cli.index-build.depth",
+      type: "CLM-DOC-CONFORMANCE",
+      format: "text",
+    });
+    expect(log.mock.calls.map(([message]) => String(message))).toEqual(
+      expect.arrayContaining([
+        "CLM-DOC-CONFORMANCE: refuted",
+        "  Parameter: cli.index-build.depth",
+        '  Statement: {"documentedValue":"structured","effectiveValue":"full"}',
+      ]),
+    );
+
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    process.exitCode = undefined;
+    await runClaimsReview({
+      claim: "cli.index-build.depth",
+      actor: "reviewer",
+      decision: "accepted",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(64);
+    expect(String(error.mock.calls[0][0])).toContain(
+      "Add --type and, when needed, --scope",
+    );
+
+    log.mockClear();
+    process.exitCode = undefined;
+    await runClaimsReview({
+      claim: "cli.index-build.depth",
+      type: "CLM-DOC-CONFORMANCE",
+      actor: "reviewer",
+      decision: "accepted",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      parameterKey: "cli.index-build.depth",
+      claimType: "CLM-DOC-CONFORMANCE",
+    });
   });
 
   it("promotes an inferred claim when an explicit binding is later added", async () => {
