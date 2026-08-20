@@ -32,6 +32,11 @@ export {
 export { ClaimsStore } from "./claims/store.js";
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
+export {
+  SUBJECT_IDENTITY_CONTRACT_VERSION,
+  parameterSubjectIdentity,
+} from "./claims/subjects.js";
+export type { SubjectIdentityV1, SubjectKind } from "./claims/subjects.js";
 export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
 export {
   CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,

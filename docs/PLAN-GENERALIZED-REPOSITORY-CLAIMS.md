@@ -252,6 +252,11 @@ Examples:
 - Module: `module:workspace:@intentweave/index`
 - Architecture rule: `architecture-rule:no-ui-to-persistence`
 
+G1 freezes `SubjectIdentityV1` as
+`subject:<sha256(canonicalJson(identityKey))>`. The Parameter adapter maps the
+legacy key `session.timeout` to identity key `parameter:session.timeout`; paths,
+spans, symbols, and local database ordinals are not inputs.
+
 ### 5.2 Claims Can Have Multiple Subjects
 
 A single `subject_identity_id` on `claim_identities` would be too restrictive.
