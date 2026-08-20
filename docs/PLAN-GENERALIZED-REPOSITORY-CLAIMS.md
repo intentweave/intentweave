@@ -1,8 +1,8 @@
 # Generalized Repository Claims
 
-> **Version:** 0.7
+> **Version:** 0.8
 > **Status:** Follow-on concept / implementation plan
-> **Date:** 2026-08-19
+> **Date:** 2026-08-20
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
 
 ## 1. Purpose
@@ -1012,8 +1012,45 @@ imported and validated against their referenced identities. Missing or ambiguous
 references are `inconclusive` or require migration; they are never silently
 reassigned.
 
-The concrete file format is selected in G0. Once published, it is a compatibility
-surface: schema changes require versioning, migration, and round-trip tests.
+The portable v1 artifact is `.iw/claims/state.yaml`. It is human-reviewable YAML
+validated against a strict, versioned domain schema with these top-level maps:
+
+```text
+schemaVersion
+policies
+candidateDecisions
+subjectBindings
+assessmentReviews
+baselineAcceptances
+```
+
+The contract is fixed as follows:
+
+- the artifact stores only the currently effective governance state; Git is its
+  portable history, while SQLite retains the complete operational append-only
+  history,
+- entries reference durable domain identity keys and content fingerprints, not
+  local SQLite row IDs,
+- every Policy actor carries its own Policy ID and version; Assessment Reviews
+  name the Assessment Policy separately so decision provenance and evaluation
+  provenance cannot be conflated,
+- `intentweave.bindings.yaml` remains the explicit Parameter binding source and
+  is not duplicated; its effective promotions are projected with
+  `explicit-binding` provenance,
+- an Assessment Review is imported only when its assessment and Policy
+  fingerprints match; a stale basis reopens or becomes `inconclusive` rather
+  than being silently accepted,
+- export order is canonical, writes are atomic, and export -> import -> export is
+  byte-identical,
+- duplicate YAML keys, conflicting effective entries, unknown fields, and
+  unsupported schema versions fail closed with an actionable validation error,
+- provider payloads, complete prompts, secrets, and source excerpts are excluded;
+  only normalized decisions and required provenance are portable,
+- CLI commands own atomic updates, but manual edits are supported when they pass
+  the same validation contract.
+
+Once published, the file path and schema are compatibility surfaces. Schema
+changes require an explicit version, migration, and round-trip tests.
 
 ## 11. CLI Target
 
@@ -1125,11 +1162,13 @@ packages/index/src/claims/
   registry.ts             # Claim family and adapter registration
   impact.ts               # reverse dependency queries
   explain.ts              # current and historical explanation model
+  portableState.ts        # provider-neutral portable-state contract and validation
 
 packages/index/src/schema.ts
   # stepwise forward migrations plus durable pre-migration snapshot restore
 
 packages/cli/src/claims/
+  portableState.ts        # YAML loading and atomic canonical writes
   discovery/
     codeValues.ts         # existing deterministic R1 discovery
     publicSymbols.ts      # deterministic symbol discovery
@@ -1163,8 +1202,8 @@ Goal: establish a robust baseline before generalization.
 - record golden vectors for existing Parameter, Evidence, Claim, and material
   fingerprints plus their current exit behavior,
 - record performance and database-size baselines,
-- select the portable Review and Policy artifact with `schemaVersion`, import,
-  export, and round-trip migration,
+- implement `.iw/claims/state.yaml` v1 with strict import, deterministic atomic
+  export, and byte-identical round-trip tests,
 - measure the current first run on at least three external repositories,
 - publish a public design article that clearly distinguishes current and target
   behavior and collect feedback from five to ten design partners.
@@ -1444,7 +1483,10 @@ Generalization is robust when:
 28. `r1-compatibility` is a one-time backfill and continued automatic R1
     promotion occurs only through an explicit, versioned
     `r1-continuous-auto-promote` Policy; explicit bindings use their separate
-    `explicit-binding` Policy.
+    `explicit-binding` Policy,
+29. `.iw/claims/state.yaml` reproduces effective Policies, Candidate decisions,
+    Subject bindings, Assessment Reviews, and baseline acceptances between fresh
+    checkouts without SQLite-local IDs or non-deterministic serialization.
 
 ## 18. Explicit Non-Goals
 
@@ -1472,10 +1514,6 @@ implementation:
 3. Which Assessment Review Decision values are fixed and how do they affect CI?
 4. Which Candidate Policies may promote automatically and which may only
    recommend?
-5. Which versioned repository artifact transports effective Candidate and
-   Assessment Reviews?
-6. Which normalized effective semantic artifacts must be portable, and which
-   provider details remain local?
 
 Recommendation:
 
@@ -1507,7 +1545,8 @@ Recommendation:
 - Third-party provider frameworks may be implementation details of `plugin-llm`;
   their types do not cross into `@intentweave/core` or Claims contracts.
 - SQLite remains the Runtime projection. Effective team decisions and normalized
-  semantic bindings receive a portable, versioned repository format in G0.
+  semantic bindings use the strict `.iw/claims/state.yaml` v1 contract; Git is
+  the portable history and provider payloads remain local.
 - Promoted Claim evaluation never depends on model availability.
 
 ## 20. Core Statement

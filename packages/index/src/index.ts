@@ -33,6 +33,12 @@ export { ClaimsStore } from "./claims/store.js";
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
+export {
+  CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
+  ClaimsPortableStateError,
+  emptyPortableClaimsState,
+  parsePortableClaimsState,
+} from "./claims/portableState.js";
 export { assessClaimPolicy, assessRuleResults } from "./claims/policies.js";
 export {
   r1LiteralBinding,
@@ -73,6 +79,16 @@ export type {
   VersionedClaimValue,
   VersionedScopeEvidence,
 } from "./claims/types.js";
+export type {
+  PortableAssessmentReview,
+  PortableBaselineAcceptance,
+  PortableCandidateDecision,
+  PortableClaimsActor,
+  PortableClaimsPolicy,
+  PortableClaimsState,
+  PortableJsonValue,
+  PortableSubjectBinding,
+} from "./claims/portableState.js";
 
 // CypherLite CARI graph projection + query runner
 export {
