@@ -955,6 +955,10 @@ records persist their identity and materiality contract versions so a later
 contract change appends or migrates deliberately instead of silently changing
 identity.
 
+The frozen formulas, concrete vectors, public exit codes, and executable
+compatibility-suite mapping are recorded in
+`docs/CLAIMS-PARAMETER-COMPATIBILITY-V1.md`.
+
 Examples:
 
 - Parameter: value, semantic location, and Parameter Subject,
