@@ -16,9 +16,46 @@ import type {
   PersistedVersion,
   PersistRuleResultInput,
 } from "./types.js";
+import { parameterSubjectIdentity } from "./subjects.js";
 
 function idFor(kind: string, identityKey: string): string {
   return `${kind}:${fingerprint(identityKey)}`;
+}
+
+function persistParameterSubject(
+  db: Database.Database,
+  parameterKey: string,
+  now: number,
+): { parameterId: string; subjectId: string } {
+  const parameterId = idFor("parameter", parameterKey);
+  const subject = parameterSubjectIdentity(parameterKey);
+  db.prepare(
+    `INSERT OR IGNORE INTO subject_identities (
+       id, kind, identity_key, display_name, lifecycle_state,
+       contract_version, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    subject.id,
+    subject.kind,
+    subject.identityKey,
+    subject.displayName,
+    subject.lifecycleState,
+    subject.contractVersion,
+    now,
+  );
+  db.prepare(
+    `INSERT OR IGNORE INTO subject_aliases (
+       subject_identity_id, alias_kind, alias_key, created_at
+     ) VALUES (?, 'parameter-key', ?, ?)`,
+  ).run(subject.id, parameterKey, now);
+  db.prepare(
+    `INSERT INTO parameter_identities (
+       id, canonical_key, subject_identity_id, created_at
+     ) VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       subject_identity_id = COALESCE(parameter_identities.subject_identity_id, excluded.subject_identity_id)`,
+  ).run(parameterId, parameterKey, subject.id, now);
+  return { parameterId, subjectId: subject.id };
 }
 
 function nextOrdinal(
@@ -55,13 +92,11 @@ export class ClaimsStore {
   persistEvidence(input: PersistEvidenceInput): PersistedVersion {
     const persist = this.db.transaction(() => {
       const now = Date.now();
-      const parameterId = idFor("parameter", input.parameterKey);
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO parameter_identities (id, canonical_key, created_at)
-           VALUES (?, ?, ?)`,
-        )
-        .run(parameterId, input.parameterKey, now);
+      const { parameterId, subjectId } = persistParameterSubject(
+        this.db,
+        input.parameterKey,
+        now,
+      );
 
       const evidenceIdentityId = idFor("evidence", input.identityKey);
       this.db
@@ -77,6 +112,14 @@ export class ClaimsStore {
           input.identityKey,
           now,
         );
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO evidence_subjects (
+             evidence_identity_id, subject_identity_id, subject_role,
+             basis, confidence, created_at
+           ) VALUES (?, ?, 'subject', 'parameter-compatibility', 'certain', ?)`,
+        )
+        .run(evidenceIdentityId, subjectId, now);
 
       const versions = this.db
         .prepare(
@@ -308,13 +351,11 @@ export class ClaimsStore {
   ): PersistedAssessment {
     const persist = this.db.transaction(() => {
       const now = Date.now();
-      const parameterId = idFor("parameter", input.parameterKey);
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO parameter_identities (id, canonical_key, created_at)
-           VALUES (?, ?, ?)`,
-        )
-        .run(parameterId, input.parameterKey, now);
+      const { parameterId, subjectId } = persistParameterSubject(
+        this.db,
+        input.parameterKey,
+        now,
+      );
 
       const identityKey = [
         input.parameterKey,
@@ -336,6 +377,13 @@ export class ClaimsStore {
           identityKey,
           now,
         );
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO claim_subjects (
+             claim_identity_id, subject_identity_id, subject_role, created_at
+           ) VALUES (?, ?, 'subject', ?)`,
+        )
+        .run(claimIdentityId, subjectId, now);
 
       const statementJson = canonicalJson(input.normalizedStatement);
       const latestVersion = this.db

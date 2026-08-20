@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import Database from "@intentweave/sqlite-compat";
+import { parameterSubjectIdentity } from "./claims/subjects.js";
 
 /**
  * SQL statements executed in order to create the CARI schema.
@@ -368,6 +369,28 @@ CREATE TABLE IF NOT EXISTS _meta (
 `;
 
 export const CLAIMS_COMPANION_TABLES = [
+  "subject_identities",
+  "subject_aliases",
+  "parameter_identities",
+  "parameter_evidence_bindings",
+  "evidence_identities",
+  "evidence_versions",
+  "evidence_continuity",
+  "evidence_subjects",
+  "rule_result_identities",
+  "rule_result_versions",
+  "rule_result_evidence",
+  "claim_identities",
+  "claim_subjects",
+  "claim_versions",
+  "claim_assessments",
+  "claim_assessment_dependencies",
+  "review_decisions",
+  "review_decision_reopens",
+  "claim_assessment_references",
+] as const;
+
+const SCHEMA_16_CLAIMS_COMPANION_TABLES = [
   "parameter_identities",
   "parameter_evidence_bindings",
   "evidence_identities",
@@ -385,24 +408,11 @@ export const CLAIMS_COMPANION_TABLES = [
   "claim_assessment_references",
 ] as const;
 
-const LEGACY_CLAIMS_COMPANION_TABLES = [
-  "parameter_identities",
-  "parameter_evidence_bindings",
-  "evidence_identities",
-  "evidence_versions",
-  "evidence_continuity",
-  "rule_result_identities",
-  "rule_result_versions",
-  "rule_result_evidence",
-  "claim_identities",
-  "claim_versions",
-  "claim_assessments",
-  "claim_assessment_dependencies",
-  "review_decisions",
-  "review_decision_reopens",
-] as const;
+const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
+  (table) => table !== "claim_assessment_references",
+);
 
-export const CURRENT_SCHEMA_VERSION = "16";
+export const CURRENT_SCHEMA_VERSION = "17";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -437,6 +447,9 @@ function claimsCompanionTablesInSchema(
   );
   if (CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return CLAIMS_COMPANION_TABLES;
+  }
+  if (SCHEMA_16_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return SCHEMA_16_CLAIMS_COMPANION_TABLES;
   }
   if (LEGACY_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return LEGACY_CLAIMS_COMPANION_TABLES;
@@ -512,7 +525,27 @@ export function restoreClaimsHistory(
         db.exec(`DELETE FROM ${table}`);
       }
       for (const table of sourceTables) {
-        db.exec(`INSERT INTO ${table} SELECT * FROM claims_history.${table}`);
+        const sourceColumns = new Set(
+          (
+            db
+              .prepare(`PRAGMA claims_history.table_info(${table})`)
+              .all() as Array<{
+              name: string;
+            }>
+          ).map((column) => column.name),
+        );
+        const commonColumns = (
+          db.prepare(`PRAGMA main.table_info(${table})`).all() as Array<{
+            name: string;
+          }>
+        )
+          .map((column) => column.name)
+          .filter((column) => sourceColumns.has(column));
+        const columns = commonColumns.join(", ");
+        db.exec(
+          `INSERT INTO ${table} (${columns})
+           SELECT ${columns} FROM claims_history.${table}`,
+        );
       }
       // Legacy snapshots (schema v15) do not have this table.
       db.exec(`
@@ -524,6 +557,7 @@ export function restoreClaimsHistory(
         JOIN claim_versions cv ON cv.id = ca.claim_version_id
         WHERE ca.reference_key IS NOT NULL
       `);
+      backfillParameterSubjects(db);
     });
     restore();
   } finally {
@@ -734,6 +768,97 @@ CREATE INDEX IF NOT EXISTS idx_review_reopens_claim_status
   ON review_decision_reopens(claim_identity_id, status);
 `;
 
+const SUBJECT_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS subject_identities (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  identity_key TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  lifecycle_state TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subject_aliases (
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  alias_kind TEXT NOT NULL,
+  alias_key TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (subject_identity_id, alias_kind, alias_key),
+  UNIQUE (alias_kind, alias_key)
+);
+
+CREATE TABLE IF NOT EXISTS claim_subjects (
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  subject_role TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (claim_identity_id, subject_identity_id, subject_role)
+);
+
+CREATE TABLE IF NOT EXISTS evidence_subjects (
+  evidence_identity_id TEXT NOT NULL REFERENCES evidence_identities(id),
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  subject_role TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (evidence_identity_id, subject_identity_id, subject_role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subject_aliases_subject
+  ON subject_aliases(subject_identity_id);
+CREATE INDEX IF NOT EXISTS idx_claim_subjects_subject
+  ON claim_subjects(subject_identity_id, subject_role);
+CREATE INDEX IF NOT EXISTS idx_evidence_subjects_subject
+  ON evidence_subjects(subject_identity_id, subject_role);
+`;
+
+function backfillParameterSubjects(db: Database.Database): void {
+  const parameters = db
+    .prepare(`SELECT id, canonical_key, created_at FROM parameter_identities`)
+    .all() as Array<{ id: string; canonical_key: string; created_at: number }>;
+  for (const parameter of parameters) {
+    const subject = parameterSubjectIdentity(parameter.canonical_key);
+    db.prepare(
+      `INSERT OR IGNORE INTO subject_identities (
+         id, kind, identity_key, display_name, lifecycle_state,
+         contract_version, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      subject.id,
+      subject.kind,
+      subject.identityKey,
+      subject.displayName,
+      subject.lifecycleState,
+      subject.contractVersion,
+      parameter.created_at,
+    );
+    db.prepare(
+      `INSERT OR IGNORE INTO subject_aliases (
+         subject_identity_id, alias_kind, alias_key, created_at
+       ) VALUES (?, 'parameter-key', ?, ?)`,
+    ).run(subject.id, parameter.canonical_key, parameter.created_at);
+    db.prepare(
+      `UPDATE parameter_identities
+       SET subject_identity_id = ? WHERE id = ?`,
+    ).run(subject.id, parameter.id);
+    db.prepare(
+      `INSERT OR IGNORE INTO claim_subjects (
+         claim_identity_id, subject_identity_id, subject_role, created_at
+       ) SELECT id, ?, 'subject', created_at
+         FROM claim_identities WHERE parameter_identity_id = ?`,
+    ).run(subject.id, parameter.id);
+    db.prepare(
+      `INSERT OR IGNORE INTO evidence_subjects (
+         evidence_identity_id, subject_identity_id, subject_role,
+         basis, confidence, created_at
+       ) SELECT id, ?, 'subject', 'parameter-compatibility', 'certain', created_at
+         FROM evidence_identities WHERE parameter_identity_id = ?`,
+    ).run(subject.id, parameter.id);
+  }
+}
+
 /** Upgrade a core schema-14 database with the additive claims companion schema. */
 export function migrateSchema14To15(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
@@ -779,14 +904,51 @@ export function migrateSchema15To16(db: Database.Database): void {
     `);
     db.prepare(
       `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)`,
-    ).run(CURRENT_SCHEMA_VERSION);
+    ).run("16");
+  });
+  migrate();
+}
+
+/** Add G1a Subject storage and backfill every legacy Parameter relationship. */
+export function migrateSchema16To17(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(SUBJECT_SCHEMA_SQL);
+    const columns = db
+      .prepare(`PRAGMA table_info(parameter_identities)`)
+      .all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((column) => column.name === "subject_identity_id")) {
+      db.exec(
+        `ALTER TABLE parameter_identities
+         ADD COLUMN subject_identity_id TEXT REFERENCES subject_identities(id)`,
+      );
+    }
+    backfillParameterSubjects(db);
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_parameter_subject_identity
+       ON parameter_identities(subject_identity_id)`,
+    );
+    const missing = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM parameter_identities
+         WHERE subject_identity_id IS NULL`,
+      )
+      .get() as { count: number };
+    if (missing.count !== 0) {
+      throw new Error("Subject backfill left Parameter identities unlinked");
+    }
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '17')`,
+    ).run();
   });
   migrate();
 }
 
 /**
  * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
- * Supported transitions: 14 -> 15 -> 16 and 15 -> 16.
+ * Supported transitions: 14 -> 15 -> 16 -> 17, 15 -> 16 -> 17, and 16 -> 17.
  * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
  */
 export function migrateSchemaToCurrent(db: Database.Database): void {
@@ -794,10 +956,16 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
   if (!schemaVersion || schemaVersion === "14") {
     migrateSchema14To15(db);
     migrateSchema15To16(db);
+    migrateSchema16To17(db);
     return;
   }
   if (schemaVersion === "15") {
     migrateSchema15To16(db);
+    migrateSchema16To17(db);
+    return;
+  }
+  if (schemaVersion === "16") {
+    migrateSchema16To17(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -816,6 +984,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion &&
     schemaVersion !== "14" &&
     schemaVersion !== "15" &&
+    schemaVersion !== "16" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

@@ -16,6 +16,7 @@ export {
   initSchema,
   migrateSchema14To15,
   migrateSchema15To16,
+  migrateSchema16To17,
   migrateSchemaToCurrent,
   replaceDatabaseAtomically,
   restoreClaimsHistory,

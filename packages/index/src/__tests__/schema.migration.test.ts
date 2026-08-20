@@ -11,6 +11,7 @@ import {
   initSchema,
   migrateSchema14To15,
   migrateSchema15To16,
+  migrateSchema16To17,
   restoreClaimsHistory,
   snapshotClaimsHistory,
 } from "../schema.js";
@@ -187,6 +188,102 @@ describe("migrateSchema14To15 hardening", () => {
     });
   });
 
+  it("backfills Parameter Subjects and role links in schema 17", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    db.exec(`
+      INSERT INTO parameter_identities (id, canonical_key, created_at)
+        VALUES ('parameter:legacy', 'session.timeout', 10);
+      INSERT INTO evidence_identities (
+        id, parameter_identity_id, source_kind, identity_key, created_at
+      ) VALUES ('evidence:legacy', 'parameter:legacy', 'code-default', 'legacy', 11);
+      INSERT INTO claim_identities (
+        id, parameter_identity_id, claim_type, scope, identity_key, created_at
+      ) VALUES (
+        'claim:legacy', 'parameter:legacy', 'CLM-DEFAULT', NULL,
+        'session.timeout:CLM-DEFAULT:', 12
+      );
+    `);
+
+    migrateSchema16To17(db);
+
+    const subjectId =
+      "subject:7b57ba0a2670daa7bc027664d912ee37df1cd3a49351a929bbc73dc8599c91bc";
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "17" });
+    expect(
+      db
+        .prepare(
+          `SELECT id, kind, identity_key, contract_version
+           FROM subject_identities`,
+        )
+        .get(),
+    ).toEqual({
+      id: subjectId,
+      kind: "parameter",
+      identity_key: "parameter:session.timeout",
+      contract_version: "1",
+    });
+    expect(
+      db.prepare(`SELECT subject_identity_id FROM parameter_identities`).get(),
+    ).toEqual({ subject_identity_id: subjectId });
+    expect(db.prepare(`SELECT subject_role FROM claim_subjects`).get()).toEqual(
+      {
+        subject_role: "subject",
+      },
+    );
+    expect(
+      db
+        .prepare(
+          `SELECT subject_role, basis, confidence FROM evidence_subjects`,
+        )
+        .get(),
+    ).toEqual({
+      subject_role: "subject",
+      basis: "parameter-compatibility",
+      confidence: "certain",
+    });
+  });
+
+  it("rolls back schema 17 when Subject backfill conflicts", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    db.exec(`
+      INSERT INTO parameter_identities (id, canonical_key, created_at)
+        VALUES ('parameter:legacy', 'session.timeout', 10);
+      CREATE TABLE subject_identities (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, identity_key TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL, lifecycle_state TEXT NOT NULL,
+        contract_version TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
+      INSERT INTO subject_identities VALUES (
+        'subject:conflict', 'parameter', 'parameter:session.timeout',
+        'session.timeout', 'active', '1', 1
+      );
+    `);
+
+    expect(() => migrateSchema16To17(db)).toThrow();
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "16" });
+    expect(
+      (
+        db.prepare(`PRAGMA table_info(parameter_identities)`).all() as Array<{
+          name: string;
+        }>
+      ).some((column) => column.name === "subject_identity_id"),
+    ).toBe(false);
+  });
+
   it("restores Claims history from a WAL-safe snapshot after a fresh rebuild", () => {
     const directory = mkdtempSync(
       path.join(tmpdir(), "intentweave-claims-history-"),
@@ -261,6 +358,51 @@ describe("migrateSchema14To15 hardening", () => {
         )
         .get(),
     ).toEqual({ name: "claim_assessment_references" });
+    rebuilt.close();
+    discardClaimsHistory(snapshot);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("restores a real schema-16 snapshot into schema 17 and backfills Subjects", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-claims-v16-snapshot-"),
+    );
+    const sourcePath = path.join(directory, "schema-16.db");
+    const source = new Database(sourcePath);
+    source.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(source);
+    migrateSchema15To16(source);
+    source
+      .prepare(
+        `INSERT INTO parameter_identities (id, canonical_key, created_at)
+         VALUES ('parameter:legacy', 'session.timeout', 10)`,
+      )
+      .run();
+    source.close();
+
+    const snapshot = snapshotClaimsHistory(sourcePath);
+    const rebuilt = new Database(path.join(directory, "rebuilt.db"));
+    initSchema(rebuilt);
+    restoreClaimsHistory(rebuilt, snapshot);
+
+    expect(
+      rebuilt
+        .prepare(
+          `SELECT parameter.id, parameter.canonical_key,
+                  subject.identity_key, subject.contract_version
+           FROM parameter_identities parameter
+           JOIN subject_identities subject ON subject.id = parameter.subject_identity_id`,
+        )
+        .get(),
+    ).toEqual({
+      id: "parameter:legacy",
+      canonical_key: "session.timeout",
+      identity_key: "parameter:session.timeout",
+      contract_version: "1",
+    });
     rebuilt.close();
     discardClaimsHistory(snapshot);
     rmSync(directory, { recursive: true, force: true });

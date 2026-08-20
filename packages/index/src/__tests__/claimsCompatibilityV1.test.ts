@@ -149,5 +149,26 @@ describe("Parameter Claims compatibility v1", () => {
         .prepare("SELECT id, assessment_key FROM claim_assessments")
         .get(),
     ).toEqual({ id: V1.assessment, assessment_key: V1.assessmentKey });
+    expect(
+      database
+        .prepare(
+          `SELECT parameter.subject_identity_id, subject.identity_key
+           FROM parameter_identities parameter
+           JOIN subject_identities subject ON subject.id = parameter.subject_identity_id`,
+        )
+        .get(),
+    ).toEqual({
+      subject_identity_id:
+        "subject:7b57ba0a2670daa7bc027664d912ee37df1cd3a49351a929bbc73dc8599c91bc",
+      identity_key: "parameter:session.timeout",
+    });
+    expect(
+      database.prepare("SELECT subject_role FROM claim_subjects").get(),
+    ).toEqual({
+      subject_role: "subject",
+    });
+    expect(
+      database.prepare("SELECT subject_role FROM evidence_subjects").get(),
+    ).toEqual({ subject_role: "subject" });
   });
 });
