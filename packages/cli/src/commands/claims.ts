@@ -34,6 +34,16 @@ import {
 import { load as yamlLoad } from "js-yaml";
 import { ClaimsGit, ClaimsGitError } from "../claims/git.js";
 import type { GitRename } from "../claims/git.js";
+import {
+  CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
+  ClaimsPortableStateFileError,
+  parsePortableClaimsStateYaml,
+} from "../claims/portableState.js";
+import {
+  persistPortableAssessmentReview,
+  projectPortableAssessmentReviews,
+  type PortableReviewProjectionIssue,
+} from "../claims/portableReviewProjection.js";
 
 const defaultContracts: ClaimsContractVersions = {
   r1RuleContractVersion: "r1-v1",
@@ -274,6 +284,7 @@ function formatText(result: {
     scope: string | null;
     reviewReopened: boolean;
   }>;
+  portableStateIssues: PortableReviewProjectionIssue[];
 }): string {
   const lines: string[] = [];
   for (const claim of result.claims) {
@@ -298,6 +309,10 @@ function formatText(result: {
     lines.push(
       `  Review: ${claim.reviewReopened ? "reopened" : "not previously reviewed"}`,
     );
+  }
+  for (const issue of result.portableStateIssues) {
+    lines.push(`Portable state: ${issue.kind} (${issue.claimIdentityId})`);
+    lines.push(`  ${issue.message}`);
   }
   return lines.join("\n");
 }
@@ -938,6 +953,12 @@ export async function runClaimsCheck(options: {
     const bindings = bindingsText
       ? parseClaimsBindings(yamlLoad(bindingsText))
       : { parameters: {} };
+    const portableStateText = readOptionalCurrentFile(
+      CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
+    );
+    const portableState = portableStateText
+      ? parsePortableClaimsStateYaml(portableStateText)
+      : undefined;
     const registryText = readOptionalCurrentFile("config/environments.yaml");
     const registryPath = "config/environments.yaml";
     const scopes = registryText
@@ -1095,6 +1116,7 @@ export async function runClaimsCheck(options: {
             assessmentStatuses: string[];
           }>,
           retiredClaims: [] as RefreshedRetiredClaim[],
+          portableStateIssues: [] as PortableReviewProjectionIssue[],
         };
         const allRuleStatuses: Array<
           "passed" | "failed" | "inconclusive" | "not_applicable"
@@ -1653,6 +1675,16 @@ export async function runClaimsCheck(options: {
             }
           }
         }
+        if (portableState) {
+          const projection = projectPortableAssessmentReviews(
+            database,
+            portableState,
+          );
+          output.portableStateIssues.push(...projection.issues);
+          allAssessmentStatuses.push(
+            ...projection.issues.map(() => "inconclusive" as const),
+          );
+        }
         for (const assessmentId of assessmentIds) {
           const assessment = database
             .prepare(
@@ -1738,7 +1770,9 @@ export async function runClaimsCheck(options: {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
     process.exitCode =
-      error instanceof ClaimsBindingError || error instanceof ClaimsGitError
+      error instanceof ClaimsBindingError ||
+      error instanceof ClaimsGitError ||
+      error instanceof ClaimsPortableStateFileError
         ? 64
         : 1;
   }
@@ -1818,10 +1852,17 @@ export async function runClaimsReview(options: {
   scope?: string;
   actor: string;
   decision: string;
+  rationale?: string;
   format: string;
 }): Promise<void> {
   try {
-    const database = claimsDatabase(process.cwd());
+    if (options.decision !== "accepted" && options.decision !== "rejected") {
+      throw new ClaimsBindingError(
+        "Review decision must be accepted or rejected",
+      );
+    }
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
     try {
       const claim = resolveSingleClaimIdentity(database, options);
       const assessment = database
@@ -1850,11 +1891,27 @@ export async function runClaimsReview(options: {
           `No reviewable assessment for claim ${claim.id}`,
         );
       }
+      const decidedAt = new Date();
+      const portableStatePath = persistPortableAssessmentReview(
+        workspaceRoot,
+        database,
+        {
+          claimIdentityId: claim.id,
+          basisAssessmentId,
+          decision: options.decision,
+          actor: options.actor,
+          rationale:
+            options.rationale ??
+            `Recorded via iw claims review (${options.decision})`,
+          decidedAt: decidedAt.toISOString(),
+        },
+      );
       const result = new ClaimsReviewStore(database).record({
         claimIdentityId: claim.id,
         basisAssessmentId,
         decision: options.decision,
         actor: options.actor,
+        createdAt: decidedAt.getTime(),
       });
       const output = {
         claimIdentityId: claim.id,
@@ -1862,12 +1919,13 @@ export async function runClaimsReview(options: {
         claimType: claim.claim_type,
         scope: claim.scope,
         assessmentId: basisAssessmentId,
+        portableStatePath,
         ...result,
       };
       console.log(
         options.format === "json"
           ? JSON.stringify(output, null, 2)
-          : `Review recorded: ${result.id}`,
+          : `Review recorded: ${result.id}\nPortable state: ${portableStatePath}`,
       );
       process.exitCode = 0;
     } finally {
@@ -2070,6 +2128,7 @@ export const claimsCommand = new Command("claims")
       .option("--scope <scope>", "Claim scope used to resolve a parameter")
       .requiredOption("--actor <name>", "Review decision actor")
       .requiredOption("--decision <decision>", "Review disposition")
+      .option("--rationale <text>", "Reason for the review decision")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsReview),
   )

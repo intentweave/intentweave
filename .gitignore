@@ -6,7 +6,10 @@ dist/
 *.tsbuildinfo
 
 # IntentWeave workspace data
-.iw/
+.iw/*
+!.iw/claims/
+.iw/claims/*
+!.iw/claims/state.yaml
 
 # Environment
 .env

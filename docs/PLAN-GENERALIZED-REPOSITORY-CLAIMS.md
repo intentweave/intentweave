@@ -1040,6 +1040,17 @@ The contract is fixed as follows:
 - an Assessment Review is imported only when its assessment and Policy
   fingerprints match; a stale basis reopens or becomes `inconclusive` rather
   than being silently accepted,
+- the portable Assessment fingerprint is content-addressed over the durable
+  Claim identity, normalized statement, epistemic status, Assessment Policy,
+  and each dependency's semantic projection and role; Evidence contributes its
+  Source Kind and material fingerprint, while Rule Results contribute identity,
+  applicability, normalized status/output/reasons, and Rule Contract version but
+  not their implementation fingerprint; paths, SQLite row IDs, and local version
+  ordinals are excluded,
+- during G0, portable Assessment Reviews bootstrap only a fresh SQLite
+  projection with no Review history for that Claim; once local Review history
+  exists, carry-forward and reopen semantics remain authoritative and import
+  does not overwrite or reinterpret them,
 - export order is canonical, writes are atomic, and export -> import -> export is
   byte-identical,
 - duplicate YAML keys, conflicting effective entries, unknown fields, and
@@ -1051,6 +1062,8 @@ The contract is fixed as follows:
 
 Once published, the file path and schema are compatibility surfaces. Schema
 changes require an explicit version, migration, and round-trip tests.
+Repositories that ignore `.iw/` must add a narrow exception for
+`.iw/claims/state.yaml`; runtime artifacts such as `.iw/index.db` remain ignored.
 
 ## 11. CLI Target
 
@@ -1214,6 +1227,9 @@ Acceptance:
 - existing Parameter and Claim IDs and material fingerprints match the pinned
   v1 golden vectors byte for byte,
 - repeated checks and index rebuilds are idempotent,
+- a reviewed Claim can be reconstructed from `.iw/claims/state.yaml` in a fresh
+  index without changing the file, while a changed Assessment basis is reported
+  as `stale_assessment` and produces `inconclusive` rather than acceptance,
 - old databases migrate without losing history,
 - the first run records the number, type, and surfacing reasons of automatically
   materialized Claims; findings are manually classified as `would-promote`,

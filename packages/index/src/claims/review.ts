@@ -16,6 +16,7 @@ interface CurrentDecision {
   basis_assessment_id: string;
   decision: string;
   actor: string;
+  decision_origin: string;
 }
 
 interface CurrentAssessment {
@@ -56,7 +57,7 @@ function currentDecision(
 ): CurrentDecision | undefined {
   return db
     .prepare(
-      `SELECT id, basis_assessment_id, decision, actor
+      `SELECT id, basis_assessment_id, decision, actor, decision_origin
        FROM review_decisions
        WHERE claim_identity_id = ? AND is_current = 1`,
     )
@@ -195,7 +196,13 @@ export class ClaimsReviewStore {
     const record = this.db.transaction(() => {
       assertReviewable(this.db, input.claimIdentityId, input.basisAssessmentId);
       const previous = currentDecision(this.db, input.claimIdentityId);
-      if (previous?.basis_assessment_id === input.basisAssessmentId) {
+      const decisionOrigin = input.decisionOrigin ?? "manual";
+      if (
+        previous?.basis_assessment_id === input.basisAssessmentId &&
+        previous.decision === input.decision &&
+        previous.actor === input.actor &&
+        previous.decision_origin === decisionOrigin
+      ) {
         return { id: previous.id, carriedForward: false };
       }
 
@@ -209,12 +216,13 @@ export class ClaimsReviewStore {
         )
         .get(input.claimIdentityId) as { id: string } | undefined;
 
-      const now = Date.now();
+      const now = input.createdAt ?? Date.now();
       const id = `review:${fingerprint({
         claimIdentityId: input.claimIdentityId,
         basisAssessmentId: input.basisAssessmentId,
         decision: input.decision,
         actor: input.actor,
+        decisionOrigin,
         reopenId: openReopen?.id ?? null,
       })}`;
       if (previous) {
@@ -227,7 +235,7 @@ export class ClaimsReviewStore {
           `INSERT INTO review_decisions (
              id, claim_identity_id, basis_assessment_id, decision, actor,
              decision_origin, superseded_by_decision_id, is_current, created_at
-           ) VALUES (?, ?, ?, ?, ?, 'manual', NULL, 1, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, ?)`,
         )
         .run(
           id,
@@ -235,6 +243,7 @@ export class ClaimsReviewStore {
           input.basisAssessmentId,
           input.decision,
           input.actor,
+          decisionOrigin,
           now,
         );
       if (previous) {

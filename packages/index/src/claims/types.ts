@@ -126,6 +126,8 @@ export interface RecordReviewInput {
   basisAssessmentId: string;
   decision: string;
   actor: string;
+  decisionOrigin?: "manual" | "portable";
+  createdAt?: number;
 }
 
 export interface ReopenReviewInput {

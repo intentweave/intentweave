@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -92,6 +93,106 @@ describe("iw claims check", () => {
         .get(),
     ).toEqual({ count: 3 });
     index.close();
+  });
+
+  it("restores a portable review in a fresh index and rejects a stale basis", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"));
+    mkdirSync(path.join(workspace, "src"));
+    const databasePath = path.join(workspace, ".iw", "index.db");
+    const sourcePath = path.join(workspace, "src", "options.ts");
+    const initializeIndex = () => {
+      const database = new Database(databasePath);
+      initSchema(database);
+      database.close();
+    };
+    initializeIndex();
+    writeFileSync(sourcePath, "export const MAX_RETRIES = 3;\n");
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.chdir(workspace);
+    process.exitCode = undefined;
+
+    await runClaimsCheck({ format: "json" });
+
+    const initialIndex = new Database(databasePath);
+    const claim = initialIndex
+      .prepare("SELECT id FROM claim_identities")
+      .get() as { id: string };
+    initialIndex.close();
+    await runClaimsReview({
+      claim: claim.id,
+      actor: "reviewer",
+      decision: "accepted",
+      rationale: "Validated project default",
+      format: "json",
+    });
+    const statePath = path.join(workspace, ".iw", "claims", "state.yaml");
+    const portableState = readFileSync(statePath, "utf-8");
+
+    rmSync(databasePath);
+    initializeIndex();
+    log.mockClear();
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      portableStateIssues: [],
+    });
+    const restoredIndex = new Database(databasePath);
+    expect(
+      restoredIndex
+        .prepare(
+          `SELECT decision, actor, decision_origin
+           FROM review_decisions WHERE is_current = 1`,
+        )
+        .get(),
+    ).toEqual({
+      decision: "accepted",
+      actor: "reviewer",
+      decision_origin: "portable",
+    });
+    restoredIndex.close();
+    expect(readFileSync(statePath, "utf-8")).toBe(portableState);
+
+    rmSync(databasePath);
+    initializeIndex();
+    log.mockClear();
+    process.exitCode = undefined;
+    await runClaimsCheck({
+      format: "json",
+      contracts: { implementationFingerprint: "claims-engine-v2" },
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      portableStateIssues: [],
+    });
+
+    rmSync(databasePath);
+    initializeIndex();
+    writeFileSync(sourcePath, "export const MAX_RETRIES = 4;\n");
+    log.mockClear();
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+
+    expect(process.exitCode).toBe(2);
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      portableStateIssues: [
+        {
+          claimIdentityId: claim.id,
+          kind: "stale_assessment",
+        },
+      ],
+    });
+    const staleIndex = new Database(databasePath);
+    expect(
+      staleIndex
+        .prepare("SELECT COUNT(*) AS count FROM review_decisions")
+        .get(),
+    ).toEqual({ count: 0 });
+    staleIndex.close();
   });
 
   it("refresh retires stale auto claims but preserves explicit claims", async () => {
