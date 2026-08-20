@@ -7,13 +7,18 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import Database from "@intentweave/sqlite-compat";
 import { openIndex } from "../queries/shared.js";
-import { initSchema } from "../schema.js";
+import { initSchema, schemaMigrationBackupPath } from "../schema.js";
 
 describe("openIndex", () => {
   const dbPath = join(tmpdir(), `intentweave-schema-14-${process.pid}.db`);
 
   afterEach(() => {
-    for (const path of [dbPath, `${dbPath}-shm`, `${dbPath}-wal`]) {
+    for (const path of [
+      dbPath,
+      `${dbPath}-shm`,
+      `${dbPath}-wal`,
+      schemaMigrationBackupPath(dbPath, "16"),
+    ]) {
       if (existsSync(path)) rmSync(path);
     }
   });
@@ -37,7 +42,7 @@ describe("openIndex", () => {
       .get() as { name: string } | undefined;
     index.close();
 
-    expect(version.value).toBe("16");
+    expect(version.value).toBe("17");
     expect(table?.name).toBe("claim_assessment_references");
   });
 

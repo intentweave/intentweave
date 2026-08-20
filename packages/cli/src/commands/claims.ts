@@ -13,7 +13,7 @@ import {
   claimsExitCode,
   fingerprint,
   materialFingerprint,
-  migrateSchemaToCurrent,
+  openMigratedDatabase,
 } from "@intentweave/index";
 import type {
   ClaimScalar,
@@ -340,9 +340,7 @@ function claimsDatabase(workspaceRoot: string): Database.Database {
       `Index not found at ${dbPath}. Run \`iw index build\` first.`,
     );
   }
-  const database = new Database(dbPath);
-  migrateSchemaToCurrent(database);
-  return database;
+  return openMigratedDatabase(dbPath);
 }
 
 function isMaterialChange(

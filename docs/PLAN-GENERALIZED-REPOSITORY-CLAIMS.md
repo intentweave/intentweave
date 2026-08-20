@@ -339,6 +339,14 @@ writes is explicitly unsupported. G1 is complete only after both schema
 releases, including stepwise forward-migration, snapshot-restore, and
 history-preservation tests.
 
+For G1a, a direct in-place upgrade retains the snapshot next to the index as
+`.iw/index.db.schema-16.backup`. The file is created atomically before schema 17
+is written, reused rather than overwritten on later opens, and retained through
+the G1b recovery window. A failed upgrade closes the partial database and
+atomically restores this snapshot. Rebuild-based index creation remains covered
+by its existing temporary-database replacement and Claims-history snapshot
+path; it does not create a second in-place migration backup.
+
 ## 6. Candidate Discovery as a Separate Layer
 
 Today, a code finding is materialized immediately as a Claim. That is too

@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "@intentweave/sqlite-compat";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -12,8 +12,10 @@ import {
   migrateSchema14To15,
   migrateSchema15To16,
   migrateSchema16To17,
+  openMigratedDatabase,
   restoreClaimsHistory,
   snapshotClaimsHistory,
+  schemaMigrationBackupPath,
 } from "../schema.js";
 import { buildIndex } from "../writer.js";
 
@@ -405,6 +407,89 @@ describe("migrateSchema14To15 hardening", () => {
     });
     rebuilt.close();
     discardClaimsHistory(snapshot);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("retains a durable schema-16 backup after an in-place G1a migration", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-g1a-success-"),
+    );
+    const dbPath = path.join(directory, "index.db");
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(legacy);
+    migrateSchema15To16(legacy);
+    legacy
+      .prepare(
+        `INSERT INTO parameter_identities (id, canonical_key, created_at)
+         VALUES ('parameter:legacy', 'session.timeout', 10)`,
+      )
+      .run();
+    legacy.close();
+
+    const migrated = openMigratedDatabase(dbPath);
+    expect(
+      migrated
+        .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+        .get(),
+    ).toEqual({ value: "17" });
+    migrated.close();
+
+    const backupPath = schemaMigrationBackupPath(dbPath, "16");
+    expect(existsSync(backupPath)).toBe(true);
+    const backup = new Database(backupPath, { readonly: true });
+    expect(
+      backup
+        .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+        .get(),
+    ).toEqual({ value: "16" });
+    expect(
+      backup.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
+    ).toEqual({ canonical_key: "session.timeout" });
+    backup.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("atomically restores the durable backup after a failed in-place migration", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-g1a-failure-"),
+    );
+    const dbPath = path.join(directory, "index.db");
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(legacy);
+    migrateSchema15To16(legacy);
+    legacy.close();
+
+    expect(() =>
+      openMigratedDatabase(dbPath, (database) => {
+        database.exec(`CREATE TABLE g1a_partial_write (id TEXT PRIMARY KEY)`);
+        throw new Error("injected G1a failure");
+      }),
+    ).toThrow("injected G1a failure");
+
+    const restored = new Database(dbPath, { readonly: true });
+    expect(
+      restored
+        .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+        .get(),
+    ).toEqual({ value: "16" });
+    expect(
+      restored
+        .prepare(
+          `SELECT COUNT(*) AS count FROM sqlite_master
+           WHERE type = 'table' AND name = 'g1a_partial_write'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    restored.close();
+    expect(existsSync(schemaMigrationBackupPath(dbPath, "16"))).toBe(true);
     rmSync(directory, { recursive: true, force: true });
   });
 

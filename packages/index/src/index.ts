@@ -18,9 +18,11 @@ export {
   migrateSchema15To16,
   migrateSchema16To17,
   migrateSchemaToCurrent,
+  openMigratedDatabase,
   replaceDatabaseAtomically,
   restoreClaimsHistory,
   snapshotClaimsHistory,
+  schemaMigrationBackupPath,
   temporaryDatabasePath,
 } from "./schema.js";
 export {

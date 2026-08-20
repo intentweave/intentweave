@@ -570,6 +570,78 @@ export function discardClaimsHistory(snapshotPath: string | undefined): void {
   if (snapshotPath) fs.rmSync(snapshotPath, { force: true });
 }
 
+export function schemaMigrationBackupPath(
+  dbPath: string,
+  schemaVersion: string,
+): string {
+  return `${dbPath}.schema-${schemaVersion}.backup`;
+}
+
+function createDurableMigrationBackup(
+  db: Database.Database,
+  dbPath: string,
+  schemaVersion: string,
+): string {
+  const backupPath = schemaMigrationBackupPath(dbPath, schemaVersion);
+  if (fs.existsSync(backupPath)) return backupPath;
+  const temporaryPath = `${backupPath}.${randomUUID()}.tmp`;
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  try {
+    db.exec(`VACUUM INTO ${sqliteStringLiteral(temporaryPath)}`);
+    fs.renameSync(temporaryPath, backupPath);
+  } catch (error) {
+    fs.rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+  return backupPath;
+}
+
+function restoreMigrationBackup(backupPath: string, dbPath: string): void {
+  const temporaryPath = `${dbPath}.${randomUUID()}.restore`;
+  fs.copyFileSync(backupPath, temporaryPath);
+  try {
+    for (const suffix of ["-wal", "-shm"]) {
+      fs.rmSync(`${dbPath}${suffix}`, { force: true });
+    }
+    fs.renameSync(temporaryPath, dbPath);
+  } catch (error) {
+    fs.rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+/**
+ * Open and migrate an on-disk index while retaining a durable schema-16 backup.
+ * The optional migration callback exists for failure-path verification only.
+ */
+export function openMigratedDatabase(
+  dbPath: string,
+  migrateG1a: (db: Database.Database) => void = migrateSchema16To17,
+): Database.Database {
+  let database = new Database(dbPath);
+  let backupPath: string | undefined;
+  try {
+    const initialVersion = readSchemaVersion(database);
+    if (!initialVersion || initialVersion === "14") {
+      migrateSchema14To15(database);
+      migrateSchema15To16(database);
+    } else if (initialVersion === "15") {
+      migrateSchema15To16(database);
+    }
+    if (readSchemaVersion(database) === "16") {
+      backupPath = createDurableMigrationBackup(database, dbPath, "16");
+      migrateG1a(database);
+    } else {
+      migrateSchemaToCurrent(database);
+    }
+    return database;
+  } catch (error) {
+    database.close();
+    if (backupPath) restoreMigrationBackup(backupPath, dbPath);
+    throw error;
+  }
+}
+
 /**
  * Claims companion schema added in version 15.
  *
