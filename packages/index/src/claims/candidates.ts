@@ -72,12 +72,59 @@ export interface CandidateReviewInput {
   effect: CandidateReviewEffect;
   rationale: string;
   provenance: unknown;
+  promotedClaimIdentityId?: string;
 }
 
 export interface PersistedCandidateReview {
   id: string;
   created: boolean;
   candidate: PersistedCandidate;
+}
+
+export interface CandidatePolicyDecisionInput {
+  candidateId: string;
+  policyId: string;
+  policyVersion: string;
+  decision: CandidateReviewDecision;
+  rationale: string;
+  provenance: unknown;
+  promotedClaimIdentityId?: string;
+}
+
+export interface CandidateEvidence {
+  evidenceKey: string;
+  evidenceVersionId?: string;
+  sourceKind: string;
+  role: string;
+  provenance: unknown;
+}
+
+export interface CandidateSubject {
+  kind: SubjectKind;
+  identityKey: string;
+  displayName: string;
+  role: string;
+  basis: string;
+  confidence: CandidateConfidence;
+}
+
+export interface CandidateDetails extends PersistedCandidate {
+  candidateKind: string;
+  proposedClaimType: string;
+  discoveryMode: CandidateDiscoveryMode;
+  discoveryAdapterId: string;
+  discoveryContractVersion: string;
+  inferenceId?: string;
+  confidence: CandidateConfidence;
+  normalizedStatement: unknown;
+  provenance: unknown;
+  evidence: CandidateEvidence[];
+  subjects: CandidateSubject[];
+}
+
+export interface CandidateListFilter {
+  state?: CandidateState;
+  subjectKind?: SubjectKind;
 }
 
 interface CandidateRow {
@@ -87,6 +134,18 @@ interface CandidateRow {
   state: CandidateState;
   fingerprint: string;
   observation_fingerprint: string;
+}
+
+interface CandidateDetailRow extends CandidateRow {
+  candidate_kind: string;
+  proposed_claim_type: string;
+  discovery_mode: CandidateDiscoveryMode;
+  discovery_adapter_id: string;
+  discovery_contract_version: string;
+  inference_id: string | null;
+  confidence: CandidateConfidence;
+  normalized_statement_json: string;
+  provenance_json: string;
 }
 
 const REOBSERVED_MARKER = "#reobserved:";
@@ -307,6 +366,23 @@ export class CandidateStore {
     return transition();
   }
 
+  triage(candidateId: string, provenance: unknown): PersistedCandidate {
+    let current = this.details(candidateId);
+    if (!current) throw new Error(`Candidate ${candidateId} does not exist`);
+    if (current.state === "discovered") {
+      current = this.details(
+        this.transition(current.id, "correlated", provenance).id,
+      )!;
+    }
+    if (current.state === "correlated") {
+      return this.transition(current.id, "triaged", provenance);
+    }
+    if (current.state === "triaged") {
+      return { ...current, created: false };
+    }
+    throw new Error(`Candidate ${current.id} cannot be triaged from ${current.state}`);
+  }
+
   review(input: CandidateReviewInput): PersistedCandidateReview {
     const review = this.db.transaction(() => {
       requireNonEmpty(input.actorId, "Candidate Review actor");
@@ -319,6 +395,7 @@ export class CandidateStore {
         effect: input.effect,
         rationale: input.rationale,
         provenance: input.provenance,
+        promotedClaimIdentityId: input.promotedClaimIdentityId ?? null,
       })}`;
       const existing = this.db
         .prepare(`SELECT id FROM candidate_reviews WHERE id = ?`)
@@ -344,16 +421,24 @@ export class CandidateStore {
           `Candidate ${input.candidateId} must be triaged before Review`,
         );
       }
+      const requiresPromotedClaim =
+        input.effect === "effective" && input.decision === "promote";
+      if (requiresPromotedClaim !== Boolean(input.promotedClaimIdentityId)) {
+        throw new Error(
+          "A promoted Claim identity is required only for promote decisions",
+        );
+      }
       this.db
         .prepare(
           `INSERT INTO candidate_reviews (
-             id, candidate_id, actor_kind, actor_id, decision, effect,
-             rationale, provenance_json, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             id, candidate_id, promoted_claim_identity_id, actor_kind,
+             actor_id, decision, effect, rationale, provenance_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           reviewId,
           input.candidateId,
+          input.promotedClaimIdentityId ?? null,
           input.actorKind,
           input.actorId,
           input.decision,
@@ -380,9 +465,178 @@ export class CandidateStore {
     return review();
   }
 
+  applyPolicyDecision(
+    input: CandidatePolicyDecisionInput,
+  ): PersistedCandidateReview {
+    requireNonEmpty(input.policyId, "Candidate Policy ID");
+    requireNonEmpty(input.policyVersion, "Candidate Policy version");
+    const apply = this.db.transaction(() => {
+      const policyDecisionId = `candidate-policy-decision:${fingerprint({
+        candidateId: input.candidateId,
+        policyId: input.policyId,
+        policyVersion: input.policyVersion,
+        decision: input.decision,
+        rationale: input.rationale,
+        provenance: input.provenance,
+        promotedClaimIdentityId: input.promotedClaimIdentityId ?? null,
+      })}`;
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO candidate_policy_decisions (
+             id, candidate_id, promoted_claim_identity_id, policy_id,
+             policy_version, decision, rationale, provenance_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          policyDecisionId,
+          input.candidateId,
+          input.promotedClaimIdentityId ?? null,
+          input.policyId,
+          input.policyVersion,
+          input.decision,
+          input.rationale,
+          canonicalJson(input.provenance),
+          Date.now(),
+        );
+      return this.review({
+        candidateId: input.candidateId,
+        actorKind: "policy",
+        actorId: input.policyId,
+        decision: input.decision,
+        effect: "effective",
+        rationale: input.rationale,
+        provenance: {
+          policyDecisionId,
+          policyVersion: input.policyVersion,
+          input: input.provenance,
+        },
+        promotedClaimIdentityId: input.promotedClaimIdentityId,
+      });
+    });
+    return apply();
+  }
+
   current(identityKey: string): PersistedCandidate | undefined {
     const row = this.rowsForIdentity(identityKey)[0];
     return row ? persistedCandidate(row, false) : undefined;
+  }
+
+  listCurrent(filter: CandidateListFilter = {}): CandidateDetails[] {
+    const rows = this.db
+      .prepare(
+        `WITH latest AS (
+           SELECT identity_key, MAX(version_ordinal) AS version_ordinal
+           FROM claim_candidates GROUP BY identity_key
+         )
+         SELECT candidate.*
+         FROM claim_candidates candidate
+         JOIN latest
+           ON latest.identity_key = candidate.identity_key
+          AND latest.version_ordinal = candidate.version_ordinal
+         WHERE (? IS NULL OR candidate.state = ?)
+           AND (
+             ? IS NULL OR EXISTS (
+               SELECT 1 FROM candidate_subjects link
+               JOIN subject_identities subject
+                 ON subject.id = link.subject_identity_id
+               WHERE link.candidate_id = candidate.id AND subject.kind = ?
+             )
+           )
+         ORDER BY candidate.created_at, candidate.id`,
+      )
+      .all(
+        filter.state ?? null,
+        filter.state ?? null,
+        filter.subjectKind ?? null,
+        filter.subjectKind ?? null,
+      ) as CandidateDetailRow[];
+    return rows.map((row) => this.detailsFromRow(row));
+  }
+
+  details(candidateId: string): CandidateDetails | undefined {
+    const row = this.db
+      .prepare(`SELECT * FROM claim_candidates WHERE id = ?`)
+      .get(candidateId) as CandidateDetailRow | undefined;
+    return row ? this.detailsFromRow(row) : undefined;
+  }
+
+  private detailsFromRow(row: CandidateDetailRow): CandidateDetails {
+    const discovery = this.db
+      .prepare(
+        `SELECT provenance_json FROM claim_candidates
+         WHERE identity_key = ? AND observation_fingerprint = ?
+           AND state = 'discovered'
+         ORDER BY version_ordinal DESC LIMIT 1`,
+      )
+      .get(row.identity_key, row.observation_fingerprint) as
+      | { provenance_json: string }
+      | undefined;
+    const evidence = (
+      this.db
+        .prepare(
+          `SELECT evidence_key, evidence_version_id, source_kind,
+                  evidence_role, provenance_json
+           FROM candidate_evidence WHERE candidate_id = ?
+           ORDER BY source_kind, evidence_key, evidence_role`,
+        )
+        .all(row.id) as Array<{
+        evidence_key: string;
+        evidence_version_id: string | null;
+        source_kind: string;
+        evidence_role: string;
+        provenance_json: string;
+      }>
+    ).map((item) => ({
+      evidenceKey: item.evidence_key,
+      ...(item.evidence_version_id
+        ? { evidenceVersionId: item.evidence_version_id }
+        : {}),
+      sourceKind: item.source_kind,
+      role: item.evidence_role,
+      provenance: JSON.parse(item.provenance_json) as unknown,
+    }));
+    const subjects = (
+      this.db
+        .prepare(
+          `SELECT subject.kind, subject.identity_key, subject.display_name,
+                  link.subject_role, link.basis, link.confidence
+           FROM candidate_subjects link
+           JOIN subject_identities subject ON subject.id = link.subject_identity_id
+           WHERE link.candidate_id = ?
+           ORDER BY link.subject_role, subject.identity_key`,
+        )
+        .all(row.id) as Array<{
+        kind: SubjectKind;
+        identity_key: string;
+        display_name: string;
+        subject_role: string;
+        basis: string;
+        confidence: CandidateConfidence;
+      }>
+    ).map((item) => ({
+      kind: item.kind,
+      identityKey: item.identity_key,
+      displayName: item.display_name,
+      role: item.subject_role,
+      basis: item.basis,
+      confidence: item.confidence,
+    }));
+    return {
+      ...persistedCandidate(row, false),
+      candidateKind: row.candidate_kind,
+      proposedClaimType: row.proposed_claim_type,
+      discoveryMode: row.discovery_mode,
+      discoveryAdapterId: row.discovery_adapter_id,
+      discoveryContractVersion: row.discovery_contract_version,
+      ...(row.inference_id ? { inferenceId: row.inference_id } : {}),
+      confidence: row.confidence,
+      normalizedStatement: JSON.parse(row.normalized_statement_json) as unknown,
+      provenance: JSON.parse(
+        discovery?.provenance_json ?? row.provenance_json,
+      ) as unknown,
+      evidence,
+      subjects,
+    };
   }
 
   private appendTransition(

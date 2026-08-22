@@ -213,6 +213,13 @@ describe("initSchema", () => {
     ).toEqual({ name: "claim_candidates" });
     expect(
       (
+        db.prepare(`PRAGMA table_info(candidate_reviews)`).all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    ).toContain("promoted_claim_identity_id");
+    expect(
+      (
         db.prepare(`PRAGMA table_info(claim_identities)`).all() as Array<{
           name: string;
         }>

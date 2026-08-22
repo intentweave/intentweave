@@ -31,7 +31,25 @@ describe("iw claims check", () => {
     }
   });
 
-  it("extracts an unscoped default claim without a bindings manifest", async () => {
+  function enableContinuousR1Promotion(workspace: string): void {
+    mkdirSync(path.join(workspace, ".iw", "claims"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".iw", "claims", "state.yaml"),
+      `schemaVersion: "1"
+policies:
+  r1-continuous-auto-promote:
+    version: "1"
+    enabled: true
+    configuration: {}
+candidateDecisions: {}
+subjectBindings: {}
+assessmentReviews: {}
+baselineAcceptances: {}
+`,
+    );
+  }
+
+  it("keeps unbound R1 findings Candidate-only without a promotion Policy", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-claims-"));
     workspaces.push(workspace);
     mkdirSync(path.join(workspace, ".iw"));
@@ -49,33 +67,22 @@ describe("iw claims check", () => {
 
     await runClaimsCheck({ format: "json" });
 
-    expect(process.exitCode).toBe(4);
+    expect(process.exitCode).toBe(2);
     expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
-      claims: expect.arrayContaining([
-        {
-          parameterKey: expect.stringContaining("code:variable:"),
-          claimType: "CLM-DEFAULT",
-          ruleStatuses: ["passed"],
-          assessmentStatuses: ["supported"],
-        },
-        {
-          parameterKey: expect.stringContaining("code:variable:"),
-          claimType: "CLM-LITERAL",
-          ruleStatuses: ["passed"],
-          assessmentStatuses: ["supported"],
-        },
-      ]),
+      gateStatus: "no_active_claims",
+      claims: [],
       scopes: [],
+      candidates: { discovered: 2, active: 0, issues: [] },
     });
     const index = new Database(path.join(workspace, ".iw", "index.db"));
     expect(
       index.prepare("SELECT COUNT(*) AS count FROM claim_identities").get(),
-    ).toEqual({ count: 2 });
+    ).toEqual({ count: 0 });
     expect(
       index
         .prepare("SELECT COUNT(*) AS count FROM rule_result_identities")
         .get(),
-    ).toEqual({ count: 2 });
+    ).toEqual({ count: 0 });
     expect(
       index
         .prepare(
@@ -83,7 +90,7 @@ describe("iw claims check", () => {
            ORDER BY basis, confidence`,
         )
         .all(),
-    ).toHaveLength(3);
+    ).toHaveLength(0);
     expect(
       index
         .prepare(
@@ -91,7 +98,10 @@ describe("iw claims check", () => {
            WHERE basis = 'r1-discovery' AND confidence = 'probable'`,
         )
         .get(),
-    ).toEqual({ count: 3 });
+    ).toEqual({ count: 0 });
+    expect(
+      index.prepare("SELECT COUNT(*) AS count FROM claim_candidates").get(),
+    ).toEqual({ count: 2 });
     index.close();
   });
 
@@ -108,6 +118,7 @@ describe("iw claims check", () => {
       database.close();
     };
     initializeIndex();
+    enableContinuousR1Promotion(workspace);
     writeFileSync(sourcePath, "export const MAX_RETRIES = 3;\n");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     process.chdir(workspace);
@@ -203,6 +214,7 @@ describe("iw claims check", () => {
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
     database.close();
+    enableContinuousR1Promotion(workspace);
     writeFileSync(
       path.join(workspace, "intentweave.bindings.yaml"),
       `parameters:
@@ -302,6 +314,7 @@ describe("iw claims check", () => {
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
     database.close();
+    enableContinuousR1Promotion(workspace);
     writeFileSync(
       path.join(workspace, "src", "parser.ts"),
       'export const COMMIT_START = "ACTIVE";\n',
@@ -536,6 +549,7 @@ describe("iw claims check", () => {
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
     database.close();
+    enableContinuousR1Promotion(workspace);
     writeFileSync(
       path.join(workspace, "src", "options.ts"),
       "/**\n * @default 25\n */\nexport const PAGE_SIZE = 25;\n",
@@ -626,6 +640,7 @@ describe("iw claims check", () => {
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
     database.close();
+    enableContinuousR1Promotion(workspace);
     writeFileSync(
       path.join(workspace, "src", "options.ts"),
       "export const PAGE_SIZE = 25;\n",
@@ -1449,11 +1464,6 @@ describe("iw claims check", () => {
           scope: "eu-prod",
           epistemic_status: "supported",
         },
-        {
-          claim_type: "CLM-LITERAL",
-          scope: null,
-          epistemic_status: "supported",
-        },
       ]),
     );
     expect(
@@ -1468,8 +1478,23 @@ describe("iw claims check", () => {
          JOIN parameter_identities parameter ON parameter.id = ci.parameter_identity_id
          WHERE ci.claim_type = 'CLM-LITERAL'`,
       )
-      .get() as { canonical_key: string };
-    expect(requestClaim.canonical_key).toContain("code:variable:");
+      .get();
+    expect(requestClaim).toBeUndefined();
+    expect(
+      c4Index
+        .prepare(
+          `WITH latest AS (
+             SELECT identity_key, MAX(version_ordinal) AS ordinal
+             FROM claim_candidates GROUP BY identity_key
+           )
+           SELECT candidate.state
+           FROM claim_candidates candidate
+           JOIN latest ON latest.identity_key = candidate.identity_key
+                      AND latest.ordinal = candidate.version_ordinal
+           WHERE candidate.proposed_claim_type = 'CLM-LITERAL'`,
+        )
+        .get(),
+    ).toEqual({ state: "discovered" });
     expect(
       c4Index
         .prepare(
@@ -1748,10 +1773,7 @@ describe("iw claims check", () => {
            ORDER BY ci.claim_type, ci.scope`,
         )
         .all(),
-    ).toEqual([
-      { claim_type: "CLM-DOC-CONFORMANCE", scope: null },
-      { claim_type: "CLM-LITERAL", scope: null },
-    ]);
+    ).toEqual([{ claim_type: "CLM-DOC-CONFORMANCE", scope: null }]);
     p1Index.close();
   });
 

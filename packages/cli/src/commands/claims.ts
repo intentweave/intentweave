@@ -17,10 +17,19 @@ import {
   openMigratedDatabase,
 } from "@intentweave/index";
 import type {
+  CandidateReviewDecision,
+  CandidateState,
   ClaimScalar,
   ClaimsContractVersions,
   PersistedVersion,
+  PortableClaimsState,
+  SubjectKind,
 } from "@intentweave/index";
+import {
+  applyCandidatePolicy,
+  persistPortableCandidateDecision,
+  reviewCandidate,
+} from "../claims/candidateGovernance.js";
 import {
   persistR1Candidates,
   R1_DISCOVERY_ADAPTER_ID,
@@ -43,6 +52,8 @@ import type { GitRename } from "../claims/git.js";
 import {
   CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
   ClaimsPortableStateFileError,
+  claimsPortableStatePath,
+  loadPortableClaimsState,
   parsePortableClaimsStateYaml,
 } from "../claims/portableState.js";
 import {
@@ -368,11 +379,25 @@ export async function runClaimsDiscover(options: {
     );
     const database = claimsDatabase(workspaceRoot);
     try {
-      const candidates = persistR1Candidates(
-        new CandidateStore(database),
+      const store = new CandidateStore(database);
+      const existingCompatibilityKeys = currentR1ClaimCandidateKeys(database);
+      const portableState = loadPortableClaimsState(workspaceRoot);
+      const discovered = persistR1Candidates(
+        store,
         observations,
         currentRevision(workspaceRoot),
       );
+      const projectionIssues = applyEffectiveCandidateDecisions(
+        database,
+        discovered.map((candidate) => candidate.identityKey),
+        existingCompatibilityKeys,
+        portableState,
+        resolveContracts(),
+      );
+      const candidates = discovered.map((candidate) => ({
+        ...candidate,
+        ...store.current(candidate.identityKey)!,
+      }));
       const surfaced = candidates.filter(
         (candidate) => options.all || candidate.surfaced,
       );
@@ -388,6 +413,7 @@ export async function runClaimsDiscover(options: {
           .length,
         hiddenCount: candidates.filter((candidate) => !candidate.surfaced)
           .length,
+        projectionIssues,
         candidates: surfaced,
       };
       if (options.format === "json") {
@@ -405,6 +431,374 @@ export async function runClaimsDiscover(options: {
           console.log(`  Sources: ${candidate.sourceKinds.join(", ")}`);
         }
       }
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode =
+      error instanceof ClaimsBindingError ||
+      error instanceof ClaimsPortableStateFileError
+        ? 64
+        : 1;
+  }
+}
+
+const CANDIDATE_STATES: readonly CandidateState[] = [
+  "discovered",
+  "correlated",
+  "triaged",
+  "promoted",
+  "rejected",
+  "suppressed",
+  "superseded",
+];
+const SUBJECT_KINDS: readonly SubjectKind[] = [
+  "parameter",
+  "symbol",
+  "module",
+  "endpoint",
+];
+const CANDIDATE_DECISIONS: readonly CandidateReviewDecision[] = [
+  "promote",
+  "reject",
+  "suppress",
+  "defer",
+];
+
+interface CandidateProjectionIssue {
+  identityKey: string;
+  reason: "stale-portable-decision" | "closed-candidate-conflict";
+}
+
+function currentR1ClaimCandidateKeys(
+  database: Database.Database,
+): Set<string> {
+  return new Set(
+    (
+      database
+        .prepare(
+          `SELECT DISTINCT parameter.canonical_key, claim.claim_type
+           FROM claim_identities claim
+           JOIN parameter_identities parameter
+             ON parameter.id = claim.parameter_identity_id
+           JOIN claim_versions version ON version.claim_identity_id = claim.id
+           JOIN claim_assessments assessment
+             ON assessment.claim_version_id = version.id
+            AND assessment.is_current = 1
+           WHERE claim.claim_type IN ('CLM-DEFAULT', 'CLM-LITERAL')`,
+        )
+        .all() as Array<{ canonical_key: string; claim_type: string }>
+    ).map((row) => `r1:${row.canonical_key}:${row.claim_type}`),
+  );
+}
+
+function applyEffectiveCandidateDecisions(
+  database: Database.Database,
+  identityKeys: readonly string[],
+  existingCompatibilityKeys: ReadonlySet<string>,
+  portableState: PortableClaimsState | undefined,
+  contracts: ClaimsContractVersions,
+): CandidateProjectionIssue[] {
+  const store = new CandidateStore(database);
+  const issues: CandidateProjectionIssue[] = [];
+  const continuousPolicy = portableState?.policies[
+    "r1-continuous-auto-promote"
+  ];
+  for (const identityKey of identityKeys) {
+    const current = store.current(identityKey);
+    if (!current) continue;
+    let candidate = store.details(current.id)!;
+    const portableDecision = portableState?.candidateDecisions[identityKey];
+    if (portableDecision) {
+      if (
+        portableDecision.candidateFingerprint !==
+        candidate.observationFingerprint
+      ) {
+        if (!existingCompatibilityKeys.has(identityKey)) {
+          issues.push({ identityKey, reason: "stale-portable-decision" });
+          continue;
+        }
+      } else {
+        const targetState =
+          portableDecision.decision === "promote"
+            ? "promoted"
+            : portableDecision.decision === "reject"
+              ? "rejected"
+              : "suppressed";
+        if (candidate.state === targetState) continue;
+        if (!["discovered", "correlated", "triaged"].includes(candidate.state)) {
+          issues.push({ identityKey, reason: "closed-candidate-conflict" });
+          continue;
+        }
+        candidate = store.details(
+          store.triage(candidate.id, {
+            basis: "portable-candidate-decision",
+          }).id,
+        )!;
+        if (portableDecision.actor.kind === "policy") {
+          applyCandidatePolicy(database, {
+            candidateId: candidate.id,
+            policyId: portableDecision.actor.id,
+            policyVersion: portableDecision.actor.version!,
+            decision: portableDecision.decision,
+            rationale: portableDecision.rationale,
+            provenance: { source: CLAIMS_PORTABLE_STATE_RELATIVE_PATH },
+            contracts,
+          });
+        } else {
+          reviewCandidate(database, {
+            candidateId: candidate.id,
+            actor: portableDecision.actor.id,
+            decision: portableDecision.decision,
+            rationale: portableDecision.rationale,
+            provenance: { source: CLAIMS_PORTABLE_STATE_RELATIVE_PATH },
+            contracts,
+          });
+        }
+        continue;
+      }
+    }
+
+    const policy = existingCompatibilityKeys.has(identityKey)
+      ? {
+          id:
+            candidate.ordinal === 1
+              ? "r1-compatibility"
+              : "promoted-claim-continuity",
+          version: "1",
+        }
+      : continuousPolicy?.enabled
+        ? {
+            id: "r1-continuous-auto-promote",
+            version: continuousPolicy.version,
+          }
+        : undefined;
+    if (!policy || candidate.state === "promoted") continue;
+    if (!["discovered", "correlated", "triaged"].includes(candidate.state)) {
+      issues.push({ identityKey, reason: "closed-candidate-conflict" });
+      continue;
+    }
+    candidate = store.details(
+      store.triage(candidate.id, { basis: policy.id }).id,
+    )!;
+    applyCandidatePolicy(database, {
+      candidateId: candidate.id,
+      policyId: policy.id,
+      policyVersion: policy.version,
+      decision: "promote",
+      rationale:
+        policy.id === "r1-compatibility"
+          ? "Preserve a Claim active before Candidate migration"
+          : policy.id === "promoted-claim-continuity"
+            ? "Continue governance for an already active Claim identity"
+            : "Continuous R1 auto-promotion is explicitly enabled",
+      provenance: { source: "candidate-policy" },
+      contracts,
+    });
+  }
+  return issues;
+}
+
+function candidateState(value: string | undefined): CandidateState | undefined {
+  if (!value) return undefined;
+  if (!CANDIDATE_STATES.includes(value as CandidateState)) {
+    throw new ClaimsBindingError(
+      `Candidate state must be one of: ${CANDIDATE_STATES.join(", ")}`,
+    );
+  }
+  return value as CandidateState;
+}
+
+function candidateSubjectKind(value: string | undefined): SubjectKind | undefined {
+  if (!value) return undefined;
+  if (!SUBJECT_KINDS.includes(value as SubjectKind)) {
+    throw new ClaimsBindingError(
+      `Subject kind must be one of: ${SUBJECT_KINDS.join(", ")}`,
+    );
+  }
+  return value as SubjectKind;
+}
+
+export async function runClaimsCandidatesList(options: {
+  state?: string;
+  subjectKind?: string;
+  all?: boolean;
+  format: string;
+}): Promise<void> {
+  try {
+    const database = claimsDatabase(process.cwd());
+    try {
+      const store = new CandidateStore(database);
+      const state = candidateState(options.state);
+      const candidates = store
+        .listCurrent({
+          ...(state ? { state } : {}),
+          ...(options.subjectKind
+            ? { subjectKind: candidateSubjectKind(options.subjectKind)! }
+            : {}),
+        })
+        .filter(
+          (candidate) =>
+            options.all ||
+            state !== undefined ||
+            ["discovered", "correlated", "triaged"].includes(candidate.state),
+        );
+      if (options.format === "json") {
+        console.log(JSON.stringify({ candidates }, null, 2));
+      } else if (candidates.length === 0) {
+        console.log("No matching Candidates.");
+      } else {
+        for (const candidate of candidates) {
+          console.log(
+            `${candidate.id}  ${candidate.proposedClaimType}  ${candidate.state}`,
+          );
+          console.log(
+            `  Subjects: ${candidate.subjects.map((subject) => `${subject.role}=${subject.identityKey}`).join(", ")}`,
+          );
+        }
+      }
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
+}
+
+export async function runClaimsCandidatesTriage(options: {
+  candidate?: string;
+  subjectKind?: string;
+  claimType?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    const database = claimsDatabase(process.cwd());
+    try {
+      const store = new CandidateStore(database);
+      const candidates = store
+        .listCurrent({
+          ...(options.subjectKind
+            ? { subjectKind: candidateSubjectKind(options.subjectKind)! }
+            : {}),
+        })
+        .filter(
+          (candidate) =>
+            (!options.candidate || candidate.id === options.candidate) &&
+            (!options.claimType ||
+              candidate.proposedClaimType === options.claimType) &&
+            ["discovered", "correlated", "triaged"].includes(candidate.state),
+        );
+      if (options.candidate && candidates.length === 0) {
+        throw new ClaimsBindingError(
+          `No triageable current Candidate matches ${options.candidate}`,
+        );
+      }
+      const triaged = database.transaction(() =>
+        candidates.map((candidate) =>
+          store.triage(candidate.id, {
+            basis: "manual-triage",
+            semanticInduction: "not_run",
+          }),
+        ),
+      )();
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ candidates: triaged }, null, 2)
+          : `Triaged ${triaged.length} Candidate${triaged.length === 1 ? "" : "s"}.`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
+}
+
+export async function runClaimsCandidateReview(options: {
+  candidate: string;
+  actor: string;
+  decision: string;
+  rationale: string;
+  format: string;
+}): Promise<void> {
+  try {
+    if (!CANDIDATE_DECISIONS.includes(options.decision as CandidateReviewDecision)) {
+      throw new ClaimsBindingError(
+        `Candidate decision must be one of: ${CANDIDATE_DECISIONS.join(", ")}`,
+      );
+    }
+    const decision = options.decision as CandidateReviewDecision;
+    if (options.actor.trim().length === 0) {
+      throw new ClaimsBindingError("Candidate Review actor must not be empty");
+    }
+    if (options.rationale.trim().length === 0) {
+      throw new ClaimsBindingError(
+        "Candidate Review rationale must not be empty",
+      );
+    }
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const store = new CandidateStore(database);
+      const candidate = store.details(options.candidate);
+      if (!candidate || store.current(candidate.identityKey)?.id !== candidate.id) {
+        throw new ClaimsBindingError(
+          `Candidate ${options.candidate} is not a current Candidate`,
+        );
+      }
+      if (candidate.state !== "triaged") {
+        throw new ClaimsBindingError(
+          `Candidate ${candidate.id} must be triaged before Review`,
+        );
+      }
+      if (
+        decision === "promote" &&
+        candidate.discoveryAdapterId !== R1_DISCOVERY_ADAPTER_ID
+      ) {
+        throw new ClaimsBindingError(
+          `Candidate adapter ${candidate.discoveryAdapterId} has no promotion evaluator`,
+        );
+      }
+      const decidedAt = new Date().toISOString();
+      const portableStatePath =
+        decision === "defer"
+          ? undefined
+          : claimsPortableStatePath(workspaceRoot);
+      const apply = database.transaction(() => {
+        const result = reviewCandidate(database, {
+          candidateId: candidate.id,
+          actor: options.actor,
+          decision,
+          rationale: options.rationale,
+          provenance: {
+            decidedAt,
+            portableStatePath: portableStatePath ?? null,
+          },
+          contracts: resolveContracts(),
+        });
+        if (decision !== "defer") {
+          persistPortableCandidateDecision(workspaceRoot, candidate, {
+            decision,
+            actor: { kind: "human", id: options.actor },
+            decidedAt,
+            rationale: options.rationale,
+          });
+        }
+        return result;
+      });
+      const result = apply();
+      const output = { ...result, portableStatePath: portableStatePath ?? null };
+      console.log(
+        options.format === "json"
+          ? JSON.stringify(output, null, 2)
+          : `Candidate Review recorded: ${result.review.id}${result.assessment ? `\nPromoted Claim: ${result.assessment.claimIdentityId}` : ""}${portableStatePath ? `\nPortable state: ${portableStatePath}` : ""}`,
+      );
       process.exitCode = 0;
     } finally {
       database.close();
@@ -1100,9 +1494,35 @@ export async function runClaimsCheck(options: {
         const revision = headRevision ?? currentRevision(workspaceRoot);
         const readBoundFile = (filePath: string) =>
           readOptionalCurrentFile(filePath) ?? "";
+        const existingCompatibilityKeys = currentR1ClaimCandidateKeys(database);
+        const candidateStore = new CandidateStore(database);
+        const discoveredCandidates = persistR1Candidates(
+          candidateStore,
+          discoveredCode,
+          revision,
+        );
+        const candidateProjectionIssues = applyEffectiveCandidateDecisions(
+          database,
+          discoveredCandidates.map((candidate) => candidate.identityKey),
+          existingCompatibilityKeys,
+          portableState,
+          contracts,
+        );
+        const activeCandidateKeys = new Set(
+          discoveredCandidates.flatMap((candidate) =>
+            candidateStore.current(candidate.identityKey)?.state === "promoted"
+              ? [candidate.identityKey]
+              : [],
+          ),
+        );
+        const activeDiscoveredCode = discoveredCode.filter((observation) =>
+          activeCandidateKeys.has(
+            `r1:${observation.parameterKey}:${observation.claimType}`,
+          ),
+        );
         const code = [
           ...extractBoundCodeEvidence(bindings, readBoundFile),
-          ...discoveredCode,
+          ...activeDiscoveredCode,
         ];
         const docs = extractDocumentationAssertions(bindings, readBoundFile);
         const documentationInconclusive = docs.filter(
@@ -1159,6 +1579,10 @@ export async function runClaimsCheck(options: {
             baseCodeFiles,
             readBaseFile,
             baseBindings,
+          ).filter((observation) =>
+            activeCandidateKeys.has(
+              `r1:${observation.parameterKey}:${observation.claimType}`,
+            ),
           );
           return persistSnapshotEvidence(
             store,
@@ -1208,6 +1632,7 @@ export async function runClaimsCheck(options: {
           ? scopes.filter((scope) => scope.name === options.scope)
           : scopes;
         const output = {
+          gateStatus: "evaluated",
           claims: [] as Array<{
             parameterKey: string;
             claimType: string;
@@ -1221,6 +1646,11 @@ export async function runClaimsCheck(options: {
           }>,
           retiredClaims: [] as RefreshedRetiredClaim[],
           portableStateIssues: [] as PortableReviewProjectionIssue[],
+          candidates: {
+            discovered: discoveredCandidates.length,
+            active: activeCandidateKeys.size,
+            issues: candidateProjectionIssues,
+          },
         };
         const allRuleStatuses: Array<
           "passed" | "failed" | "inconclusive" | "not_applicable"
@@ -1228,6 +1658,9 @@ export async function runClaimsCheck(options: {
         const allAssessmentStatuses: Array<
           "supported" | "refuted" | "contested" | "inconclusive"
         > = [];
+        allAssessmentStatuses.push(
+          ...candidateProjectionIssues.map(() => "inconclusive" as const),
+        );
         const assessmentIds: string[] = [];
         const reopenedClaimIds = new Set<string>();
         allRuleStatuses.push(
@@ -1235,7 +1668,7 @@ export async function runClaimsCheck(options: {
         );
 
         const unscopedParameterKeys = new Set(
-          (scopes.length === 0 ? code : discoveredCode).map(
+          (scopes.length === 0 ? code : activeDiscoveredCode).map(
             (observation) => observation.parameterKey,
           ),
         );
@@ -1849,6 +2282,9 @@ export async function runClaimsCheck(options: {
               (row.reviewed === 0 || row.open_reopen === 1)
             );
           });
+        if (output.claims.length === 0 && output.scopes.length === 0) {
+          output.gateStatus = "no_active_claims";
+        }
         return {
           output,
           exitCode: claimsExitCode({
@@ -2169,6 +2605,19 @@ export async function runClaimsExplain(options: {
           kind: subject.kind,
           identityKey: subject.identity_key,
         })),
+        promotion: database
+          .prepare(
+            `SELECT review.actor_kind, review.actor_id, review.decision,
+                    candidate.identity_key AS candidate_identity_key,
+                    candidate.observation_fingerprint
+             FROM candidate_reviews review
+             JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+             WHERE review.promoted_claim_identity_id = ?
+               AND review.decision = 'promote'
+               AND review.effect = 'effective'
+             ORDER BY review.created_at DESC LIMIT 1`,
+          )
+          .get(assessment.claim_identity_id) ?? null,
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),
@@ -2222,6 +2671,16 @@ export async function runClaimsExplain(options: {
               `  Materiality contract: ${claim.materialityContract.id}@${claim.materialityContract.version}`,
             );
           }
+          if (claim.promotion) {
+            const promotion = claim.promotion as {
+              actor_kind: string;
+              actor_id: string;
+              candidate_identity_key: string;
+            };
+            console.log(
+              `  Promoted from: ${promotion.candidate_identity_key} by ${promotion.actor_kind}:${promotion.actor_id}`,
+            );
+          }
           console.log(`  Statement: ${JSON.stringify(claim.statement)}`);
           console.log(`  Claim: ${claim.claimIdentityId}`);
           console.log(`  Assessment: ${claim.assessmentId}`);
@@ -2259,6 +2718,40 @@ export async function runClaimsExplain(options: {
   }
 }
 
+const claimsCandidatesCommand = new Command("candidates")
+  .description("Triage and govern discovered Claim Candidates")
+  .addCommand(
+    new Command("list")
+      .description("List the current Candidate inbox")
+      .option("--state <state>", "Restrict by Candidate state")
+      .option("--subject-kind <kind>", "Restrict by Subject kind")
+      .option("--all", "Include promoted and closed Candidates")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidatesList),
+  )
+  .addCommand(
+    new Command("triage")
+      .description("Move deterministic Candidates into the reviewable inbox")
+      .option("--candidate <id>", "Restrict triage to one current Candidate")
+      .option("--subject-kind <kind>", "Restrict by Subject kind")
+      .option("--claim-type <type>", "Restrict by proposed Claim type")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidatesTriage),
+  )
+  .addCommand(
+    new Command("review")
+      .description("Record an effective human Candidate decision")
+      .requiredOption("--candidate <id>", "Current triaged Candidate ID")
+      .requiredOption("--actor <name>", "Decision actor")
+      .requiredOption(
+        "--decision <decision>",
+        "promote, reject, suppress, or defer",
+      )
+      .requiredOption("--rationale <text>", "Reason for the decision")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidateReview),
+  );
+
 export const claimsCommand = new Command("claims")
   .description("Discover, assess, explain, and review repository claims")
   .addCommand(
@@ -2270,6 +2763,7 @@ export const claimsCommand = new Command("claims")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsDiscover),
   )
+  .addCommand(claimsCandidatesCommand)
   .addCommand(
     new Command("check")
       .description(

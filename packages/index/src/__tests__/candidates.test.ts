@@ -128,19 +128,19 @@ describe("CandidateStore", () => {
       rationale: "Needs another source",
       provenance: {},
     });
-    const promoted = store.review({
+    const rejected = store.review({
       candidateId: triaged.id,
       actorKind: "human",
       actorId: "reviewer",
-      decision: "promote",
+      decision: "reject",
       effect: "effective",
-      rationale: "Repository contract",
+      rationale: "Not a repository contract",
       provenance: {},
     });
 
     expect(recommendation.candidate.state).toBe("triaged");
     expect(deferred.candidate.state).toBe("triaged");
-    expect(promoted.candidate).toMatchObject({ state: "promoted", ordinal: 4 });
+    expect(rejected.candidate).toMatchObject({ state: "rejected", ordinal: 4 });
     expect(
       db.prepare(`SELECT COUNT(*) AS count FROM candidate_reviews`).get(),
     ).toEqual({ count: 3 });
@@ -164,6 +164,56 @@ describe("CandidateStore", () => {
 
     expect(rejected.candidate.state).toBe("rejected");
     expect(rescanned).toEqual({ ...rejected.candidate, created: false });
+  });
+
+  it("materializes versioned Policy decisions with effective provenance", () => {
+    const discovered = store.persist(input(1800));
+    const triaged = store.triage(discovered.id, {
+      basis: "deterministic-correlation",
+    });
+
+    const decision = store.applyPolicyDecision({
+      candidateId: triaged.id,
+      policyId: "suppress-internal-defaults",
+      policyVersion: "1",
+      decision: "suppress",
+      rationale: "Internal defaults are outside governance scope",
+      provenance: { configurationFingerprint: "policy-config-v1" },
+    });
+    const repeated = store.applyPolicyDecision({
+      candidateId: triaged.id,
+      policyId: "suppress-internal-defaults",
+      policyVersion: "1",
+      decision: "suppress",
+      rationale: "Internal defaults are outside governance scope",
+      provenance: { configurationFingerprint: "policy-config-v1" },
+    });
+
+    expect(decision.candidate.state).toBe("suppressed");
+    expect(repeated).toMatchObject({ id: decision.id, created: false });
+    expect(
+      db
+        .prepare(
+          `SELECT policy_id, policy_version, decision
+           FROM candidate_policy_decisions`,
+        )
+        .get(),
+    ).toEqual({
+      policy_id: "suppress-internal-defaults",
+      policy_version: "1",
+      decision: "suppress",
+    });
+    expect(
+      db
+        .prepare(
+          `SELECT actor_kind, actor_id, effect FROM candidate_reviews`,
+        )
+        .get(),
+    ).toEqual({
+      actor_kind: "policy",
+      actor_id: "suppress-internal-defaults",
+      effect: "effective",
+    });
   });
 
   it("rejects skipped lifecycle states", () => {

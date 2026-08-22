@@ -38,12 +38,17 @@ export { ClaimsStore } from "./claims/store.js";
 export { CandidateStore } from "./claims/candidates.js";
 export type {
   CandidateConfidence,
+  CandidateDetails,
   CandidateDiscoveryMode,
+  CandidateEvidence,
   CandidateEvidenceInput,
+  CandidateListFilter,
+  CandidatePolicyDecisionInput,
   CandidateReviewDecision,
   CandidateReviewEffect,
   CandidateReviewInput,
   CandidateState,
+  CandidateSubject,
   CandidateSubjectInput,
   PersistClaimCandidateInput,
   PersistedCandidate,

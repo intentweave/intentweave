@@ -1302,12 +1302,15 @@ Acceptance:
 ### Phase G2: Candidate and Semantic Discovery
 
 Implementation checkpoint (2026-08-22): the deterministic G2 foundation is in
-place with schema 19 Candidate storage, append-only Candidate lifecycle and
-Review primitives, the R1 code-value adapter, and `iw claims discover`. This
-checkpoint does not yet activate Candidate Policies, promotion into Claims,
-portable Candidate decisions, structured inference, or semantic adapters.
-`iw claims check` therefore retains its existing compatibility behavior until
-the Candidate Policy and promotion step is implemented.
+place with schema 19 Candidate storage, append-only Candidate lifecycle, the R1
+code-value adapter, and the `discover`, `candidates list`, `candidates triage`,
+and `candidates review` workflows. Effective human decisions are portable;
+manual R1 promotion materializes the existing Evidence, RuleResult, Claim, and
+Assessment path atomically. `r1-compatibility` and the explicitly enabled
+`r1-continuous-auto-promote` Policy are projected as materialized decisions.
+New unbound R1 findings otherwise remain Candidate-only in `claims check`.
+Materialized `explicit-binding` Policy provenance, general non-R1 promotion,
+structured inference, and semantic adapters remain open.
 
 - implement Candidate persistence and states,
 - separate Discovery, Correlation, Triage, and Promotion,

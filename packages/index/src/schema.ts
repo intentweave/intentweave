@@ -1038,6 +1038,7 @@ CREATE TABLE IF NOT EXISTS candidate_subjects (
 CREATE TABLE IF NOT EXISTS candidate_reviews (
   id TEXT PRIMARY KEY,
   candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  promoted_claim_identity_id TEXT REFERENCES claim_identities(id),
   actor_kind TEXT NOT NULL,
   actor_id TEXT NOT NULL,
   decision TEXT NOT NULL,
@@ -1053,6 +1054,7 @@ CREATE TABLE IF NOT EXISTS candidate_reviews (
 CREATE TABLE IF NOT EXISTS candidate_policy_decisions (
   id TEXT PRIMARY KEY,
   candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  promoted_claim_identity_id TEXT REFERENCES claim_identities(id),
   policy_id TEXT NOT NULL,
   policy_version TEXT NOT NULL,
   decision TEXT NOT NULL,
