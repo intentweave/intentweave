@@ -13,12 +13,14 @@ import {
   migrateSchema15To16,
   migrateSchema16To17,
   migrateSchema17To18,
+  migrateSchema18To19,
   openMigratedDatabase,
   restoreClaimsHistory,
   snapshotClaimsHistory,
   schemaMigrationBackupPath,
 } from "../schema.js";
 import { buildIndex } from "../writer.js";
+import { CandidateStore } from "../claims/candidates.js";
 
 describe("migrateSchema14To15 hardening", () => {
   let db: Database.Database;
@@ -307,6 +309,33 @@ describe("migrateSchema14To15 hardening", () => {
          VALUES ('evidence:timeout', 'parameter:timeout', 'code-default', 'timeout', 1)`,
       )
       .run();
+    new CandidateStore(source).persist({
+      identityKey: "r1:code:variable:timeout:CLM-DEFAULT",
+      candidateKind: "r1-code-value",
+      proposedClaimType: "CLM-DEFAULT",
+      discoveryMode: "deterministic",
+      discoveryAdapterId: "r1-code-values",
+      discoveryContractVersion: "1",
+      confidence: "probable",
+      normalizedStatement: { value: 1800 },
+      provenance: { revision: "source" },
+      evidence: [
+        {
+          evidenceKey: "r1:timeout",
+          sourceKind: "code-default",
+          provenance: { file: "src/session.ts" },
+        },
+      ],
+      subjects: [
+        {
+          kind: "parameter",
+          identityKey: "parameter:code:variable:timeout",
+          role: "subject",
+          basis: "r1-discovery",
+          confidence: "probable",
+        },
+      ],
+    });
     source.close();
 
     const snapshot = snapshotClaimsHistory(sourcePath);
@@ -320,6 +349,11 @@ describe("migrateSchema14To15 hardening", () => {
     expect(
       rebuilt.prepare(`SELECT source_kind FROM evidence_identities`).get(),
     ).toEqual({ source_kind: "code-default" });
+    expect(
+      rebuilt
+        .prepare(`SELECT state, candidate_kind FROM claim_candidates`)
+        .get(),
+    ).toEqual({ state: "discovered", candidate_kind: "r1-code-value" });
     rebuilt.close();
     discardClaimsHistory(snapshot);
     rmSync(directory, { recursive: true, force: true });
@@ -486,7 +520,7 @@ describe("migrateSchema14To15 hardening", () => {
       migrated
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "18" });
+    ).toEqual({ value: "19" });
     migrated.close();
 
     const backupPath = schemaMigrationBackupPath(dbPath, "16");
@@ -792,7 +826,7 @@ describe("migrateSchema14To15 hardening", () => {
       migrated
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "18" });
+    ).toEqual({ value: "19" });
     migrated.close();
 
     const backupPath = schemaMigrationBackupPath(dbPath, "17");
@@ -808,6 +842,101 @@ describe("migrateSchema14To15 hardening", () => {
     ).toEqual({ canonical_key: "session.timeout" });
     backup.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("migrates schema 18 to 19 without changing existing Claim history", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    db.exec(`
+      INSERT INTO subject_identities (
+        id, kind, identity_key, display_name, lifecycle_state,
+        contract_version, created_at
+      ) VALUES (
+        'subject:existing', 'module', 'module:existing', 'existing',
+        'active', '1', 1
+      );
+      INSERT INTO claim_identities (
+        id, parameter_identity_id, claim_type, scope, identity_key,
+        identity_contract_id, identity_contract_version, created_at
+      ) VALUES (
+        'claim:existing', NULL, 'CLM-MODULE-CONTRACT', NULL,
+        'module:existing:contract', 'module-identity', '1', 2
+      );
+      INSERT INTO claim_subjects (
+        claim_identity_id, subject_identity_id, subject_role, created_at
+      ) VALUES ('claim:existing', 'subject:existing', 'subject', 2);
+    `);
+
+    migrateSchema18To19(db);
+
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "19" });
+    expect(
+      db
+        .prepare(
+          `SELECT ci.id, subject.subject_role
+           FROM claim_identities ci
+           JOIN claim_subjects subject ON subject.claim_identity_id = ci.id`,
+        )
+        .get(),
+    ).toEqual({ id: "claim:existing", subject_role: "subject" });
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name LIKE 'candidate_%'
+           ORDER BY name`,
+        )
+        .all(),
+    ).toEqual([
+      { name: "candidate_evidence" },
+      { name: "candidate_inferences" },
+      { name: "candidate_policy_decisions" },
+      { name: "candidate_reviews" },
+      { name: "candidate_subjects" },
+    ]);
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'claim_candidates'`,
+        )
+        .get(),
+    ).toEqual({ name: "claim_candidates" });
+    expect(db.prepare(`PRAGMA foreign_key_check`).all()).toEqual([]);
+  });
+
+  it("rolls back every Candidate table when schema 19 migration fails", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    db.exec(`CREATE TABLE candidate_reviews (wrong_column TEXT)`);
+
+    expect(() => migrateSchema18To19(db)).toThrow();
+
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "18" });
+    expect(
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM sqlite_master
+           WHERE type = 'table' AND name = 'claim_candidates'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
   });
 
   it("atomically restores the schema-17 backup after a failed G1b migration", () => {
@@ -861,20 +990,20 @@ describe("migrateSchema14To15 hardening", () => {
     database
       .prepare(
         `INSERT OR REPLACE INTO _meta (key, value)
-         VALUES ('schema_version', '19')`,
+         VALUES ('schema_version', '20')`,
       )
       .run();
     database.close();
 
     expect(() => openMigratedDatabase(dbPath)).toThrow(
-      /schema version 19 is incompatible/i,
+      /schema version 20 is incompatible/i,
     );
     const untouched = new Database(dbPath, { readonly: true });
     expect(
       untouched
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "19" });
+    ).toEqual({ value: "20" });
     untouched.close();
     rmSync(directory, { recursive: true, force: true });
   });

@@ -1301,6 +1301,14 @@ Acceptance:
 
 ### Phase G2: Candidate and Semantic Discovery
 
+Implementation checkpoint (2026-08-22): the deterministic G2 foundation is in
+place with schema 19 Candidate storage, append-only Candidate lifecycle and
+Review primitives, the R1 code-value adapter, and `iw claims discover`. This
+checkpoint does not yet activate Candidate Policies, promotion into Claims,
+portable Candidate decisions, structured inference, or semantic adapters.
+`iw claims check` therefore retains its existing compatibility behavior until
+the Candidate Policy and promotion step is implemented.
+
 - implement Candidate persistence and states,
 - separate Discovery, Correlation, Triage, and Promotion,
 - persist annotation-only findings and ambiguity,

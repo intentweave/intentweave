@@ -368,7 +368,7 @@ CREATE TABLE IF NOT EXISTS _meta (
 );
 `;
 
-export const CLAIMS_COMPANION_TABLES = [
+const SCHEMA_18_CLAIMS_COMPANION_TABLES = [
   "subject_identities",
   "subject_aliases",
   "subject_continuity",
@@ -391,9 +391,20 @@ export const CLAIMS_COMPANION_TABLES = [
   "claim_assessment_references",
 ] as const;
 
-const SCHEMA_17_CLAIMS_COMPANION_TABLES = CLAIMS_COMPANION_TABLES.filter(
-  (table) => table !== "subject_continuity",
-);
+export const CLAIMS_COMPANION_TABLES = [
+  ...SCHEMA_18_CLAIMS_COMPANION_TABLES,
+  "candidate_inferences",
+  "claim_candidates",
+  "candidate_evidence",
+  "candidate_subjects",
+  "candidate_reviews",
+  "candidate_policy_decisions",
+] as const;
+
+const SCHEMA_17_CLAIMS_COMPANION_TABLES =
+  SCHEMA_18_CLAIMS_COMPANION_TABLES.filter(
+    (table) => table !== "subject_continuity",
+  );
 
 const SCHEMA_16_CLAIMS_COMPANION_TABLES = [
   "parameter_identities",
@@ -417,7 +428,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "18";
+export const CURRENT_SCHEMA_VERSION = "19";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -452,6 +463,11 @@ function claimsCompanionTablesInSchema(
   );
   if (CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return CLAIMS_COMPANION_TABLES;
+  }
+  if (
+    SCHEMA_18_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))
+  ) {
+    return SCHEMA_18_CLAIMS_COMPANION_TABLES;
   }
   if (SCHEMA_17_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return SCHEMA_17_CLAIMS_COMPANION_TABLES;
@@ -627,6 +643,7 @@ export function openMigratedDatabase(
   dbPath: string,
   migrateG1a: (db: Database.Database) => void = migrateSchema16To17,
   migrateG1b: (db: Database.Database) => void = migrateSchema17To18,
+  migrateG2: (db: Database.Database) => void = migrateSchema18To19,
 ): Database.Database {
   let database = new Database(dbPath);
   let closed = false;
@@ -665,6 +682,10 @@ export function openMigratedDatabase(
         restoreMigrationBackup(backupPath, dbPath);
         throw error;
       }
+    }
+    if (readSchemaVersion(database) === "18") {
+      // G2 is additive and transactionally rolls back without a restore snapshot.
+      migrateG2(database);
     }
     migrateSchemaToCurrent(database);
     return database;
@@ -941,6 +962,123 @@ CREATE INDEX IF NOT EXISTS idx_subject_continuity_to
   ON subject_continuity(to_subject_identity_id, version_ordinal DESC);
 `;
 
+const CANDIDATE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS candidate_inferences (
+  id TEXT PRIMARY KEY,
+  inference_identity_key TEXT NOT NULL,
+  version_ordinal INTEGER NOT NULL,
+  adapter_id TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  input_fingerprint TEXT NOT NULL,
+  output_fingerprint TEXT NOT NULL,
+  evidence_version_ids_json TEXT NOT NULL,
+  proposed_subject_bindings_json TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (inference_identity_key, version_ordinal),
+  UNIQUE (inference_identity_key, output_fingerprint),
+  CHECK (mode = 'model'),
+  CHECK (confidence IN ('probable', 'ambiguous'))
+);
+
+CREATE TABLE IF NOT EXISTS claim_candidates (
+  id TEXT PRIMARY KEY,
+  identity_key TEXT NOT NULL,
+  version_ordinal INTEGER NOT NULL,
+  candidate_kind TEXT NOT NULL,
+  proposed_claim_type TEXT NOT NULL,
+  discovery_mode TEXT NOT NULL,
+  discovery_adapter_id TEXT NOT NULL,
+  discovery_contract_version TEXT NOT NULL,
+  inference_id TEXT REFERENCES candidate_inferences(id),
+  confidence TEXT NOT NULL,
+  state TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  observation_fingerprint TEXT NOT NULL,
+  normalized_statement_json TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (identity_key, version_ordinal),
+  UNIQUE (identity_key, fingerprint),
+  CHECK (discovery_mode IN ('deterministic', 'semantic', 'manual')),
+  CHECK (confidence IN ('certain', 'probable', 'ambiguous')),
+  CHECK (state IN (
+    'discovered', 'correlated', 'triaged', 'promoted',
+    'rejected', 'suppressed', 'superseded'
+  ))
+);
+
+CREATE TABLE IF NOT EXISTS candidate_evidence (
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  evidence_key TEXT NOT NULL,
+  evidence_version_id TEXT REFERENCES evidence_versions(id),
+  source_kind TEXT NOT NULL,
+  evidence_role TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (candidate_id, evidence_key, evidence_role)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_subjects (
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  subject_role TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (candidate_id, subject_identity_id, subject_role)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_reviews (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  actor_kind TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  effect TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK (actor_kind IN ('human', 'ai', 'policy')),
+  CHECK (decision IN ('promote', 'reject', 'suppress', 'defer')),
+  CHECK (effect IN ('recommendation', 'effective'))
+);
+
+CREATE TABLE IF NOT EXISTS candidate_policy_decisions (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  policy_id TEXT NOT NULL,
+  policy_version TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (candidate_id, policy_id, policy_version),
+  CHECK (decision IN ('promote', 'reject', 'suppress', 'defer'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_inferences_identity_ordinal
+  ON candidate_inferences(inference_identity_key, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_claim_candidates_identity_ordinal
+  ON claim_candidates(identity_key, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_claim_candidates_state
+  ON claim_candidates(state, candidate_kind, proposed_claim_type);
+CREATE INDEX IF NOT EXISTS idx_candidate_evidence_version
+  ON candidate_evidence(evidence_version_id);
+CREATE INDEX IF NOT EXISTS idx_candidate_subjects_subject
+  ON candidate_subjects(subject_identity_id, subject_role);
+CREATE INDEX IF NOT EXISTS idx_candidate_reviews_candidate
+  ON candidate_reviews(candidate_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_candidate_policy_candidate
+  ON candidate_policy_decisions(candidate_id, policy_id, policy_version);
+`;
+
 function backfillParameterSubjects(db: Database.Database): void {
   const parameters = db
     .prepare(`SELECT id, canonical_key, created_at FROM parameter_identities`)
@@ -1166,10 +1304,23 @@ export function migrateSchema17To18(db: Database.Database): void {
   }
 }
 
+/** Add the append-only Candidate persistence layer used by G2 discovery. */
+export function migrateSchema18To19(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(CANDIDATE_SCHEMA_SQL);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '19')`,
+    ).run();
+  });
+  migrate();
+}
+
 /**
  * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
- * Supported transitions: 14 -> 15 -> 16 -> 17 -> 18, 15 -> 16 -> 17 -> 18,
- * 16 -> 17 -> 18, and 17 -> 18.
+ * Supported transitions: 14 -> 15 -> 16 -> 17 -> 18 -> 19,
+ * 15 -> 16 -> 17 -> 18 -> 19, 16 -> 17 -> 18 -> 19,
+ * 17 -> 18 -> 19, and 18 -> 19.
  * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
  */
 export function migrateSchemaToCurrent(db: Database.Database): void {
@@ -1179,21 +1330,29 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema15To16(db);
     migrateSchema16To17(db);
     migrateSchema17To18(db);
+    migrateSchema18To19(db);
     return;
   }
   if (schemaVersion === "15") {
     migrateSchema15To16(db);
     migrateSchema16To17(db);
     migrateSchema17To18(db);
+    migrateSchema18To19(db);
     return;
   }
   if (schemaVersion === "16") {
     migrateSchema16To17(db);
     migrateSchema17To18(db);
+    migrateSchema18To19(db);
     return;
   }
   if (schemaVersion === "17") {
     migrateSchema17To18(db);
+    migrateSchema18To19(db);
+    return;
+  }
+  if (schemaVersion === "18") {
+    migrateSchema18To19(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1214,6 +1373,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "15" &&
     schemaVersion !== "16" &&
     schemaVersion !== "17" &&
+    schemaVersion !== "18" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

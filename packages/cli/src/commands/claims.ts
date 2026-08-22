@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { Command } from "commander";
 import Database from "@intentweave/sqlite-compat";
 import {
+  CandidateStore,
   ClaimsEngine,
   ClaimsReviewStore,
   ClaimsStore,
@@ -20,6 +21,11 @@ import type {
   ClaimsContractVersions,
   PersistedVersion,
 } from "@intentweave/index";
+import {
+  persistR1Candidates,
+  R1_DISCOVERY_ADAPTER_ID,
+  R1_DISCOVERY_CONTRACT_VERSION,
+} from "../claims/candidateDiscovery.js";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
@@ -123,6 +129,7 @@ function currentRevision(workspaceRoot: string): string {
     return execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: workspaceRoot,
       encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   } catch {
     return "working-tree";
@@ -341,6 +348,71 @@ function claimsDatabase(workspaceRoot: string): Database.Database {
     );
   }
   return openMigratedDatabase(dbPath);
+}
+
+export async function runClaimsDiscover(options: {
+  all?: boolean;
+  format: string;
+}): Promise<void> {
+  const workspaceRoot = process.cwd();
+  try {
+    const bindings = loadOptionalClaimsBindings(workspaceRoot) ?? {
+      parameters: {},
+    };
+    const files = await discoverWorkingTreeCodeFiles(workspaceRoot);
+    const observations = extractDiscoveredCodeEvidence(
+      files,
+      (filePath) =>
+        fs.readFileSync(path.join(workspaceRoot, filePath), "utf-8"),
+      bindings,
+    );
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const candidates = persistR1Candidates(
+        new CandidateStore(database),
+        observations,
+        currentRevision(workspaceRoot),
+      );
+      const surfaced = candidates.filter(
+        (candidate) => options.all || candidate.surfaced,
+      );
+      const output = {
+        adapter: {
+          id: R1_DISCOVERY_ADAPTER_ID,
+          contractVersion: R1_DISCOVERY_CONTRACT_VERSION,
+          mode: "deterministic",
+        },
+        semanticDiscovery: "not_run",
+        discoveredCount: candidates.length,
+        surfacedCount: candidates.filter((candidate) => candidate.surfaced)
+          .length,
+        hiddenCount: candidates.filter((candidate) => !candidate.surfaced)
+          .length,
+        candidates: surfaced,
+      };
+      if (options.format === "json") {
+        console.log(JSON.stringify(output, null, 2));
+      } else {
+        console.log(
+          `Discovered ${output.discoveredCount} Candidate${output.discoveredCount === 1 ? "" : "s"} ` +
+            `(${output.surfacedCount} surfaced, ${output.hiddenCount} visible with --all).`,
+        );
+        console.log("Semantic discovery was not run.");
+        for (const candidate of surfaced) {
+          console.log(
+            `${candidate.id}  ${candidate.proposedClaimType}  ${candidate.state}`,
+          );
+          console.log(`  Sources: ${candidate.sourceKinds.join(", ")}`);
+        }
+      }
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
 }
 
 function isMaterialChange(
@@ -2189,6 +2261,15 @@ export async function runClaimsExplain(options: {
 
 export const claimsCommand = new Command("claims")
   .description("Discover, assess, explain, and review repository claims")
+  .addCommand(
+    new Command("discover")
+      .description(
+        "Persist deterministic findings as Candidates without activating Claims",
+      )
+      .option("--all", "Include low-confidence and annotation-only Candidates")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsDiscover),
+  )
   .addCommand(
     new Command("check")
       .description(

@@ -18,6 +18,7 @@ export {
   migrateSchema15To16,
   migrateSchema16To17,
   migrateSchema17To18,
+  migrateSchema18To19,
   migrateSchemaToCurrent,
   openMigratedDatabase,
   replaceDatabaseAtomically,
@@ -34,6 +35,20 @@ export {
   ruleResultFingerprint,
 } from "./claims/canonical.js";
 export { ClaimsStore } from "./claims/store.js";
+export { CandidateStore } from "./claims/candidates.js";
+export type {
+  CandidateConfidence,
+  CandidateDiscoveryMode,
+  CandidateEvidenceInput,
+  CandidateReviewDecision,
+  CandidateReviewEffect,
+  CandidateReviewInput,
+  CandidateState,
+  CandidateSubjectInput,
+  PersistClaimCandidateInput,
+  PersistedCandidate,
+  PersistedCandidateReview,
+} from "./claims/candidates.js";
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export {

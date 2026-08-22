@@ -91,7 +91,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("18");
+    expect(row?.value).toBe("19");
   });
 
   it("migrates a schema-14 index with the claims companion tables", () => {
@@ -176,7 +176,7 @@ describe("initSchema", () => {
     });
   });
 
-  it("runs chained 14->15->16->17->18 migration through migrateSchemaToCurrent", () => {
+  it("runs chained 14->15->16->17->18->19 migration through migrateSchemaToCurrent", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
@@ -186,7 +186,7 @@ describe("initSchema", () => {
 
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "18" });
+    ).toEqual({ value: "19" });
     expect(
       db
         .prepare(
@@ -203,6 +203,14 @@ describe("initSchema", () => {
         )
         .get(),
     ).toEqual({ name: "subject_continuity" });
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'claim_candidates'`,
+        )
+        .get(),
+    ).toEqual({ name: "claim_candidates" });
     expect(
       (
         db.prepare(`PRAGMA table_info(claim_identities)`).all() as Array<{
@@ -232,7 +240,7 @@ describe("initSchema", () => {
   it("rejects unknown newer schema versions instead of downgrading", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      INSERT INTO _meta (key, value) VALUES ('schema_version', '19');
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '20');
       CREATE TABLE future_only (id TEXT PRIMARY KEY);
     `);
     const schemaBefore = db
@@ -243,10 +251,10 @@ describe("initSchema", () => {
       )
       .all();
 
-    expect(() => initSchema(db)).toThrow(/schema version 19 is incompatible/i);
+    expect(() => initSchema(db)).toThrow(/schema version 20 is incompatible/i);
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "19" });
+    ).toEqual({ value: "20" });
     expect(
       db
         .prepare(
