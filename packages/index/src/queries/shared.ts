@@ -13,7 +13,7 @@ import { openMigratedDatabase } from "../schema.js";
  * Open the index database in read-only mode.
  * Throws if the file doesn't exist.
  */
-const EXPECTED_SCHEMA_VERSION = "17";
+const EXPECTED_SCHEMA_VERSION = "18";
 
 export function openIndex(dbPath: string): Database.Database {
   if (!fs.existsSync(dbPath)) {

@@ -21,6 +21,8 @@ interface AssessmentBasis {
   normalized_statement_json: string;
   assessment_policy_id: string;
   assessment_policy_version: string;
+  materiality_contract_id: string | null;
+  materiality_contract_version: string | null;
 }
 
 interface AssessmentDependencyBasis {
@@ -108,12 +110,20 @@ function portableAssessmentFingerprint(
     .sort((left, right) =>
       JSON.stringify(left).localeCompare(JSON.stringify(right)),
     );
+  const materialityContract =
+    basis.materiality_contract_id && basis.materiality_contract_version
+      ? {
+          id: basis.materiality_contract_id,
+          version: basis.materiality_contract_version,
+        }
+      : undefined;
   return fingerprint({
     claimIdentityId,
     normalizedStatement: JSON.parse(basis.normalized_statement_json),
     epistemicStatus: basis.epistemic_status,
     assessmentPolicyId: basis.assessment_policy_id,
     assessmentPolicyVersion: basis.assessment_policy_version,
+    ...(materialityContract ? { materialityContract } : {}),
     dependencies: normalizedDependencies,
   });
 }
@@ -132,7 +142,8 @@ function assessmentBasis(
   return database
     .prepare(
       `SELECT ca.id, ca.epistemic_status, cv.normalized_statement_json,
-              cv.assessment_policy_id, cv.assessment_policy_version
+              cv.assessment_policy_id, cv.assessment_policy_version,
+              cv.materiality_contract_id, cv.materiality_contract_version
        FROM claim_assessments ca
        JOIN claim_versions cv ON cv.id = ca.claim_version_id
        WHERE cv.claim_identity_id = ?

@@ -12,11 +12,15 @@ import type {
   PersistClaimAssessmentInput,
   PersistEvidenceContinuityInput,
   PersistEvidenceInput,
+  PersistGenericClaimAssessmentInput,
+  PersistSubjectAliasInput,
+  PersistSubjectContinuityInput,
   PersistedAssessment,
+  PersistedSubjectContinuity,
   PersistedVersion,
   PersistRuleResultInput,
 } from "./types.js";
-import { parameterSubjectIdentity } from "./subjects.js";
+import { parameterSubjectIdentity, subjectIdentity } from "./subjects.js";
 
 function idFor(kind: string, identityKey: string): string {
   return `${kind}:${fingerprint(identityKey)}`;
@@ -60,11 +64,16 @@ function persistParameterSubject(
 
 function nextOrdinal(
   db: Database.Database,
-  table: "evidence_versions" | "rule_result_versions" | "claim_versions",
+  table:
+    | "evidence_versions"
+    | "rule_result_versions"
+    | "claim_versions"
+    | "subject_continuity",
   identityColumn:
     | "evidence_identity_id"
     | "rule_result_identity_id"
-    | "claim_identity_id",
+    | "claim_identity_id"
+    | "continuity_identity_key",
   identityId: string,
 ): number {
   const row = db
@@ -246,6 +255,128 @@ export class ClaimsStore {
     return persist();
   }
 
+  persistSubjectAlias(input: PersistSubjectAliasInput): boolean {
+    if (
+      input.aliasKind.trim().length === 0 ||
+      input.aliasKey.trim().length === 0
+    ) {
+      throw new Error("A Subject alias requires a non-empty kind and key");
+    }
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO subject_aliases (
+           subject_identity_id, alias_kind, alias_key, created_at
+         ) VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        input.subjectIdentityId,
+        input.aliasKind,
+        input.aliasKey,
+        Date.now(),
+      );
+    if (result.changes !== 0) return true;
+    const existing = this.db
+      .prepare(
+        `SELECT subject_identity_id FROM subject_aliases
+         WHERE alias_kind = ? AND alias_key = ?`,
+      )
+      .get(input.aliasKind, input.aliasKey) as
+      | { subject_identity_id: string }
+      | undefined;
+    if (existing?.subject_identity_id !== input.subjectIdentityId) {
+      throw new Error(
+        `Subject alias ${input.aliasKind}:${input.aliasKey} already belongs to another Subject`,
+      );
+    }
+    return false;
+  }
+
+  persistSubjectContinuity(
+    input: PersistSubjectContinuityInput,
+  ): PersistedSubjectContinuity {
+    if (input.fromSubjectIdentityId === input.toSubjectIdentityId) {
+      throw new Error("Subject continuity requires two different identities");
+    }
+    if (
+      input.basis.trim().length === 0 ||
+      input.confidence.trim().length === 0
+    ) {
+      throw new Error(
+        "Subject continuity requires a non-empty basis and confidence",
+      );
+    }
+    const identityKey = canonicalJson({
+      fromSubjectIdentityId: input.fromSubjectIdentityId,
+      toSubjectIdentityId: input.toSubjectIdentityId,
+      basis: input.basis,
+    });
+    const observationFingerprint = fingerprint({
+      confidence: input.confidence,
+      provenance: input.provenance,
+    });
+    const persist = this.db.transaction(() => {
+      const versions = this.db
+        .prepare(
+          `SELECT id, version_ordinal, fingerprint
+           FROM subject_continuity
+           WHERE continuity_identity_key = ?
+           ORDER BY version_ordinal DESC`,
+        )
+        .all(identityKey) as Array<{
+        id: string;
+        version_ordinal: number;
+        fingerprint: string;
+      }>;
+      const current = versions[0];
+      if (
+        current &&
+        logicalFingerprint(current.fingerprint) === observationFingerprint
+      ) {
+        return {
+          id: current.id,
+          ordinal: current.version_ordinal,
+          created: false,
+        };
+      }
+      const ordinal = nextOrdinal(
+        this.db,
+        "subject_continuity",
+        "continuity_identity_key",
+        identityKey,
+      );
+      const returning = versions.some(
+        (version) =>
+          logicalFingerprint(version.fingerprint) === observationFingerprint,
+      );
+      const storedFingerprint = returning
+        ? reobservedFingerprint(observationFingerprint, ordinal)
+        : observationFingerprint;
+      const id = `subject-continuity:${fingerprint(identityKey)}@${ordinal}`;
+      this.db
+        .prepare(
+          `INSERT INTO subject_continuity (
+             id, continuity_identity_key, version_ordinal, fingerprint,
+             from_subject_identity_id, to_subject_identity_id,
+             basis, confidence, provenance_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          identityKey,
+          ordinal,
+          storedFingerprint,
+          input.fromSubjectIdentityId,
+          input.toSubjectIdentityId,
+          input.basis,
+          input.confidence,
+          canonicalJson(input.provenance),
+          Date.now(),
+        );
+      return { id, ordinal, created: true };
+    });
+    return persist();
+  }
+
   persistRuleResult(
     input: PersistRuleResultInput,
     evidenceVersionIds: string[],
@@ -385,11 +516,155 @@ export class ClaimsStore {
         )
         .run(claimIdentityId, subjectId, now);
 
+      return this.persistAssessmentForClaimIdentity(
+        claimIdentityId,
+        input,
+        now,
+      );
+    });
+
+    return persist();
+  }
+
+  /**
+   * Persist a generic Claim whose identity is anchored in role-based Subjects
+   * (G1b). No ParameterIdentity is created; `claim_subjects` is authoritative.
+   */
+  persistGenericClaimAssessment(
+    input: PersistGenericClaimAssessmentInput,
+  ): PersistedAssessment {
+    if (input.subjects.length === 0) {
+      throw new Error("A generic Claim requires at least one Subject");
+    }
+    const subjectKeys = input.subjects.map((subject) => ({
+      role: subject.role,
+      identityKey: subject.identityKey,
+    }));
+    const seen = new Set<string>();
+    for (const subject of subjectKeys) {
+      if (subject.role.trim().length === 0) {
+        throw new Error("A Claim Subject requires a non-empty role");
+      }
+      const key = canonicalJson([subject.role, subject.identityKey]);
+      if (seen.has(key)) {
+        throw new Error(
+          `Duplicate Claim Subject ${subject.role}:${subject.identityKey}`,
+        );
+      }
+      seen.add(key);
+    }
+    for (const [name, contract] of [
+      ["identity", input.identityContract],
+      ["materiality", input.materialityContract],
+    ] as const) {
+      if (
+        contract.id.trim().length === 0 ||
+        contract.version.trim().length === 0
+      ) {
+        throw new Error(
+          `A generic Claim requires a versioned ${name} contract`,
+        );
+      }
+    }
+    const persist = this.db.transaction(() => {
+      const now = Date.now();
+      const identityKey = canonicalJson({
+        claimType: input.claimType,
+        identityContract: input.identityContract,
+        scope: input.scope ?? "",
+        subjects: [...subjectKeys].sort(
+          (left, right) =>
+            left.role.localeCompare(right.role) ||
+            left.identityKey.localeCompare(right.identityKey),
+        ),
+      });
+      const claimIdentityId = idFor("claim", identityKey);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO claim_identities
+             (id, parameter_identity_id, claim_type, scope, identity_key,
+              identity_contract_id, identity_contract_version, created_at)
+           VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          claimIdentityId,
+          input.claimType,
+          input.scope ?? null,
+          identityKey,
+          input.identityContract.id,
+          input.identityContract.version,
+          now,
+        );
+      const insertSubject = this.db.prepare(
+        `INSERT OR IGNORE INTO subject_identities (
+           id, kind, identity_key, display_name, lifecycle_state,
+           contract_version, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertClaimSubject = this.db.prepare(
+        `INSERT OR IGNORE INTO claim_subjects (
+           claim_identity_id, subject_identity_id, subject_role, created_at
+         ) VALUES (?, ?, ?, ?)`,
+      );
+      for (const subjectInput of input.subjects) {
+        const subject = subjectIdentity(
+          subjectInput.kind,
+          subjectInput.identityKey,
+          subjectInput.displayName,
+        );
+        insertSubject.run(
+          subject.id,
+          subject.kind,
+          subject.identityKey,
+          subject.displayName,
+          subject.lifecycleState,
+          subject.contractVersion,
+          now,
+        );
+        insertClaimSubject.run(
+          claimIdentityId,
+          subject.id,
+          subjectInput.role,
+          now,
+        );
+      }
+
+      return this.persistAssessmentForClaimIdentity(
+        claimIdentityId,
+        input,
+        now,
+      );
+    });
+
+    return persist();
+  }
+
+  private persistAssessmentForClaimIdentity(
+    claimIdentityId: string,
+    input: {
+      normalizedStatement: unknown;
+      assessmentPolicyId: string;
+      assessmentPolicyVersion: string;
+      materialityContract?: {
+        id: string;
+        version: string;
+      };
+      repositoryRevision: string;
+      status: PersistClaimAssessmentInput["status"];
+      dependencies: PersistClaimAssessmentInput["dependencies"];
+    },
+    now: number,
+  ): PersistedAssessment {
+    {
       const statementJson = canonicalJson(input.normalizedStatement);
+      const materialityContractId = input.materialityContract?.id ?? null;
+      const materialityContractVersion =
+        input.materialityContract?.version ?? null;
       const latestVersion = this.db
         .prepare(
           `SELECT id, version_ordinal, normalized_statement_json,
-                  assessment_policy_id, assessment_policy_version
+                  assessment_policy_id, assessment_policy_version,
+                  materiality_contract_id, materiality_contract_version
            FROM claim_versions
            WHERE claim_identity_id = ?
            ORDER BY version_ordinal DESC LIMIT 1`,
@@ -401,6 +676,8 @@ export class ClaimsStore {
             normalized_statement_json: string;
             assessment_policy_id: string;
             assessment_policy_version: string;
+            materiality_contract_id: string | null;
+            materiality_contract_version: string | null;
           }
         | undefined;
       const unchangedClaim =
@@ -408,7 +685,10 @@ export class ClaimsStore {
         latestVersion.normalized_statement_json === statementJson &&
         latestVersion.assessment_policy_id === input.assessmentPolicyId &&
         latestVersion.assessment_policy_version ===
-          input.assessmentPolicyVersion;
+          input.assessmentPolicyVersion &&
+        latestVersion.materiality_contract_id === materialityContractId &&
+        latestVersion.materiality_contract_version ===
+          materialityContractVersion;
       const claimVersionId = unchangedClaim
         ? latestVersion.id
         : `${claimIdentityId}@${nextOrdinal(
@@ -422,8 +702,10 @@ export class ClaimsStore {
           .prepare(
             `INSERT INTO claim_versions (
                id, claim_identity_id, version_ordinal, normalized_statement_json,
-               assessment_policy_id, assessment_policy_version, repository_revision, created_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+               assessment_policy_id, assessment_policy_version,
+               materiality_contract_id, materiality_contract_version,
+               repository_revision, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             claimVersionId,
@@ -432,6 +714,8 @@ export class ClaimsStore {
             statementJson,
             input.assessmentPolicyId,
             input.assessmentPolicyVersion,
+            materialityContractId,
+            materialityContractVersion,
             input.repositoryRevision,
             now,
           );
@@ -530,8 +814,6 @@ export class ClaimsStore {
         claimVersionId,
         created: true,
       };
-    });
-
-    return persist();
+    }
   }
 }

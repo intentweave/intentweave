@@ -704,13 +704,18 @@ function semanticContractDrift(
   referenceAssessmentId: string,
   baseRevision?: string,
 ):
-  | { dependencyVersionId: string; provenance: Record<string, unknown> }
+  | {
+      dependencyKind: "rule_result_version" | "claim_version";
+      dependencyVersionId: string;
+      provenance: Record<string, unknown>;
+    }
   | undefined {
   const assessmentRow = (assessmentId: string) =>
     database
       .prepare(
         `SELECT cv.id AS claim_version_id, cv.assessment_policy_id,
-                cv.assessment_policy_version, cv.normalized_statement_json
+                cv.assessment_policy_version, cv.normalized_statement_json,
+                cv.materiality_contract_id, cv.materiality_contract_version
          FROM claim_assessments ca
          JOIN claim_versions cv ON cv.id = ca.claim_version_id
          WHERE ca.id = ?`,
@@ -721,6 +726,8 @@ function semanticContractDrift(
           assessment_policy_id: string;
           assessment_policy_version: string;
           normalized_statement_json: string;
+          materiality_contract_id: string | null;
+          materiality_contract_version: string | null;
         }
       | undefined;
   const current = assessmentRow(currentAssessmentId);
@@ -786,7 +793,17 @@ function semanticContractDrift(
   const policyChanged =
     current.assessment_policy_id !== reference.assessment_policy_id ||
     current.assessment_policy_version !== reference.assessment_policy_version;
-  if (changedRules.length === 0 && !policyChanged) return undefined;
+  const materialityContractChanged =
+    current.materiality_contract_id !== reference.materiality_contract_id ||
+    current.materiality_contract_version !==
+      reference.materiality_contract_version;
+  if (
+    changedRules.length === 0 &&
+    !policyChanged &&
+    !materialityContractChanged
+  ) {
+    return undefined;
+  }
 
   const changedDependency = changedRules.find((rule) => {
     const to = rule.to;
@@ -803,10 +820,15 @@ function semanticContractDrift(
     changedDependency.to !== null &&
     "dependencyVersionId" in changedDependency.to
       ? String(changedDependency.to.dependencyVersionId)
-      : [...currentRules.values()][0]?.dependency_version_id;
-  if (!dependencyVersionId) return undefined;
+      : ([...currentRules.values()][0]?.dependency_version_id ??
+        current.claim_version_id);
+  const dependencyKind =
+    changedDependency || currentRules.size > 0
+      ? "rule_result_version"
+      : "claim_version";
 
   return {
+    dependencyKind,
     dependencyVersionId,
     provenance: {
       baseRevision: baseRevision ?? null,
@@ -821,6 +843,18 @@ function semanticContractDrift(
             to: {
               id: current.assessment_policy_id,
               version: current.assessment_policy_version,
+            },
+          }
+        : null,
+      materialityContract: materialityContractChanged
+        ? {
+            from: {
+              id: reference.materiality_contract_id,
+              version: reference.materiality_contract_version,
+            },
+            to: {
+              id: current.materiality_contract_id,
+              version: current.materiality_contract_version,
             },
           }
         : null,
@@ -868,7 +902,7 @@ function reopenContractChange(
   const reopened = reviews.reopen({
     claimIdentityId: current.claim_identity_id,
     basisAssessmentId: assessmentId,
-    dependencyKind: "rule_result_version",
+    dependencyKind: drift.dependencyKind,
     dependencyVersionId: drift.dependencyVersionId,
     reason: "warrant-changed",
     secondaryProvenance: drift.provenance,
@@ -1784,7 +1818,7 @@ interface ClaimSelectorOptions {
 
 interface ClaimIdentitySelection {
   id: string;
-  parameter_key: string;
+  parameter_key: string | null;
   claim_type: string;
   scope: string | null;
 }
@@ -1800,7 +1834,7 @@ function matchingClaimIdentities(
       `SELECT ci.id, parameter.canonical_key AS parameter_key,
               ci.claim_type, ci.scope
        FROM claim_identities ci
-       JOIN parameter_identities parameter
+       LEFT JOIN parameter_identities parameter
          ON parameter.id = ci.parameter_identity_id
        WHERE ((? IS NULL AND ? IS NULL)
               OR ci.id = ? OR parameter.canonical_key = ?)
@@ -1974,10 +2008,12 @@ export async function runClaimsExplain(options: {
            SELECT ci.id AS claim_identity_id,
                   parameter.canonical_key AS parameter_key,
                   ci.claim_type, ci.scope,
+                  ci.identity_contract_id, ci.identity_contract_version,
                   ca.id AS assessment_id, ca.epistemic_status,
-                  cv.normalized_statement_json
+                  cv.normalized_statement_json,
+                  cv.materiality_contract_id, cv.materiality_contract_version
            FROM claim_identities ci
-           JOIN parameter_identities parameter
+           LEFT JOIN parameter_identities parameter
              ON parameter.id = ci.parameter_identity_id
            LEFT JOIN current_assessments current_assessment
              ON current_assessment.claim_identity_id = ci.id
@@ -2004,12 +2040,16 @@ export async function runClaimsExplain(options: {
           options.scope ?? null,
         ) as Array<{
         claim_identity_id: string;
-        parameter_key: string;
+        parameter_key: string | null;
         claim_type: string;
         scope: string | null;
+        identity_contract_id: string | null;
+        identity_contract_version: string | null;
         assessment_id: string;
         epistemic_status: string;
         normalized_statement_json: string;
+        materiality_contract_id: string | null;
+        materiality_contract_version: string | null;
       }>;
       if (options.claim && assessments.length === 0) {
         throw new ClaimsBindingError(
@@ -2021,6 +2061,42 @@ export async function runClaimsExplain(options: {
         parameterKey: assessment.parameter_key,
         claimType: assessment.claim_type,
         scope: assessment.scope,
+        identityContract:
+          assessment.identity_contract_id &&
+          assessment.identity_contract_version
+            ? {
+                id: assessment.identity_contract_id,
+                version: assessment.identity_contract_version,
+              }
+            : null,
+        materialityContract:
+          assessment.materiality_contract_id &&
+          assessment.materiality_contract_version
+            ? {
+                id: assessment.materiality_contract_id,
+                version: assessment.materiality_contract_version,
+              }
+            : null,
+        subjects: (
+          database
+            .prepare(
+              `SELECT subject.identity_key, subject.kind, link.subject_role
+               FROM claim_subjects link
+               JOIN subject_identities subject
+                 ON subject.id = link.subject_identity_id
+               WHERE link.claim_identity_id = ?
+               ORDER BY link.subject_role, subject.identity_key`,
+            )
+            .all(assessment.claim_identity_id) as Array<{
+            identity_key: string;
+            kind: string;
+            subject_role: string;
+          }>
+        ).map((subject) => ({
+          role: subject.subject_role,
+          kind: subject.kind,
+          identityKey: subject.identity_key,
+        })),
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),
@@ -2056,7 +2132,24 @@ export async function runClaimsExplain(options: {
           console.log(
             `${claim.claimType}${claim.scope ? ` (${claim.scope})` : ""}: ${claim.status}`,
           );
-          console.log(`  Parameter: ${claim.parameterKey}`);
+          if (claim.parameterKey) {
+            console.log(`  Parameter: ${claim.parameterKey}`);
+          }
+          for (const subject of claim.subjects) {
+            console.log(
+              `  Subject: ${subject.role}=${subject.identityKey} (${subject.kind})`,
+            );
+          }
+          if (claim.identityContract) {
+            console.log(
+              `  Identity contract: ${claim.identityContract.id}@${claim.identityContract.version}`,
+            );
+          }
+          if (claim.materialityContract) {
+            console.log(
+              `  Materiality contract: ${claim.materialityContract.id}@${claim.materialityContract.version}`,
+            );
+          }
           console.log(`  Statement: ${JSON.stringify(claim.statement)}`);
           console.log(`  Claim: ${claim.claimIdentityId}`);
           console.log(`  Assessment: ${claim.assessmentId}`);

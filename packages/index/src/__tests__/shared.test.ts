@@ -18,6 +18,7 @@ describe("openIndex", () => {
       `${dbPath}-shm`,
       `${dbPath}-wal`,
       schemaMigrationBackupPath(dbPath, "16"),
+      schemaMigrationBackupPath(dbPath, "17"),
     ]) {
       if (existsSync(path)) rmSync(path);
     }
@@ -42,7 +43,7 @@ describe("openIndex", () => {
       .get() as { name: string } | undefined;
     index.close();
 
-    expect(version.value).toBe("17");
+    expect(version.value).toBe("18");
     expect(table?.name).toBe("claim_assessment_references");
   });
 

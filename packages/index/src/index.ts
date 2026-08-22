@@ -17,6 +17,7 @@ export {
   migrateSchema14To15,
   migrateSchema15To16,
   migrateSchema16To17,
+  migrateSchema17To18,
   migrateSchemaToCurrent,
   openMigratedDatabase,
   replaceDatabaseAtomically,
@@ -37,9 +38,17 @@ export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export {
   SUBJECT_IDENTITY_CONTRACT_VERSION,
+  affectedCurrentAssessmentsForSubject,
+  affectedCurrentAssessmentsForSubjectAlias,
+  affectedCurrentAssessmentsForSubjectContinuity,
   parameterSubjectIdentity,
+  subjectIdentity,
 } from "./claims/subjects.js";
-export type { SubjectIdentityV1, SubjectKind } from "./claims/subjects.js";
+export type {
+  SubjectIdentityV1,
+  SubjectImpactAssessment,
+  SubjectKind,
+} from "./claims/subjects.js";
 export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
 export {
   CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
@@ -60,6 +69,7 @@ export type {
   AssessmentEffect,
   ClaimAssessmentDependencyInput,
   ClaimAssessmentStatus,
+  ClaimSubjectInput,
   ClaimPolicyDependencyInput,
   ClaimsExitInput,
   ClaimsContractVersions,
@@ -71,20 +81,26 @@ export type {
   MaterialFingerprintInput,
   NormalizedRuleResult,
   PersistEvidenceInput,
+  PersistGenericClaimAssessmentInput,
+  PersistSubjectAliasInput,
+  PersistSubjectContinuityInput,
   PersistedVersion,
   PersistRuleResultInput,
   PersistClaimAssessmentInput,
   PersistedAssessment,
+  PersistedSubjectContinuity,
   PersistedReopen,
   PersistedReviewDecision,
   RecordReviewInput,
   ReopenReason,
   ReopenReviewInput,
+  ReviewDependencyKind,
   RuleApplicability,
   RuleResultFingerprintInput,
   RuleResultStatus,
   WarrantPolarity,
   VersionedClaimValue,
+  VersionedClaimContract,
   VersionedScopeEvidence,
 } from "./claims/types.js";
 export type {

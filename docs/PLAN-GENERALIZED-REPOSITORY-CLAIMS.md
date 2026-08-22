@@ -326,7 +326,12 @@ Migration is additive and takes place in two consecutive G1 schema releases:
    compatibility link. `claim_subjects` becomes authoritative for generic
    Claims, including Claims with multiple Subject roles. Existing Parameter
    rows retain their original foreign key and IDs; generic Claims do not receive
-   synthetic Parameter identities.
+   synthetic Parameter identities. Schema 18 also adds nullable
+   `identity_contract_id` / `identity_contract_version` columns to Claim
+   identities and nullable `materiality_contract_id` /
+   `materiality_contract_version` columns to Claim versions. Legacy Parameter
+   rows keep `NULL`, which means their frozen v1 compatibility contract; new
+   generalized Claims must persist explicit values.
 
 The already nullable Evidence-to-Parameter link remains available for legacy
 readers while `evidence_subjects` becomes authoritative for generic Evidence.
@@ -338,6 +343,12 @@ snapshot before G1b-only writes are accepted; downgrade after new-version-only
 writes is explicitly unsupported. G1 is complete only after both schema
 releases, including stepwise forward-migration, snapshot-restore, and
 history-preservation tests.
+
+Subject continuity in schema 18 is append-only and versioned by Subject pair
+and basis. Reobserving the same confidence and provenance deduplicates; changed
+confidence or provenance appends a new ordinal. Reverse Impact resolves current
+Assessments directly from a Subject identity, through a persisted alias, or
+from both endpoints of a concrete continuity version using `claim_subjects`.
 
 For G1a, a direct in-place upgrade retains the snapshot next to the index as
 `.iw/index.db.schema-16.backup`. The file is created atomically before schema 17
@@ -922,11 +933,11 @@ one-step, version-guarded migration discipline and are split at the G1/G2
 boundary rather than bundled into one large version. Assuming implementation
 starts from the current schema version `16`, the sequence is:
 
-| Schema | Phase | Change                                                                                                                                            |
-| ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `17`   | G1a   | add `subject_identities`, `subject_aliases`, `claim_subjects`, and `evidence_subjects`; backfill Parameter Subjects and dual-write                |
-| `18`   | G1b   | rebuild Claim identity storage with nullable legacy Parameter linkage and authoritative role-based Subjects                                       |
-| `19`   | G2    | add `claim_candidates`, `candidate_evidence`, `candidate_subjects`, `candidate_inferences`, `candidate_reviews`, and `candidate_policy_decisions` |
+| Schema | Phase | Change                                                                                                                                                              |
+| ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `17`   | G1a   | add `subject_identities`, `subject_aliases`, `claim_subjects`, and `evidence_subjects`; backfill Parameter Subjects and dual-write                                  |
+| `18`   | G1b   | rebuild Claim identity storage with nullable legacy Parameter linkage, versioned generic Claim contracts, Subject continuity, and authoritative role-based Subjects |
+| `19`   | G2    | add `claim_candidates`, `candidate_evidence`, `candidate_subjects`, `candidate_inferences`, `candidate_reviews`, and `candidate_policy_decisions`                   |
 
 If the baseline schema advances before implementation, the numbers shift but
 the order, transaction boundaries, and one-version-at-a-time migrations do not.

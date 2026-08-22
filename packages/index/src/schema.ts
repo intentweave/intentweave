@@ -371,6 +371,7 @@ CREATE TABLE IF NOT EXISTS _meta (
 export const CLAIMS_COMPANION_TABLES = [
   "subject_identities",
   "subject_aliases",
+  "subject_continuity",
   "parameter_identities",
   "parameter_evidence_bindings",
   "evidence_identities",
@@ -389,6 +390,10 @@ export const CLAIMS_COMPANION_TABLES = [
   "review_decision_reopens",
   "claim_assessment_references",
 ] as const;
+
+const SCHEMA_17_CLAIMS_COMPANION_TABLES = CLAIMS_COMPANION_TABLES.filter(
+  (table) => table !== "subject_continuity",
+);
 
 const SCHEMA_16_CLAIMS_COMPANION_TABLES = [
   "parameter_identities",
@@ -412,7 +417,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "17";
+export const CURRENT_SCHEMA_VERSION = "18";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -447,6 +452,9 @@ function claimsCompanionTablesInSchema(
   );
   if (CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return CLAIMS_COMPANION_TABLES;
+  }
+  if (SCHEMA_17_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return SCHEMA_17_CLAIMS_COMPANION_TABLES;
   }
   if (SCHEMA_16_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return SCHEMA_16_CLAIMS_COMPANION_TABLES;
@@ -611,15 +619,23 @@ function restoreMigrationBackup(backupPath: string, dbPath: string): void {
 }
 
 /**
- * Open and migrate an on-disk index while retaining a durable schema-16 backup.
- * The optional migration callback exists for failure-path verification only.
+ * Open and migrate an on-disk index while retaining a durable backup for each
+ * in-place G1 schema step. The optional migration callbacks exist for
+ * failure-path verification only.
  */
 export function openMigratedDatabase(
   dbPath: string,
   migrateG1a: (db: Database.Database) => void = migrateSchema16To17,
+  migrateG1b: (db: Database.Database) => void = migrateSchema17To18,
 ): Database.Database {
   let database = new Database(dbPath);
-  let backupPath: string | undefined;
+  let closed = false;
+  const closeOnce = (): void => {
+    if (!closed) {
+      database.close();
+      closed = true;
+    }
+  };
   try {
     const initialVersion = readSchemaVersion(database);
     if (!initialVersion || initialVersion === "14") {
@@ -628,16 +644,32 @@ export function openMigratedDatabase(
     } else if (initialVersion === "15") {
       migrateSchema15To16(database);
     }
-    if (readSchemaVersion(database) === "16") {
-      backupPath = createDurableMigrationBackup(database, dbPath, "16");
-      migrateG1a(database);
-    } else {
-      migrateSchemaToCurrent(database);
+    const g1Steps: Array<{
+      fromVersion: string;
+      migrate: (db: Database.Database) => void;
+    }> = [
+      { fromVersion: "16", migrate: migrateG1a },
+      { fromVersion: "17", migrate: migrateG1b },
+    ];
+    for (const step of g1Steps) {
+      if (readSchemaVersion(database) !== step.fromVersion) continue;
+      const backupPath = createDurableMigrationBackup(
+        database,
+        dbPath,
+        step.fromVersion,
+      );
+      try {
+        step.migrate(database);
+      } catch (error) {
+        closeOnce();
+        restoreMigrationBackup(backupPath, dbPath);
+        throw error;
+      }
     }
+    migrateSchemaToCurrent(database);
     return database;
   } catch (error) {
-    database.close();
-    if (backupPath) restoreMigrationBackup(backupPath, dbPath);
+    closeOnce();
     throw error;
   }
 }
@@ -886,6 +918,29 @@ CREATE INDEX IF NOT EXISTS idx_evidence_subjects_subject
   ON evidence_subjects(subject_identity_id, subject_role);
 `;
 
+const G1B_SUBJECT_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS subject_continuity (
+  id TEXT PRIMARY KEY,
+  continuity_identity_key TEXT NOT NULL,
+  version_ordinal INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  from_subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  to_subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (continuity_identity_key, version_ordinal),
+  UNIQUE (continuity_identity_key, fingerprint),
+  CHECK (from_subject_identity_id != to_subject_identity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subject_continuity_from
+  ON subject_continuity(from_subject_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_subject_continuity_to
+  ON subject_continuity(to_subject_identity_id, version_ordinal DESC);
+`;
+
 function backfillParameterSubjects(db: Database.Database): void {
   const parameters = db
     .prepare(`SELECT id, canonical_key, created_at FROM parameter_identities`)
@@ -1019,8 +1074,102 @@ export function migrateSchema16To17(db: Database.Database): void {
 }
 
 /**
+ * G1b: rebuild Claim identity storage so `parameter_identity_id` becomes a
+ * nullable legacy compatibility link and `claim_subjects` becomes the
+ * authoritative Subject relationship for generic Claims. Existing Parameter
+ * rows retain their foreign key and IDs; no synthetic Parameters are created.
+ */
+export function migrateSchema17To18(db: Database.Database): void {
+  const columns = db
+    .prepare(`PRAGMA table_info(claim_identities)`)
+    .all() as Array<{ name: string; notnull: number }>;
+  const parameterColumn = columns.find(
+    (column) => column.name === "parameter_identity_id",
+  );
+  if (!parameterColumn) {
+    throw new Error(
+      "Schema 17 database is missing claim_identities.parameter_identity_id",
+    );
+  }
+  // PRAGMA foreign_keys is a no-op inside a transaction, so toggle it outside.
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      db.exec(G1B_SUBJECT_SCHEMA_SQL);
+      if (parameterColumn.notnull !== 0) {
+        db.exec(`
+          CREATE TABLE claim_identities_g1b (
+            id TEXT PRIMARY KEY,
+            parameter_identity_id TEXT REFERENCES parameter_identities(id),
+            claim_type TEXT NOT NULL,
+            scope TEXT,
+            identity_key TEXT NOT NULL UNIQUE,
+            identity_contract_id TEXT,
+            identity_contract_version TEXT,
+            created_at INTEGER NOT NULL
+          );
+          INSERT INTO claim_identities_g1b (
+            id, parameter_identity_id, claim_type, scope, identity_key,
+            identity_contract_id, identity_contract_version, created_at
+          )
+          SELECT id, parameter_identity_id, claim_type, scope, identity_key,
+                 NULL, NULL, created_at
+          FROM claim_identities;
+          DROP TABLE claim_identities;
+          ALTER TABLE claim_identities_g1b RENAME TO claim_identities;
+        `);
+      } else {
+        const identityColumns = new Set(columns.map((column) => column.name));
+        if (!identityColumns.has("identity_contract_id")) {
+          db.exec(
+            `ALTER TABLE claim_identities ADD COLUMN identity_contract_id TEXT`,
+          );
+        }
+        if (!identityColumns.has("identity_contract_version")) {
+          db.exec(
+            `ALTER TABLE claim_identities ADD COLUMN identity_contract_version TEXT`,
+          );
+        }
+      }
+      const versionColumns = new Set(
+        (
+          db.prepare(`PRAGMA table_info(claim_versions)`).all() as Array<{
+            name: string;
+          }>
+        ).map((column) => column.name),
+      );
+      if (!versionColumns.has("materiality_contract_id")) {
+        db.exec(
+          `ALTER TABLE claim_versions ADD COLUMN materiality_contract_id TEXT`,
+        );
+      }
+      if (!versionColumns.has("materiality_contract_version")) {
+        db.exec(
+          `ALTER TABLE claim_versions ADD COLUMN materiality_contract_version TEXT`,
+        );
+      }
+      db.prepare(
+        `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '18')`,
+      ).run();
+      const violations = db
+        .prepare(`PRAGMA foreign_key_check`)
+        .all() as unknown[];
+      if (violations.length > 0) {
+        throw new Error(
+          "Schema 18 migration left foreign key violations in claim_identities",
+        );
+      }
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
+/**
  * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
- * Supported transitions: 14 -> 15 -> 16 -> 17, 15 -> 16 -> 17, and 16 -> 17.
+ * Supported transitions: 14 -> 15 -> 16 -> 17 -> 18, 15 -> 16 -> 17 -> 18,
+ * 16 -> 17 -> 18, and 17 -> 18.
  * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
  */
 export function migrateSchemaToCurrent(db: Database.Database): void {
@@ -1029,15 +1178,22 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema14To15(db);
     migrateSchema15To16(db);
     migrateSchema16To17(db);
+    migrateSchema17To18(db);
     return;
   }
   if (schemaVersion === "15") {
     migrateSchema15To16(db);
     migrateSchema16To17(db);
+    migrateSchema17To18(db);
     return;
   }
   if (schemaVersion === "16") {
     migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    return;
+  }
+  if (schemaVersion === "17") {
+    migrateSchema17To18(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1057,6 +1213,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "14" &&
     schemaVersion !== "15" &&
     schemaVersion !== "16" &&
+    schemaVersion !== "17" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

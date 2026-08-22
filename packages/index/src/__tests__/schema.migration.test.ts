@@ -12,6 +12,7 @@ import {
   migrateSchema14To15,
   migrateSchema15To16,
   migrateSchema16To17,
+  migrateSchema17To18,
   openMigratedDatabase,
   restoreClaimsHistory,
   snapshotClaimsHistory,
@@ -410,6 +411,56 @@ describe("migrateSchema14To15 hardening", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("restores schema-17 Subject links into a schema-18 rebuild", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-claims-v17-snapshot-"),
+    );
+    const sourcePath = path.join(directory, "schema-17.db");
+    const source = new Database(sourcePath);
+    source.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(source);
+    migrateSchema15To16(source);
+    source.exec(`
+      INSERT INTO parameter_identities (id, canonical_key, created_at)
+        VALUES ('parameter:legacy', 'session.timeout', 10);
+      INSERT INTO claim_identities (
+        id, parameter_identity_id, claim_type, scope, identity_key, created_at
+      ) VALUES (
+        'claim:legacy', 'parameter:legacy', 'CLM-DEFAULT', NULL,
+        'session.timeout:CLM-DEFAULT:', 12
+      );
+    `);
+    migrateSchema16To17(source);
+    source.close();
+
+    const snapshot = snapshotClaimsHistory(sourcePath);
+    const rebuilt = new Database(path.join(directory, "rebuilt.db"));
+    initSchema(rebuilt);
+    restoreClaimsHistory(rebuilt, snapshot);
+
+    expect(
+      rebuilt
+        .prepare(
+          `SELECT subject.identity_key, link.subject_role
+           FROM claim_subjects link
+           JOIN subject_identities subject
+             ON subject.id = link.subject_identity_id
+           WHERE link.claim_identity_id = 'claim:legacy'`,
+        )
+        .get(),
+    ).toEqual({
+      identity_key: "parameter:session.timeout",
+      subject_role: "subject",
+    });
+    expect(rebuilt.prepare(`PRAGMA foreign_key_check`).all()).toEqual([]);
+    rebuilt.close();
+    discardClaimsHistory(snapshot);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
   it("retains a durable schema-16 backup after an in-place G1a migration", () => {
     const directory = mkdtempSync(
       path.join(tmpdir(), "intentweave-g1a-success-"),
@@ -435,7 +486,7 @@ describe("migrateSchema14To15 hardening", () => {
       migrated
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "17" });
+    ).toEqual({ value: "18" });
     migrated.close();
 
     const backupPath = schemaMigrationBackupPath(dbPath, "16");
@@ -592,5 +643,239 @@ describe("migrateSchema14To15 hardening", () => {
     expect(referenceConstraints.sql).toContain(
       "PRIMARY KEY (claim_identity_id, repository_revision)",
     );
+  });
+
+  it("rebuilds claim_identities with a nullable legacy Parameter link in schema 18", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    db.exec(`
+      INSERT INTO parameter_identities (id, canonical_key, created_at)
+        VALUES ('parameter:legacy', 'session.timeout', 10);
+      INSERT INTO claim_identities (
+        id, parameter_identity_id, claim_type, scope, identity_key, created_at
+      ) VALUES (
+        'claim:legacy', 'parameter:legacy', 'CLM-DEFAULT', NULL,
+        'session.timeout:CLM-DEFAULT:', 12
+      );
+    `);
+    migrateSchema16To17(db);
+    db.exec(`
+      INSERT INTO claim_versions (
+        id, claim_identity_id, version_ordinal, normalized_statement_json,
+        assessment_policy_id, assessment_policy_version,
+        repository_revision, created_at
+      ) VALUES (
+        'claim:legacy@1', 'claim:legacy', 1, '{"value":1800}',
+        'default-contract', '1', 'rev:legacy', 13
+      );
+      INSERT INTO claim_assessments (
+        id, claim_version_id, assessment_key, epistemic_status,
+        repository_revision, is_current, created_at
+      ) VALUES (
+        'assessment:legacy', 'claim:legacy@1', 'assessment-key:legacy',
+        'supported', 'rev:legacy', 1, 14
+      );
+      INSERT INTO claim_assessment_references (
+        claim_identity_id, repository_revision, assessment_id, created_at
+      ) VALUES ('claim:legacy', 'rev:legacy', 'assessment:legacy', 15);
+      INSERT INTO review_decisions (
+        id, claim_identity_id, basis_assessment_id, decision, actor,
+        decision_origin, is_current, created_at
+      ) VALUES (
+        'review:legacy', 'claim:legacy', 'assessment:legacy', 'accepted',
+        'reviewer', 'manual', 1, 16
+      );
+    `);
+
+    migrateSchema17To18(db);
+
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "18" });
+    const parameterColumn = (
+      db.prepare(`PRAGMA table_info(claim_identities)`).all() as Array<{
+        name: string;
+        notnull: number;
+      }>
+    ).find((column) => column.name === "parameter_identity_id");
+    expect(parameterColumn?.notnull).toBe(0);
+    // Existing Parameter rows retain their original foreign key and IDs.
+    expect(
+      db
+        .prepare(
+          `SELECT ci.id, ci.parameter_identity_id, ci.identity_key,
+                  ci.identity_contract_id, ci.identity_contract_version
+           FROM claim_identities ci`,
+        )
+        .get(),
+    ).toEqual({
+      id: "claim:legacy",
+      parameter_identity_id: "parameter:legacy",
+      identity_key: "session.timeout:CLM-DEFAULT:",
+      identity_contract_id: null,
+      identity_contract_version: null,
+    });
+    expect(
+      db
+        .prepare(
+          `SELECT cv.id AS claim_version_id, ca.id AS assessment_id,
+                  reference.assessment_id AS reference_assessment_id,
+                  review.id AS review_id,
+                  cv.materiality_contract_id,
+                  cv.materiality_contract_version
+           FROM claim_versions cv
+           JOIN claim_assessments ca ON ca.claim_version_id = cv.id
+           JOIN claim_assessment_references reference
+             ON reference.claim_identity_id = cv.claim_identity_id
+           JOIN review_decisions review
+             ON review.claim_identity_id = cv.claim_identity_id`,
+        )
+        .get(),
+    ).toEqual({
+      claim_version_id: "claim:legacy@1",
+      assessment_id: "assessment:legacy",
+      reference_assessment_id: "assessment:legacy",
+      review_id: "review:legacy",
+      materiality_contract_id: null,
+      materiality_contract_version: null,
+    });
+    expect(db.prepare(`SELECT subject_role FROM claim_subjects`).get()).toEqual(
+      {
+        subject_role: "subject",
+      },
+    );
+    expect(db.prepare(`PRAGMA foreign_key_check`).all()).toEqual([]);
+    // Generic Claims without a Parameter identity are now persistable.
+    db.prepare(
+      `INSERT INTO claim_identities (
+         id, parameter_identity_id, claim_type, scope, identity_key, created_at
+       ) VALUES ('claim:generic', NULL, 'CLM-DEPENDENCY-CONFORMANCE', NULL,
+                 'generic:dependency', 13)`,
+    ).run();
+    expect(
+      db
+        .prepare(
+          `SELECT parameter_identity_id FROM claim_identities
+           WHERE id = 'claim:generic'`,
+        )
+        .get(),
+    ).toEqual({ parameter_identity_id: null });
+  });
+
+  it("retains a durable schema-17 backup after an in-place G1b migration", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-g1b-success-"),
+    );
+    const dbPath = path.join(directory, "index.db");
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(legacy);
+    migrateSchema15To16(legacy);
+    legacy
+      .prepare(
+        `INSERT INTO parameter_identities (id, canonical_key, created_at)
+         VALUES ('parameter:legacy', 'session.timeout', 10)`,
+      )
+      .run();
+    migrateSchema16To17(legacy);
+    legacy.close();
+
+    const migrated = openMigratedDatabase(dbPath);
+    expect(
+      migrated
+        .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+        .get(),
+    ).toEqual({ value: "18" });
+    migrated.close();
+
+    const backupPath = schemaMigrationBackupPath(dbPath, "17");
+    expect(existsSync(backupPath)).toBe(true);
+    const backup = new Database(backupPath, { readonly: true });
+    expect(
+      backup
+        .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+        .get(),
+    ).toEqual({ value: "17" });
+    expect(
+      backup.prepare(`SELECT canonical_key FROM parameter_identities`).get(),
+    ).toEqual({ canonical_key: "session.timeout" });
+    backup.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("atomically restores the schema-17 backup after a failed G1b migration", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-g1b-failure-"),
+    );
+    const dbPath = path.join(directory, "index.db");
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(legacy);
+    migrateSchema15To16(legacy);
+    migrateSchema16To17(legacy);
+    legacy.close();
+
+    expect(() =>
+      openMigratedDatabase(dbPath, undefined, (database) => {
+        database.exec(`CREATE TABLE g1b_partial_write (id TEXT PRIMARY KEY)`);
+        throw new Error("injected G1b failure");
+      }),
+    ).toThrow("injected G1b failure");
+
+    const restored = new Database(dbPath, { readonly: true });
+    expect(
+      restored
+        .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+        .get(),
+    ).toEqual({ value: "17" });
+    expect(
+      restored
+        .prepare(
+          `SELECT COUNT(*) AS count FROM sqlite_master
+           WHERE type = 'table' AND name = 'g1b_partial_write'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    restored.close();
+    expect(existsSync(schemaMigrationBackupPath(dbPath, "17"))).toBe(true);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("rejects reopening a database written by a newer schema after G1b", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "intentweave-g1b-downgrade-"),
+    );
+    const dbPath = path.join(directory, "index.db");
+    const database = new Database(dbPath);
+    initSchema(database);
+    database
+      .prepare(
+        `INSERT OR REPLACE INTO _meta (key, value)
+         VALUES ('schema_version', '19')`,
+      )
+      .run();
+    database.close();
+
+    expect(() => openMigratedDatabase(dbPath)).toThrow(
+      /schema version 19 is incompatible/i,
+    );
+    const untouched = new Database(dbPath, { readonly: true });
+    expect(
+      untouched
+        .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+        .get(),
+    ).toEqual({ value: "19" });
+    untouched.close();
+    rmSync(directory, { recursive: true, force: true });
   });
 });
