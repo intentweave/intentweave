@@ -2430,6 +2430,69 @@ interface ClaimIdentitySelection {
   scope: string | null;
 }
 
+function promotedClaimForCandidate(
+  database: Database.Database,
+  candidateId: string,
+): string {
+  const selected = database
+    .prepare(
+      `SELECT identity_key, version_ordinal
+       FROM claim_candidates WHERE id = ?`,
+    )
+    .get(candidateId) as
+    | { identity_key: string; version_ordinal: number }
+    | undefined;
+  if (!selected) {
+    throw new ClaimsBindingError(`Candidate ${candidateId} does not exist`);
+  }
+  const cycle = database
+    .prepare(
+      `SELECT MAX(version_ordinal) AS start_ordinal
+       FROM claim_candidates
+       WHERE identity_key = ? AND state = 'discovered'
+         AND version_ordinal <= ?`,
+    )
+    .get(selected.identity_key, selected.version_ordinal) as {
+    start_ordinal: number;
+  };
+  const nextCycle = database
+    .prepare(
+      `SELECT MIN(version_ordinal) AS start_ordinal
+       FROM claim_candidates
+       WHERE identity_key = ? AND state = 'discovered'
+         AND version_ordinal > ?`,
+    )
+    .get(selected.identity_key, cycle.start_ordinal) as {
+    start_ordinal: number | null;
+  };
+  const promotion = database
+    .prepare(
+      `SELECT review.promoted_claim_identity_id
+       FROM candidate_reviews review
+       JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+       WHERE candidate.identity_key = ?
+         AND candidate.version_ordinal >= ?
+         AND (? IS NULL OR candidate.version_ordinal < ?)
+         AND review.decision = 'promote'
+         AND review.effect = 'effective'
+         AND review.promoted_claim_identity_id IS NOT NULL
+       ORDER BY candidate.version_ordinal DESC, review.created_at DESC
+       LIMIT 1`,
+    )
+    .get(
+      selected.identity_key,
+      cycle.start_ordinal,
+      nextCycle.start_ordinal,
+      nextCycle.start_ordinal,
+    ) as { promoted_claim_identity_id: string } | undefined;
+  if (!promotion) {
+    throw new ClaimsBindingError(
+      `Candidate ${candidateId} has no effective promotion`,
+    );
+  }
+  return promotion.promoted_claim_identity_id;
+}
+
 function matchingClaimIdentities(
   database: Database.Database,
   options: ClaimSelectorOptions,
@@ -2465,7 +2528,10 @@ function resolveSingleClaimIdentity(
   database: Database.Database,
   options: ClaimSelectorOptions & { claim: string },
 ): ClaimIdentitySelection {
-  const matches = matchingClaimIdentities(database, options);
+  const resolvedOptions = options.claim.startsWith("candidate:")
+    ? { ...options, claim: promotedClaimForCandidate(database, options.claim) }
+    : options;
+  const matches = matchingClaimIdentities(database, resolvedOptions);
   if (matches.length === 0) {
     throw new ClaimsBindingError(
       `No claim matches ${options.claim}${options.type ? ` with type ${options.type}` : ""}${options.scope ? ` in scope ${options.scope}` : ""}`,
@@ -2591,9 +2657,11 @@ export async function runClaimsExplain(options: {
   try {
     const database = claimsDatabase(process.cwd());
     try {
-      const claimId = options.claim?.startsWith("claim:")
-        ? options.claim
-        : null;
+      const claimId = options.claim?.startsWith("candidate:")
+        ? promotedClaimForCandidate(database, options.claim)
+        : options.claim?.startsWith("claim:")
+          ? options.claim
+          : null;
       const parameterKey = options.claim && !claimId ? options.claim : null;
       const assessments = database
         .prepare(

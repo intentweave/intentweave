@@ -83,7 +83,7 @@ describe("iw claims candidates", () => {
         format: "json",
       });
       const output = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
-        review: { candidate: { state: string } };
+        review: { candidate: { id: string; state: string } };
         assessment: { claimIdentityId: string; id: string };
         portableStatePath: string;
       };
@@ -139,6 +139,18 @@ describe("iw claims candidates", () => {
         actor_kind: "human",
         actor_id: "benjamin",
       });
+
+      log.mockClear();
+      await runClaimsExplain({
+        claim: output.review.candidate.id,
+        format: "json",
+      });
+      const candidateExplanation = JSON.parse(
+        String(log.mock.calls.at(-1)?.[0]),
+      ) as Array<{ claimIdentityId: string }>;
+      expect(candidateExplanation[0]?.claimIdentityId).toBe(
+        output.assessment.claimIdentityId,
+      );
 
       rmSync(fixture.dbPath);
       const rebuilt = new Database(fixture.dbPath);
@@ -243,6 +255,15 @@ describe("iw claims candidates", () => {
       database.close();
       expect(existsSync(path.join(fixture.root, ".iw/claims/state.yaml"))).toBe(
         false,
+      );
+      process.exitCode = undefined;
+      await runClaimsExplain({
+        claim: fixture.candidateId,
+        format: "json",
+      });
+      expect(process.exitCode).toBe(64);
+      expect(String(vi.mocked(console.error).mock.calls.at(-1)?.[0])).toContain(
+        "has no effective promotion",
       );
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
