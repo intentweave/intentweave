@@ -37,6 +37,11 @@ import {
   R1_DISCOVERY_CONTRACT_VERSION,
 } from "../claims/candidateDiscovery.js";
 import {
+  persistPublicSymbolCandidates,
+  PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+  PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
+} from "../claims/publicSymbolDiscovery.js";
+import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
   extractDiscoveredCodeEvidence,
@@ -390,12 +395,19 @@ export async function runClaimsDiscover(options: {
     try {
       const store = new CandidateStore(database);
       const existingCompatibilityKeys = currentR1ClaimCandidateKeys(database);
+      const existingPromotedKeys = promotedCandidateIdentityKeys(database);
       const portableState = loadPortableClaimsState(workspaceRoot);
-      const discovered = persistR1Candidates(
+      const revision = currentRevision(workspaceRoot);
+      const r1Candidates = persistR1Candidates(
         store,
         [...observations, ...boundObservations],
-        currentRevision(workspaceRoot),
+        revision,
       );
+      const publicSymbolCandidates = persistPublicSymbolCandidates(
+        database,
+        revision,
+      );
+      const discovered = [...r1Candidates, ...publicSymbolCandidates];
       const explicitBindingKeys = new Set(
         boundObservations.map(
           (observation) =>
@@ -406,6 +418,7 @@ export async function runClaimsDiscover(options: {
         database,
         discovered.map((candidate) => candidate.identityKey),
         existingCompatibilityKeys,
+        existingPromotedKeys,
         portableState,
         resolveContracts(),
         explicitBindingKeys,
@@ -423,6 +436,18 @@ export async function runClaimsDiscover(options: {
           contractVersion: R1_DISCOVERY_CONTRACT_VERSION,
           mode: "deterministic",
         },
+        adapters: [
+          {
+            id: R1_DISCOVERY_ADAPTER_ID,
+            contractVersion: R1_DISCOVERY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+          {
+            id: PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+            contractVersion: PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+        ],
         semanticDiscovery: "not_run",
         discoveredCount: candidates.length,
         surfacedCount: candidates.filter((candidate) => candidate.surfaced)
@@ -508,10 +533,30 @@ function currentR1ClaimCandidateKeys(database: Database.Database): Set<string> {
   );
 }
 
+function promotedCandidateIdentityKeys(
+  database: Database.Database,
+): Set<string> {
+  return new Set(
+    (
+      database
+        .prepare(
+          `SELECT DISTINCT candidate.identity_key
+           FROM candidate_reviews review
+           JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+           WHERE review.decision = 'promote'
+             AND review.effect = 'effective'
+             AND review.promoted_claim_identity_id IS NOT NULL`,
+        )
+        .all() as Array<{ identity_key: string }>
+    ).map((row) => row.identity_key),
+  );
+}
+
 function applyEffectiveCandidateDecisions(
   database: Database.Database,
   identityKeys: readonly string[],
   existingCompatibilityKeys: ReadonlySet<string>,
+  existingPromotedKeys: ReadonlySet<string>,
   portableState: PortableClaimsState | undefined,
   contracts: ClaimsContractVersions,
   explicitBindingKeys: ReadonlySet<string>,
@@ -531,7 +576,10 @@ function applyEffectiveCandidateDecisions(
         portableDecision.candidateFingerprint !==
         candidate.observationFingerprint
       ) {
-        if (!existingCompatibilityKeys.has(identityKey)) {
+        if (
+          !existingCompatibilityKeys.has(identityKey) &&
+          !existingPromotedKeys.has(identityKey)
+        ) {
           issues.push({ identityKey, reason: "stale-portable-decision" });
           continue;
         }
@@ -578,20 +626,25 @@ function applyEffectiveCandidateDecisions(
       }
     }
 
-    const policy = existingCompatibilityKeys.has(identityKey)
+    const policy = existingPromotedKeys.has(identityKey)
       ? {
-          id:
-            candidate.ordinal === 1
-              ? "r1-compatibility"
-              : "promoted-claim-continuity",
+          id: "promoted-claim-continuity",
           version: "1",
         }
-      : continuousPolicy?.enabled
+      : existingCompatibilityKeys.has(identityKey)
         ? {
-            id: "r1-continuous-auto-promote",
-            version: continuousPolicy.version,
+            id:
+              candidate.ordinal === 1
+                ? "r1-compatibility"
+                : "promoted-claim-continuity",
+            version: "1",
           }
-        : undefined;
+        : identityKey.startsWith("r1:") && continuousPolicy?.enabled
+          ? {
+              id: "r1-continuous-auto-promote",
+              version: continuousPolicy.version,
+            }
+          : undefined;
     if (!policy || candidate.state === "promoted") continue;
     if (!["discovered", "correlated", "triaged"].includes(candidate.state)) {
       issues.push({ identityKey, reason: "closed-candidate-conflict" });
@@ -1548,16 +1601,26 @@ export async function runClaimsCheck(options: {
           ),
         );
         const existingCompatibilityKeys = currentR1ClaimCandidateKeys(database);
+        const existingPromotedKeys = promotedCandidateIdentityKeys(database);
         const candidateStore = new CandidateStore(database);
-        const discoveredCandidates = persistR1Candidates(
+        const r1Candidates = persistR1Candidates(
           candidateStore,
           [...discoveredCode, ...boundCandidateEvidence],
           revision,
         );
+        const publicSymbolCandidates = persistPublicSymbolCandidates(
+          database,
+          revision,
+        );
+        const discoveredCandidates = [
+          ...r1Candidates,
+          ...publicSymbolCandidates,
+        ];
         const candidateProjectionIssues = applyEffectiveCandidateDecisions(
           database,
           discoveredCandidates.map((candidate) => candidate.identityKey),
           existingCompatibilityKeys,
+          existingPromotedKeys,
           portableState,
           contracts,
           explicitBindingKeys,
@@ -2159,13 +2222,33 @@ export async function runClaimsCheck(options: {
             | "inconclusive";
         }>;
         for (const claim of genericClaims) {
+          const ruleStatuses = (
+            database
+              .prepare(
+                `SELECT result.normalized_status
+                 FROM claim_assessment_dependencies dependency
+                 JOIN rule_result_versions result
+                   ON result.id = dependency.dependency_version_id
+                 WHERE dependency.claim_assessment_id = ?
+                   AND dependency.dependency_kind = 'rule_result_version'
+                 ORDER BY result.id`,
+              )
+              .all(claim.assessment_id) as Array<{
+              normalized_status:
+                | "passed"
+                | "failed"
+                | "inconclusive"
+                | "not_applicable";
+            }>
+          ).map((result) => result.normalized_status);
           output.claims.push({
             claimIdentityId: claim.claim_identity_id,
             parameterKey: null,
             claimType: claim.claim_type,
-            ruleStatuses: [],
+            ruleStatuses,
             assessmentStatuses: [claim.epistemic_status],
           });
+          allRuleStatuses.push(...ruleStatuses);
           allAssessmentStatuses.push(claim.epistemic_status);
           assessmentIds.push(claim.assessment_id);
         }
@@ -2795,13 +2878,53 @@ export async function runClaimsExplain(options: {
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),
-        dependencies: database
-          .prepare(
-            `SELECT dependency_kind, dependency_version_id, epistemic_role,
-                    warrant_polarity, assessment_effect
-             FROM claim_assessment_dependencies WHERE claim_assessment_id = ?`,
-          )
-          .all(assessment.assessment_id),
+        dependencies: (
+          database
+            .prepare(
+              `SELECT dependency.dependency_kind,
+                      dependency.dependency_version_id,
+                      dependency.epistemic_role,
+                      dependency.warrant_polarity,
+                      dependency.assessment_effect,
+                      rule.normalized_status AS rule_status,
+                      rule.normalized_output_json AS rule_output_json,
+                      rule.normalized_reasons_json AS rule_reasons_json,
+                      rule.rule_contract_version,
+                      rule.implementation_fingerprint
+               FROM claim_assessment_dependencies dependency
+               LEFT JOIN rule_result_versions rule
+                 ON dependency.dependency_kind = 'rule_result_version'
+                AND rule.id = dependency.dependency_version_id
+               WHERE dependency.claim_assessment_id = ?`,
+            )
+            .all(assessment.assessment_id) as Array<{
+            dependency_kind: string;
+            dependency_version_id: string;
+            epistemic_role: string;
+            warrant_polarity: string | null;
+            assessment_effect: string;
+            rule_status: string | null;
+            rule_output_json: string | null;
+            rule_reasons_json: string | null;
+            rule_contract_version: string | null;
+            implementation_fingerprint: string | null;
+          }>
+        ).map((dependency) => ({
+          dependency_kind: dependency.dependency_kind,
+          dependency_version_id: dependency.dependency_version_id,
+          epistemic_role: dependency.epistemic_role,
+          warrant_polarity: dependency.warrant_polarity,
+          assessment_effect: dependency.assessment_effect,
+          rule_status: dependency.rule_status,
+          rule_output: dependency.rule_output_json
+            ? JSON.parse(dependency.rule_output_json)
+            : null,
+          rule_reasons: dependency.rule_reasons_json
+            ? JSON.parse(dependency.rule_reasons_json)
+            : null,
+          rule_contract_version: dependency.rule_contract_version,
+          implementation_fingerprint: dependency.implementation_fingerprint,
+        })),
         review: database
           .prepare(
             `SELECT id, basis_assessment_id, decision, actor, decision_origin,
@@ -2864,6 +2987,20 @@ export async function runClaimsExplain(options: {
           console.log(`  Statement: ${JSON.stringify(claim.statement)}`);
           console.log(`  Claim: ${claim.claimIdentityId}`);
           console.log(`  Assessment: ${claim.assessmentId}`);
+          for (const dependency of claim.dependencies as Array<{
+            dependency_kind: string;
+            dependency_version_id: string;
+            rule_status: string | null;
+            rule_reasons: string[] | null;
+          }>) {
+            if (!dependency.rule_status) continue;
+            console.log(
+              `  Rule result: ${dependency.rule_status} (${dependency.dependency_version_id})`,
+            );
+            for (const reason of dependency.rule_reasons ?? []) {
+              console.log(`    Reason: ${reason}`);
+            }
+          }
           if (claim.review) {
             console.log(
               `  Review: ${(claim.review as { decision: string }).decision}`,

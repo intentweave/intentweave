@@ -5,7 +5,9 @@ import type Database from "@intentweave/sqlite-compat";
 import {
   CandidateStore,
   ClaimsEngine,
+  ClaimsReviewStore,
   ClaimsStore,
+  assessClaimPolicy,
   emptyPortableClaimsState,
   fingerprint,
   materialFingerprint,
@@ -84,6 +86,17 @@ function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value)
     ? value
     : undefined;
+}
+
+function evidenceNormalizedValue(
+  database: Database.Database,
+  evidenceVersionId: string | undefined,
+): unknown {
+  if (!evidenceVersionId) return undefined;
+  const row = database
+    .prepare(`SELECT normalized_value FROM evidence_versions WHERE id = ?`)
+    .get(evidenceVersionId) as { normalized_value: string } | undefined;
+  return row ? (JSON.parse(row.normalized_value) as unknown) : undefined;
 }
 
 function promoteR1Candidate(
@@ -203,7 +216,7 @@ function promoteGenericCandidate(
   const provenance = record(candidate.provenance, "Candidate provenance");
   const repositoryRevision =
     optionalString(provenance.repositoryRevision) ?? "working-tree";
-  const dependencies = candidate.evidence.flatMap(
+  let dependencies = candidate.evidence.flatMap(
     (evidence): ClaimAssessmentDependencyInput[] =>
       evidence.evidenceVersionId
         ? [
@@ -217,7 +230,95 @@ function promoteGenericCandidate(
           ]
         : [],
   );
-  return new ClaimsStore(database).persistGenericClaimAssessment({
+  let status: "supported" | "refuted" | "contested" | "inconclusive" =
+    "inconclusive";
+  let changedWarrantVersionId: string | undefined;
+  if (candidate.proposedClaimType === "CLM-PUBLIC-SYMBOL-DOCUMENTED") {
+    const documentation = candidate.evidence.find(
+      (evidence) => evidence.role === "documentation",
+    );
+    const definition = candidate.evidence.find(
+      (evidence) => evidence.role === "definition",
+    );
+    const documentationValue = evidenceNormalizedValue(
+      database,
+      documentation?.evidenceVersionId,
+    );
+    const definitionValue = evidenceNormalizedValue(
+      database,
+      definition?.evidenceVersionId,
+    );
+    const normalizedDocumentation =
+      documentationValue &&
+      typeof documentationValue === "object" &&
+      !Array.isArray(documentationValue)
+        ? (documentationValue as Record<string, unknown>)
+        : undefined;
+    const documented =
+      typeof normalizedDocumentation?.present === "boolean"
+        ? normalizedDocumentation.present
+        : undefined;
+    const normalizedDefinition =
+      definitionValue &&
+      typeof definitionValue === "object" &&
+      !Array.isArray(definitionValue)
+        ? (definitionValue as Record<string, unknown>)
+        : undefined;
+    const applicable = normalizedDefinition?.exported !== false;
+    const ruleStatus = !applicable
+      ? "not_applicable"
+      : documented === undefined
+        ? "inconclusive"
+        : documented
+          ? "passed"
+          : "failed";
+    const evidenceVersionIds = [definition, documentation].flatMap(
+      (evidence) =>
+        evidence?.evidenceVersionId ? [evidence.evidenceVersionId] : [],
+    );
+    const rule = new ClaimsStore(database).persistRuleResult(
+      {
+        ruleId: "R.public-symbol-documentation",
+        subjectKey: candidate.subjects[0]?.identityKey,
+        applicability: applicable ? "applicable" : "not_applicable",
+        normalizedStatus: ruleStatus,
+        normalizedOutput: {
+          symbolName: normalizedDefinition?.name ?? null,
+          symbolKind: normalizedDefinition?.kind ?? null,
+          signature: normalizedDefinition?.signature ?? null,
+          exported: normalizedDefinition?.exported ?? null,
+          documented: documented ?? null,
+          summary: normalizedDocumentation?.summary ?? null,
+        },
+        normalizedReasons: [
+          !applicable
+            ? "public-symbol-no-longer-applicable"
+            : documented === undefined
+              ? "symbol-documentation-evidence-missing"
+              : documented
+                ? "public-symbol-documentation-present"
+                : "public-symbol-documentation-missing",
+        ],
+        evidenceVersionIds,
+        ruleContractVersion: "public-symbol-documentation-v1",
+        implementationFingerprint: "public-symbol-documentation-impl-v1",
+      },
+      evidenceVersionIds,
+    );
+    const assessment = assessClaimPolicy([
+      {
+        dependencyKind: "rule_result_version",
+        dependencyVersionId: rule.id,
+        epistemicRole: "warrant",
+        authoritative: true,
+        ruleStatus,
+      },
+    ]);
+    status = assessment.status;
+    dependencies = assessment.dependencies;
+    changedWarrantVersionId = rule.id;
+  }
+  const persisted = new ClaimsStore(database).persistGenericClaimAssessment({
     subjects: candidate.subjects.map((subject) => ({
       kind: subject.kind,
       identityKey: subject.identityKey,
@@ -231,9 +332,36 @@ function promoteGenericCandidate(
     assessmentPolicyId: contract.assessmentPolicy.id,
     assessmentPolicyVersion: contract.assessmentPolicy.version,
     repositoryRevision,
-    status: "inconclusive",
+    status,
     dependencies,
   });
+  if (persisted.created && changedWarrantVersionId) {
+    const previous = database
+      .prepare(
+        `SELECT id, epistemic_status
+         FROM claim_assessments
+         WHERE superseded_by_assessment_id = ?
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(persisted.id) as
+      | { id: string; epistemic_status: string }
+      | undefined;
+    if (previous) {
+      new ClaimsReviewStore(database).reopen({
+        claimIdentityId: persisted.claimIdentityId,
+        basisAssessmentId: persisted.id,
+        dependencyKind: "rule_result_version",
+        dependencyVersionId: changedWarrantVersionId,
+        reason: "warrant-changed",
+        secondaryProvenance: {
+          candidateId: candidate.id,
+          previousStatus: previous.epistemic_status,
+          currentStatus: status,
+        },
+      });
+    }
+  }
+  return persisted;
 }
 
 function promoteCandidate(

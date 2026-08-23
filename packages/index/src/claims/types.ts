@@ -119,6 +119,28 @@ export interface ClaimSubjectInput {
   role: string;
 }
 
+export interface EvidenceSubjectInput extends ClaimSubjectInput {
+  basis: string;
+  confidence: string;
+}
+
+/** Generic Evidence anchored in role-based Subjects rather than a Parameter. */
+export interface PersistGenericEvidenceInput {
+  subjects: EvidenceSubjectInput[];
+  sourceKind: string;
+  identityKey: string;
+  fingerprint: string;
+  materialFingerprint: string;
+  normalizedValue: unknown;
+  semanticLocation: string;
+  provenance: unknown;
+  filePath?: string;
+  symbolId?: string;
+  spanStartLine?: number;
+  spanEndLine?: number;
+  repositoryRevision?: string;
+}
+
 /** Identifies the versioned algorithm used for generalized Claim semantics. */
 export interface VersionedClaimContract {
   id: string;

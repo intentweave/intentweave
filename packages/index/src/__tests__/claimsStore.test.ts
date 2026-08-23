@@ -447,6 +447,78 @@ describe("ClaimsStore generic Subjects (G1b)", () => {
     dependencies: [],
   });
 
+  it("persists versioned generic Evidence with Subject links", () => {
+    const input = {
+      subjects: [
+        {
+          kind: "symbol" as const,
+          identityKey: "symbol:exported-handler",
+          displayName: "handleRequest",
+          role: "subject",
+          basis: "cari-symbol-table",
+          confidence: "certain",
+        },
+      ],
+      sourceKind: "code-documentation",
+      identityKey: "public-symbol-doc:exported-handler:documentation",
+      materialFingerprint: fingerprint({ present: false }),
+      normalizedValue: { present: false },
+      semanticLocation: "symbol:exported-handler.documentation",
+      provenance: { adapterId: "cari-public-symbol-documentation" },
+      filePath: "src/handler.ts",
+      symbolId: "exported-handler",
+      repositoryRevision: "rev:1",
+    };
+    const first = store.persistGenericEvidence({
+      ...input,
+      fingerprint: fingerprint({ present: false, line: 1 }),
+      spanStartLine: 1,
+      spanEndLine: 1,
+    });
+    const repeated = store.persistGenericEvidence({
+      ...input,
+      fingerprint: fingerprint({ present: false, line: 1 }),
+      spanStartLine: 1,
+      spanEndLine: 1,
+    });
+    const moved = store.persistGenericEvidence({
+      ...input,
+      fingerprint: fingerprint({ present: false, line: 3 }),
+      spanStartLine: 3,
+      spanEndLine: 3,
+      repositoryRevision: "rev:2",
+    });
+
+    expect(first).toMatchObject({ ordinal: 1, created: true });
+    expect(repeated).toEqual({ ...first, created: false });
+    expect(moved).toMatchObject({ ordinal: 2, created: true });
+    expect(
+      db
+        .prepare(
+          `SELECT identity.parameter_identity_id, subject.kind,
+                  subject.identity_key, link.subject_role,
+                  link.basis, link.confidence
+           FROM evidence_identities identity
+           JOIN evidence_subjects link
+             ON link.evidence_identity_id = identity.id
+           JOIN subject_identities subject
+             ON subject.id = link.subject_identity_id
+           WHERE identity.identity_key = ?`,
+        )
+        .get(input.identityKey),
+    ).toEqual({
+      parameter_identity_id: null,
+      kind: "symbol",
+      identity_key: "symbol:exported-handler",
+      subject_role: "subject",
+      basis: "cari-symbol-table",
+      confidence: "certain",
+    });
+    expect(
+      db.prepare(`SELECT COUNT(*) AS count FROM parameter_identities`).get(),
+    ).toEqual({ count: 0 });
+  });
+
   it("persists a two-Subject Claim without a ParameterIdentity", () => {
     const assessment = store.persistGenericClaimAssessment(dependencyClaim());
 

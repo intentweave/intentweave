@@ -1312,7 +1312,7 @@ Acceptance:
 
 ### Phase G2: Candidate and Semantic Discovery
 
-Implementation checkpoint (2026-08-22): the deterministic G2 foundation is in
+Implementation checkpoint (2026-08-23): the deterministic G2 foundation is in
 place with schema 19 Candidate storage, append-only Candidate lifecycle, the R1
 code-value adapter, and the `discover`, `candidates list`, `candidates triage`,
 and `candidates review` workflows. Effective human decisions are portable;
@@ -1324,8 +1324,14 @@ Explicit Parameter bindings are projected through materialized
 provenance. New unbound R1 findings otherwise remain Candidate-only in
 `claims check`. Manual non-R1 promotion now materializes role-based generic
 Claims for the three registered families and keeps them `inconclusive` until a
-family Rule Adapter exists. Structured inference and semantic adapters remain
-open.
+family Rule Adapter exists. The first registered family Adapter is now present
+for `CLM-PUBLIC-SYMBOL-DOCUMENTED`: it consumes the existing CARI `symbols`
+table, persists positive or explicitly missing documentation Evidence, and
+evaluates promoted Claims as `supported`, `refuted`, `inconclusive`, or
+`not_applicable`. Unpromoted Symbol Candidates remain outside the gate, while
+changed observations of an already promoted Symbol Claim continue through the
+materialized `promoted-claim-continuity@1` Policy. Structured inference and
+semantic adapters remain open.
 
 - implement Candidate persistence and states,
 - separate Discovery, Correlation, Triage, and Promotion,
@@ -1387,6 +1393,14 @@ Acceptance:
   access.
 
 ### Phase G3: Symbol Contract Slice
+
+Initial implementation checkpoint (2026-08-23): deterministic public top-level
+Symbol Discovery, generic Evidence-to-Subject persistence, explicit missing-doc
+Evidence, manual promotion, family RuleResult evaluation, changed-warrant
+reopen, deletion/non-public reconciliation, and reason-bearing Explain output
+are implemented. Rename continuity, `--since` anchoring for Symbol Evidence,
+ambiguous documentation correlation, and the complete fixed-commit fixture
+remain open before G3 acceptance.
 
 - public Symbol Subjects and continuity,
 - positive documentation Evidence,

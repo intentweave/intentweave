@@ -12,6 +12,7 @@ import type {
   PersistClaimAssessmentInput,
   PersistEvidenceContinuityInput,
   PersistEvidenceInput,
+  PersistGenericEvidenceInput,
   PersistGenericClaimAssessmentInput,
   PersistSubjectAliasInput,
   PersistSubjectContinuityInput,
@@ -208,6 +209,124 @@ export class ClaimsStore {
       return { id, ordinal, created: true };
     });
 
+    return persist();
+  }
+
+  persistGenericEvidence(input: PersistGenericEvidenceInput): PersistedVersion {
+    if (input.subjects.length === 0) {
+      throw new Error("Generic Evidence requires at least one Subject");
+    }
+    const persist = this.db.transaction(() => {
+      const now = Date.now();
+      const evidenceIdentityId = idFor("evidence", input.identityKey);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO evidence_identities
+             (id, parameter_identity_id, source_kind, identity_key, created_at)
+           VALUES (?, NULL, ?, ?, ?)`,
+        )
+        .run(evidenceIdentityId, input.sourceKind, input.identityKey, now);
+      for (const subjectInput of input.subjects) {
+        const subject = subjectIdentity(
+          subjectInput.kind,
+          subjectInput.identityKey,
+          subjectInput.displayName,
+        );
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO subject_identities (
+               id, kind, identity_key, display_name, lifecycle_state,
+               contract_version, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            subject.id,
+            subject.kind,
+            subject.identityKey,
+            subject.displayName,
+            subject.lifecycleState,
+            subject.contractVersion,
+            now,
+          );
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO evidence_subjects (
+               evidence_identity_id, subject_identity_id, subject_role,
+               basis, confidence, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            evidenceIdentityId,
+            subject.id,
+            subjectInput.role,
+            subjectInput.basis,
+            subjectInput.confidence,
+            now,
+          );
+      }
+
+      const versions = this.db
+        .prepare(
+          `SELECT id, version_ordinal, fingerprint FROM evidence_versions
+           WHERE evidence_identity_id = ? ORDER BY version_ordinal DESC`,
+        )
+        .all(evidenceIdentityId) as Array<{
+        id: string;
+        version_ordinal: number;
+        fingerprint: string;
+      }>;
+      const current = versions[0];
+      if (
+        current &&
+        logicalFingerprint(current.fingerprint) === input.fingerprint
+      ) {
+        return {
+          id: current.id,
+          ordinal: current.version_ordinal,
+          created: false,
+        };
+      }
+      const returning = versions.find(
+        (version) =>
+          logicalFingerprint(version.fingerprint) === input.fingerprint,
+      );
+      const ordinal = nextOrdinal(
+        this.db,
+        "evidence_versions",
+        "evidence_identity_id",
+        evidenceIdentityId,
+      );
+      const id = `${evidenceIdentityId}@${ordinal}`;
+      const storedFingerprint = returning
+        ? reobservedFingerprint(input.fingerprint, ordinal)
+        : input.fingerprint;
+      this.db
+        .prepare(
+          `INSERT INTO evidence_versions (
+             id, evidence_identity_id, version_ordinal, fingerprint,
+             material_fingerprint, normalized_value, semantic_location,
+             file_path, symbol_id, span_start_line, span_end_line,
+             repository_revision, provenance_json, observed_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          evidenceIdentityId,
+          ordinal,
+          storedFingerprint,
+          input.materialFingerprint,
+          canonicalJson(input.normalizedValue),
+          input.semanticLocation,
+          input.filePath ?? null,
+          input.symbolId ?? null,
+          input.spanStartLine ?? null,
+          input.spanEndLine ?? null,
+          input.repositoryRevision ?? null,
+          canonicalJson(input.provenance),
+          now,
+        );
+      return { id, ordinal, created: true };
+    });
     return persist();
   }
 
