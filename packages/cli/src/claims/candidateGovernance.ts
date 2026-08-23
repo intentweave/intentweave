@@ -12,6 +12,7 @@ import {
   type CandidateDetails,
   type CandidatePolicyDecisionInput,
   type CandidateReviewDecision,
+  type ClaimAssessmentDependencyInput,
   type ClaimsContractVersions,
   type ClaimScalar,
   type PersistedAssessment,
@@ -27,6 +28,33 @@ export interface CandidateGovernanceResult {
   review: PersistedCandidateReview;
   assessment?: PersistedAssessment;
 }
+
+interface GenericCandidatePromotionContract {
+  identity: { id: string; version: string };
+  materiality: { id: string; version: string };
+  assessmentPolicy: { id: string; version: string };
+}
+
+const GENERIC_CANDIDATE_PROMOTION_CONTRACTS: Record<
+  string,
+  GenericCandidatePromotionContract
+> = {
+  "CLM-PUBLIC-SYMBOL-DOCUMENTED": {
+    identity: { id: "symbol-doc-identity", version: "1" },
+    materiality: { id: "symbol-doc-materiality", version: "1" },
+    assessmentPolicy: { id: "symbol-documentation", version: "1" },
+  },
+  "CLM-ENDPOINT-AUTHENTICATED": {
+    identity: { id: "endpoint-authentication-identity", version: "1" },
+    materiality: { id: "endpoint-authentication-materiality", version: "1" },
+    assessmentPolicy: { id: "endpoint-authentication", version: "1" },
+  },
+  "CLM-DEPENDENCY-CONFORMANCE": {
+    identity: { id: "dependency-claim-identity", version: "1" },
+    materiality: { id: "dependency-claim-materiality", version: "1" },
+    assessmentPolicy: { id: "dependency-conformance", version: "1" },
+  },
+};
 
 function claimScalar(value: unknown): ClaimScalar {
   if (
@@ -135,7 +163,9 @@ function promoteR1Candidate(
     (evidence) => evidence.sourceKind === "code-default",
   );
   if (!codeDefault) {
-    throw new Error("R1 Candidate cannot be promoted without code-default Evidence");
+    throw new Error(
+      "R1 Candidate cannot be promoted without code-default Evidence",
+    );
   }
   const annotation = persisted.find(
     (evidence) => evidence.sourceKind === "code-annotation",
@@ -159,6 +189,63 @@ function promoteR1Candidate(
   return result.assessments[0]!;
 }
 
+function promoteGenericCandidate(
+  database: Database.Database,
+  candidate: CandidateDetails,
+): PersistedAssessment {
+  const contract =
+    GENERIC_CANDIDATE_PROMOTION_CONTRACTS[candidate.proposedClaimType];
+  if (!contract) {
+    throw new Error(
+      `Claim type ${candidate.proposedClaimType} has no registered promotion contract`,
+    );
+  }
+  const provenance = record(candidate.provenance, "Candidate provenance");
+  const repositoryRevision =
+    optionalString(provenance.repositoryRevision) ?? "working-tree";
+  const dependencies = candidate.evidence.flatMap(
+    (evidence): ClaimAssessmentDependencyInput[] =>
+      evidence.evidenceVersionId
+        ? [
+            {
+              dependencyKind: "evidence_version",
+              dependencyVersionId: evidence.evidenceVersionId,
+              epistemicRole: "assertion",
+              warrantPolarity: null,
+              assessmentEffect: "neutral",
+            },
+          ]
+        : [],
+  );
+  return new ClaimsStore(database).persistGenericClaimAssessment({
+    subjects: candidate.subjects.map((subject) => ({
+      kind: subject.kind,
+      identityKey: subject.identityKey,
+      displayName: subject.displayName,
+      role: subject.role,
+    })),
+    claimType: candidate.proposedClaimType,
+    identityContract: contract.identity,
+    materialityContract: contract.materiality,
+    normalizedStatement: candidate.normalizedStatement,
+    assessmentPolicyId: contract.assessmentPolicy.id,
+    assessmentPolicyVersion: contract.assessmentPolicy.version,
+    repositoryRevision,
+    status: "inconclusive",
+    dependencies,
+  });
+}
+
+function promoteCandidate(
+  database: Database.Database,
+  candidate: CandidateDetails,
+  contracts: ClaimsContractVersions,
+): PersistedAssessment {
+  return candidate.discoveryAdapterId === "r1-code-values"
+    ? promoteR1Candidate(database, candidate, contracts)
+    : promoteGenericCandidate(database, candidate);
+}
+
 export function reviewCandidate(
   database: Database.Database,
   input: {
@@ -173,10 +260,11 @@ export function reviewCandidate(
   const apply = database.transaction(() => {
     const candidates = new CandidateStore(database);
     const candidate = candidates.details(input.candidateId);
-    if (!candidate) throw new Error(`Candidate ${input.candidateId} does not exist`);
+    if (!candidate)
+      throw new Error(`Candidate ${input.candidateId} does not exist`);
     const assessment =
       input.decision === "promote"
-        ? promoteR1Candidate(database, candidate, input.contracts)
+        ? promoteCandidate(database, candidate, input.contracts)
         : undefined;
     const review = candidates.review({
       candidateId: input.candidateId,
@@ -200,10 +288,11 @@ export function applyCandidatePolicy(
   const apply = database.transaction(() => {
     const candidates = new CandidateStore(database);
     const candidate = candidates.details(input.candidateId);
-    if (!candidate) throw new Error(`Candidate ${input.candidateId} does not exist`);
+    if (!candidate)
+      throw new Error(`Candidate ${input.candidateId} does not exist`);
     const assessment =
       input.decision === "promote"
-        ? promoteR1Candidate(database, candidate, input.contracts)
+        ? promoteCandidate(database, candidate, input.contracts)
         : undefined;
     const review = candidates.applyPolicyDecision({
       ...input,
@@ -212,6 +301,76 @@ export function applyCandidatePolicy(
     return { review, ...(assessment ? { assessment } : {}) };
   });
   return apply();
+}
+
+export function linkCandidatePolicyPromotion(
+  database: Database.Database,
+  input: {
+    candidateIdentityKey: string;
+    promotedClaimIdentityId: string;
+    policyId: string;
+    policyVersion: string;
+    rationale: string;
+    provenance: unknown;
+  },
+): PersistedCandidateReview | undefined {
+  const link = database.transaction(() => {
+    const candidates = new CandidateStore(database);
+    const current = candidates.current(input.candidateIdentityKey);
+    if (!current) {
+      throw new Error(`Candidate ${input.candidateIdentityKey} does not exist`);
+    }
+    const cycle = database
+      .prepare(
+        `SELECT MAX(version_ordinal) AS start_ordinal
+         FROM claim_candidates
+         WHERE identity_key = ? AND state = 'discovered'`,
+      )
+      .get(input.candidateIdentityKey) as { start_ordinal: number };
+    const existing = database
+      .prepare(
+        `SELECT decision.id, decision.promoted_claim_identity_id
+         FROM candidate_policy_decisions decision
+         JOIN claim_candidates candidate ON candidate.id = decision.candidate_id
+         WHERE candidate.identity_key = ?
+           AND candidate.version_ordinal >= ?
+           AND decision.policy_id = ?
+           AND decision.policy_version = ?
+         ORDER BY candidate.version_ordinal DESC LIMIT 1`,
+      )
+      .get(
+        input.candidateIdentityKey,
+        cycle.start_ordinal,
+        input.policyId,
+        input.policyVersion,
+      ) as
+      | { id: string; promoted_claim_identity_id: string | null }
+      | undefined;
+    if (existing) {
+      if (
+        existing.promoted_claim_identity_id !== input.promotedClaimIdentityId
+      ) {
+        throw new Error(
+          `Candidate Policy ${input.policyId}@${input.policyVersion} is linked to a different Claim`,
+        );
+      }
+      return undefined;
+    }
+    const triaged = candidates.triage(current.id, {
+      basis: input.policyId,
+      policyVersion: input.policyVersion,
+    });
+    return candidates.applyPolicyDecision({
+      candidateId: triaged.id,
+      policyId: input.policyId,
+      policyVersion: input.policyVersion,
+      decision: "promote",
+      rationale: input.rationale,
+      provenance: input.provenance,
+      promotedClaimIdentityId: input.promotedClaimIdentityId,
+    });
+  });
+  return link();
 }
 
 export function persistPortableCandidateDecision(

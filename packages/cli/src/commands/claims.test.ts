@@ -629,6 +629,20 @@ baselineAcceptances: {}
         )
         .all(),
     ).toEqual([{ decision_origin: "carry-forward", is_current: 1 }]);
+    expect(
+      promotedIndex
+        .prepare(
+          `SELECT policy.policy_id, policy.policy_version,
+                  policy.promoted_claim_identity_id
+           FROM candidate_policy_decisions policy
+           WHERE policy.policy_id = 'explicit-binding'`,
+        )
+        .get(),
+    ).toEqual({
+      policy_id: "explicit-binding",
+      policy_version: "1",
+      promoted_claim_identity_id: expect.any(String),
+    });
     promotedIndex.close();
   });
 

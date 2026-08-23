@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "@intentweave/sqlite-compat";
-import { initSchema } from "@intentweave/index";
+import { CandidateStore, initSchema } from "@intentweave/index";
 import { parsePortableClaimsStateYaml } from "../claims/portableState.js";
 import {
   runClaimsCandidateReview,
@@ -130,7 +130,9 @@ describe("iw claims candidates", () => {
         claim: output.assessment.claimIdentityId,
         format: "json",
       });
-      const explanation = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as Array<{
+      const explanation = JSON.parse(
+        String(log.mock.calls.at(-1)?.[0]),
+      ) as Array<{
         promotion: { actor_kind: string; actor_id: string };
       }>;
       expect(explanation[0]?.promotion).toMatchObject({
@@ -234,7 +236,9 @@ describe("iw claims candidates", () => {
           .get(),
       ).toEqual({ state: "triaged" });
       expect(
-        database.prepare(`SELECT COUNT(*) AS count FROM claim_identities`).get(),
+        database
+          .prepare(`SELECT COUNT(*) AS count FROM claim_identities`)
+          .get(),
       ).toEqual({ count: 0 });
       database.close();
       expect(existsSync(path.join(fixture.root, ".iw/claims/state.yaml"))).toBe(
@@ -242,6 +246,233 @@ describe("iw claims candidates", () => {
       );
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("promotes a generic multi-Subject Candidate conservatively", async () => {
+    const root = mkdtempSync(
+      path.join(tmpdir(), "intentweave-generic-candidate-"),
+    );
+    try {
+      mkdirSync(path.join(root, ".iw"), { recursive: true });
+      const dbPath = path.join(root, ".iw/index.db");
+      const database = new Database(dbPath);
+      initSchema(database);
+      const candidates = new CandidateStore(database);
+      const discovered = candidates.persist({
+        identityKey: "architecture:no-ui-to-persistence",
+        candidateKind: "architecture-dependency",
+        proposedClaimType: "CLM-DEPENDENCY-CONFORMANCE",
+        discoveryMode: "manual",
+        discoveryAdapterId: "manual-repository-claim",
+        discoveryContractVersion: "1",
+        confidence: "certain",
+        normalizedStatement: {
+          source: "module:workspace:@intentweave/ui",
+          target: "module:workspace:@intentweave/persistence",
+          rule: "no-ui-to-persistence",
+        },
+        provenance: { repositoryRevision: "rev:manual" },
+        evidence: [],
+        subjects: [
+          {
+            kind: "module",
+            identityKey: "module:workspace:@intentweave/ui",
+            role: "source",
+            basis: "manual",
+            confidence: "certain",
+          },
+          {
+            kind: "module",
+            identityKey: "module:workspace:@intentweave/persistence",
+            role: "target",
+            basis: "manual",
+            confidence: "certain",
+          },
+        ],
+      });
+      const triaged = candidates.triage(discovered.id, {
+        basis: "manual-triage",
+      });
+      database.close();
+      process.chdir(root);
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      await runClaimsCandidateReview({
+        candidate: triaged.id,
+        actor: "benjamin",
+        decision: "promote",
+        rationale: "This architecture boundary should be governed",
+        format: "json",
+      });
+
+      expect(process.exitCode).toBe(0);
+      const reviewOutput = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+        assessment: { claimIdentityId: string; id: string };
+      };
+      const persisted = new Database(dbPath, { readonly: true });
+      expect(
+        persisted
+          .prepare(
+            `SELECT claim.parameter_identity_id, claim.claim_type,
+                    claim.identity_contract_id, claim.identity_contract_version,
+                    version.materiality_contract_id,
+                    version.materiality_contract_version,
+                    assessment.epistemic_status
+             FROM claim_identities claim
+             JOIN claim_versions version ON version.claim_identity_id = claim.id
+             JOIN claim_assessments assessment
+               ON assessment.claim_version_id = version.id
+             WHERE claim.id = ?`,
+          )
+          .get(reviewOutput.assessment.claimIdentityId),
+      ).toEqual({
+        parameter_identity_id: null,
+        claim_type: "CLM-DEPENDENCY-CONFORMANCE",
+        identity_contract_id: "dependency-claim-identity",
+        identity_contract_version: "1",
+        materiality_contract_id: "dependency-claim-materiality",
+        materiality_contract_version: "1",
+        epistemic_status: "inconclusive",
+      });
+      expect(
+        persisted
+          .prepare(
+            `SELECT link.subject_role, subject.identity_key
+             FROM claim_subjects link
+             JOIN subject_identities subject ON subject.id = link.subject_identity_id
+             WHERE link.claim_identity_id = ?
+             ORDER BY link.subject_role`,
+          )
+          .all(reviewOutput.assessment.claimIdentityId),
+      ).toEqual([
+        {
+          subject_role: "source",
+          identity_key: "module:workspace:@intentweave/ui",
+        },
+        {
+          subject_role: "target",
+          identity_key: "module:workspace:@intentweave/persistence",
+        },
+      ]);
+      persisted.close();
+
+      log.mockClear();
+      await runClaimsExplain({
+        claim: reviewOutput.assessment.claimIdentityId,
+        format: "json",
+      });
+      const explanation = JSON.parse(
+        String(log.mock.calls.at(-1)?.[0]),
+      ) as Array<{
+        status: string;
+        promotion: { actor_kind: string; actor_id: string };
+      }>;
+      expect(explanation[0]).toMatchObject({
+        status: "inconclusive",
+        promotion: { actor_kind: "human", actor_id: "benjamin" },
+      });
+
+      log.mockClear();
+      process.exitCode = undefined;
+      await runClaimsCheck({ format: "json" });
+      expect(process.exitCode).toBe(2);
+      const check = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+        gateStatus: string;
+        candidates: { active: number };
+        claims: Array<{
+          claimIdentityId: string;
+          parameterKey: string | null;
+          claimType: string;
+          assessmentStatuses: string[];
+        }>;
+      };
+      expect(check).toMatchObject({
+        gateStatus: "evaluated",
+        candidates: { active: 1 },
+        claims: [
+          {
+            claimIdentityId: reviewOutput.assessment.claimIdentityId,
+            parameterKey: null,
+            claimType: "CLM-DEPENDENCY-CONFORMANCE",
+            assessmentStatuses: ["inconclusive"],
+          },
+        ],
+      });
+      const unchanged = new Database(dbPath, { readonly: true });
+      expect(
+        unchanged
+          .prepare(`SELECT COUNT(*) AS count FROM claim_assessments`)
+          .get(),
+      ).toEqual({ count: 1 });
+      unchanged.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects generic promotion without a registered family contract", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "intentweave-unknown-claim-"));
+    try {
+      mkdirSync(path.join(root, ".iw"), { recursive: true });
+      const dbPath = path.join(root, ".iw/index.db");
+      const database = new Database(dbPath);
+      initSchema(database);
+      const candidates = new CandidateStore(database);
+      const discovered = candidates.persist({
+        identityKey: "manual:unknown-contract",
+        candidateKind: "manual-claim",
+        proposedClaimType: "CLM-UNKNOWN",
+        discoveryMode: "manual",
+        discoveryAdapterId: "manual-repository-claim",
+        discoveryContractVersion: "1",
+        confidence: "certain",
+        normalizedStatement: { value: true },
+        provenance: { repositoryRevision: "rev:manual" },
+        evidence: [],
+        subjects: [
+          {
+            kind: "module",
+            identityKey: "module:workspace:unknown",
+            role: "subject",
+            basis: "manual",
+            confidence: "certain",
+          },
+        ],
+      });
+      const triaged = candidates.triage(discovered.id, {
+        basis: "manual-triage",
+      });
+      database.close();
+      process.chdir(root);
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      await runClaimsCandidateReview({
+        candidate: triaged.id,
+        actor: "benjamin",
+        decision: "promote",
+        rationale: "Attempt an unregistered family",
+        format: "json",
+      });
+
+      expect(process.exitCode).toBe(1);
+      expect(existsSync(path.join(root, ".iw/claims/state.yaml"))).toBe(false);
+      const unchanged = new Database(dbPath, { readonly: true });
+      expect(
+        unchanged
+          .prepare(`SELECT COUNT(*) AS count FROM claim_identities`)
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(
+        unchanged
+          .prepare(`SELECT COUNT(*) AS count FROM candidate_reviews`)
+          .get(),
+      ).toEqual({ count: 0 });
+      unchanged.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
@@ -262,10 +493,14 @@ describe("iw claims candidates", () => {
       );
       const database = new Database(fixture.dbPath, { readonly: true });
       expect(
-        database.prepare(`SELECT COUNT(*) AS count FROM candidate_reviews`).get(),
+        database
+          .prepare(`SELECT COUNT(*) AS count FROM candidate_reviews`)
+          .get(),
       ).toEqual({ count: 0 });
       expect(
-        database.prepare(`SELECT COUNT(*) AS count FROM claim_identities`).get(),
+        database
+          .prepare(`SELECT COUNT(*) AS count FROM claim_identities`)
+          .get(),
       ).toEqual({ count: 0 });
       database.close();
     } finally {
@@ -314,7 +549,9 @@ describe("iw claims candidates", () => {
       });
       const database = new Database(fixture.dbPath, { readonly: true });
       expect(
-        database.prepare(`SELECT COUNT(*) AS count FROM claim_identities`).get(),
+        database
+          .prepare(`SELECT COUNT(*) AS count FROM claim_identities`)
+          .get(),
       ).toEqual({ count: 0 });
       database.close();
     } finally {

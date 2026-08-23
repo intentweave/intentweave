@@ -14,15 +14,19 @@ export const R1_DISCOVERY_CONTRACT_VERSION = "1";
 
 export interface DiscoveredCandidateResult extends PersistedCandidate {
   proposedClaimType: string;
-  confidence: "probable";
+  confidence: "certain" | "probable";
   sourceKinds: string[];
   surfaced: boolean;
 }
 
+type R1CandidateInput = PersistClaimCandidateInput & {
+  confidence: "certain" | "probable";
+};
+
 function r1CandidateInputs(
   observations: CodeEvidenceObservation[],
   repositoryRevision: string,
-): PersistClaimCandidateInput[] {
+): R1CandidateInput[] {
   const groups = new Map<string, CodeEvidenceObservation[]>();
   for (const observation of observations) {
     const key = canonicalJson([
@@ -52,7 +56,8 @@ function r1CandidateInputs(
         ),
       );
       const primary =
-        ordered.find((item) => item.sourceKind === "code-default") ?? ordered[0];
+        ordered.find((item) => item.sourceKind === "code-default") ??
+        ordered[0];
       const observedValues = [
         ...new Map(
           ordered.map((item) => [
@@ -61,6 +66,10 @@ function r1CandidateInputs(
           ]),
         ).values(),
       ];
+      const explicitBinding = primary.bindingBasis === "explicit-map";
+      const confidence: R1CandidateInput["confidence"] = explicitBinding
+        ? "certain"
+        : "probable";
       return {
         identityKey: `r1:${primary.parameterKey}:${primary.claimType}`,
         candidateKind: "r1-code-value",
@@ -68,7 +77,7 @@ function r1CandidateInputs(
         discoveryMode: "deterministic" as const,
         discoveryAdapterId: R1_DISCOVERY_ADAPTER_ID,
         discoveryContractVersion: R1_DISCOVERY_CONTRACT_VERSION,
-        confidence: "probable" as const,
+        confidence,
         normalizedStatement: {
           subject: primary.parameterKey,
           predicate:
@@ -101,8 +110,8 @@ function r1CandidateInputs(
             identityKey: `parameter:${primary.parameterKey}`,
             displayName: primary.parameterKey,
             role: "subject",
-            basis: "r1-discovery",
-            confidence: "probable" as const,
+            basis: explicitBinding ? "explicit-binding" : "r1-discovery",
+            confidence,
           },
         ],
       };
@@ -124,9 +133,9 @@ export function persistR1Candidates(
     return {
       ...candidate,
       proposedClaimType: input.proposedClaimType,
-      confidence: "probable" as const,
+      confidence: input.confidence,
       sourceKinds,
-      surfaced: sourceKinds.length >= 2,
+      surfaced: input.confidence === "certain" || sourceKinds.length >= 2,
     };
   });
 }

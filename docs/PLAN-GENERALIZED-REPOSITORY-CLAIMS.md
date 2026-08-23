@@ -524,6 +524,17 @@ Decision semantics are fixed:
 - `defer`: Evidence or correlation is not sufficient for a decision; the
   Candidate remains `triaged` and eligible for a later Review.
 
+Generic promotion is family-registered rather than based on one global
+identity or materiality algorithm. The initial registry contains
+`CLM-PUBLIC-SYMBOL-DOCUMENTED`, `CLM-ENDPOINT-AUTHENTICATED`, and
+`CLM-DEPENDENCY-CONFORMANCE`, each with its own versioned identity,
+materiality, and Assessment Policy contracts. Until a family-specific Rule
+Adapter evaluates the Candidate, promotion creates an `inconclusive`
+Assessment with grounded Evidence dependencies marked neutral. Promotion
+therefore activates governance but never turns Candidate relevance into an
+unsupported truth judgment. A proposed Claim type without a registered family
+contract is rejected atomically.
+
 The state transitions are explicit:
 
 ```text
@@ -1308,9 +1319,13 @@ and `candidates review` workflows. Effective human decisions are portable;
 manual R1 promotion materializes the existing Evidence, RuleResult, Claim, and
 Assessment path atomically. `r1-compatibility` and the explicitly enabled
 `r1-continuous-auto-promote` Policy are projected as materialized decisions.
-New unbound R1 findings otherwise remain Candidate-only in `claims check`.
-Materialized `explicit-binding` Policy provenance, general non-R1 promotion,
-structured inference, and semantic adapters remain open.
+Explicit Parameter bindings are projected through materialized
+`explicit-binding@1` decisions, including their promoted Claim link and Explain
+provenance. New unbound R1 findings otherwise remain Candidate-only in
+`claims check`. Manual non-R1 promotion now materializes role-based generic
+Claims for the three registered families and keeps them `inconclusive` until a
+family Rule Adapter exists. Structured inference and semantic adapters remain
+open.
 
 - implement Candidate persistence and states,
 - separate Discovery, Correlation, Triage, and Promotion,

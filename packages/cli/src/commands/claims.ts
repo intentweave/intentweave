@@ -27,6 +27,7 @@ import type {
 } from "@intentweave/index";
 import {
   applyCandidatePolicy,
+  linkCandidatePolicyPromotion,
   persistPortableCandidateDecision,
   reviewCandidate,
 } from "../claims/candidateGovernance.js";
@@ -285,7 +286,8 @@ function persistSnapshotEvidence(
 
 function formatText(result: {
   claims: Array<{
-    parameterKey: string;
+    claimIdentityId?: string;
+    parameterKey: string | null;
     claimType: string;
     ruleStatuses: string[];
     assessmentStatuses: string[];
@@ -306,7 +308,9 @@ function formatText(result: {
 }): string {
   const lines: string[] = [];
   for (const claim of result.claims) {
-    lines.push(`Claim: ${claim.parameterKey} (${claim.claimType})`);
+    lines.push(
+      `Claim: ${claim.parameterKey ?? claim.claimIdentityId} (${claim.claimType})`,
+    );
     lines.push(`  Rule results: ${claim.ruleStatuses.join(", ")}`);
     lines.push(
       `  Assessments: ${claim.assessmentStatuses.join(", ") || "none"}`,
@@ -371,12 +375,17 @@ export async function runClaimsDiscover(options: {
       parameters: {},
     };
     const files = await discoverWorkingTreeCodeFiles(workspaceRoot);
+    const readCode = (filePath: string) =>
+      fs.readFileSync(path.join(workspaceRoot, filePath), "utf-8");
     const observations = extractDiscoveredCodeEvidence(
       files,
-      (filePath) =>
-        fs.readFileSync(path.join(workspaceRoot, filePath), "utf-8"),
+      readCode,
       bindings,
     );
+    const boundObservations = extractBoundCodeEvidence(
+      bindings,
+      readCode,
+    ).filter((observation) => "identityKey" in observation);
     const database = claimsDatabase(workspaceRoot);
     try {
       const store = new CandidateStore(database);
@@ -384,8 +393,14 @@ export async function runClaimsDiscover(options: {
       const portableState = loadPortableClaimsState(workspaceRoot);
       const discovered = persistR1Candidates(
         store,
-        observations,
+        [...observations, ...boundObservations],
         currentRevision(workspaceRoot),
+      );
+      const explicitBindingKeys = new Set(
+        boundObservations.map(
+          (observation) =>
+            `r1:${observation.parameterKey}:${observation.claimType}`,
+        ),
       );
       const projectionIssues = applyEffectiveCandidateDecisions(
         database,
@@ -393,6 +408,7 @@ export async function runClaimsDiscover(options: {
         existingCompatibilityKeys,
         portableState,
         resolveContracts(),
+        explicitBindingKeys,
       );
       const candidates = discovered.map((candidate) => ({
         ...candidate,
@@ -472,9 +488,7 @@ interface CandidateProjectionIssue {
   reason: "stale-portable-decision" | "closed-candidate-conflict";
 }
 
-function currentR1ClaimCandidateKeys(
-  database: Database.Database,
-): Set<string> {
+function currentR1ClaimCandidateKeys(database: Database.Database): Set<string> {
   return new Set(
     (
       database
@@ -500,17 +514,18 @@ function applyEffectiveCandidateDecisions(
   existingCompatibilityKeys: ReadonlySet<string>,
   portableState: PortableClaimsState | undefined,
   contracts: ClaimsContractVersions,
+  explicitBindingKeys: ReadonlySet<string>,
 ): CandidateProjectionIssue[] {
   const store = new CandidateStore(database);
   const issues: CandidateProjectionIssue[] = [];
-  const continuousPolicy = portableState?.policies[
-    "r1-continuous-auto-promote"
-  ];
+  const continuousPolicy =
+    portableState?.policies["r1-continuous-auto-promote"];
   for (const identityKey of identityKeys) {
     const current = store.current(identityKey);
     if (!current) continue;
     let candidate = store.details(current.id)!;
     const portableDecision = portableState?.candidateDecisions[identityKey];
+    if (explicitBindingKeys.has(identityKey)) continue;
     if (portableDecision) {
       if (
         portableDecision.candidateFingerprint !==
@@ -528,7 +543,9 @@ function applyEffectiveCandidateDecisions(
               ? "rejected"
               : "suppressed";
         if (candidate.state === targetState) continue;
-        if (!["discovered", "correlated", "triaged"].includes(candidate.state)) {
+        if (
+          !["discovered", "correlated", "triaged"].includes(candidate.state)
+        ) {
           issues.push({ identityKey, reason: "closed-candidate-conflict" });
           continue;
         }
@@ -611,7 +628,9 @@ function candidateState(value: string | undefined): CandidateState | undefined {
   return value as CandidateState;
 }
 
-function candidateSubjectKind(value: string | undefined): SubjectKind | undefined {
+function candidateSubjectKind(
+  value: string | undefined,
+): SubjectKind | undefined {
   if (!value) return undefined;
   if (!SUBJECT_KINDS.includes(value as SubjectKind)) {
     throw new ClaimsBindingError(
@@ -728,7 +747,9 @@ export async function runClaimsCandidateReview(options: {
   format: string;
 }): Promise<void> {
   try {
-    if (!CANDIDATE_DECISIONS.includes(options.decision as CandidateReviewDecision)) {
+    if (
+      !CANDIDATE_DECISIONS.includes(options.decision as CandidateReviewDecision)
+    ) {
       throw new ClaimsBindingError(
         `Candidate decision must be one of: ${CANDIDATE_DECISIONS.join(", ")}`,
       );
@@ -747,7 +768,10 @@ export async function runClaimsCandidateReview(options: {
     try {
       const store = new CandidateStore(database);
       const candidate = store.details(options.candidate);
-      if (!candidate || store.current(candidate.identityKey)?.id !== candidate.id) {
+      if (
+        !candidate ||
+        store.current(candidate.identityKey)?.id !== candidate.id
+      ) {
         throw new ClaimsBindingError(
           `Candidate ${options.candidate} is not a current Candidate`,
         );
@@ -755,14 +779,6 @@ export async function runClaimsCandidateReview(options: {
       if (candidate.state !== "triaged") {
         throw new ClaimsBindingError(
           `Candidate ${candidate.id} must be triaged before Review`,
-        );
-      }
-      if (
-        decision === "promote" &&
-        candidate.discoveryAdapterId !== R1_DISCOVERY_ADAPTER_ID
-      ) {
-        throw new ClaimsBindingError(
-          `Candidate adapter ${candidate.discoveryAdapterId} has no promotion evaluator`,
         );
       }
       const decidedAt = new Date().toISOString();
@@ -793,7 +809,10 @@ export async function runClaimsCandidateReview(options: {
         return result;
       });
       const result = apply();
-      const output = { ...result, portableStatePath: portableStatePath ?? null };
+      const output = {
+        ...result,
+        portableStatePath: portableStatePath ?? null,
+      };
       console.log(
         options.format === "json"
           ? JSON.stringify(output, null, 2)
@@ -1415,6 +1434,30 @@ function promoteDiscoveredClaim(
   }
 }
 
+function linkExplicitBindingPromotion(
+  database: Database.Database,
+  codeDefault: Extract<
+    ReturnType<typeof extractBoundCodeEvidence>[number],
+    { identityKey: string }
+  >,
+  promotedClaimIdentityId: string,
+): void {
+  if (codeDefault.bindingBasis !== "explicit-map") return;
+  linkCandidatePolicyPromotion(database, {
+    candidateIdentityKey: `r1:${codeDefault.parameterKey}:${codeDefault.claimType}`,
+    promotedClaimIdentityId,
+    policyId: "explicit-binding",
+    policyVersion: "1",
+    rationale: "Activate the Claim selected by an explicit Parameter binding",
+    provenance: {
+      source: "intentweave.bindings.yaml",
+      bindingBasis: codeDefault.bindingBasis,
+      bindingConfidence: codeDefault.bindingConfidence,
+      evidenceIdentityKey: codeDefault.identityKey,
+    },
+  });
+}
+
 export async function runClaimsCheck(options: {
   scope?: string;
   since?: string;
@@ -1494,11 +1537,21 @@ export async function runClaimsCheck(options: {
         const revision = headRevision ?? currentRevision(workspaceRoot);
         const readBoundFile = (filePath: string) =>
           readOptionalCurrentFile(filePath) ?? "";
+        const boundCode = extractBoundCodeEvidence(bindings, readBoundFile);
+        const boundCandidateEvidence = boundCode.filter(
+          (observation) => "identityKey" in observation,
+        );
+        const explicitBindingKeys = new Set(
+          boundCandidateEvidence.map(
+            (observation) =>
+              `r1:${observation.parameterKey}:${observation.claimType}`,
+          ),
+        );
         const existingCompatibilityKeys = currentR1ClaimCandidateKeys(database);
         const candidateStore = new CandidateStore(database);
         const discoveredCandidates = persistR1Candidates(
           candidateStore,
-          discoveredCode,
+          [...discoveredCode, ...boundCandidateEvidence],
           revision,
         );
         const candidateProjectionIssues = applyEffectiveCandidateDecisions(
@@ -1507,6 +1560,7 @@ export async function runClaimsCheck(options: {
           existingCompatibilityKeys,
           portableState,
           contracts,
+          explicitBindingKeys,
         );
         const activeCandidateKeys = new Set(
           discoveredCandidates.flatMap((candidate) =>
@@ -1520,10 +1574,7 @@ export async function runClaimsCheck(options: {
             `r1:${observation.parameterKey}:${observation.claimType}`,
           ),
         );
-        const code = [
-          ...extractBoundCodeEvidence(bindings, readBoundFile),
-          ...activeDiscoveredCode,
-        ];
+        const code = [...boundCode, ...activeDiscoveredCode];
         const docs = extractDocumentationAssertions(bindings, readBoundFile);
         const documentationInconclusive = docs.filter(
           (observation) => observation.kind === "inconclusive",
@@ -1634,7 +1685,8 @@ export async function runClaimsCheck(options: {
         const output = {
           gateStatus: "evaluated",
           claims: [] as Array<{
-            parameterKey: string;
+            claimIdentityId?: string;
+            parameterKey: string | null;
             claimType: string;
             ruleStatuses: string[];
             assessmentStatuses: string[];
@@ -1773,6 +1825,11 @@ export async function runClaimsCheck(options: {
             },
             contracts,
           });
+          linkExplicitBindingPromotion(
+            database,
+            codeDefault,
+            result.assessments[0]!.claimIdentityId,
+          );
           promoteDiscoveredClaim(
             database,
             reviews,
@@ -2008,6 +2065,11 @@ export async function runClaimsCheck(options: {
               contracts,
             });
             if (codeDefault && "identityKey" in codeDefault) {
+              linkExplicitBindingPromotion(
+                database,
+                codeDefault,
+                result.assessments[0]!.claimIdentityId,
+              );
               promoteDiscoveredClaim(
                 database,
                 reviews,
@@ -2072,6 +2134,40 @@ export async function runClaimsCheck(options: {
               revision,
             ),
           );
+        }
+        const genericClaims = database
+          .prepare(
+            `SELECT claim.id AS claim_identity_id, claim.claim_type,
+                    assessment.id AS assessment_id,
+                    assessment.epistemic_status
+             FROM claim_identities claim
+             JOIN claim_versions version ON version.claim_identity_id = claim.id
+             JOIN claim_assessments assessment
+               ON assessment.claim_version_id = version.id
+              AND assessment.is_current = 1
+             WHERE claim.parameter_identity_id IS NULL
+             ORDER BY claim.claim_type, claim.id`,
+          )
+          .all() as Array<{
+          claim_identity_id: string;
+          claim_type: string;
+          assessment_id: string;
+          epistemic_status:
+            | "supported"
+            | "refuted"
+            | "contested"
+            | "inconclusive";
+        }>;
+        for (const claim of genericClaims) {
+          output.claims.push({
+            claimIdentityId: claim.claim_identity_id,
+            parameterKey: null,
+            claimType: claim.claim_type,
+            ruleStatuses: [],
+            assessmentStatuses: [claim.epistemic_status],
+          });
+          allAssessmentStatuses.push(claim.epistemic_status);
+          assessmentIds.push(claim.assessment_id);
         }
         if (claimsGit && baseRevision && headRevision) {
           const changedPaths = claimsGit.changedPaths(
@@ -2282,6 +2378,9 @@ export async function runClaimsCheck(options: {
               (row.reviewed === 0 || row.open_reopen === 1)
             );
           });
+        output.candidates.active = candidateStore.listCurrent({
+          state: "promoted",
+        }).length;
         if (output.claims.length === 0 && output.scopes.length === 0) {
           output.gateStatus = "no_active_claims";
         }
@@ -2605,19 +2704,26 @@ export async function runClaimsExplain(options: {
           kind: subject.kind,
           identityKey: subject.identity_key,
         })),
-        promotion: database
-          .prepare(
-            `SELECT review.actor_kind, review.actor_id, review.decision,
+        promotion:
+          database
+            .prepare(
+              `SELECT review.actor_kind, review.actor_id, review.decision,
                     candidate.identity_key AS candidate_identity_key,
-                    candidate.observation_fingerprint
+                    candidate.observation_fingerprint,
+                    policy.policy_id, policy.policy_version,
+                    policy.rationale AS policy_rationale
              FROM candidate_reviews review
              JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+             LEFT JOIN candidate_policy_decisions policy
+               ON policy.candidate_id = review.candidate_id
+              AND policy.promoted_claim_identity_id = review.promoted_claim_identity_id
              WHERE review.promoted_claim_identity_id = ?
                AND review.decision = 'promote'
                AND review.effect = 'effective'
-             ORDER BY review.created_at DESC LIMIT 1`,
-          )
-          .get(assessment.claim_identity_id) ?? null,
+             ORDER BY candidate.version_ordinal DESC, review.created_at DESC
+             LIMIT 1`,
+            )
+            .get(assessment.claim_identity_id) ?? null,
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),
@@ -2676,9 +2782,15 @@ export async function runClaimsExplain(options: {
               actor_kind: string;
               actor_id: string;
               candidate_identity_key: string;
+              policy_id: string | null;
+              policy_version: string | null;
             };
             console.log(
-              `  Promoted from: ${promotion.candidate_identity_key} by ${promotion.actor_kind}:${promotion.actor_id}`,
+              `  Promoted from: ${promotion.candidate_identity_key} by ${
+                promotion.policy_id && promotion.policy_version
+                  ? `policy ${promotion.policy_id}@${promotion.policy_version}`
+                  : `${promotion.actor_kind}:${promotion.actor_id}`
+              }`,
             );
           }
           console.log(`  Statement: ${JSON.stringify(claim.statement)}`);
