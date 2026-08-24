@@ -23,6 +23,7 @@ export type {
   SymbolKind,
   ExportKind,
   SourceRange,
+  ExtractedDecorator,
   ExtractedSymbol,
   ExtractedImport,
   ExtractedExport,

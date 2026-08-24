@@ -655,7 +655,26 @@ export class ClaimsStore {
     if (input.subjects.length === 0) {
       throw new Error("A generic Claim requires at least one Subject");
     }
-    const subjectKeys = input.subjects.map((subject) => ({
+    const identityRoles = input.identitySubjectRoles
+      ? new Set(input.identitySubjectRoles)
+      : undefined;
+    const identitySubjects = identityRoles
+      ? input.subjects.filter((subject) => identityRoles.has(subject.role))
+      : input.subjects;
+    if (identitySubjects.length === 0) {
+      throw new Error("A generic Claim identity requires at least one Subject");
+    }
+    if (
+      identityRoles &&
+      [...identityRoles].some(
+        (role) => !input.subjects.some((subject) => subject.role === role),
+      )
+    ) {
+      throw new Error(
+        "A generic Claim identity role is not attached to the Claim",
+      );
+    }
+    const subjectKeys = identitySubjects.map((subject) => ({
       role: subject.role,
       identityKey: subject.identityKey,
     }));

@@ -153,6 +153,8 @@ export interface VersionedClaimContract {
  */
 export interface PersistGenericClaimAssessmentInput {
   subjects: ClaimSubjectInput[];
+  /** Subject roles that define identity; all Subjects remain attached. */
+  identitySubjectRoles?: string[];
   claimType: string;
   scope?: string;
   identityContract: VersionedClaimContract;

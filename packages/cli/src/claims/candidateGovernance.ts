@@ -128,6 +128,7 @@ function evidenceMaterialInputs(
 function ruleWarrantMaterialFingerprint(
   database: Database.Database,
   input: {
+    ruleId: string;
     applicability: string;
     normalizedStatus: string;
     normalizedOutput: unknown;
@@ -140,12 +141,35 @@ function ruleWarrantMaterialFingerprint(
   return fingerprint({
     applicability: input.applicability,
     normalizedStatus: input.normalizedStatus,
-    normalizedOutput: input.normalizedOutput,
+    normalizedOutput: projectRuleWarrantMaterialOutput(
+      input.ruleId,
+      input.normalizedOutput,
+    ),
     normalizedReasons: input.normalizedReasons,
     evidence: evidenceMaterialInputs(database, input.evidenceVersionIds),
     ruleContractVersion: input.ruleContractVersion,
     // Implementation-only drift versions the RuleResult but is not semantic warrant material.
   });
+}
+
+export function projectRuleWarrantMaterialOutput(
+  ruleId: string,
+  value: unknown,
+): unknown {
+  if (
+    ruleId !== "R.endpoint-authentication" ||
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return value;
+  }
+  const {
+    handler: _handler,
+    controller: _controller,
+    ...material
+  } = value as Record<string, unknown>;
+  return material;
 }
 
 function currentRuleWarrantMaterialFingerprint(
@@ -188,6 +212,7 @@ function currentRuleWarrantMaterialFingerprint(
       .all(current.id) as Array<{ evidence_version_id: string }>
   ).map((evidence) => evidence.evidence_version_id);
   return ruleWarrantMaterialFingerprint(database, {
+    ruleId,
     applicability: current.applicability,
     normalizedStatus: current.normalized_status,
     normalizedOutput: JSON.parse(current.normalized_output_json) as unknown,
@@ -446,6 +471,161 @@ function promoteGenericCandidate(
     status = assessment.status;
     dependencies = assessment.dependencies;
     changedWarrantVersionId = rule.id;
+  } else if (candidate.proposedClaimType === "CLM-ENDPOINT-AUTHENTICATED") {
+    const route = candidate.evidence.find(
+      (evidence) => evidence.role === "route",
+    );
+    const handler = candidate.evidence.find(
+      (evidence) => evidence.role === "handler",
+    );
+    const guard = candidate.evidence.find(
+      (evidence) => evidence.role === "guard",
+    );
+    const documentation = candidate.evidence.find(
+      (evidence) => evidence.role === "documentation",
+    );
+    const framework = candidate.evidence.find(
+      (evidence) => evidence.role === "framework",
+    );
+    const routeValue = record(
+      evidenceNormalizedValue(database, route?.evidenceVersionId),
+      "Endpoint Route Evidence",
+    );
+    const handlerValue = handler?.evidenceVersionId
+      ? record(
+          evidenceNormalizedValue(database, handler.evidenceVersionId),
+          "Endpoint Handler Evidence",
+        )
+      : {};
+    const guardValue = guard?.evidenceVersionId
+      ? record(
+          evidenceNormalizedValue(database, guard.evidenceVersionId),
+          "Endpoint Guard Evidence",
+        )
+      : {};
+    const documentationValue = documentation?.evidenceVersionId
+      ? record(
+          evidenceNormalizedValue(database, documentation.evidenceVersionId),
+          "Endpoint Security Documentation Evidence",
+        )
+      : {};
+    const frameworkValue = framework?.evidenceVersionId
+      ? record(
+          evidenceNormalizedValue(database, framework.evidenceVersionId),
+          "Endpoint Framework Evidence",
+        )
+      : {};
+    const active = routeValue.active === true;
+    const routeKnown = routeValue.pathKnown === true;
+    const frameworkKnown =
+      frameworkValue.recognized === true &&
+      frameworkValue.framework === "nestjs";
+    const guardPresent = guardValue.present === true;
+    const publicExemption = guardValue.publicExemption === true;
+    const documentationRequirement = optionalString(
+      documentationValue.requirement,
+    );
+    const ambiguous = candidate.confidence === "ambiguous";
+    const documentationConflict =
+      (documentationRequirement === "required" && publicExemption) ||
+      (documentationRequirement === "public" && guardPresent);
+    const applicable = active && (!publicExemption || documentationConflict);
+    const ruleStatus: "passed" | "failed" | "inconclusive" | "not_applicable" =
+      !active
+        ? "not_applicable"
+        : ambiguous || !frameworkKnown || !routeKnown
+          ? "inconclusive"
+          : documentationConflict
+            ? "failed"
+            : publicExemption
+              ? "not_applicable"
+              : guardPresent
+                ? "passed"
+                : documentationRequirement === "required"
+                  ? "failed"
+                  : "inconclusive";
+    const reason = !active
+      ? "endpoint-route-no-longer-present"
+      : ambiguous
+        ? "endpoint-route-correlation-ambiguous"
+        : !frameworkKnown
+          ? "endpoint-framework-configuration-unknown"
+          : !routeKnown
+            ? "endpoint-route-path-not-statically-known"
+            : documentationConflict
+              ? "endpoint-security-contract-contradiction"
+              : publicExemption
+                ? "endpoint-explicitly-public"
+                : guardPresent
+                  ? "endpoint-authentication-guard-present"
+                  : documentationRequirement === "required"
+                    ? "required-endpoint-authentication-guard-missing"
+                    : "endpoint-authentication-evidence-missing";
+    const evidenceVersionIds = [
+      route,
+      handler,
+      guard,
+      documentation,
+      framework,
+    ].flatMap((evidence) =>
+      evidence?.evidenceVersionId ? [evidence.evidenceVersionId] : [],
+    );
+    const ruleInput = {
+      ruleId: "R.endpoint-authentication",
+      subjectKey: candidate.subjects.find(
+        (subject) => subject.role === "endpoint",
+      )?.identityKey,
+      applicability: applicable
+        ? ("applicable" as const)
+        : ("not_applicable" as const),
+      normalizedStatus: ruleStatus,
+      normalizedOutput: {
+        framework: frameworkValue.framework ?? routeValue.framework ?? null,
+        method: routeValue.method ?? null,
+        path: routeValue.path ?? null,
+        pathKnown: routeKnown,
+        active,
+        controller: handlerValue.controller ?? null,
+        handler: handlerValue.handler ?? null,
+        guards: Array.isArray(guardValue.guards) ? guardValue.guards : [],
+        guardSource: guardValue.source ?? null,
+        publicExemption,
+        documentationRequirement: documentationRequirement ?? null,
+      },
+      normalizedReasons: [reason],
+      evidenceVersionIds,
+      ruleContractVersion: "endpoint-authentication-nestjs-v1",
+      implementationFingerprint: "endpoint-authentication-nestjs-impl-v1",
+    };
+    const previousWarrantMaterialFingerprint =
+      currentRuleWarrantMaterialFingerprint(
+        database,
+        ruleInput.ruleId,
+        ruleInput.subjectKey,
+      );
+    const nextWarrantMaterialFingerprint = ruleWarrantMaterialFingerprint(
+      database,
+      ruleInput,
+    );
+    warrantMaterialChanged =
+      previousWarrantMaterialFingerprint === undefined ||
+      previousWarrantMaterialFingerprint !== nextWarrantMaterialFingerprint;
+    const rule = new ClaimsStore(database).persistRuleResult(
+      ruleInput,
+      evidenceVersionIds,
+    );
+    const assessment = assessClaimPolicy([
+      {
+        dependencyKind: "rule_result_version",
+        dependencyVersionId: rule.id,
+        epistemicRole: "warrant",
+        authoritative: true,
+        ruleStatus,
+      },
+    ]);
+    status = assessment.status;
+    dependencies = assessment.dependencies;
+    changedWarrantVersionId = rule.id;
   }
   const persisted = new ClaimsStore(database).persistGenericClaimAssessment({
     subjects: candidate.subjects.map((subject) => ({
@@ -454,6 +634,10 @@ function promoteGenericCandidate(
       displayName: subject.displayName,
       role: subject.role,
     })),
+    identitySubjectRoles:
+      candidate.proposedClaimType === "CLM-ENDPOINT-AUTHENTICATED"
+        ? ["endpoint"]
+        : undefined,
     claimType: candidate.proposedClaimType,
     identityContract: contract.identity,
     materialityContract: contract.materiality,

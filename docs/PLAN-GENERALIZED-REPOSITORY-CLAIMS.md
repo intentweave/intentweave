@@ -1428,6 +1428,36 @@ Acceptance:
 
 ### Phase G4: Endpoint Slice
 
+Completion checkpoint (2026-08-24): G4 is implemented for exactly one
+framework adapter, NestJS. `cari-nestjs-endpoint-authentication@1` reads the
+indexed TypeScript/JavaScript file and Symbol inventory, retains structured
+class and method Decorator calls through the existing AST extractor, and emits
+Endpoint Candidates with Route, handler, Guard, framework-configuration, and
+security-documentation Evidence. It does not introduce a second repository
+indexer or a second framework adapter.
+
+`endpoint-authentication-identity@1` is anchored only in the normalized HTTP
+method and statically known Route. Handler and Guard Symbols remain correlated
+Subjects and Evidence dependencies but are not identity inputs. A handler
+rename on the same Route records `stable-nestjs-endpoint-route` Subject
+continuity and carries the Review forward; Guard, applicability, Route, and
+`@auth required|public` changes remain material warrants. The regular and
+`--since` paths use the same Rule-specific material output projection, so a
+non-material handler rename cannot be reopened by merge-base contract drift.
+
+`R.endpoint-authentication` uses contract
+`endpoint-authentication-nestjs-v1`. A recognized Route with positive
+`@UseGuards(...)` Evidence is `passed`; a new recognized Route without positive
+Guard Evidence is `inconclusive` unless an explicit `@auth required` contract
+makes the absence `failed`; an explicit public exemption is `not_applicable`;
+unknown or ambiguous Route correlation is `inconclusive`; and contradictory
+documentation and implementation are `failed`. Deleted Routes append
+`not_applicable` Evidence and remain explainable instead of disappearing.
+
+The fixed E0-E6 Git fixture performs real CARI rebuilds and verifies promotion,
+Review, carry-forward, selective reopen, `--since`, Explain, unknown paths,
+public exemptions, contradictions, and deletion. G4 acceptance is complete.
+
 - select exactly one framework adapter first,
 - correlate Route, handler, and Guard Subjects,
 - model positive authentication Evidence and applicability,
@@ -1477,6 +1507,7 @@ E2  Guard removed, failed/refuted and reopen
 E3  unknown framework path, inconclusive
 E4  public Route explicitly exempted, not_applicable
 E5  documentation and implementation contracts contradict each other
+E6  Route deleted, retained as not_applicable and Review lifecycle preserved
 ```
 
 Every semantic adapter additionally verifies:

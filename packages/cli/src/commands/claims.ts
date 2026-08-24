@@ -29,6 +29,7 @@ import {
   applyCandidatePolicy,
   linkCandidatePolicyPromotion,
   persistPortableCandidateDecision,
+  projectRuleWarrantMaterialOutput,
   reviewCandidate,
 } from "../claims/candidateGovernance.js";
 import {
@@ -42,6 +43,11 @@ import {
   PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
 } from "../claims/publicSymbolDiscovery.js";
 import type { PublicSymbolDiscoveryContext } from "../claims/publicSymbolContinuity.js";
+import {
+  NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
+  NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
+  persistNestEndpointCandidates,
+} from "../claims/nestEndpointDiscovery.js";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
@@ -408,7 +414,21 @@ export async function runClaimsDiscover(options: {
         database,
         revision,
       );
-      const discovered = [...r1Candidates, ...publicSymbolCandidates];
+      const endpointCandidates = persistNestEndpointCandidates(
+        database,
+        revision,
+        (filePath) => {
+          const absolutePath = path.join(workspaceRoot, filePath);
+          return fs.existsSync(absolutePath)
+            ? fs.readFileSync(absolutePath, "utf-8")
+            : undefined;
+        },
+      );
+      const discovered = [
+        ...r1Candidates,
+        ...publicSymbolCandidates,
+        ...endpointCandidates,
+      ];
       const explicitBindingKeys = new Set(
         boundObservations.map(
           (observation) =>
@@ -446,6 +466,11 @@ export async function runClaimsDiscover(options: {
           {
             id: PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
             contractVersion: PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+          {
+            id: NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
+            contractVersion: NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
             mode: "deterministic",
           },
         ],
@@ -1169,6 +1194,7 @@ interface RuleDependencySnapshot {
   warrant_polarity: string | null;
   assessment_effect: string;
   identity_key: string;
+  rule_id: string;
   rule_contract_version: string;
   implementation_fingerprint: string;
   normalized_status: string;
@@ -1184,7 +1210,8 @@ function ruleDependencySnapshots(
     .prepare(
       `SELECT dependency.dependency_version_id, dependency.epistemic_role,
               dependency.warrant_polarity, dependency.assessment_effect,
-              identity.identity_key, result.rule_contract_version,
+              identity.identity_key, identity.rule_id,
+              result.rule_contract_version,
               result.implementation_fingerprint, result.normalized_status,
               result.normalized_output_json, result.normalized_reasons_json
        FROM claim_assessment_dependencies dependency
@@ -1300,8 +1327,18 @@ function semanticContractDrift(
       currentRule.rule_contract_version !==
         referenceRule.rule_contract_version ||
       currentRule.normalized_status !== referenceRule.normalized_status ||
-      currentRule.normalized_output_json !==
-        referenceRule.normalized_output_json ||
+      fingerprint(
+        projectRuleWarrantMaterialOutput(
+          currentRule.rule_id,
+          JSON.parse(currentRule.normalized_output_json) as unknown,
+        ),
+      ) !==
+        fingerprint(
+          projectRuleWarrantMaterialOutput(
+            referenceRule.rule_id,
+            JSON.parse(referenceRule.normalized_output_json) as unknown,
+          ),
+        ) ||
       currentRule.normalized_reasons_json !==
         referenceRule.normalized_reasons_json;
     if (differs) {
@@ -1623,9 +1660,15 @@ export async function runClaimsCheck(options: {
           revision,
           symbolDiscoveryContext,
         );
+        const endpointCandidates = persistNestEndpointCandidates(
+          database,
+          revision,
+          readOptionalCurrentFile,
+        );
         const discoveredCandidates = [
           ...r1Candidates,
           ...publicSymbolCandidates,
+          ...endpointCandidates,
         ];
         const candidateProjectionIssues = applyEffectiveCandidateDecisions(
           database,

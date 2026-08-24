@@ -649,6 +649,72 @@ describe("ClaimsStore generic Subjects (G1b)", () => {
     expect(reversed.created).toBe(false);
   });
 
+  it("can attach correlated Subjects without making them Claim identity inputs", () => {
+    const endpoint = {
+      kind: "endpoint" as const,
+      identityKey: "endpoint:nestjs:POST:/admin/users",
+      displayName: "POST /admin/users",
+      role: "endpoint",
+    };
+    const input = {
+      ...dependencyClaim(),
+      subjects: [
+        endpoint,
+        {
+          kind: "symbol" as const,
+          identityKey: "symbol:AdminController.createUser",
+          role: "handler",
+        },
+      ],
+      identitySubjectRoles: ["endpoint"],
+      claimType: "CLM-ENDPOINT-AUTHENTICATED",
+      identityContract: {
+        id: "endpoint-authentication-identity",
+        version: "1",
+      },
+    };
+    const first = store.persistGenericClaimAssessment(input);
+    const renamed = store.persistGenericClaimAssessment({
+      ...input,
+      subjects: [
+        endpoint,
+        {
+          kind: "symbol",
+          identityKey: "symbol:AdminController.registerUser",
+          role: "handler",
+        },
+      ],
+      repositoryRevision: "rev:2",
+    });
+
+    expect(renamed.claimIdentityId).toBe(first.claimIdentityId);
+    expect(
+      db
+        .prepare(
+          `SELECT subject.subject_role, identity.identity_key
+           FROM claim_subjects subject
+           JOIN subject_identities identity
+             ON identity.id = subject.subject_identity_id
+           WHERE subject.claim_identity_id = ?
+           ORDER BY identity.identity_key`,
+        )
+        .all(first.claimIdentityId),
+    ).toEqual([
+      {
+        subject_role: "endpoint",
+        identity_key: "endpoint:nestjs:POST:/admin/users",
+      },
+      {
+        subject_role: "handler",
+        identity_key: "symbol:AdminController.createUser",
+      },
+      {
+        subject_role: "handler",
+        identity_key: "symbol:AdminController.registerUser",
+      },
+    ]);
+  });
+
   it("rejects generic Claims without Subjects or with duplicate roles", () => {
     expect(() =>
       store.persistGenericClaimAssessment({
