@@ -312,7 +312,8 @@ function persistSnapshotEvidence(
   return observations;
 }
 
-function formatText(result: {
+export interface ClaimsCheckOutput {
+  gateStatus: "evaluated" | "no_active_claims";
   claims: Array<{
     claimIdentityId?: string;
     parameterKey: string | null;
@@ -333,7 +334,24 @@ function formatText(result: {
     reviewReopened: boolean;
   }>;
   portableStateIssues: PortableReviewProjectionIssue[];
-}): string {
+  candidates: {
+    discovered: number;
+    active: number;
+    issues: unknown[];
+  };
+}
+
+export interface ClaimsCheckExecution {
+  output: ClaimsCheckOutput;
+  exitCode: number;
+}
+
+export function formatClaimsCheckText(
+  result: Pick<
+    ClaimsCheckOutput,
+    "claims" | "scopes" | "retiredClaims" | "portableStateIssues"
+  >,
+): string {
   const lines: string[] = [];
   for (const claim of result.claims) {
     lines.push(
@@ -1661,7 +1679,10 @@ export async function runClaimsCheck(options: {
   refresh?: boolean;
   format: string;
   contracts?: Partial<ClaimsContractVersions>;
-}): Promise<void> {
+  emit?: boolean;
+  setExitCode?: boolean;
+  throwOnError?: boolean;
+}): Promise<ClaimsCheckExecution | undefined> {
   const workspaceRoot = process.cwd();
   const contracts = resolveContracts(options.contracts);
   try {
@@ -1914,7 +1935,7 @@ export async function runClaimsCheck(options: {
         const selectedScopes = options.scope
           ? scopes.filter((scope) => scope.name === options.scope)
           : scopes;
-        const output = {
+        const output: ClaimsCheckOutput = {
           gateStatus: "evaluated",
           claims: [] as Array<{
             claimIdentityId?: string;
@@ -2645,24 +2666,31 @@ export async function runClaimsCheck(options: {
         };
       });
       const result = runCheck();
-      console.log(
-        options.format === "json"
-          ? JSON.stringify(result.output, null, 2)
-          : formatText(result.output),
-      );
-      process.exitCode = result.exitCode;
+      if (options.emit !== false) {
+        console.log(
+          options.format === "json"
+            ? JSON.stringify(result.output, null, 2)
+            : formatClaimsCheckText(result.output),
+        );
+      }
+      if (options.setExitCode !== false) process.exitCode = result.exitCode;
+      return result;
     } finally {
       database.close();
     }
   } catch (error) {
+    if (options.throwOnError) throw error;
     const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
-    process.exitCode =
-      error instanceof ClaimsBindingError ||
-      error instanceof ClaimsGitError ||
-      error instanceof ClaimsPortableStateFileError
-        ? 64
-        : 1;
+    if (options.emit !== false) console.error(message);
+    if (options.setExitCode !== false) {
+      process.exitCode =
+        error instanceof ClaimsBindingError ||
+        error instanceof ClaimsGitError ||
+        error instanceof ClaimsPortableStateFileError
+          ? 64
+          : 1;
+    }
+    return undefined;
   }
 }
 
@@ -3284,7 +3312,9 @@ export const claimsCommand = new Command("claims")
         "Reconcile current auto-discovered claims and retire stale entries",
       )
       .option("-f, --format <format>", "Output format: text or json", "text")
-      .action(runClaimsCheck),
+      .action(async (options) => {
+        await runClaimsCheck(options);
+      }),
   )
   .addCommand(
     new Command("review")

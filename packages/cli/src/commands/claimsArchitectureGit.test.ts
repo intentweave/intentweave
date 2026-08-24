@@ -22,6 +22,7 @@ import {
   runClaimsExplain,
   runClaimsReview,
 } from "./claims.js";
+import { runIntentCheck } from "./intentCheck.js";
 
 describe("G5 Architecture Dependency Git slice", () => {
   const originalCwd = process.cwd();
@@ -200,6 +201,28 @@ rules:
     expect(process.exitCode).toBe(0);
   }
 
+  async function intentCheck(
+    input: {
+      rulesOnly?: boolean;
+    } = {},
+  ): Promise<Record<string, unknown>> {
+    process.exitCode = undefined;
+    await runIntentCheck({
+      config: ".iw/rules.yaml",
+      severity: "low",
+      limit: "100",
+      format: "json",
+      ...input,
+    });
+    const serialized = vi.mocked(console.log).mock.calls.at(-1)?.[0];
+    if (serialized === undefined) {
+      throw new Error(
+        `Intent check produced no output: ${String(vi.mocked(console.error).mock.calls.at(-1)?.[0])}`,
+      );
+    }
+    return JSON.parse(String(serialized)) as Record<string, unknown>;
+  }
+
   it("runs A0-A5 through rulesCheck Evidence, lifecycle, --since, and Explain", async () => {
     const workspace = mkdtempSync(
       path.join(tmpdir(), "intentweave-g5-architecture-git-"),
@@ -240,6 +263,16 @@ rules:
     process.chdir(workspace);
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const a0Intent = (await intentCheck()) as {
+      claims: { gateStatus: string };
+      rules: { result: { totalViolations: number } };
+      summary: { exitCode: number };
+    };
+    expect(a0Intent).toMatchObject({
+      claims: { gateStatus: "not_evaluated" },
+      rules: { result: { totalViolations: 0 } },
+      summary: { exitCode: 0 },
+    });
     const promoted = await promoteArchitectureCandidate(log);
     let database = new Database(path.join(workspace, ".iw/index.db"), {
       readonly: true,
@@ -342,6 +375,62 @@ rules:
         .get(promoted.claimIdentityId),
     ).toEqual({ reason: "warrant-changed", status: "open" });
     database.close();
+
+    log.mockClear();
+    const rawA2 = (await intentCheck({ rulesOnly: true })) as {
+      rules: { result: { totalViolations: number } };
+      claims: { gateStatus: string };
+    };
+    expect(rawA2).toMatchObject({
+      rules: { result: { totalViolations: 1 } },
+      claims: { gateStatus: "not_evaluated" },
+    });
+    log.mockClear();
+    const unifiedA2 = (await intentCheck()) as {
+      rules: {
+        result: { totalViolations: number };
+        suppressedDuplicateViolations: number;
+      };
+      claims: {
+        governedArchitectureViolations: Array<{
+          claimIdentityId: string;
+          violation: { detail: string };
+        }>;
+      };
+      summary: { exitCode: number };
+    };
+    expect(unifiedA2).toMatchObject({
+      rules: {
+        result: { totalViolations: 0 },
+        suppressedDuplicateViolations: 1,
+      },
+      claims: {
+        governedArchitectureViolations: [
+          {
+            claimIdentityId: promoted.claimIdentityId,
+            violation: {
+              detail: expect.stringContaining("../persistence/db"),
+            },
+          },
+        ],
+      },
+      summary: { exitCode: 1 },
+    });
+
+    log.mockClear();
+    process.exitCode = undefined;
+    await runIntentCheck({
+      config: ".iw/rules.yaml",
+      severity: "low",
+      limit: "100",
+      format: "text",
+    });
+    const unifiedText = String(log.mock.calls.at(-1)?.[0]);
+    const violationDetail = "import of `../persistence/db`";
+    expect(unifiedText.split(violationDetail)).toHaveLength(2);
+    expect(unifiedText).toContain("Rules gate: passed");
+    expect(unifiedText).toContain("Claims gate: failed");
+    expect(unifiedText).toContain(`Claim: ${promoted.claimIdentityId}`);
 
     log.mockClear();
     await runClaimsExplain({ claim: promoted.candidateId, format: "json" });

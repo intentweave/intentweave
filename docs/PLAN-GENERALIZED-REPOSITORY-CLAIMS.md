@@ -1,6 +1,6 @@
 # Generalized Repository Claims
 
-> **Version:** 0.9
+> **Version:** 1.0
 > **Status:** Follow-on concept / implementation plan with delivery checkpoints
 > **Date:** 2026-08-24
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
@@ -1527,10 +1527,7 @@ use the same normalized RuleResult and existing reverse-dependency lifecycle.
 The fixed A0-A5 Git fixture exercises a conformant boundary, source-file rename
 with Review carry-forward, a forbidden import with `failed`/`refuted`, repair
 and reopen, an excluded scope with `inconclusive`, and Rule removal with
-`not_applicable`. G5 acceptance is complete for this bounded contract. The
-top-level `iw intent check` command still exposes the existing raw Rules check;
-unified Intent/Claims CLI orchestration remains a separate Definition-of-Done
-item rather than being implied by this evaluator bridge.
+`not_applicable`. G5 acceptance is complete for this bounded contract.
 
 - connect CARI imports and Architecture Rules as Evidence Adapters,
 - use relational Source and Target Subjects,
@@ -1543,6 +1540,22 @@ Acceptance:
 - existing Rules produce Claims-compatible results through adapters,
 - "no violation found" becomes `passed` only with complete applicability and
   sufficient Evidence.
+
+### Unified Intent Gate
+
+Completion checkpoint (2026-08-24): `iw intent check` is the primary combined
+gate for existing Intent Rules and promoted Claims. It invokes the same Claims
+runtime as `iw claims check`, preserves the established aggregate exit priority
+`64 > 1 > 2 > 4 > 3 > 0`, and maps a Candidate-only Claims state to the neutral
+gate-level status `not_evaluated`.
+
+An Architecture violation governed by a current promoted
+`CLM-DEPENDENCY-CONFORMANCE` Claim is partitioned from the raw Rules section by
+its exact Rule ID, file, line, and normalized detail. It is reported once under
+Claims together with the governing Claim identity. Unpromoted Architecture
+Rules remain visible as raw Rules violations. `--rules-only` deliberately keeps
+the unpartitioned Rules view, while `iw index rules-check` remains the expert
+entry point for baseline and diagnostic Rules workflows.
 
 ## 16. Test Strategy
 
@@ -1619,6 +1632,8 @@ Every slice additionally verifies:
   R1 findings,
 - Candidate-only `iw intent check` reports the Claims gate as `not_evaluated`
   without creating an Assessment or changing the aggregate exit code,
+- the combined Intent gate reports a governed Architecture violation once under
+  Claims, while `--rules-only` retains the raw Rules violation,
 - `defer` leaves a Candidate `triaged`, while `superseded` is produced only by a
   provenance-bearing system transition,
 - two checks on the same commit create no new domain version,
@@ -1657,7 +1672,8 @@ Generalization is robust when:
 17. effective Candidate and Assessment Reviews reproduce between two fresh
     checkouts without identity or history loss,
 18. `iw claims check` and the Claims portion of `iw intent check` produce the
-    same Assessments, Findings, and exit semantics,
+    same Assessments, Findings, and exit semantics; exact Architecture
+    duplicates are rendered once under their governing Claim,
 19. a first run on at least three external repositories does not activate an
     uncurated Claim flood directly in CI,
 20. promoted Claims can be evaluated in CI without model credentials or network
