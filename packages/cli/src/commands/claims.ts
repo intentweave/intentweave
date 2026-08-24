@@ -41,6 +41,7 @@ import {
   PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
   PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
 } from "../claims/publicSymbolDiscovery.js";
+import type { PublicSymbolDiscoveryContext } from "../claims/publicSymbolContinuity.js";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
@@ -918,7 +919,7 @@ function renamedPredecessor(
   database: Database.Database,
   previousEvidence: Map<string, PersistedObservation>,
   current: PersistedObservation,
-  renames: GitRename[],
+  renames: readonly GitRename[],
 ):
   | {
       identityKey: string;
@@ -1526,6 +1527,15 @@ export async function runClaimsCheck(options: {
     const baseRevision = options.since
       ? claimsGit!.mergeBase(options.since)
       : undefined;
+    const symbolDiscoveryContext: PublicSymbolDiscoveryContext | undefined =
+      claimsGit && baseRevision && headRevision
+        ? {
+            baseRevision,
+            headRevision,
+            changedPaths: claimsGit.changedPaths(baseRevision, headRevision),
+            renames: claimsGit.renames(baseRevision, headRevision),
+          }
+        : undefined;
     const readOptionalCurrentFile = (filePath: string): string | undefined => {
       if (claimsGit && headRevision)
         return claimsGit.show(headRevision, filePath);
@@ -1611,6 +1621,7 @@ export async function runClaimsCheck(options: {
         const publicSymbolCandidates = persistPublicSymbolCandidates(
           database,
           revision,
+          symbolDiscoveryContext,
         );
         const discoveredCandidates = [
           ...r1Candidates,
@@ -2253,11 +2264,8 @@ export async function runClaimsCheck(options: {
           assessmentIds.push(claim.assessment_id);
         }
         if (claimsGit && baseRevision && headRevision) {
-          const changedPaths = claimsGit.changedPaths(
-            baseRevision,
-            headRevision,
-          );
-          const renames = claimsGit.renames(baseRevision, headRevision);
+          const changedPaths = symbolDiscoveryContext!.changedPaths;
+          const renames = symbolDiscoveryContext!.renames;
           const continuedPreviousIdentityKeys = new Set<string>();
           for (const [identityKey, current] of currentEvidence) {
             const matchedRename = renamedPredecessor(

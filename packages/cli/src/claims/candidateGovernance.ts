@@ -99,6 +99,105 @@ function evidenceNormalizedValue(
   return row ? (JSON.parse(row.normalized_value) as unknown) : undefined;
 }
 
+function evidenceMaterialInputs(
+  database: Database.Database,
+  evidenceVersionIds: readonly string[],
+): Array<{ sourceKind: string; materialFingerprint: string }> {
+  if (evidenceVersionIds.length === 0) return [];
+  const placeholders = evidenceVersionIds.map(() => "?").join(", ");
+  return (
+    database
+      .prepare(
+        `SELECT identity.source_kind, evidence.material_fingerprint
+         FROM evidence_versions evidence
+         JOIN evidence_identities identity
+           ON identity.id = evidence.evidence_identity_id
+         WHERE evidence.id IN (${placeholders})
+         ORDER BY identity.source_kind, evidence.material_fingerprint`,
+      )
+      .all(...evidenceVersionIds) as Array<{
+      source_kind: string;
+      material_fingerprint: string;
+    }>
+  ).map((evidence) => ({
+    sourceKind: evidence.source_kind,
+    materialFingerprint: evidence.material_fingerprint,
+  }));
+}
+
+function ruleWarrantMaterialFingerprint(
+  database: Database.Database,
+  input: {
+    applicability: string;
+    normalizedStatus: string;
+    normalizedOutput: unknown;
+    normalizedReasons: string[];
+    evidenceVersionIds: string[];
+    ruleContractVersion: string;
+    implementationFingerprint: string;
+  },
+): string {
+  return fingerprint({
+    applicability: input.applicability,
+    normalizedStatus: input.normalizedStatus,
+    normalizedOutput: input.normalizedOutput,
+    normalizedReasons: input.normalizedReasons,
+    evidence: evidenceMaterialInputs(database, input.evidenceVersionIds),
+    ruleContractVersion: input.ruleContractVersion,
+    // Implementation-only drift versions the RuleResult but is not semantic warrant material.
+  });
+}
+
+function currentRuleWarrantMaterialFingerprint(
+  database: Database.Database,
+  ruleId: string,
+  subjectKey: string | undefined,
+): string | undefined {
+  const current = database
+    .prepare(
+      `SELECT result.applicability, result.normalized_status,
+              result.normalized_output_json, result.normalized_reasons_json,
+              result.rule_contract_version,
+              result.implementation_fingerprint, result.id
+       FROM rule_result_versions result
+       JOIN rule_result_identities identity
+         ON identity.id = result.rule_result_identity_id
+       WHERE identity.rule_id = ? AND identity.identity_key = ?
+       ORDER BY result.version_ordinal DESC LIMIT 1`,
+    )
+    .get(ruleId, [ruleId, subjectKey ?? "", ""].join(":")) as
+    | {
+        applicability: string;
+        normalized_status: string;
+        normalized_output_json: string;
+        normalized_reasons_json: string;
+        rule_contract_version: string;
+        implementation_fingerprint: string;
+        id: string;
+      }
+    | undefined;
+  if (!current) return undefined;
+  const evidenceVersionIds = (
+    database
+      .prepare(
+        `SELECT evidence_version_id
+         FROM rule_result_evidence
+         WHERE rule_result_version_id = ?
+         ORDER BY evidence_version_id`,
+      )
+      .all(current.id) as Array<{ evidence_version_id: string }>
+  ).map((evidence) => evidence.evidence_version_id);
+  return ruleWarrantMaterialFingerprint(database, {
+    applicability: current.applicability,
+    normalizedStatus: current.normalized_status,
+    normalizedOutput: JSON.parse(current.normalized_output_json) as unknown,
+    normalizedReasons: JSON.parse(current.normalized_reasons_json) as string[],
+    evidenceVersionIds,
+    ruleContractVersion: current.rule_contract_version,
+    implementationFingerprint: current.implementation_fingerprint,
+  });
+}
+
 function promoteR1Candidate(
   database: Database.Database,
   candidate: CandidateDetails,
@@ -233,6 +332,7 @@ function promoteGenericCandidate(
   let status: "supported" | "refuted" | "contested" | "inconclusive" =
     "inconclusive";
   let changedWarrantVersionId: string | undefined;
+  let warrantMaterialChanged = true;
   if (candidate.proposedClaimType === "CLM-PUBLIC-SYMBOL-DOCUMENTED") {
     const documentation = candidate.evidence.find(
       (evidence) => evidence.role === "documentation",
@@ -264,45 +364,74 @@ function promoteGenericCandidate(
       !Array.isArray(definitionValue)
         ? (definitionValue as Record<string, unknown>)
         : undefined;
-    const applicable = normalizedDefinition?.exported !== false;
-    const ruleStatus = !applicable
-      ? "not_applicable"
-      : documented === undefined
+    const definitionKnown = typeof normalizedDefinition?.exported === "boolean";
+    const ambiguousAssignment =
+      candidate.confidence === "ambiguous" ||
+      normalizedDocumentation?.ambiguousAssignment === true;
+    const applicable =
+      definitionKnown && normalizedDefinition.exported !== false;
+    const ruleStatus: "passed" | "failed" | "inconclusive" | "not_applicable" =
+      ambiguousAssignment || !definitionKnown
         ? "inconclusive"
-        : documented
-          ? "passed"
-          : "failed";
+        : !applicable
+          ? "not_applicable"
+          : documented === undefined
+            ? "inconclusive"
+            : documented
+              ? "passed"
+              : "failed";
     const evidenceVersionIds = [definition, documentation].flatMap(
       (evidence) =>
         evidence?.evidenceVersionId ? [evidence.evidenceVersionId] : [],
     );
-    const rule = new ClaimsStore(database).persistRuleResult(
-      {
-        ruleId: "R.public-symbol-documentation",
-        subjectKey: candidate.subjects[0]?.identityKey,
-        applicability: applicable ? "applicable" : "not_applicable",
-        normalizedStatus: ruleStatus,
-        normalizedOutput: {
-          symbolName: normalizedDefinition?.name ?? null,
-          symbolKind: normalizedDefinition?.kind ?? null,
-          signature: normalizedDefinition?.signature ?? null,
-          exported: normalizedDefinition?.exported ?? null,
-          documented: documented ?? null,
-          summary: normalizedDocumentation?.summary ?? null,
-        },
-        normalizedReasons: [
-          !applicable
-            ? "public-symbol-no-longer-applicable"
-            : documented === undefined
-              ? "symbol-documentation-evidence-missing"
-              : documented
-                ? "public-symbol-documentation-present"
-                : "public-symbol-documentation-missing",
-        ],
-        evidenceVersionIds,
-        ruleContractVersion: "public-symbol-documentation-v1",
-        implementationFingerprint: "public-symbol-documentation-impl-v1",
+    const ruleInput = {
+      ruleId: "R.public-symbol-documentation",
+      subjectKey: candidate.subjects[0]?.identityKey,
+      applicability: applicable
+        ? ("applicable" as const)
+        : ("not_applicable" as const),
+      normalizedStatus: ruleStatus,
+      normalizedOutput: {
+        symbolName: normalizedDefinition?.name ?? null,
+        symbolKind: normalizedDefinition?.kind ?? null,
+        signature: normalizedDefinition?.signature ?? null,
+        exported: normalizedDefinition?.exported ?? null,
+        documented: documented ?? null,
+        summary: normalizedDocumentation?.summary ?? null,
+        ambiguousAssignment,
       },
+      normalizedReasons: [
+        ambiguousAssignment
+          ? "symbol-documentation-assignment-ambiguous"
+          : !definitionKnown
+            ? "symbol-definition-evidence-missing"
+            : !applicable
+              ? "public-symbol-no-longer-applicable"
+              : documented === undefined
+                ? "symbol-documentation-evidence-missing"
+                : documented
+                  ? "public-symbol-documentation-present"
+                  : "public-symbol-documentation-missing",
+      ],
+      evidenceVersionIds,
+      ruleContractVersion: "public-symbol-documentation-v2",
+      implementationFingerprint: "public-symbol-documentation-impl-v2",
+    };
+    const previousWarrantMaterialFingerprint =
+      currentRuleWarrantMaterialFingerprint(
+        database,
+        ruleInput.ruleId,
+        ruleInput.subjectKey,
+      );
+    const nextWarrantMaterialFingerprint = ruleWarrantMaterialFingerprint(
+      database,
+      ruleInput,
+    );
+    warrantMaterialChanged =
+      previousWarrantMaterialFingerprint === undefined ||
+      previousWarrantMaterialFingerprint !== nextWarrantMaterialFingerprint;
+    const rule = new ClaimsStore(database).persistRuleResult(
+      ruleInput,
       evidenceVersionIds,
     );
     const assessment = assessClaimPolicy([
@@ -335,7 +464,7 @@ function promoteGenericCandidate(
     status,
     dependencies,
   });
-  if (persisted.created && changedWarrantVersionId) {
+  if (persisted.created && changedWarrantVersionId && warrantMaterialChanged) {
     const previous = database
       .prepare(
         `SELECT id, epistemic_status

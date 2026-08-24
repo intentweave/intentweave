@@ -1394,13 +1394,25 @@ Acceptance:
 
 ### Phase G3: Symbol Contract Slice
 
-Initial implementation checkpoint (2026-08-23): deterministic public top-level
-Symbol Discovery, generic Evidence-to-Subject persistence, explicit missing-doc
-Evidence, manual promotion, family RuleResult evaluation, changed-warrant
-reopen, deletion/non-public reconciliation, and reason-bearing Explain output
-are implemented. Rename continuity, `--since` anchoring for Symbol Evidence,
-ambiguous documentation correlation, and the complete fixed-commit fixture
-remain open before G3 acceptance.
+Completion checkpoint (2026-08-23): G3 is implemented end to end. The versioned
+`cari-public-symbol-documentation@2` Adapter discovers deterministic public
+top-level Symbol Candidates from the existing CARI `symbols` table, persists
+positive and explicitly missing documentation Evidence, and evaluates promoted
+Claims through `R.public-symbol-documentation@2`. CARI IDs remain observations:
+Git rename or a unique Merge-Base predecessor establishes versioned Subject
+continuity and a persisted `cari-symbol-id` alias while preserving the canonical
+Claim identity. A raw unpromoted Candidate observed before later Merge-Base
+correlation is explicitly superseded; competing promoted Claims are never
+silently merged. Warrant materiality excludes path and span but includes the
+public signature and documentation state, so move-only changes carry Reviews
+forward while signature or documentation changes reopen them. `--since` uses
+the existing Merge-Base Assessment anchors and remains reproducible after a
+regular check and intervening Review. Unlinked documentation that could refer
+to multiple same-named public Symbols produces grounded `ambiguous`
+Candidate-only correlations, never an automatic promotion. The fixed S0-S5 Git
+fixture exercises real TypeScript index rebuilds, carry-forward, changed
+warrants, joint signature/documentation updates, documentation deletion,
+Explain, and ambiguous correlation. G3 acceptance is complete.
 
 - public Symbol Subjects and continuity,
 - positive documentation Evidence,
