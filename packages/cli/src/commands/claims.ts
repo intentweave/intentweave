@@ -81,6 +81,15 @@ import {
   projectPortableAssessmentReviews,
   type PortableReviewProjectionIssue,
 } from "../claims/portableReviewProjection.js";
+import {
+  candidateDisplayLines,
+  candidateInboxLines,
+  claimTypeLabel,
+  describeClaim,
+  displaySubject,
+  humanizeReason,
+  shortCandidateReference,
+} from "../claims/presentation.js";
 
 const defaultContracts: ClaimsContractVersions = {
   r1RuleContractVersion: "r1-v1",
@@ -399,6 +408,7 @@ function optionalArchitectureRulesConfig(
 
 export async function runClaimsDiscover(options: {
   all?: boolean;
+  verbose?: boolean;
   format: string;
 }): Promise<void> {
   const workspaceRoot = process.cwd();
@@ -529,10 +539,16 @@ export async function runClaimsDiscover(options: {
         );
         console.log("Semantic discovery was not run.");
         for (const candidate of surfaced) {
-          console.log(
-            `${candidate.id}  ${candidate.proposedClaimType}  ${candidate.state}`,
-          );
-          console.log(`  Sources: ${candidate.sourceKinds.join(", ")}`);
+          const details = store.details(candidate.id);
+          if (!details) continue;
+          for (const line of candidateDisplayLines(details, {
+            verbose: options.verbose,
+          })) {
+            console.log(line);
+          }
+          if (options.verbose) {
+            console.log(`  Sources: ${candidate.sourceKinds.join(", ")}`);
+          }
         }
       }
       process.exitCode = 0;
@@ -744,6 +760,53 @@ function candidateState(value: string | undefined): CandidateState | undefined {
   return value as CandidateState;
 }
 
+function resolveCandidateReference(
+  database: Database.Database,
+  reference: string,
+  currentOnly: boolean,
+): string {
+  const exact = database
+    .prepare(`SELECT id, identity_key FROM claim_candidates WHERE id = ?`)
+    .get(reference) as { id: string; identity_key: string } | undefined;
+  let matches = exact ? [exact] : [];
+  if (!exact) {
+    const parsed = /^candidate:([a-f0-9]{8,64})@(\d+)$/.exec(reference);
+    if (!parsed) {
+      throw new ClaimsBindingError(
+        `Candidate reference ${reference} must be a full ID or candidate:<8+ hex prefix>@<version>`,
+      );
+    }
+    matches = database
+      .prepare(
+        `SELECT id, identity_key FROM claim_candidates
+           WHERE id LIKE ? ORDER BY id`,
+      )
+      .all(`candidate:${parsed[1]}%@${parsed[2]}`) as Array<{
+      id: string;
+      identity_key: string;
+    }>;
+  }
+  if (currentOnly) {
+    const store = new CandidateStore(database);
+    matches = matches.filter(
+      (candidate) => store.current(candidate.identity_key)?.id === candidate.id,
+    );
+  }
+  if (matches.length === 0) {
+    throw new ClaimsBindingError(
+      `No ${currentOnly ? "current " : ""}Candidate matches ${reference}`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new ClaimsBindingError(
+      `Candidate reference ${reference} is ambiguous: ${matches
+        .map((candidate) => shortCandidateReference(candidate.id))
+        .join(", ")}`,
+    );
+  }
+  return matches[0]!.id;
+}
+
 function candidateSubjectKind(
   value: string | undefined,
 ): SubjectKind | undefined {
@@ -760,6 +823,7 @@ export async function runClaimsCandidatesList(options: {
   state?: string;
   subjectKind?: string;
   all?: boolean;
+  verbose?: boolean;
   format: string;
 }): Promise<void> {
   try {
@@ -785,13 +849,10 @@ export async function runClaimsCandidatesList(options: {
       } else if (candidates.length === 0) {
         console.log("No matching Candidates.");
       } else {
-        for (const candidate of candidates) {
-          console.log(
-            `${candidate.id}  ${candidate.proposedClaimType}  ${candidate.state}`,
-          );
-          console.log(
-            `  Subjects: ${candidate.subjects.map((subject) => `${subject.role}=${subject.identityKey}`).join(", ")}`,
-          );
+        for (const line of candidateInboxLines(candidates, {
+          verbose: options.verbose,
+        })) {
+          console.log(line);
         }
       }
       process.exitCode = 0;
@@ -814,6 +875,9 @@ export async function runClaimsCandidatesTriage(options: {
     const database = claimsDatabase(process.cwd());
     try {
       const store = new CandidateStore(database);
+      const candidateId = options.candidate
+        ? resolveCandidateReference(database, options.candidate, true)
+        : undefined;
       const candidates = store
         .listCurrent({
           ...(options.subjectKind
@@ -822,7 +886,7 @@ export async function runClaimsCandidatesTriage(options: {
         })
         .filter(
           (candidate) =>
-            (!options.candidate || candidate.id === options.candidate) &&
+            (!candidateId || candidate.id === candidateId) &&
             (!options.claimType ||
               candidate.proposedClaimType === options.claimType) &&
             ["discovered", "correlated", "triaged"].includes(candidate.state),
@@ -883,7 +947,12 @@ export async function runClaimsCandidateReview(options: {
     const database = claimsDatabase(workspaceRoot);
     try {
       const store = new CandidateStore(database);
-      const candidate = store.details(options.candidate);
+      const candidateId = resolveCandidateReference(
+        database,
+        options.candidate,
+        true,
+      );
+      const candidate = store.details(candidateId);
       if (
         !candidate ||
         store.current(candidate.identityKey)?.id !== candidate.id
@@ -2612,8 +2681,13 @@ interface ClaimIdentitySelection {
 
 function promotedClaimForCandidate(
   database: Database.Database,
-  candidateId: string,
+  candidateReference: string,
 ): string {
+  const candidateId = resolveCandidateReference(
+    database,
+    candidateReference,
+    false,
+  );
   const selected = database
     .prepare(
       `SELECT identity_key, version_ordinal
@@ -2935,7 +3009,8 @@ export async function runClaimsExplain(options: {
         subjects: (
           database
             .prepare(
-              `SELECT subject.identity_key, subject.kind, link.subject_role
+              `SELECT subject.identity_key, subject.kind, subject.display_name,
+                      link.subject_role
                FROM claim_subjects link
                JOIN subject_identities subject
                  ON subject.id = link.subject_identity_id
@@ -2945,12 +3020,14 @@ export async function runClaimsExplain(options: {
             .all(assessment.claim_identity_id) as Array<{
             identity_key: string;
             kind: string;
+            display_name: string;
             subject_role: string;
           }>
         ).map((subject) => ({
           role: subject.subject_role,
           kind: subject.kind,
           identityKey: subject.identity_key,
+          displayName: subject.display_name,
         })),
         promotion:
           database
@@ -3045,14 +3122,18 @@ export async function runClaimsExplain(options: {
       } else {
         for (const claim of output) {
           console.log(
-            `${claim.claimType}${claim.scope ? ` (${claim.scope})` : ""}: ${claim.status}`,
+            describeClaim(claim.claimType, claim.statement, claim.parameterKey),
+          );
+          console.log(`  Status: ${claim.status}`);
+          console.log(
+            `  Type: ${claimTypeLabel(claim.claimType)} (${claim.claimType})${claim.scope ? `, scope ${claim.scope}` : ""}`,
           );
           if (claim.parameterKey) {
             console.log(`  Parameter: ${claim.parameterKey}`);
           }
           for (const subject of claim.subjects) {
             console.log(
-              `  Subject: ${subject.role}=${subject.identityKey} (${subject.kind})`,
+              `  ${subject.role.charAt(0).toUpperCase()}${subject.role.slice(1)}: ${displaySubject(subject)} (${subject.kind})`,
             );
           }
           if (claim.identityContract) {
@@ -3081,9 +3162,6 @@ export async function runClaimsExplain(options: {
               }`,
             );
           }
-          console.log(`  Statement: ${JSON.stringify(claim.statement)}`);
-          console.log(`  Claim: ${claim.claimIdentityId}`);
-          console.log(`  Assessment: ${claim.assessmentId}`);
           for (const dependency of claim.dependencies as Array<{
             dependency_kind: string;
             dependency_version_id: string;
@@ -3091,11 +3169,9 @@ export async function runClaimsExplain(options: {
             rule_reasons: string[] | null;
           }>) {
             if (!dependency.rule_status) continue;
-            console.log(
-              `  Rule result: ${dependency.rule_status} (${dependency.dependency_version_id})`,
-            );
+            console.log(`  Check: ${dependency.rule_status}`);
             for (const reason of dependency.rule_reasons ?? []) {
-              console.log(`    Reason: ${reason}`);
+              console.log(`    Why: ${humanizeReason(reason)} (${reason})`);
             }
           }
           if (claim.review) {
@@ -3110,7 +3186,9 @@ export async function runClaimsExplain(options: {
             dependency_version_id: string;
             secondary_provenance_json: string | null;
           }>) {
-            console.log(`  Reopen: ${reopen.reason} (${reopen.status})`);
+            console.log(
+              `  Reopen: ${humanizeReason(reopen.reason)} (${reopen.status}, ${reopen.reason})`,
+            );
             console.log(
               `    Dependency: ${reopen.dependency_kind}:${reopen.dependency_version_id}`,
             );
@@ -3120,6 +3198,8 @@ export async function runClaimsExplain(options: {
               );
             }
           }
+          console.log(`  Claim ID: ${claim.claimIdentityId}`);
+          console.log(`  Assessment ID: ${claim.assessmentId}`);
         }
       }
       process.exitCode = output.length === 0 ? 2 : 0;
@@ -3140,13 +3220,17 @@ const claimsCandidatesCommand = new Command("candidates")
       .option("--state <state>", "Restrict by Candidate state")
       .option("--subject-kind <kind>", "Restrict by Subject kind")
       .option("--all", "Include promoted and closed Candidates")
+      .option("--verbose", "Show full IDs, Subjects, types, and confidence")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsCandidatesList),
   )
   .addCommand(
     new Command("triage")
       .description("Move deterministic Candidates into the reviewable inbox")
-      .option("--candidate <id>", "Restrict triage to one current Candidate")
+      .option(
+        "--candidate <ref>",
+        "Restrict triage to one current Candidate ID or short reference",
+      )
       .option("--subject-kind <kind>", "Restrict by Subject kind")
       .option("--claim-type <type>", "Restrict by proposed Claim type")
       .option("-f, --format <format>", "Output format: text or json", "text")
@@ -3155,7 +3239,10 @@ const claimsCandidatesCommand = new Command("candidates")
   .addCommand(
     new Command("review")
       .description("Record an effective human Candidate decision")
-      .requiredOption("--candidate <id>", "Current triaged Candidate ID")
+      .requiredOption(
+        "--candidate <ref>",
+        "Current triaged Candidate ID or short reference",
+      )
       .requiredOption("--actor <name>", "Decision actor")
       .requiredOption(
         "--decision <decision>",
@@ -3174,6 +3261,10 @@ export const claimsCommand = new Command("claims")
         "Persist deterministic findings as Candidates without activating Claims",
       )
       .option("--all", "Include low-confidence and annotation-only Candidates")
+      .option(
+        "--verbose",
+        "Show full IDs, Subjects, types, and Evidence sources",
+      )
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsDiscover),
   )
@@ -3201,8 +3292,8 @@ export const claimsCommand = new Command("claims")
         "Record a human decision against a claim's current assessment",
       )
       .requiredOption(
-        "--claim <claimIdentityIdOrParameterKey>",
-        "Claim identity ID or canonical parameter key",
+        "--claim <claimIdOrCandidateRefOrParameterKey>",
+        "Claim ID, promoted Candidate reference, or canonical parameter key",
       )
       .option("--type <claimType>", "Claim type used to resolve a parameter")
       .option("--scope <scope>", "Claim scope used to resolve a parameter")
@@ -3218,8 +3309,8 @@ export const claimsCommand = new Command("claims")
         "Show current claims with their versioned dependencies and reopens",
       )
       .option(
-        "--claim <claimIdentityIdOrParameterKey>",
-        "Restrict explanation by claim identity or canonical parameter key",
+        "--claim <claimIdOrCandidateRefOrParameterKey>",
+        "Restrict by Claim ID, promoted Candidate reference, or parameter key",
       )
       .option("--type <claimType>", "Restrict explanation to one claim type")
       .option("--scope <scope>", "Restrict explanation to one claim scope")

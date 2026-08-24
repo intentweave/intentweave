@@ -15,6 +15,7 @@ import path from "node:path";
 import Database from "@intentweave/sqlite-compat";
 import { CandidateStore, initSchema } from "@intentweave/index";
 import { parsePortableClaimsStateYaml } from "../claims/portableState.js";
+import { shortCandidateReference } from "../claims/presentation.js";
 import {
   runClaimsCandidateReview,
   runClaimsCandidatesTriage,
@@ -61,7 +62,7 @@ describe("iw claims candidates", () => {
       candidates: Array<{ id: string }>;
     };
     await runClaimsCandidatesTriage({
-      candidate: discovered.candidates[0]!.id,
+      candidate: shortCandidateReference(discovered.candidates[0]!.id),
       format: "json",
     });
     const triaged = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
@@ -76,7 +77,7 @@ describe("iw claims candidates", () => {
     try {
       const log = vi.mocked(console.log);
       await runClaimsCandidateReview({
-        candidate: fixture.candidateId,
+        candidate: shortCandidateReference(fixture.candidateId),
         actor: "benjamin",
         decision: "promote",
         rationale: "PAGE_SIZE is a repository contract",
@@ -142,7 +143,7 @@ describe("iw claims candidates", () => {
 
       log.mockClear();
       await runClaimsExplain({
-        claim: output.review.candidate.id,
+        claim: shortCandidateReference(output.review.candidate.id),
         format: "json",
       });
       const candidateExplanation = JSON.parse(

@@ -110,9 +110,11 @@ describe("iw claims explain — generic Subjects (G1b)", () => {
     const lines = log.mock.calls.map(([message]) => String(message));
     expect(lines).toEqual(
       expect.arrayContaining([
-        "CLM-DEPENDENCY-CONFORMANCE: supported",
-        "  Subject: source=module:workspace:@intentweave/ui (module)",
-        "  Subject: target=module:workspace:@intentweave/persistence (module)",
+        "module:workspace:@intentweave/ui must not import module:workspace:@intentweave/persistence",
+        "  Status: supported",
+        "  Type: Architecture dependency (CLM-DEPENDENCY-CONFORMANCE)",
+        "  Source: module:workspace:@intentweave/ui (module)",
+        "  Target: module:workspace:@intentweave/persistence (module)",
         "  Identity contract: dependency-claim-identity@1",
         "  Materiality contract: dependency-claim-materiality@1",
       ]),

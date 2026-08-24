@@ -504,9 +504,11 @@ baselineAcceptances: {}
     });
     expect(log.mock.calls.map(([message]) => String(message))).toEqual(
       expect.arrayContaining([
-        "CLM-DOC-CONFORMANCE: refuted",
+        "Documentation for cli.index-build.depth must match the effective value",
+        "  Status: refuted",
+        "  Type: Documentation conformance (CLM-DOC-CONFORMANCE)",
         "  Parameter: cli.index-build.depth",
-        '  Statement: {"documentedValue":"structured","effectiveValue":"full"}',
+        "    Why: Documentation drift. (documentation-drift)",
       ]),
     );
 
@@ -1982,7 +1984,7 @@ baselineAcceptances: {}
     expect(process.exitCode).toBe(0);
     expect(log.mock.calls.map(([message]) => String(message))).toEqual(
       expect.arrayContaining([
-        "  Reopen: continuity-broken (open)",
+        "  Reopen: Continuity broken. (open, continuity-broken)",
         expect.stringContaining("    Dependency: evidence_version:"),
         expect.stringContaining("    Provenance: "),
       ]),
