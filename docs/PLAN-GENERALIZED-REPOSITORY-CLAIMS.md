@@ -1,8 +1,8 @@
 # Generalized Repository Claims
 
-> **Version:** 0.8
-> **Status:** Follow-on concept / implementation plan
-> **Date:** 2026-08-20
+> **Version:** 0.9
+> **Status:** Follow-on concept / implementation plan with delivery checkpoints
+> **Date:** 2026-08-24
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
 
 ## 1. Purpose
@@ -34,9 +34,9 @@ not provide enough recall, but they are not the authority that promotes or
 assesses a Claim. Once a Claim is promoted, its verification path must remain
 deterministic and must not require a model call in CI.
 
-## 2. Current Starting Point
+## 2. Original Starting Point
 
-The implemented slice currently supports:
+When this plan was written, the implemented slice supported:
 
 - provisional code discovery for scalar TypeScript and JavaScript literals,
 - canonical parameter bindings through `intentweave.bindings.yaml`,
@@ -49,9 +49,9 @@ The implemented slice currently supports:
 - carry-forward, reopen, explain, and CI exit codes,
 - persistent Claims history across a complete CARI rebuild.
 
-The central limitation is structural: every `ClaimIdentity` currently points to
-exactly one `ParameterIdentity`. Manifest-free code findings work, but they also
-receive a provisional code-based parameter identity.
+The central limitation at that point was structural: every `ClaimIdentity`
+pointed to exactly one `ParameterIdentity`. Manifest-free code findings worked,
+but they also received a provisional code-based parameter identity.
 
 The slice can therefore express statements about values and defaults, but not
 general Claims such as:
@@ -62,11 +62,11 @@ general Claims such as:
 - "The current dependency graph complies with ADR-17."
 - "The public function `parseConfig` documents its error cases."
 
-### 2.1 Implemented and Planned
+### 2.1 Baseline and Target
 
-This plan explicitly distinguishes the currently executable slice from the
-target state. Examples of general Claims do not imply that those capabilities
-have already shipped.
+This table records the original baseline and target. The dated implementation
+checkpoints in section 15 supersede its baseline column as phases ship; examples
+outside those checkpoints remain target behavior.
 
 | Area           | Implemented today                                                             | Target of this extension                                         |
 | -------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------- |
@@ -1469,7 +1469,68 @@ Acceptance:
   never implicitly `passed`,
 - relevant Guard changes reproducibly reopen affected Reviews.
 
+### G4 Follow-up Backlog: Framework-Independent Endpoint Correlation
+
+The NestJS adapter is the high-precision reference provider for Endpoint
+Evidence, not the permanent framework boundary. A later Endpoint correlation
+layer should add:
+
+- a provider-neutral `EndpointCorrelationAdapter` contract that normalizes
+  Route, handler, authentication mechanism, applicability, and completeness,
+- deterministic providers for known frameworks and a structural heuristic over
+  CARI imports, Decorators, Calls, middleware ordering, and configuration,
+- explicit modeling of global Guards, inherited middleware, wrapper functions,
+  and project-specific authentication helpers,
+- optional Structured Inference for unknown frameworks or semantic wrappers,
+  producing grounded Candidates with exact Evidence references,
+- confidence and ambiguity propagation across every proposed Route-to-Guard
+  binding,
+- promotion only by human Review or a versioned project Policy; an LLM
+  correlation alone can never produce `passed` or silently activate a Claim,
+- deterministic offline re-evaluation of promoted Claims after the original
+  correlation has been persisted.
+
+The reference acceptance suite should compare known-framework adapters,
+heuristic fallback, and model-assisted correlation on external repositories.
+Missing framework coverage, unknown global middleware, or incomplete call
+ordering must remain `inconclusive`, never become success through absence. This
+follow-up expands G4 Discovery coverage; it does not replace or delay the G5
+relational Claim model.
+
 ### Phase G5: Architecture Claim Slice
+
+Completion checkpoint (2026-08-24): G5 is implemented for the first bounded
+Architecture contract. `cari-architecture-dependency-conformance@1` reads
+structural `.iw/rules.yaml` clauses whose type is `import_pattern` and whose
+`in` and `pattern` values are static strings. It reuses the existing
+`rulesCheckFromDb` evaluator instead of introducing a second Architecture Rule
+inventory or evaluator, and projects the result into policy, import-inventory,
+and rule-check Evidence.
+
+Each Candidate binds relational `source` and `target` Module Subjects and can be
+promoted as `CLM-DEPENDENCY-CONFORMANCE`. The promoted Claim is evaluated by
+`R.dependency-conformance` under
+`dependency-conformance-import-pattern-v1`. Zero violations become `passed`
+only when at least one source file exists in the current checkout, the Rule
+scope is applicable, and every scoped file was indexed completely. Missing,
+excluded, ambiguous, or incomplete scope remains `inconclusive`; a forbidden
+import is `failed` and refutes the Claim; removal of the governing Rule appends
+a `not_applicable` result instead of deleting history.
+
+Architecture materiality retains the Rule identity, Source and Target meaning,
+applicability, completeness, normalized skipped reasons, and semantic violation
+details. File paths, line numbers, and the number of otherwise conformant source
+files are non-material, so a source-file rename or an additional clean file can
+append Evidence without reopening a Review. `claims check --since` and Explain
+use the same normalized RuleResult and existing reverse-dependency lifecycle.
+
+The fixed A0-A5 Git fixture exercises a conformant boundary, source-file rename
+with Review carry-forward, a forbidden import with `failed`/`refuted`, repair
+and reopen, an excluded scope with `inconclusive`, and Rule removal with
+`not_applicable`. G5 acceptance is complete for this bounded contract. The
+top-level `iw intent check` command still exposes the existing raw Rules check;
+unified Intent/Claims CLI orchestration remains a separate Definition-of-Done
+item rather than being implied by this evaluator bridge.
 
 - connect CARI imports and Architecture Rules as Evidence Adapters,
 - use relational Source and Target Subjects,
@@ -1508,6 +1569,17 @@ E3  unknown framework path, inconclusive
 E4  public Route explicitly exempted, not_applicable
 E5  documentation and implementation contracts contradict each other
 E6  Route deleted, retained as not_applicable and Review lifecycle preserved
+```
+
+### Architecture Dependency
+
+```text
+A0  applicable Rule and complete import Evidence, supported/passed
+A1  source-file rename only, append Evidence and carry Review forward
+A2  forbidden import introduced, failed/refuted and reopen
+A3  forbidden import removed, supported/passed and reopen
+A4  Rule scope excludes every current source file, inconclusive
+A5  Architecture Rule removed, retained as not_applicable and history preserved
 ```
 
 Every semantic adapter additionally verifies:

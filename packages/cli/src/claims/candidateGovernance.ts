@@ -157,6 +157,45 @@ export function projectRuleWarrantMaterialOutput(
   value: unknown,
 ): unknown {
   if (
+    ruleId === "R.dependency-conformance" &&
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    const output = value as Record<string, unknown>;
+    const violations = Array.isArray(output.violations)
+      ? output.violations.map((violation) => {
+          const normalized = record(
+            violation,
+            "Dependency conformance violation",
+          );
+          return { detail: normalized.detail ?? null };
+        })
+      : [];
+    const skippedScopeFiles = Array.isArray(output.skippedScopeFiles)
+      ? output.skippedScopeFiles.map((skipped) => {
+          const normalized = record(
+            skipped,
+            "Dependency conformance skipped file",
+          );
+          return { reason: normalized.reason ?? null };
+        })
+      : [];
+    return {
+      active: output.active ?? null,
+      architectureRuleId: output.architectureRuleId ?? null,
+      source: output.source ?? null,
+      target: output.target ?? null,
+      executed: output.executed ?? null,
+      applicable: output.applicable ?? null,
+      complete: output.complete ?? null,
+      skippedScopeFiles,
+      scopeWarnings: output.scopeWarnings ?? [],
+      violationCount: output.violationCount ?? null,
+      violations,
+    };
+  }
+  if (
     ruleId !== "R.endpoint-authentication" ||
     !value ||
     typeof value !== "object" ||
@@ -596,6 +635,125 @@ function promoteGenericCandidate(
       evidenceVersionIds,
       ruleContractVersion: "endpoint-authentication-nestjs-v1",
       implementationFingerprint: "endpoint-authentication-nestjs-impl-v1",
+    };
+    const previousWarrantMaterialFingerprint =
+      currentRuleWarrantMaterialFingerprint(
+        database,
+        ruleInput.ruleId,
+        ruleInput.subjectKey,
+      );
+    const nextWarrantMaterialFingerprint = ruleWarrantMaterialFingerprint(
+      database,
+      ruleInput,
+    );
+    warrantMaterialChanged =
+      previousWarrantMaterialFingerprint === undefined ||
+      previousWarrantMaterialFingerprint !== nextWarrantMaterialFingerprint;
+    const rule = new ClaimsStore(database).persistRuleResult(
+      ruleInput,
+      evidenceVersionIds,
+    );
+    const assessment = assessClaimPolicy([
+      {
+        dependencyKind: "rule_result_version",
+        dependencyVersionId: rule.id,
+        epistemicRole: "warrant",
+        authoritative: true,
+        ruleStatus,
+      },
+    ]);
+    status = assessment.status;
+    dependencies = assessment.dependencies;
+    changedWarrantVersionId = rule.id;
+  } else if (
+    candidate.proposedClaimType === "CLM-DEPENDENCY-CONFORMANCE" &&
+    candidate.discoveryAdapterId === "cari-architecture-dependency-conformance"
+  ) {
+    const policy = candidate.evidence.find(
+      (evidence) => evidence.role === "policy",
+    );
+    const imports = candidate.evidence.find(
+      (evidence) => evidence.role === "imports",
+    );
+    const result = candidate.evidence.find(
+      (evidence) => evidence.role === "result",
+    );
+    const policyValue = record(
+      evidenceNormalizedValue(database, policy?.evidenceVersionId),
+      "Architecture Policy Evidence",
+    );
+    const resultValue = record(
+      evidenceNormalizedValue(database, result?.evidenceVersionId),
+      "Architecture Rule Check Evidence",
+    );
+    const active = policyValue.active === true;
+    const executed = resultValue.executed === true;
+    const applicable = resultValue.applicable === true;
+    const complete = resultValue.complete === true;
+    const violationCount =
+      typeof resultValue.violationCount === "number"
+        ? resultValue.violationCount
+        : undefined;
+    const ambiguous = candidate.confidence === "ambiguous";
+    const ruleStatus: "passed" | "failed" | "inconclusive" | "not_applicable" =
+      !active
+        ? "not_applicable"
+        : ambiguous || !executed || !applicable || !complete
+          ? "inconclusive"
+          : violationCount === undefined
+            ? "inconclusive"
+            : violationCount > 0
+              ? "failed"
+              : "passed";
+    const reason = !active
+      ? "architecture-policy-no-longer-present"
+      : ambiguous
+        ? "architecture-policy-correlation-ambiguous"
+        : !executed
+          ? "architecture-rule-check-not-executed"
+          : !applicable
+            ? "architecture-rule-scope-not-applicable"
+            : !complete
+              ? "architecture-rule-evidence-incomplete"
+              : violationCount === undefined
+                ? "architecture-rule-result-missing"
+                : violationCount > 0
+                  ? "forbidden-dependency-detected"
+                  : "dependency-policy-conformant";
+    const evidenceVersionIds = [policy, imports, result].flatMap((evidence) =>
+      evidence?.evidenceVersionId ? [evidence.evidenceVersionId] : [],
+    );
+    const source = candidate.subjects.find(
+      (subject) => subject.role === "source",
+    );
+    const target = candidate.subjects.find(
+      (subject) => subject.role === "target",
+    );
+    const ruleInput = {
+      ruleId: "R.dependency-conformance",
+      subjectKey: `${source?.identityKey ?? ""}->${target?.identityKey ?? ""}`,
+      applicability: active
+        ? ("applicable" as const)
+        : ("not_applicable" as const),
+      normalizedStatus: ruleStatus,
+      normalizedOutput: {
+        active,
+        architectureRuleId: policyValue.ruleId ?? null,
+        source: source?.displayName ?? null,
+        target: target?.displayName ?? null,
+        executed,
+        applicable,
+        complete,
+        scopeFileCount: resultValue.scopeFileCount ?? null,
+        skippedScopeFiles: resultValue.skippedScopeFiles ?? [],
+        scopeWarnings: resultValue.scopeWarnings ?? [],
+        violationCount: violationCount ?? null,
+        violations: resultValue.violations ?? [],
+      },
+      normalizedReasons: [reason],
+      evidenceVersionIds,
+      ruleContractVersion: "dependency-conformance-import-pattern-v1",
+      implementationFingerprint: "cari-rules-check-import-pattern-impl-v1",
     };
     const previousWarrantMaterialFingerprint =
       currentRuleWarrantMaterialFingerprint(

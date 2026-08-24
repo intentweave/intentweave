@@ -23,6 +23,7 @@ import type {
   ClaimsContractVersions,
   PersistedVersion,
   PortableClaimsState,
+  RulesConfig,
   SubjectKind,
 } from "@intentweave/index";
 import {
@@ -48,6 +49,12 @@ import {
   NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
   persistNestEndpointCandidates,
 } from "../claims/nestEndpointDiscovery.js";
+import {
+  ARCHITECTURE_DEPENDENCY_ADAPTER_ID,
+  ARCHITECTURE_DEPENDENCY_CONTRACT_VERSION,
+  parseArchitectureRulesConfig,
+  persistArchitectureDependencyCandidates,
+} from "../claims/architectureDependencyDiscovery.js";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
@@ -377,6 +384,19 @@ function claimsDatabase(workspaceRoot: string): Database.Database {
   return openMigratedDatabase(dbPath);
 }
 
+function optionalArchitectureRulesConfig(
+  text: string | undefined,
+): RulesConfig | undefined {
+  if (text === undefined) return undefined;
+  try {
+    return parseArchitectureRulesConfig(yamlLoad(text));
+  } catch (error) {
+    throw new ClaimsBindingError(
+      `Invalid .iw/rules.yaml: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 export async function runClaimsDiscover(options: {
   all?: boolean;
   format: string;
@@ -424,10 +444,22 @@ export async function runClaimsDiscover(options: {
             : undefined;
         },
       );
+      const rulesPath = path.join(workspaceRoot, ".iw", "rules.yaml");
+      const architectureCandidates = persistArchitectureDependencyCandidates(
+        database,
+        revision,
+        workspaceRoot,
+        optionalArchitectureRulesConfig(
+          fs.existsSync(rulesPath)
+            ? fs.readFileSync(rulesPath, "utf-8")
+            : undefined,
+        ),
+      );
       const discovered = [
         ...r1Candidates,
         ...publicSymbolCandidates,
         ...endpointCandidates,
+        ...architectureCandidates,
       ];
       const explicitBindingKeys = new Set(
         boundObservations.map(
@@ -471,6 +503,11 @@ export async function runClaimsDiscover(options: {
           {
             id: NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
             contractVersion: NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+          {
+            id: ARCHITECTURE_DEPENDENCY_ADAPTER_ID,
+            contractVersion: ARCHITECTURE_DEPENDENCY_CONTRACT_VERSION,
             mode: "deterministic",
           },
         ],
@@ -1665,10 +1702,19 @@ export async function runClaimsCheck(options: {
           revision,
           readOptionalCurrentFile,
         );
+        const architectureCandidates = persistArchitectureDependencyCandidates(
+          database,
+          revision,
+          workspaceRoot,
+          optionalArchitectureRulesConfig(
+            readOptionalCurrentFile(".iw/rules.yaml"),
+          ),
+        );
         const discoveredCandidates = [
           ...r1Candidates,
           ...publicSymbolCandidates,
           ...endpointCandidates,
+          ...architectureCandidates,
         ];
         const candidateProjectionIssues = applyEffectiveCandidateDecisions(
           database,
