@@ -36,12 +36,14 @@ export {
 } from "./claims/canonical.js";
 export { ClaimsStore } from "./claims/store.js";
 export { CandidateStore } from "./claims/candidates.js";
+export { CandidateInferenceStore } from "./claims/inferences.js";
 export type {
   CandidateConfidence,
   CandidateDetails,
   CandidateDiscoveryMode,
   CandidateEvidence,
   CandidateEvidenceInput,
+  CandidateInferenceAttachmentInput,
   CandidateListFilter,
   CandidatePolicyDecisionInput,
   CandidateReviewDecision,
@@ -54,6 +56,12 @@ export type {
   PersistedCandidate,
   PersistedCandidateReview,
 } from "./claims/candidates.js";
+export type {
+  CandidateInferenceCacheKey,
+  CandidateInferenceConfidence,
+  CandidateInferenceDetails,
+  PersistCandidateInferenceInput,
+} from "./claims/inferences.js";
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export {

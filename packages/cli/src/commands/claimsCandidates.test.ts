@@ -13,7 +13,13 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "@intentweave/sqlite-compat";
-import { CandidateStore, initSchema } from "@intentweave/index";
+import {
+  CandidateInferenceStore,
+  CandidateStore,
+  ClaimsStore,
+  fingerprint,
+  initSchema,
+} from "@intentweave/index";
 import { parsePortableClaimsStateYaml } from "../claims/portableState.js";
 import { shortCandidateReference } from "../claims/presentation.js";
 import {
@@ -71,6 +77,158 @@ describe("iw claims candidates", () => {
     expect(triaged.candidates[0]?.state).toBe("triaged");
     return { ...fixture, candidateId: triaged.candidates[0]!.id };
   }
+
+  it("explains grounded semantic inference before Candidate promotion", async () => {
+    const fixture = workspace();
+    try {
+      const database = new Database(fixture.dbPath);
+      const evidenceVersionId = new ClaimsStore(
+        database,
+      ).persistGenericEvidence({
+        subjects: [
+          {
+            kind: "symbol",
+            identityKey: "symbol:parse-config-cli",
+            displayName: "parseConfig",
+            role: "subject",
+            basis: "documentation-name-match",
+            confidence: "probable",
+          },
+        ],
+        sourceKind: "documentation-reference",
+        identityKey: "documentation-reference:parse-config",
+        fingerprint: fingerprint({ text: "CLI parseConfig reference" }),
+        materialFingerprint: fingerprint({
+          text: "CLI parseConfig reference",
+        }),
+        normalizedValue: { text: "CLI parseConfig reference" },
+        semanticLocation: "docs/cli.md:10",
+        provenance: { fixture: true },
+        filePath: "docs/cli.md",
+        spanStartLine: 10,
+        spanEndLine: 10,
+      }).id;
+      const candidates = new CandidateStore(database);
+      const discovered = candidates.persist({
+        identityKey:
+          "public-symbol-doc-correlation:doc:parseConfig:parse-config-cli",
+        candidateKind: "public-symbol-documentation-correlation",
+        proposedClaimType: "CLM-PUBLIC-SYMBOL-DOCUMENTED",
+        discoveryMode: "deterministic",
+        discoveryAdapterId: "cari-public-symbol-documentation",
+        discoveryContractVersion: "1",
+        confidence: "ambiguous",
+        normalizedStatement: {
+          symbolName: "parseConfig",
+          symbolKind: "function",
+          proposedDocumentationPath: "docs/cli.md",
+          symbolFilePath: "packages/cli/src/config.ts",
+        },
+        provenance: { alternatives: ["parse-config-cli", "parse-config-core"] },
+        evidence: [
+          {
+            evidenceKey: "documentation-reference:parse-config",
+            evidenceVersionId,
+            sourceKind: "documentation-reference",
+            role: "documentation",
+            provenance: { filePath: "docs/cli.md", line: 10 },
+          },
+        ],
+        subjects: [
+          {
+            kind: "symbol",
+            identityKey: "symbol:parse-config-cli",
+            displayName: "parseConfig",
+            role: "subject",
+            basis: "ambiguous-documentation-name-match",
+            confidence: "ambiguous",
+          },
+        ],
+      });
+      const inference = new CandidateInferenceStore(database).persist({
+        identityKey:
+          "semantic-symbol-correlation:documentation-reference:parse-config",
+        adapterId: "semantic-symbol-documentation-correlation",
+        contractVersion: "1",
+        providerId: "fixture-v2",
+        modelId: "fixture-model",
+        promptVersion: "1",
+        inputFingerprint: fingerprint({ evidenceVersionId }),
+        normalizedOutput: {
+          selectedCandidateIdentityKey:
+            "public-symbol-doc-correlation:doc:parseConfig:parse-config-cli",
+          evidenceVersionIds: [evidenceVersionId],
+          rationale: "The CLI path identifies the intended Symbol.",
+        },
+        evidenceVersionIds: [evidenceVersionId],
+        proposedSubjectBindings: [
+          {
+            role: "subject",
+            subjectIdentityKey: "symbol:parse-config-cli",
+          },
+        ],
+        confidence: "probable",
+        rationale: "The CLI path identifies the intended Symbol.",
+        provenance: { requestId: "fixture-request", finishReason: "stop" },
+      });
+      const correlated = candidates.attachInference(discovered.id, {
+        inferenceId: inference.id,
+        confidence: "probable",
+        basis: "semantic-symbol-documentation-correlation",
+        provenance: { fixture: true },
+      });
+      database.close();
+
+      process.chdir(fixture.root);
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      await runClaimsExplain({
+        claim: shortCandidateReference(correlated.id),
+        format: "json",
+      });
+      const output = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+        kind: string;
+        candidate: { id: string; state: string; inferenceId: string };
+        inference: {
+          id: string;
+          adapterId: string;
+          confidence: string;
+          rationale: string;
+          evidenceVersionIds: string[];
+        };
+      };
+      expect(output).toMatchObject({
+        kind: "candidate",
+        candidate: {
+          id: correlated.id,
+          state: "correlated",
+          inferenceId: inference.id,
+        },
+        inference: {
+          id: inference.id,
+          adapterId: "semantic-symbol-documentation-correlation",
+          confidence: "probable",
+          rationale: "The CLI path identifies the intended Symbol.",
+          evidenceVersionIds: [evidenceVersionId],
+        },
+      });
+
+      log.mockClear();
+      await runClaimsExplain({
+        claim: shortCandidateReference(correlated.id),
+        format: "text",
+      });
+      expect(log.mock.calls.flat().join("\n")).toContain(
+        "Semantic inference: probable via semantic-symbol-documentation-correlation@1",
+      );
+      expect(log.mock.calls.flat().join("\n")).toContain(
+        "Why: The CLI path identifies the intended Symbol.",
+      );
+      expect(process.exitCode).toBe(0);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
 
   it("promotes a triaged R1 Candidate into a linked active Claim", async () => {
     const fixture = await discoverAndTriage();
@@ -262,10 +420,16 @@ describe("iw claims candidates", () => {
         claim: fixture.candidateId,
         format: "json",
       });
-      expect(process.exitCode).toBe(64);
-      expect(String(vi.mocked(console.error).mock.calls.at(-1)?.[0])).toContain(
-        "has no effective promotion",
-      );
+      expect(process.exitCode).toBe(0);
+      expect(
+        JSON.parse(
+          String(vi.mocked(console.log).mock.calls.at(-1)?.[0]),
+        ) as unknown,
+      ).toMatchObject({
+        kind: "candidate",
+        candidate: { state: "triaged" },
+        inference: null,
+      });
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }

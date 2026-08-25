@@ -91,6 +91,13 @@ export interface CandidatePolicyDecisionInput {
   promotedClaimIdentityId?: string;
 }
 
+export interface CandidateInferenceAttachmentInput {
+  inferenceId: string;
+  confidence: "probable" | "ambiguous";
+  basis: string;
+  provenance: unknown;
+}
+
 export interface CandidateEvidence {
   evidenceKey: string;
   evidenceVersionId?: string;
@@ -366,6 +373,143 @@ export class CandidateStore {
     return transition();
   }
 
+  attachInference(
+    candidateId: string,
+    input: CandidateInferenceAttachmentInput,
+  ): PersistedCandidate {
+    const attach = this.db.transaction(() => {
+      requireNonEmpty(input.inferenceId, "Candidate Inference ID");
+      requireNonEmpty(input.basis, "Candidate Inference basis");
+      const inference = this.db
+        .prepare(`SELECT confidence FROM candidate_inferences WHERE id = ?`)
+        .get(input.inferenceId) as
+        | { confidence: CandidateConfidence }
+        | undefined;
+      if (!inference) {
+        throw new Error(
+          `Candidate Inference ${input.inferenceId} does not exist`,
+        );
+      }
+      if (
+        input.confidence === "probable" &&
+        inference.confidence !== "probable"
+      ) {
+        throw new Error(
+          `Ambiguous Candidate Inference ${input.inferenceId} cannot create a probable correlation`,
+        );
+      }
+      const basis = this.rowById(candidateId);
+      if (!basis) throw new Error(`Candidate ${candidateId} does not exist`);
+      const source = this.db
+        .prepare(
+          `SELECT * FROM claim_candidates WHERE identity_key = ?
+                  ORDER BY version_ordinal DESC LIMIT 1`,
+        )
+        .get(basis.identity_key) as CandidateDetailRow;
+      if (source.id !== candidateId) {
+        throw new Error(`Candidate ${candidateId} is not the current version`);
+      }
+      if (!["discovered", "correlated"].includes(source.state)) {
+        throw new Error(
+          `Candidate ${candidateId} cannot attach Inference from ${source.state}`,
+        );
+      }
+      const targetState: CandidateState =
+        input.confidence === "probable" ? "correlated" : "discovered";
+      if (
+        source.inference_id === input.inferenceId &&
+        source.confidence === input.confidence &&
+        source.state === targetState
+      ) {
+        return persistedCandidate(source, false);
+      }
+
+      const ordinal = source.version_ordinal + 1;
+      const id = `candidate:${fingerprint(source.identity_key)}@${ordinal}`;
+      const baseFingerprint = fingerprint({
+        observationFingerprint: logicalFingerprint(
+          source.observation_fingerprint,
+        ),
+        state: targetState,
+        inferenceId: input.inferenceId,
+        confidence: input.confidence,
+      });
+      const returning = this.rowsForIdentity(source.identity_key).some(
+        (version) =>
+          logicalFingerprint(version.fingerprint) === baseFingerprint,
+      );
+      const versionFingerprint = returning
+        ? `${baseFingerprint}${REOBSERVED_MARKER}${ordinal}`
+        : baseFingerprint;
+      const now = Date.now();
+      this.db
+        .prepare(
+          `INSERT INTO claim_candidates (
+             id, identity_key, version_ordinal, candidate_kind,
+             proposed_claim_type, discovery_mode, discovery_adapter_id,
+             discovery_contract_version, inference_id, confidence, state,
+             fingerprint, observation_fingerprint, normalized_statement_json,
+             provenance_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          source.identity_key,
+          ordinal,
+          source.candidate_kind,
+          source.proposed_claim_type,
+          source.discovery_mode,
+          source.discovery_adapter_id,
+          source.discovery_contract_version,
+          input.inferenceId,
+          input.confidence,
+          targetState,
+          versionFingerprint,
+          source.observation_fingerprint,
+          source.normalized_statement_json,
+          canonicalJson({
+            inference: {
+              id: input.inferenceId,
+              basis: input.basis,
+              provenance: input.provenance,
+            },
+          }),
+          now,
+        );
+      this.db
+        .prepare(
+          `INSERT INTO candidate_evidence (
+             candidate_id, evidence_key, evidence_version_id, source_kind,
+             evidence_role, provenance_json, created_at
+           )
+           SELECT ?, evidence_key, evidence_version_id, source_kind,
+                  evidence_role, provenance_json, ?
+           FROM candidate_evidence WHERE candidate_id = ?`,
+        )
+        .run(id, now, source.id);
+      this.db
+        .prepare(
+          `INSERT INTO candidate_subjects (
+             candidate_id, subject_identity_id, subject_role,
+             basis, confidence, created_at
+           )
+           SELECT ?, subject_identity_id, subject_role, ?, ?, ?
+           FROM candidate_subjects WHERE candidate_id = ?`,
+        )
+        .run(id, input.basis, input.confidence, now, source.id);
+      return {
+        id,
+        identityKey: source.identity_key,
+        ordinal,
+        state: targetState,
+        fingerprint: versionFingerprint,
+        observationFingerprint: source.observation_fingerprint,
+        created: true,
+      };
+    });
+    return attach();
+  }
+
   triage(candidateId: string, provenance: unknown): PersistedCandidate {
     let current = this.details(candidateId);
     if (!current) throw new Error(`Candidate ${candidateId} does not exist`);
@@ -380,7 +524,9 @@ export class CandidateStore {
     if (current.state === "triaged") {
       return { ...current, created: false };
     }
-    throw new Error(`Candidate ${current.id} cannot be triaged from ${current.state}`);
+    throw new Error(
+      `Candidate ${current.id} cannot be triaged from ${current.state}`,
+    );
   }
 
   review(input: CandidateReviewInput): PersistedCandidateReview {
@@ -414,7 +560,9 @@ export class CandidateStore {
       }
       const current = this.rowsForIdentity(basis.identity_key)[0];
       if (!current || current.id !== input.candidateId) {
-        throw new Error(`Candidate ${input.candidateId} is not the current version`);
+        throw new Error(
+          `Candidate ${input.candidateId} is not the current version`,
+        );
       }
       if (current.state !== "triaged") {
         throw new Error(
@@ -743,10 +891,7 @@ export class CandidateStore {
       .get(candidateId) as CandidateRow | undefined;
   }
 
-  private transitionAllowed(
-    from: CandidateState,
-    to: CandidateState,
-  ): boolean {
+  private transitionAllowed(from: CandidateState, to: CandidateState): boolean {
     if (to === "superseded") return true;
     return (
       (from === "discovered" && to === "correlated") ||

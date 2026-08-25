@@ -4,6 +4,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Database from "@intentweave/sqlite-compat";
 import { CandidateStore } from "../claims/candidates.js";
+import { CandidateInferenceStore } from "../claims/inferences.js";
+import { ClaimsStore } from "../claims/store.js";
+import { fingerprint } from "../claims/canonical.js";
 import { initSchema } from "../schema.js";
 
 describe("CandidateStore", () => {
@@ -106,6 +109,75 @@ describe("CandidateStore", () => {
     });
   });
 
+  it("attaches a grounded Inference without deterministic rescan oscillation", () => {
+    const evidenceVersionId = new ClaimsStore(db).persistGenericEvidence({
+      subjects: [
+        {
+          kind: "parameter",
+          identityKey: "parameter:code:variable:timeout",
+          role: "subject",
+          basis: "test",
+          confidence: "probable",
+        },
+      ],
+      sourceKind: "code-default",
+      identityKey: "code:variable:timeout:literal",
+      fingerprint: fingerprint({ value: 1800 }),
+      materialFingerprint: fingerprint({ value: 1800 }),
+      normalizedValue: 1800,
+      semanticLocation: "timeout",
+      provenance: { fixture: true },
+    }).id;
+    const inference = new CandidateInferenceStore(db).persist({
+      identityKey: "semantic-timeout-correlation",
+      adapterId: "semantic-correlation",
+      contractVersion: "1",
+      providerId: "fixture",
+      modelId: "fixture-model",
+      promptVersion: "1",
+      inputFingerprint: "input-a",
+      normalizedOutput: { selected: true },
+      evidenceVersionIds: [evidenceVersionId],
+      proposedSubjectBindings: [
+        {
+          role: "subject",
+          identityKey: "parameter:code:variable:timeout",
+        },
+      ],
+      confidence: "probable",
+      rationale: "The Evidence identifies the timeout Parameter",
+      provenance: { fixture: true },
+    });
+    const discovered = store.persist(input(1800));
+    const correlated = store.attachInference(discovered.id, {
+      inferenceId: inference.id,
+      confidence: "probable",
+      basis: "semantic-correlation",
+      provenance: { fixture: true },
+    });
+    const rescanned = store.persist(input(1800));
+    const repeated = store.attachInference(rescanned.id, {
+      inferenceId: inference.id,
+      confidence: "probable",
+      basis: "semantic-correlation",
+      provenance: { fixture: true },
+    });
+
+    expect(correlated).toMatchObject({ state: "correlated", ordinal: 2 });
+    expect(rescanned).toEqual({ ...correlated, created: false });
+    expect(repeated).toEqual({ ...correlated, created: false });
+    expect(store.details(correlated.id)).toMatchObject({
+      inferenceId: inference.id,
+      confidence: "probable",
+      subjects: [
+        expect.objectContaining({
+          basis: "semantic-correlation",
+          confidence: "probable",
+        }),
+      ],
+    });
+  });
+
   it("applies effective Reviews only after deterministic triage", () => {
     const discovered = store.persist(input(1800));
     const correlated = store.transition(discovered.id, "correlated", {});
@@ -205,9 +277,7 @@ describe("CandidateStore", () => {
     });
     expect(
       db
-        .prepare(
-          `SELECT actor_kind, actor_id, effect FROM candidate_reviews`,
-        )
+        .prepare(`SELECT actor_kind, actor_id, effect FROM candidate_reviews`)
         .get(),
     ).toEqual({
       actor_kind: "policy",

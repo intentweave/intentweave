@@ -464,9 +464,7 @@ function claimsCompanionTablesInSchema(
   if (CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return CLAIMS_COMPANION_TABLES;
   }
-  if (
-    SCHEMA_18_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))
-  ) {
+  if (SCHEMA_18_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
     return SCHEMA_18_CLAIMS_COMPANION_TABLES;
   }
   if (SCHEMA_17_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {

@@ -6,7 +6,9 @@ import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { Command } from "commander";
 import Database from "@intentweave/sqlite-compat";
+import type { LLMProvider } from "@intentweave/core";
 import {
+  CandidateInferenceStore,
   CandidateStore,
   ClaimsEngine,
   ClaimsReviewStore,
@@ -17,6 +19,7 @@ import {
   openMigratedDatabase,
 } from "@intentweave/index";
 import type {
+  CandidateInferenceDetails,
   CandidateReviewDecision,
   CandidateState,
   ClaimScalar,
@@ -55,6 +58,11 @@ import {
   parseArchitectureRulesConfig,
   persistArchitectureDependencyCandidates,
 } from "../claims/architectureDependencyDiscovery.js";
+import {
+  runSemanticSymbolCorrelation,
+  SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+  SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
+} from "../claims/semanticSymbolCorrelation.js";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
@@ -427,6 +435,10 @@ function optionalArchitectureRulesConfig(
 export async function runClaimsDiscover(options: {
   all?: boolean;
   verbose?: boolean;
+  semantic?: boolean;
+  provider?: string;
+  model?: string;
+  semanticLimit?: string;
   format: string;
 }): Promise<void> {
   const workspaceRoot = process.cwd();
@@ -489,6 +501,27 @@ export async function runClaimsDiscover(options: {
         ...endpointCandidates,
         ...architectureCandidates,
       ];
+      let semanticDiscovery;
+      if (options.semantic) {
+        const semanticLimit = Number.parseInt(
+          options.semanticLimit ?? "20",
+          10,
+        );
+        if (!Number.isInteger(semanticLimit) || semanticLimit <= 0) {
+          throw new ClaimsBindingError(
+            "Semantic correlation limit must be a positive integer",
+          );
+        }
+        semanticDiscovery = await runSemanticSymbolCorrelation({
+          database,
+          provider: await resolveSemanticClaimsProvider(
+            options.provider ?? "openai",
+            options.model,
+          ),
+          model: options.model,
+          limit: semanticLimit,
+        });
+      }
       const explicitBindingKeys = new Set(
         boundObservations.map(
           (observation) =>
@@ -504,10 +537,19 @@ export async function runClaimsDiscover(options: {
         resolveContracts(),
         explicitBindingKeys,
       );
-      const candidates = discovered.map((candidate) => ({
-        ...candidate,
-        ...store.current(candidate.identityKey)!,
-      }));
+      const candidates = discovered.map((candidate) => {
+        const current = store.current(candidate.identityKey)!;
+        const details = store.details(current.id)!;
+        return {
+          ...candidate,
+          ...current,
+          confidence: details.confidence,
+          ...(details.inferenceId ? { inferenceId: details.inferenceId } : {}),
+          surfaced:
+            candidate.surfaced ||
+            (Boolean(details.inferenceId) && details.confidence === "probable"),
+        };
+      });
       const surfaced = candidates.filter(
         (candidate) => options.all || candidate.surfaced,
       );
@@ -538,8 +580,17 @@ export async function runClaimsDiscover(options: {
             contractVersion: ARCHITECTURE_DEPENDENCY_CONTRACT_VERSION,
             mode: "deterministic",
           },
+          ...(options.semantic
+            ? [
+                {
+                  id: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+                  contractVersion: SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
+                  mode: "model",
+                },
+              ]
+            : []),
         ],
-        semanticDiscovery: "not_run",
+        semanticDiscovery: semanticDiscovery ?? "not_run",
         discoveredCount: candidates.length,
         surfacedCount: candidates.filter((candidate) => candidate.surfaced)
           .length,
@@ -555,7 +606,25 @@ export async function runClaimsDiscover(options: {
           `Discovered ${output.discoveredCount} Candidate${output.discoveredCount === 1 ? "" : "s"} ` +
             `(${output.surfacedCount} surfaced, ${output.hiddenCount} visible with --all).`,
         );
-        console.log("Semantic discovery was not run.");
+        if (!semanticDiscovery) {
+          console.log("Semantic discovery was not run.");
+        } else if (semanticDiscovery.status === "not_applicable") {
+          console.log(
+            "Semantic discovery found no ambiguous Symbol documentation groups.",
+          );
+        } else {
+          console.log(
+            `Semantic discovery evaluated ${semanticDiscovery.groups} group${semanticDiscovery.groups === 1 ? "" : "s"}: ` +
+              `${semanticDiscovery.providerCalls} provider call${semanticDiscovery.providerCalls === 1 ? "" : "s"}, ` +
+              `${semanticDiscovery.cacheHits} cache hit${semanticDiscovery.cacheHits === 1 ? "" : "s"}, ` +
+              `${semanticDiscovery.correlatedCandidateIds.length} probable correlation${semanticDiscovery.correlatedCandidateIds.length === 1 ? "" : "s"}.`,
+          );
+          for (const failure of semanticDiscovery.failures) {
+            console.log(
+              `  Semantic ${failure.kind}: ${failure.message} (${failure.evidenceKey})`,
+            );
+          }
+        }
         for (const candidate of surfaced) {
           const details = store.details(candidate.id);
           if (!details) continue;
@@ -569,7 +638,7 @@ export async function runClaimsDiscover(options: {
           }
         }
       }
-      process.exitCode = 0;
+      process.exitCode = semanticDiscovery?.status === "failed" ? 1 : 0;
     } finally {
       database.close();
     }
@@ -581,6 +650,24 @@ export async function runClaimsDiscover(options: {
         ? 64
         : 1;
   }
+}
+
+async function resolveSemanticClaimsProvider(
+  providerName: string,
+  model?: string,
+): Promise<LLMProvider> {
+  if (providerName !== "openai") {
+    throw new ClaimsBindingError(
+      `Unsupported semantic Claims provider ${providerName}; expected openai`,
+    );
+  }
+  const { OpenAILLMProvider } = await import("@intentweave/plugin-llm");
+  return new OpenAILLMProvider({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL,
+    organization: process.env.OPENAI_ORGANIZATION,
+    model: model ?? process.env.IW_LLM_MODEL,
+  });
 }
 
 const CANDIDATE_STATES: readonly CandidateState[] = [
@@ -2716,6 +2803,22 @@ function promotedClaimForCandidate(
     candidateReference,
     false,
   );
+  const promotedClaimIdentityId = promotedClaimForCandidateId(
+    database,
+    candidateId,
+  );
+  if (!promotedClaimIdentityId) {
+    throw new ClaimsBindingError(
+      `Candidate ${candidateId} has no effective promotion`,
+    );
+  }
+  return promotedClaimIdentityId;
+}
+
+function promotedClaimForCandidateId(
+  database: Database.Database,
+  candidateId: string,
+): string | undefined {
   const selected = database
     .prepare(
       `SELECT identity_key, version_ordinal
@@ -2767,12 +2870,93 @@ function promotedClaimForCandidate(
       nextCycle.start_ordinal,
       nextCycle.start_ordinal,
     ) as { promoted_claim_identity_id: string } | undefined;
-  if (!promotion) {
-    throw new ClaimsBindingError(
-      `Candidate ${candidateId} has no effective promotion`,
-    );
+  return promotion?.promoted_claim_identity_id;
+}
+
+function explainCandidate(
+  database: Database.Database,
+  candidateId: string,
+  format: string,
+): void {
+  const candidate = new CandidateStore(database).details(candidateId);
+  if (!candidate) {
+    throw new ClaimsBindingError(`Candidate ${candidateId} does not exist`);
   }
-  return promotion.promoted_claim_identity_id;
+  const inference = candidate.inferenceId
+    ? (new CandidateInferenceStore(database).details(candidate.inferenceId) ??
+      null)
+    : null;
+  if (format === "json") {
+    console.log(
+      JSON.stringify({ kind: "candidate", candidate, inference }, null, 2),
+    );
+    return;
+  }
+  for (const line of candidateDisplayLines(candidate, { verbose: true })) {
+    console.log(line);
+  }
+  if (!inference) {
+    console.log("  Semantic inference: none");
+    return;
+  }
+  printCandidateInference(inference);
+}
+
+function printCandidateInference(
+  inference: CandidateInferenceDetails,
+  indent = "  ",
+): void {
+  console.log(
+    `${indent}Semantic inference: ${inference.confidence} via ${inference.adapterId}@${inference.contractVersion}`,
+  );
+  console.log(
+    `${indent}  Provider: ${inference.providerId}, model ${inference.modelId}, prompt ${inference.promptVersion}`,
+  );
+  console.log(`${indent}  Why: ${inference.rationale}`);
+  console.log(
+    `${indent}  EvidenceVersions: ${inference.evidenceVersionIds.length > 0 ? inference.evidenceVersionIds.join(", ") : "none"}`,
+  );
+  console.log(
+    `${indent}  Proposed Subjects: ${inference.proposedSubjectBindings.length > 0 ? JSON.stringify(inference.proposedSubjectBindings) : "none"}`,
+  );
+  console.log(`${indent}  Provenance: ${JSON.stringify(inference.provenance)}`);
+  console.log(`${indent}  Inference ID: ${inference.id}`);
+}
+
+function candidatePromotionExplanation(
+  database: Database.Database,
+  claimIdentityId: string,
+): Record<string, unknown> | null {
+  const promotion = database
+    .prepare(
+      `SELECT review.actor_kind, review.actor_id, review.decision,
+              candidate.identity_key AS candidate_identity_key,
+              candidate.observation_fingerprint,
+              candidate.inference_id,
+              policy.policy_id, policy.policy_version,
+              policy.rationale AS policy_rationale
+       FROM candidate_reviews review
+       JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+       LEFT JOIN candidate_policy_decisions policy
+         ON policy.candidate_id = review.candidate_id
+        AND policy.promoted_claim_identity_id = review.promoted_claim_identity_id
+       WHERE review.promoted_claim_identity_id = ?
+         AND review.decision = 'promote'
+         AND review.effect = 'effective'
+       ORDER BY candidate.version_ordinal DESC, review.created_at DESC
+       LIMIT 1`,
+    )
+    .get(claimIdentityId) as
+    | (Record<string, unknown> & { inference_id: string | null })
+    | undefined;
+  if (!promotion) return null;
+  const { inference_id: inferenceId, ...details } = promotion;
+  return {
+    ...details,
+    inference: inferenceId
+      ? (new CandidateInferenceStore(database).details(inferenceId) ?? null)
+      : null,
+  };
 }
 
 function matchingClaimIdentities(
@@ -2939,11 +3123,31 @@ export async function runClaimsExplain(options: {
   try {
     const database = claimsDatabase(process.cwd());
     try {
-      const claimId = options.claim?.startsWith("candidate:")
-        ? promotedClaimForCandidate(database, options.claim)
-        : options.claim?.startsWith("claim:")
-          ? options.claim
-          : null;
+      let claimId: string | null = null;
+      if (options.claim?.startsWith("candidate:")) {
+        const candidateId = resolveCandidateReference(
+          database,
+          options.claim,
+          false,
+        );
+        const promotedClaimIdentityId = promotedClaimForCandidateId(
+          database,
+          candidateId,
+        );
+        if (!promotedClaimIdentityId) {
+          if (options.type || options.scope) {
+            throw new ClaimsBindingError(
+              "--type and --scope only apply after a Candidate has been promoted",
+            );
+          }
+          explainCandidate(database, candidateId, options.format);
+          process.exitCode = 0;
+          return;
+        }
+        claimId = promotedClaimIdentityId;
+      } else if (options.claim?.startsWith("claim:")) {
+        claimId = options.claim;
+      }
       const parameterKey = options.claim && !claimId ? options.claim : null;
       const assessments = database
         .prepare(
@@ -3057,26 +3261,10 @@ export async function runClaimsExplain(options: {
           identityKey: subject.identity_key,
           displayName: subject.display_name,
         })),
-        promotion:
-          database
-            .prepare(
-              `SELECT review.actor_kind, review.actor_id, review.decision,
-                    candidate.identity_key AS candidate_identity_key,
-                    candidate.observation_fingerprint,
-                    policy.policy_id, policy.policy_version,
-                    policy.rationale AS policy_rationale
-             FROM candidate_reviews review
-             JOIN claim_candidates candidate ON candidate.id = review.candidate_id
-             LEFT JOIN candidate_policy_decisions policy
-               ON policy.candidate_id = review.candidate_id
-              AND policy.promoted_claim_identity_id = review.promoted_claim_identity_id
-             WHERE review.promoted_claim_identity_id = ?
-               AND review.decision = 'promote'
-               AND review.effect = 'effective'
-             ORDER BY candidate.version_ordinal DESC, review.created_at DESC
-             LIMIT 1`,
-            )
-            .get(assessment.claim_identity_id) ?? null,
+        promotion: candidatePromotionExplanation(
+          database,
+          assessment.claim_identity_id,
+        ),
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),
@@ -3181,6 +3369,7 @@ export async function runClaimsExplain(options: {
               candidate_identity_key: string;
               policy_id: string | null;
               policy_version: string | null;
+              inference: CandidateInferenceDetails | null;
             };
             console.log(
               `  Promoted from: ${promotion.candidate_identity_key} by ${
@@ -3189,6 +3378,9 @@ export async function runClaimsExplain(options: {
                   : `${promotion.actor_kind}:${promotion.actor_id}`
               }`,
             );
+            if (promotion.inference) {
+              printCandidateInference(promotion.inference, "    ");
+            }
           }
           for (const dependency of claim.dependencies as Array<{
             dependency_kind: string;
@@ -3285,13 +3477,26 @@ export const claimsCommand = new Command("claims")
   .description("Discover, assess, explain, and review repository claims")
   .addCommand(
     new Command("discover")
-      .description(
-        "Persist deterministic findings as Candidates without activating Claims",
-      )
+      .description("Persist findings as Candidates without activating Claims")
       .option("--all", "Include low-confidence and annotation-only Candidates")
       .option(
         "--verbose",
         "Show full IDs, Subjects, types, and Evidence sources",
+      )
+      .option(
+        "--semantic",
+        "Opt in to grounded model-backed correlation for ambiguous findings",
+      )
+      .option(
+        "--provider <provider>",
+        "Semantic inference provider (currently openai)",
+        "openai",
+      )
+      .option("--model <model>", "Per-request semantic inference model")
+      .option(
+        "--semantic-limit <n>",
+        "Maximum ambiguous groups evaluated semantically",
+        "20",
       )
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsDiscover),

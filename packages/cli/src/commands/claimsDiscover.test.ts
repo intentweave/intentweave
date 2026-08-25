@@ -43,6 +43,7 @@ describe("iw claims discover", () => {
 
       await runClaimsDiscover({ all: true, format: "json" });
       await runClaimsDiscover({ all: true, format: "json" });
+      await runClaimsDiscover({ all: true, format: "json", semantic: true });
 
       const first = JSON.parse(String(log.mock.calls[0]?.[0])) as {
         discoveredCount: number;
@@ -58,6 +59,18 @@ describe("iw claims discover", () => {
       expect(first.candidates[0]).toMatchObject({
         state: "discovered",
         sourceKinds: ["code-annotation", "code-default"],
+      });
+      const semantic = JSON.parse(String(log.mock.calls[2]?.[0])) as {
+        semanticDiscovery: {
+          status: string;
+          groups: number;
+          providerCalls: number;
+        };
+      };
+      expect(semantic.semanticDiscovery).toMatchObject({
+        status: "not_applicable",
+        groups: 0,
+        providerCalls: 0,
       });
       const persisted = new Database(dbPath, { readonly: true });
       expect(
@@ -78,6 +91,11 @@ describe("iw claims discover", () => {
       expect(
         persisted
           .prepare(`SELECT COUNT(*) AS count FROM claim_identities`)
+          .get(),
+      ).toEqual({ count: 0 });
+      expect(
+        persisted
+          .prepare(`SELECT COUNT(*) AS count FROM candidate_inferences`)
           .get(),
       ).toEqual({ count: 0 });
       persisted.close();
