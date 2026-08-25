@@ -1,6 +1,6 @@
 # Generalized Repository Claims
 
-> **Version:** 1.0
+> **Version:** 1.1
 > **Status:** Follow-on concept / implementation plan with delivery checkpoints
 > **Date:** 2026-08-24
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
@@ -1330,8 +1330,30 @@ table, persists positive or explicitly missing documentation Evidence, and
 evaluates promoted Claims as `supported`, `refuted`, `inconclusive`, or
 `not_applicable`. Unpromoted Symbol Candidates remain outside the gate, while
 changed observations of an already promoted Symbol Claim continue through the
-materialized `promoted-claim-continuity@1` Policy. Structured inference and
-semantic adapters remain open.
+materialized `promoted-claim-continuity@1` Policy.
+
+Structured-Inference checkpoint (2026-08-25): the existing public
+`LLMProvider` remains the sole low-level transport SPI. Its optional v2 contract
+adds caller cancellation, per-request-model capability resolution, refusal,
+content-filter and unknown finish reasons, effective-model metadata, provider
+request and model revision IDs, detailed token usage, typed transport failures,
+and HTTP status provenance. The v1 shape remains valid for existing text callers
+without a runtime wrapper; only `StructuredInferenceService` requires an
+explicit v2 provider.
+
+`StructuredInferenceService` now selects the provider's model-specific output
+mode, retains normalized provenance and a raw-output fingerprint, parses JSON,
+and validates every successful response locally with JSON Schema. Refusal,
+content filtering, truncation, invalid JSON, schema mismatch, rate limiting,
+timeout, caller cancellation, transport failure, provider error, and unknown
+finish reasons remain distinct typed failures. The OpenAI-compatible adapter is
+v2 and preserves these outcomes and metadata; unknown model names conservatively
+fall back to text mode rather than claiming strict Structured Output support.
+
+The remaining G2 semantic work is the append-only `CandidateInference`
+persistence/cache integration and the first grounded, explicit-opt-in semantic
+Discovery and Correlation adapter. Neither is part of the transport abstraction
+completed by this checkpoint.
 
 - implement Candidate persistence and states,
 - separate Discovery, Correlation, Triage, and Promotion,
