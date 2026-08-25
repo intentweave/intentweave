@@ -1,6 +1,7 @@
 # Parameter Claims Compatibility V1
 
-Status: frozen G0 implementation baseline  
+Status: frozen G0 implementation baseline
+
 Baseline schema: `16`
 
 This contract protects the existing Parameter Claims slice while generalized

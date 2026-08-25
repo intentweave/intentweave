@@ -1,8 +1,8 @@
 # Generalized Repository Claims
 
-> **Version:** 1.1
+> **Version:** 1.4
 > **Status:** Follow-on concept / implementation plan with delivery checkpoints
-> **Date:** 2026-08-24
+> **Date:** 2026-08-25
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
 
 ## 1. Purpose
@@ -575,8 +575,9 @@ selection, and enforcement:
 
 ```text
 iw index build
--> iw claims discover [--ai]
--> iw claims candidates triage [--ai]
+-> iw claims discover [--semantic]
+-> iw claims candidates recommend [--semantic]
+-> iw claims candidates triage
 -> iw claims candidates review --decision promote|reject|suppress|defer
 -> iw claims check
 -> iw claims explain
@@ -1110,9 +1111,10 @@ Discovery is visibly separated from evaluation without removing the convenient
 standard path:
 
 ```text
-iw claims discover [--ai] [--subject-kind K] [--claim-type T] [--all]
+iw claims discover [--semantic] [--provider P] [--model M] [--all]
 iw claims candidates list [--state S] [--subject-kind K] [--all]
-iw claims candidates triage [--ai] [--subject-kind K] [--claim-type T]
+iw claims candidates recommend [--semantic] [--candidate ID] [--limit N]
+iw claims candidates triage [--subject-kind K] [--claim-type T]
 iw claims candidates review --candidate ID --actor NAME \
   --decision promote|reject|suppress|defer
 iw claims check [--scope S] [--since REV] [--claim-type T] [--refresh]
@@ -1124,17 +1126,21 @@ iw claims baseline accept --actor NAME [--claim-type T]
 
 Behavior:
 
-- `claims discover` runs deterministic adapters by default; `--ai` also runs
+- `claims discover` runs deterministic adapters by default; `--semantic` also runs
   enabled semantic Discovery and Correlation adapters.
 - model-backed adapters run only for changed input and contract fingerprints and
   reuse persisted inferences otherwise.
-- without `--ai`, the CLI states that semantic Discovery was not run. Reduced
+- without `--semantic`, the CLI states that semantic Discovery was not run. Reduced
   recall is never presented as repository conformance.
 - `claims check` continues to run deterministic Discovery before evaluation with
   `--refresh` or by default, but outside the R1 compatibility path it evaluates
   only promoted Claims.
-- `claims candidates triage --ai` creates recommendations, not promotions, by
-  default. Automatic promotion requires an explicit project Policy.
+- semantic adapters create grounded recommendations, not promotions. Automatic
+  promotion requires an explicit project Policy.
+- `claims candidates recommend --semantic` is the future AI-assisted relevance,
+  prioritization, grouping, and duplicate-proposal workflow. It persists
+  `actorKind: ai`, `effect: recommendation` Reviews but does not make an
+  effective Candidate decision or change CI behavior.
 - `claims candidates review` decides whether to add a Candidate to the governed
   Claim inventory; `claims review` evaluates a ClaimAssessment instead.
 - `claims list` is an inventory and lifecycle view, not a replacement for
@@ -1145,7 +1151,7 @@ Behavior:
 - `intent check` orchestrates the same Claims Runtime together with existing
   structural, behavioral, and documentary Intent Rules. It does not calculate a
   parallel set of Claim results.
-- CI evaluation of promoted Claims never requires `--ai`. If a promoted Claim
+- CI evaluation of promoted Claims never requires `--semantic`. If a promoted Claim
   requires a missing or stale effective semantic artifact, the result is
   `inconclusive`, never implicitly `passed`.
 
@@ -1350,10 +1356,29 @@ finish reasons remain distinct typed failures. The OpenAI-compatible adapter is
 v2 and preserves these outcomes and metadata; unknown model names conservatively
 fall back to text mode rather than claiming strict Structured Output support.
 
-The remaining G2 semantic work is the append-only `CandidateInference`
-persistence/cache integration and the first grounded, explicit-opt-in semantic
-Discovery and Correlation adapter. Neither is part of the transport abstraction
-completed by this checkpoint.
+Candidate-Inference checkpoint (2026-08-25): schema 19 now has an append-only
+`CandidateInferenceStore` with exact adapter, contract, provider, model, prompt,
+and input-fingerprint cache keys. Changed output appends history, including
+A-to-B-to-A observations, while unchanged semantic input reuses the persisted
+artifact and does not repeat a model call. Inferences carry grounded
+EvidenceVersion IDs, proposed Subject bindings, confidence, rationale, and the
+complete normalized `StructuredInferenceService` provenance.
+
+The first model-backed adapter is deliberately bounded to an existing concrete
+ambiguity: one documentation reference matching multiple same-named public
+Symbols. `iw claims discover --semantic` may select exactly one supplied
+Candidate and must echo the supplied EvidenceVersion ID; invented Candidate or
+Evidence identities remain `ambiguous` and make the authoring run fail. A
+grounded selection becomes a `probable` correlated Candidate but is never
+promoted automatically. The deterministic path remains the default, and
+`claims check` never invokes the model. `iw claims explain --claim candidate:...`
+explains unpromoted Candidates and includes inference, grounding, model,
+contract, rationale, and request provenance; after promotion the Claim
+explanation retains the same inference provenance.
+
+This completes the bounded G2 semantic acceptance path. Broader semantic
+adapters for framework discovery or cross-artifact correlation remain future
+family work rather than a prerequisite for deterministic Claims or CI.
 
 - implement Candidate persistence and states,
 - separate Discovery, Correlation, Triage, and Promotion,
@@ -1563,6 +1588,63 @@ Acceptance:
 - "no violation found" becomes `passed` only with complete applicability and
   sufficient Evidence.
 
+### Phase G5.1: Candidate State Semantics and Explicit Rule Policy
+
+Status: proposed follow-up; not implemented in the current checkpoint.
+
+Before AI-assisted curation, make the Candidate state machine match the visible
+product language. Confidence and lifecycle state answer different questions:
+
+```text
+confidence  How strongly is the proposed Candidate or Subject binding grounded?
+state       Where is the Candidate in the curation and governance lifecycle?
+```
+
+The state invariants are fixed as follows:
+
+- `discovered`: a Candidate statement exists, but one or more required Subject
+  roles remain unresolved or only ambiguously proposed,
+- `correlated`: every required Subject role for the proposed Claim family has a
+  current grounded binding with at least `probable` confidence,
+- `triaged`: a human has deliberately placed the correlated Candidate into the
+  relevance-decision inbox,
+- `promoted`, `rejected`, and `suppressed`: an effective human or versioned
+  Policy decision closed the Candidate Review,
+- `superseded`: a system transition replaced the Candidate observation or
+  contract without rewriting history.
+
+Deterministic and model-backed Correlation use the same state invariant.
+Architecture Candidates with complete `source`, `target`, and Rule bindings are
+therefore `correlated` immediately; an ambiguous semantic Subject proposal
+remains `discovered`. Triage must not manufacture an otherwise unsupported
+Correlation transition merely to advance the workflow. A human may resolve an
+ambiguous binding during Triage, but that resolution is persisted as an
+explicit grounded Correlation artifact first.
+
+Existing Candidate history remains append-only. Updating these invariants
+appends corrected current versions and preserves prior IDs, Reviews, Policies,
+and promotion links. CLI text and filters explain confidence separately from
+state, and regression tests cover deterministic Correlation, semantic
+Correlation, ambiguity, Triage, and reclassification.
+
+Explicit repository declarations use deterministic governance before AI. Add
+an opt-in versioned `explicit-architecture-rule@1` Candidate Policy for static,
+supported `.iw/rules.yaml` Rules. Its materialized decision names the Rule ID,
+Rule contract, Candidate fingerprint, and promoted Claim identity. Unsupported,
+dynamic, incomplete, or ambiguous Rules remain Candidates and are never
+silently promoted. This Policy changes Claims governance only; it does not
+create a parallel Architecture Rule inventory or evaluator.
+
+Acceptance:
+
+- `candidates list --state correlated` consistently includes deterministic and
+  semantic Candidates whose required Subject roles are grounded,
+- `certain` never implies human relevance approval or automatic promotion,
+- Triage does not create a synthetic Correlation for unresolved Subjects,
+- the explicit Architecture Rule Policy is opt-in, portable, versioned,
+  explainable, and idempotent,
+- disabling the Policy leaves raw Architecture Rule evaluation unchanged.
+
 ### Unified Intent Gate
 
 Completion checkpoint (2026-08-24): `iw intent check` is the primary combined
@@ -1578,6 +1660,186 @@ Claims together with the governing Claim identity. Unpromoted Architecture
 Rules remain visible as raw Rules violations. `--rules-only` deliberately keeps
 the unpartitioned Rules view, while `iw index rules-check` remains the expert
 entry point for baseline and diagnostic Rules workflows.
+
+### Phase G6: AI-Assisted Candidate Curation and Correlation
+
+Status: proposed follow-on; not implemented beyond the bounded G2 reference
+adapter.
+
+G6 starts only after the generalized lifecycle has been proven by one vertical
+slice and then broadened through the Symbol, Endpoint, and Architecture Claim
+families. This sequencing is deliberate:
+
+```text
+G0-G2  prove the generalized Candidate-to-Claim lifecycle
+G3-G5  broaden deterministic Claim families and expose real coverage gaps
+G6     add AI only where deterministic extraction, correlation, or curation
+       has measured recall or noise limitations
+```
+
+The bounded semantic Symbol correlation delivered in G2 is the reference path
+for transport, grounding, persistence, caching, and Explain. It is not a general
+AI relevance reviewer. G6 turns that reference path into reusable product
+capabilities without making a model part of `claims check` or `intent check`.
+
+#### G6a: Eligibility, Context, and Noise Baseline
+
+Before batch inference, define which Candidates are eligible and which context
+may be sent to a provider:
+
+- process only new or materially changed, unresolved Candidates by default,
+- exclude generated artifacts, fixtures, examples, and known low-value literal
+  classes through deterministic versioned Policies before invoking a model,
+- bound source excerpts, Evidence count, Candidate groups, tokens, cost, and
+  concurrency per authoring run,
+- build provider-neutral context from Candidate, Subject, EvidenceVersion,
+  Claim-family, repository-policy, and optional ADR references,
+- treat repository text, code, documentation, and configuration as untrusted
+  model input: delimit it from instructions, disable model tool execution, and
+  reject output that does not satisfy local schemas and grounding checks,
+- redact secrets and configured sensitive paths before request construction,
+  require an explicit provider allowlist, and offer a context preview that
+  shows what would leave the local process,
+- measure Candidate volume, duplicate rate, precision, recall, and first-screen
+  noise on external repositories before enabling automation,
+- clarify lifecycle presentation: `certain` is correlation confidence,
+  `discovered` is inbox state, and `correlated` is not a synonym for human
+  relevance approval.
+
+Explicit project declarations should use deterministic Policy before AI. For
+example, a static Architecture Rule in `.iw/rules.yaml` may be governed by an
+opt-in versioned `explicit-architecture-rule` Candidate Policy rather than by a
+model opinion about whether the author-written Rule is relevant.
+
+#### G6b: AI Relevance and Triage Recommendations
+
+Add a provider-neutral recommendation contract:
+
+```ts
+interface CandidateTriageRecommendation {
+  candidateId: string;
+  candidateFingerprint: string;
+  recommendation: "promote" | "reject" | "suppress" | "defer";
+  rationale: string;
+  evidenceVersionIds: string[];
+  confidence: "probable" | "ambiguous";
+  priority: "critical" | "high" | "medium" | "low";
+  duplicateOfCandidateId?: string;
+  proposedClaimType?: string;
+  proposedSubjectBindings?: unknown[];
+}
+```
+
+The recommendation is persisted as a versioned `CandidateInference` and a
+`candidate_review` with `actorKind: "ai"` and `effect: "recommendation"`.
+Recommendation Reviews may reference current `discovered`, `correlated`, or
+`triaged` Candidates without changing their lifecycle state; effective Reviews
+still require explicit Triage. This requires a narrow CandidateStore contract
+extension because the current Review path accepts only `triaged` Candidates.
+
+A recommendation is current only for the exact Candidate fingerprint and
+Inference contract that produced it. A materially changed Candidate makes the
+recommendation stale without deleting it. Model aliases do not trigger silent
+refreshes; a new model revision is observed only through an explicit refresh or
+contract change and appends a new Inference version. An effective human or
+Policy Review that acts on a recommendation records
+`basedOnRecommendationId`; it has its own actor and rationale and never mutates
+the recommendation.
+
+The authoring workflow becomes:
+
+```text
+iw claims candidates recommend --semantic
+-> inspect ranked recommendations and grounded rationale
+-> iw claims candidates triage --candidate ID
+-> iw claims candidates review --candidate ID --decision ...
+```
+
+`candidates list` gains recommendation, priority, Claim-family, duplicate, and
+"not human reviewed" filters. Explain shows the recommendation separately from
+the effective human or Policy decision. Ranking and grouping are non-authoritative
+views over persisted artifacts and never affect Claim assessment or CI exits.
+
+#### G6c: Generalized Semantic Correlation
+
+Replace the hard-coded single semantic invocation with a versioned induction
+adapter registry keyed by Claim family, Candidate kind, and supported Subject
+roles. Every adapter uses the same normalized grounding contract and can assign
+at most `probable` confidence without a deterministic anchor.
+
+Expansion order follows measured coverage gaps rather than implementation
+convenience:
+
+1. framework-independent Endpoint correlation for unknown middleware, wrappers,
+   global Guards, and project-specific authentication helpers,
+2. cross-artifact correlation between code, configuration, documentation, ADRs,
+   and Architecture Rules,
+3. duplicate and continuity proposals across refactors where Git and structural
+   identity remain ambiguous,
+4. semantic Claim extraction for prose or conventions that have no reliable
+   deterministic syntax.
+
+Known frameworks and explicit bindings continue to use deterministic adapters
+first. Model-backed correlation is a fallback for unresolved ambiguity, not a
+replacement for CARI Evidence or family Rules.
+
+#### G6d: Policy-Governed Automation
+
+Automation is introduced as an explicit ladder:
+
+1. deterministic Policies for explicit repository declarations,
+2. human acceptance of individual AI recommendations,
+3. versioned Policies derived from repeated accepted decisions,
+4. optional Policy-controlled auto-promotion for a narrowly defined Claim
+   family, inference contract, minimum confidence, and verifiable anchor.
+
+AI output alone never promotes a Candidate. Auto-promotion requires an enabled,
+versioned repository Policy whose materialized decision names the inference,
+Policy version, grounding Evidence, and rationale. New automation runs in
+report-only mode before becoming effective and can be disabled without changing
+the deterministic evaluation of already promoted Claims.
+
+An AI-backed auto-promotion Policy is eligible only when the Claim family has a
+deterministic Rule Adapter for subsequent checks and the required Subject roles
+have verifiable grounded anchors. It must define family-specific evaluation
+thresholds, a minimum reviewed sample, an acceptable false-promotion rate, and
+a report-only observation period. A recommendation cannot auto-promote a Claim
+whose initial and future Assessments would depend only on model judgment.
+
+Unaccepted recommendations remain local. Once a human or Policy makes a
+semantic binding effective, `.iw/claims/state.yaml` stores the normalized
+binding, durable identity keys, Candidate and Inference fingerprints, adapter
+and contract versions, effective decision, and audit provenance. Provider
+payloads, full prompts, secrets, and source excerpts remain local. Export,
+import, stale-reference handling, and byte-identical round trips follow the
+portability contract in section 10.4.
+
+Acceptance:
+
+- unchanged inference inputs reuse persisted results without provider access,
+- every recommendation and correlation cites existing Candidate, Subject, and
+  EvidenceVersion identities; invented identities are rejected,
+- AI recommendations remain append-only, explainable, and non-effective until a
+  human or approved Policy acts,
+- accepting or rejecting a recommendation is a separate effective decision with
+  its own actor, rationale, `basedOnRecommendationId`, and portable provenance,
+- stale recommendations are retained as history but excluded from current
+  ranking and automation,
+- disabling semantic induction reduces authoring coverage explicitly but does
+  not change checks of promoted Claims,
+- batch limits, cancellation, typed provider failures, privacy exclusions, and
+  cost summaries are visible to the authoring user,
+- ranking does not hide ambiguous or low-priority Candidates from `--all`,
+- evaluation fixtures demonstrate useful precision and inbox-noise reduction
+  before any AI-backed auto-promotion Policy can become effective,
+- effective semantic bindings survive export, fresh-index import, and offline
+  Explain without provider access,
+- repository prompt injection, secret redaction, provider allowlisting, and
+  request-context preview are covered by adversarial fixtures,
+- AI-backed auto-promotion is unavailable without a deterministic family Rule
+  Adapter, grounded Subject anchors, reviewed quality thresholds, and a
+  completed report-only period,
+- `iw claims check` and `iw intent check` never require a model call.
 
 ## 16. Test Strategy
 

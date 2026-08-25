@@ -455,34 +455,68 @@ the TypeScript pipeline (same fallback behavior as `--include`/`--exclude`).
 
 ### Claims discovery and optional bindings
 
-`iw claims check` extracts provisional claims directly from syntactically strong
-scalar literal bindings in TypeScript and JavaScript: exported literals,
-top-level constants, parameter/destructuring defaults, and directly annotated
-defaults. Ordinary local variables, loop counters, accumulators, assignments,
-tests, fixtures, generated output, dependencies, and build directories are not
-materialized as claims by the default scan.
+`iw claims discover` persists possible repository statements as Candidates
+without activating them as governed Claims. Deterministic adapters currently
+cover TypeScript/JavaScript scalar bindings, public Symbol documentation,
+bounded NestJS Endpoint authentication, and supported Architecture import
+Rules. Unpromoted Candidates remain outside `iw claims check` and CI.
+
+The scalar adapter inspects syntactically strong bindings such as exported
+literals, top-level constants, parameter/destructuring defaults, and directly
+annotated defaults. Ordinary local variables, loop counters, accumulators,
+tests, fixtures, generated output, dependencies, and build directories are
+excluded from the default scan.
 
 Explicit defaults become `CLM-DEFAULT`; other exported or top-level constants
 become `CLM-LITERAL`. A directly attached JSDoc default is captured as separate
 corroborating or contradicting evidence.
 
-No binding manifest or scope registry is required for this unscoped discovery:
+No binding manifest or scope registry is required for unscoped Candidate
+Discovery. Inspect and curate the inbox explicitly:
 
 ```bash
 iw index build
-iw claims check
-iw claims explain
+iw claims discover
+iw claims discover --all --verbose
+iw claims candidates list --verbose
+iw claims candidates triage --candidate 'candidate:<hash>@<version>'
+iw claims candidates review \
+  --candidate 'candidate:<hash>@<version>' \
+  --actor alice \
+  --decision promote \
+  --rationale 'This statement should be governed'
 ```
 
-Automatically discovered code claims use provisional code-based parameter
-identities and `r1-discovery` provenance. IntentWeave does not guess that
-similarly named code, configuration, and prose values represent the same domain
-parameter.
+`promote`, `reject`, `suppress`, and `defer` are explicit Candidate decisions.
+Only promotion creates an active Claim and enters Assessment, Review, reopen,
+and CI. Candidate confidence describes grounding quality; it is not a human
+approval. Automatically discovered code Candidates use provisional code-based
+Parameter Subjects and `r1-discovery` provenance. IntentWeave does not guess
+that similarly named code, configuration, and prose values represent the same
+domain Parameter.
 
-Add `intentweave.bindings.yaml` only when you want to promote or correlate a
-candidate with a canonical parameter key, documentation assertion, or scoped
-configuration. Scoped checks additionally require `config/environments.yaml`
-and the corresponding `config/<scope>.yaml` files.
+Semantic Correlation is opt-in authoring behavior:
+
+```bash
+export OPENAI_API_KEY=...
+iw claims discover --semantic --all --verbose
+iw claims candidates list --state correlated --verbose
+iw claims explain --claim 'candidate:<hash>@<version>'
+```
+
+The initial model-backed adapter is deliberately narrow: it resolves one
+documentation reference that could refer to multiple same-named public Symbols.
+It cites existing Candidate and EvidenceVersion IDs, persists a cached
+append-only inference, and can assign at most `probable` confidence. If no such
+ambiguous group exists, Semantic Discovery reports `not_applicable` and makes no
+provider call. It does not review the relevance of all Candidates, promote a
+Candidate, or run during `iw claims check` or `iw intent check`.
+
+Add `intentweave.bindings.yaml` when you want to correlate and promote a
+Candidate through the versioned `explicit-binding` Policy with a canonical
+Parameter key, documentation assertion, or scoped configuration. Scoped checks
+additionally require `config/environments.yaml` and the corresponding
+`config/<scope>.yaml` files.
 
 ```yaml
 # intentweave.bindings.yaml
@@ -514,8 +548,8 @@ session:
   timeout: 3600
 ```
 
-With optional bindings in place, evaluate the correlated scope and inspect the
-evidence chain:
+With an explicit binding or a manually promoted Candidate in place, evaluate
+the active Claim inventory and inspect the Evidence chain:
 
 ```bash
 iw claims check --scope production
@@ -525,9 +559,11 @@ iw claims check --scope production --since origin/main
 iw claims check --refresh
 ```
 
-`--claim` accepts either the stable `claim:<sha256>` identity or a canonical
-parameter key. A parameter can have several claims, so use `--type` and, for
-scoped claims, `--scope` when selecting exactly one claim for review.
+`--claim` accepts a stable `claim:<sha256>` identity, a promoted or unpromoted
+`candidate:<sha256>@<version>` reference, or a canonical Parameter key. An
+unpromoted Candidate explanation shows its current Evidence, Subjects, and any
+semantic inference. A Parameter can have several Claims, so use `--type` and,
+for scoped Claims, `--scope` when selecting exactly one active Claim for Review.
 
 `--refresh` reconciles the current automatic discovery result with previously
 current provisional `code:*` claims. Claims that no longer pass discovery are
