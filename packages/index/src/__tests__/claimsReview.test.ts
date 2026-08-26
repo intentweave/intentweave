@@ -75,6 +75,46 @@ describe("ClaimsReviewStore", () => {
     ]);
   });
 
+  it("supersedes a changed decision on the same assessment", () => {
+    const current = assessment(3600, "r3@1");
+    const accepted = reviews.record({
+      claimIdentityId: current.claimIdentityId,
+      basisAssessmentId: current.id,
+      decision: "accepted",
+      actor: "reviewer",
+    });
+
+    const rejected = reviews.record({
+      claimIdentityId: current.claimIdentityId,
+      basisAssessmentId: current.id,
+      decision: "rejected",
+      actor: "reviewer",
+    });
+
+    expect(rejected.id).not.toBe(accepted.id);
+    expect(
+      db
+        .prepare(
+          `SELECT id, decision, is_current, superseded_by_decision_id
+           FROM review_decisions ORDER BY is_current ASC`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: accepted.id,
+        decision: "accepted",
+        is_current: 0,
+        superseded_by_decision_id: rejected.id,
+      },
+      {
+        id: rejected.id,
+        decision: "rejected",
+        is_current: 1,
+        superseded_by_decision_id: null,
+      },
+    ]);
+  });
+
   it("invalidates a current review with an explicit material-change reopen", () => {
     const first = assessment(3600, "r3@1");
     reviews.record({

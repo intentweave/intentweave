@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Database from "@intentweave/sqlite-compat";
 import { ClaimsStore } from "../claims/store.js";
 import { fingerprint, materialFingerprint } from "../claims/canonical.js";
+import {
+  affectedCurrentAssessmentsForSubject,
+  affectedCurrentAssessmentsForSubjectAlias,
+  affectedCurrentAssessmentsForSubjectContinuity,
+  subjectIdentity,
+} from "../claims/subjects.js";
 import { initSchema } from "../schema.js";
 
 describe("ClaimsStore", () => {
@@ -395,5 +401,497 @@ describe("ClaimsStore", () => {
       .prepare(`SELECT COUNT(*) AS count FROM rule_result_versions`)
       .get() as { count: number };
     expect(ruleCount.count).toBe(1);
+  });
+});
+
+describe("ClaimsStore generic Subjects (G1b)", () => {
+  let db: Database.Database;
+  let store: ClaimsStore;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    initSchema(db);
+    store = new ClaimsStore(db);
+  });
+
+  afterEach(() => db.close());
+
+  const dependencyClaim = () => ({
+    subjects: [
+      {
+        kind: "module" as const,
+        identityKey: "module:workspace:@intentweave/ui",
+        role: "source",
+      },
+      {
+        kind: "module" as const,
+        identityKey: "module:workspace:@intentweave/persistence",
+        role: "target",
+      },
+    ],
+    claimType: "CLM-DEPENDENCY-CONFORMANCE",
+    identityContract: { id: "dependency-claim-identity", version: "1" },
+    materialityContract: {
+      id: "dependency-claim-materiality",
+      version: "1",
+    },
+    normalizedStatement: {
+      source: "module:workspace:@intentweave/ui",
+      target: "module:workspace:@intentweave/persistence",
+      rule: "no-ui-to-persistence",
+    },
+    assessmentPolicyId: "dependency-conformance",
+    assessmentPolicyVersion: "1",
+    repositoryRevision: "rev:1",
+    status: "supported" as const,
+    dependencies: [],
+  });
+
+  it("persists versioned generic Evidence with Subject links", () => {
+    const input = {
+      subjects: [
+        {
+          kind: "symbol" as const,
+          identityKey: "symbol:exported-handler",
+          displayName: "handleRequest",
+          role: "subject",
+          basis: "cari-symbol-table",
+          confidence: "certain",
+        },
+      ],
+      sourceKind: "code-documentation",
+      identityKey: "public-symbol-doc:exported-handler:documentation",
+      materialFingerprint: fingerprint({ present: false }),
+      normalizedValue: { present: false },
+      semanticLocation: "symbol:exported-handler.documentation",
+      provenance: { adapterId: "cari-public-symbol-documentation" },
+      filePath: "src/handler.ts",
+      symbolId: "exported-handler",
+      repositoryRevision: "rev:1",
+    };
+    const first = store.persistGenericEvidence({
+      ...input,
+      fingerprint: fingerprint({ present: false, line: 1 }),
+      spanStartLine: 1,
+      spanEndLine: 1,
+    });
+    const repeated = store.persistGenericEvidence({
+      ...input,
+      fingerprint: fingerprint({ present: false, line: 1 }),
+      spanStartLine: 1,
+      spanEndLine: 1,
+    });
+    const moved = store.persistGenericEvidence({
+      ...input,
+      fingerprint: fingerprint({ present: false, line: 3 }),
+      spanStartLine: 3,
+      spanEndLine: 3,
+      repositoryRevision: "rev:2",
+    });
+
+    expect(first).toMatchObject({ ordinal: 1, created: true });
+    expect(repeated).toEqual({ ...first, created: false });
+    expect(moved).toMatchObject({ ordinal: 2, created: true });
+    expect(
+      db
+        .prepare(
+          `SELECT identity.parameter_identity_id, subject.kind,
+                  subject.identity_key, link.subject_role,
+                  link.basis, link.confidence
+           FROM evidence_identities identity
+           JOIN evidence_subjects link
+             ON link.evidence_identity_id = identity.id
+           JOIN subject_identities subject
+             ON subject.id = link.subject_identity_id
+           WHERE identity.identity_key = ?`,
+        )
+        .get(input.identityKey),
+    ).toEqual({
+      parameter_identity_id: null,
+      kind: "symbol",
+      identity_key: "symbol:exported-handler",
+      subject_role: "subject",
+      basis: "cari-symbol-table",
+      confidence: "certain",
+    });
+    expect(
+      db.prepare(`SELECT COUNT(*) AS count FROM parameter_identities`).get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("persists a two-Subject Claim without a ParameterIdentity", () => {
+    const assessment = store.persistGenericClaimAssessment(dependencyClaim());
+
+    expect(assessment.created).toBe(true);
+    const claim = db
+      .prepare(
+        `SELECT parameter_identity_id, claim_type, identity_key
+         FROM claim_identities WHERE id = ?`,
+      )
+      .get(assessment.claimIdentityId) as {
+      parameter_identity_id: string | null;
+      claim_type: string;
+      identity_key: string;
+    };
+    expect(claim.parameter_identity_id).toBeNull();
+    expect(claim.claim_type).toBe("CLM-DEPENDENCY-CONFORMANCE");
+
+    const links = db
+      .prepare(
+        `SELECT link.subject_role, subject.kind, subject.identity_key
+         FROM claim_subjects link
+         JOIN subject_identities subject
+           ON subject.id = link.subject_identity_id
+         WHERE link.claim_identity_id = ?
+         ORDER BY link.subject_role`,
+      )
+      .all(assessment.claimIdentityId) as Array<{
+      subject_role: string;
+      kind: string;
+      identity_key: string;
+    }>;
+    expect(links).toEqual([
+      {
+        subject_role: "source",
+        kind: "module",
+        identity_key: "module:workspace:@intentweave/ui",
+      },
+      {
+        subject_role: "target",
+        kind: "module",
+        identity_key: "module:workspace:@intentweave/persistence",
+      },
+    ]);
+    // No synthetic Parameter identity was created.
+    expect(
+      db.prepare(`SELECT COUNT(*) AS count FROM parameter_identities`).get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("is idempotent for unchanged generic Claims and versions material changes", () => {
+    const first = store.persistGenericClaimAssessment(dependencyClaim());
+    const repeated = store.persistGenericClaimAssessment(dependencyClaim());
+    expect(repeated).toEqual({ ...first, created: false });
+
+    const changed = store.persistGenericClaimAssessment({
+      ...dependencyClaim(),
+      normalizedStatement: {
+        source: "module:workspace:@intentweave/ui",
+        target: "module:workspace:@intentweave/persistence",
+        rule: "no-ui-to-persistence",
+        exception: "read-models",
+      },
+      repositoryRevision: "rev:2",
+    });
+    expect(changed.created).toBe(true);
+    expect(changed.claimIdentityId).toBe(first.claimIdentityId);
+    expect(changed.claimVersionId).not.toBe(first.claimVersionId);
+
+    const versions = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM claim_versions
+         WHERE claim_identity_id = ?`,
+      )
+      .get(first.claimIdentityId) as { count: number };
+    expect(versions.count).toBe(2);
+  });
+
+  it("versions materiality contracts and identities separately", () => {
+    const first = store.persistGenericClaimAssessment(dependencyClaim());
+    const materialityChanged = store.persistGenericClaimAssessment({
+      ...dependencyClaim(),
+      materialityContract: {
+        id: "dependency-claim-materiality",
+        version: "2",
+      },
+      repositoryRevision: "rev:2",
+    });
+    const identityChanged = store.persistGenericClaimAssessment({
+      ...dependencyClaim(),
+      identityContract: { id: "dependency-claim-identity", version: "2" },
+      repositoryRevision: "rev:3",
+    });
+
+    expect(materialityChanged.claimIdentityId).toBe(first.claimIdentityId);
+    expect(materialityChanged.claimVersionId).not.toBe(first.claimVersionId);
+    expect(identityChanged.claimIdentityId).not.toBe(first.claimIdentityId);
+    expect(
+      db
+        .prepare(
+          `SELECT identity_contract_id, identity_contract_version
+           FROM claim_identities WHERE id = ?`,
+        )
+        .get(first.claimIdentityId),
+    ).toEqual({
+      identity_contract_id: "dependency-claim-identity",
+      identity_contract_version: "1",
+    });
+    expect(
+      db
+        .prepare(
+          `SELECT materiality_contract_id, materiality_contract_version
+           FROM claim_versions WHERE id = ?`,
+        )
+        .get(materialityChanged.claimVersionId),
+    ).toEqual({
+      materiality_contract_id: "dependency-claim-materiality",
+      materiality_contract_version: "2",
+    });
+  });
+
+  it("derives a stable Claim identity independent of Subject order", () => {
+    const forward = store.persistGenericClaimAssessment(dependencyClaim());
+    const reversed = store.persistGenericClaimAssessment({
+      ...dependencyClaim(),
+      subjects: [...dependencyClaim().subjects].reverse(),
+    });
+    expect(reversed.claimIdentityId).toBe(forward.claimIdentityId);
+    expect(reversed.created).toBe(false);
+  });
+
+  it("can attach correlated Subjects without making them Claim identity inputs", () => {
+    const endpoint = {
+      kind: "endpoint" as const,
+      identityKey: "endpoint:nestjs:POST:/admin/users",
+      displayName: "POST /admin/users",
+      role: "endpoint",
+    };
+    const input = {
+      ...dependencyClaim(),
+      subjects: [
+        endpoint,
+        {
+          kind: "symbol" as const,
+          identityKey: "symbol:AdminController.createUser",
+          role: "handler",
+        },
+      ],
+      identitySubjectRoles: ["endpoint"],
+      claimType: "CLM-ENDPOINT-AUTHENTICATED",
+      identityContract: {
+        id: "endpoint-authentication-identity",
+        version: "1",
+      },
+    };
+    const first = store.persistGenericClaimAssessment(input);
+    const renamed = store.persistGenericClaimAssessment({
+      ...input,
+      subjects: [
+        endpoint,
+        {
+          kind: "symbol",
+          identityKey: "symbol:AdminController.registerUser",
+          role: "handler",
+        },
+      ],
+      repositoryRevision: "rev:2",
+    });
+
+    expect(renamed.claimIdentityId).toBe(first.claimIdentityId);
+    expect(
+      db
+        .prepare(
+          `SELECT subject.subject_role, identity.identity_key
+           FROM claim_subjects subject
+           JOIN subject_identities identity
+             ON identity.id = subject.subject_identity_id
+           WHERE subject.claim_identity_id = ?
+           ORDER BY identity.identity_key`,
+        )
+        .all(first.claimIdentityId),
+    ).toEqual([
+      {
+        subject_role: "endpoint",
+        identity_key: "endpoint:nestjs:POST:/admin/users",
+      },
+      {
+        subject_role: "handler",
+        identity_key: "symbol:AdminController.createUser",
+      },
+      {
+        subject_role: "handler",
+        identity_key: "symbol:AdminController.registerUser",
+      },
+    ]);
+  });
+
+  it("rejects generic Claims without Subjects or with duplicate roles", () => {
+    expect(() =>
+      store.persistGenericClaimAssessment({
+        ...dependencyClaim(),
+        subjects: [],
+      }),
+    ).toThrow(/at least one Subject/);
+    expect(() =>
+      store.persistGenericClaimAssessment({
+        ...dependencyClaim(),
+        subjects: [
+          dependencyClaim().subjects[0]!,
+          dependencyClaim().subjects[0]!,
+        ],
+      }),
+    ).toThrow(/Duplicate Claim Subject/);
+    expect(() =>
+      store.persistGenericClaimAssessment({
+        ...dependencyClaim(),
+        subjects: [
+          {
+            kind: "module",
+            identityKey: "module:workspace:@intentweave/ui",
+            role: "  ",
+          },
+        ],
+      }),
+    ).toThrow(/non-empty role/);
+  });
+
+  it("does not conflate distinct Subject tuples with the same concatenation", () => {
+    expect(() =>
+      store.persistGenericClaimAssessment({
+        ...dependencyClaim(),
+        subjects: [
+          {
+            kind: "module",
+            identityKey: "module:symbol:x",
+            role: "source",
+          },
+          {
+            kind: "symbol",
+            identityKey: "symbol:x",
+            role: "sourcemodule:",
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("derives reverse impact from Subjects, aliases, and continuity", () => {
+    const first = store.persistGenericClaimAssessment(dependencyClaim());
+    const renamedInput = {
+      ...dependencyClaim(),
+      subjects: [
+        {
+          kind: "module" as const,
+          identityKey: "module:workspace:@intentweave/web",
+          role: "source",
+        },
+      ],
+      normalizedStatement: { documented: true },
+    };
+    const renamed = store.persistGenericClaimAssessment(renamedInput);
+    const source = subjectIdentity(
+      "module",
+      "module:workspace:@intentweave/ui",
+    );
+    const target = subjectIdentity(
+      "module",
+      "module:workspace:@intentweave/web",
+    );
+
+    expect(
+      store.persistSubjectAlias({
+        subjectIdentityId: source.id,
+        aliasKind: "module-name",
+        aliasKey: "@intentweave/frontend",
+      }),
+    ).toBe(true);
+    expect(
+      store.persistSubjectAlias({
+        subjectIdentityId: source.id,
+        aliasKind: "module-name",
+        aliasKey: "@intentweave/frontend",
+      }),
+    ).toBe(false);
+    expect(() =>
+      store.persistSubjectAlias({
+        subjectIdentityId: target.id,
+        aliasKind: "module-name",
+        aliasKey: "@intentweave/frontend",
+      }),
+    ).toThrow(/already belongs to another Subject/);
+    const continuity = store.persistSubjectContinuity({
+      fromSubjectIdentityId: source.id,
+      toSubjectIdentityId: target.id,
+      basis: "git-rename",
+      confidence: "probable",
+      provenance: { from: "ui", to: "web" },
+    });
+    expect(continuity).toMatchObject({ ordinal: 1, created: true });
+    expect(
+      store.persistSubjectContinuity({
+        fromSubjectIdentityId: source.id,
+        toSubjectIdentityId: target.id,
+        basis: "git-rename",
+        confidence: "probable",
+        provenance: { from: "ui", to: "web" },
+      }),
+    ).toEqual({ ...continuity, created: false });
+    const revisedContinuity = store.persistSubjectContinuity({
+      fromSubjectIdentityId: source.id,
+      toSubjectIdentityId: target.id,
+      basis: "git-rename",
+      confidence: "certain",
+      provenance: { from: "ui", to: "web", reviewed: true },
+    });
+    expect(revisedContinuity).toMatchObject({ ordinal: 2, created: true });
+
+    expect(affectedCurrentAssessmentsForSubject(db, source.id)).toEqual([
+      { claimIdentityId: first.claimIdentityId, assessmentId: first.id },
+    ]);
+    expect(
+      affectedCurrentAssessmentsForSubjectAlias(
+        db,
+        "module-name",
+        "@intentweave/frontend",
+      ),
+    ).toEqual([
+      { claimIdentityId: first.claimIdentityId, assessmentId: first.id },
+    ]);
+    expect(
+      affectedCurrentAssessmentsForSubjectContinuity(db, revisedContinuity.id),
+    ).toEqual(
+      [
+        { claimIdentityId: first.claimIdentityId, assessmentId: first.id },
+        { claimIdentityId: renamed.claimIdentityId, assessmentId: renamed.id },
+      ].sort((left, right) =>
+        left.claimIdentityId.localeCompare(right.claimIdentityId),
+      ),
+    );
+  });
+
+  it("keeps the legacy Parameter path byte-identical alongside generic Claims", () => {
+    const parameterAssessment = store.persistClaimAssessment({
+      parameterKey: "session.timeout",
+      claimType: "CLM-DEFAULT",
+      normalizedStatement: { value: 1800 },
+      assessmentPolicyId: "default-contract",
+      assessmentPolicyVersion: "1",
+      repositoryRevision: "rev:1",
+      status: "supported",
+      dependencies: [],
+    });
+    const genericAssessment =
+      store.persistGenericClaimAssessment(dependencyClaim());
+
+    const parameterClaim = db
+      .prepare(
+        `SELECT parameter_identity_id, identity_key FROM claim_identities
+         WHERE id = ?`,
+      )
+      .get(parameterAssessment.claimIdentityId) as {
+      parameter_identity_id: string | null;
+      identity_key: string;
+    };
+    expect(parameterClaim.parameter_identity_id).not.toBeNull();
+    expect(parameterClaim.identity_key).toBe("session.timeout:CLM-DEFAULT:");
+
+    const genericClaim = db
+      .prepare(
+        `SELECT parameter_identity_id FROM claim_identities WHERE id = ?`,
+      )
+      .get(genericAssessment.claimIdentityId) as {
+      parameter_identity_id: string | null;
+    };
+    expect(genericClaim.parameter_identity_id).toBeNull();
   });
 });

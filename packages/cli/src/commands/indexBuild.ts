@@ -4471,7 +4471,9 @@ function renderAsciiConformanceDiagram(
   return lines.join("\n");
 }
 
-async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
+export async function loadRulesConfig(
+  configPath: string,
+): Promise<RulesConfig> {
   let raw: string;
   try {
     raw = await fs.readFile(configPath, "utf-8");
@@ -4509,7 +4511,7 @@ async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
  * Load optional .iw/config.yaml workspace config.
  * Returns undefined (silently) if the file doesn't exist.
  */
-async function loadIwConfig(
+export async function loadIwConfig(
   configDir: string,
 ): Promise<import("@intentweave/index").IwConfig | undefined> {
   const configPath = path.join(configDir, "config.yaml");
@@ -4531,7 +4533,7 @@ const SEVERITY_COLOR: Record<string, (s: string) => string> = {
 
 // ── Intent check presets ───────────────────────────────────────────────────
 
-const INTENT_CHECK_PRESETS: Record<
+export const INTENT_CHECK_PRESETS: Record<
   string,
   {
     domain: string;

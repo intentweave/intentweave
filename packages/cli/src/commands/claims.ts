@@ -6,20 +6,64 @@ import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { Command } from "commander";
 import Database from "@intentweave/sqlite-compat";
+import type { LLMProvider } from "@intentweave/core";
 import {
+  CandidateInferenceStore,
+  CandidateStore,
   ClaimsEngine,
   ClaimsReviewStore,
   ClaimsStore,
   claimsExitCode,
   fingerprint,
   materialFingerprint,
-  migrateSchemaToCurrent,
+  openMigratedDatabase,
 } from "@intentweave/index";
 import type {
+  CandidateDetails,
+  CandidateInferenceDetails,
+  CandidateReviewDecision,
+  CandidateState,
   ClaimScalar,
   ClaimsContractVersions,
   PersistedVersion,
+  PortableClaimsState,
+  RulesConfig,
+  SubjectKind,
 } from "@intentweave/index";
+import {
+  applyCandidatePolicy,
+  linkCandidatePolicyPromotion,
+  persistPortableCandidateDecision,
+  projectRuleWarrantMaterialOutput,
+  reviewCandidate,
+} from "../claims/candidateGovernance.js";
+import {
+  persistR1Candidates,
+  R1_DISCOVERY_ADAPTER_ID,
+  R1_DISCOVERY_CONTRACT_VERSION,
+} from "../claims/candidateDiscovery.js";
+import {
+  persistPublicSymbolCandidates,
+  PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+  PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
+} from "../claims/publicSymbolDiscovery.js";
+import type { PublicSymbolDiscoveryContext } from "../claims/publicSymbolContinuity.js";
+import {
+  NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
+  NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
+  persistNestEndpointCandidates,
+} from "../claims/nestEndpointDiscovery.js";
+import {
+  ARCHITECTURE_DEPENDENCY_ADAPTER_ID,
+  ARCHITECTURE_DEPENDENCY_CONTRACT_VERSION,
+  parseArchitectureRulesConfig,
+  persistArchitectureDependencyCandidates,
+} from "../claims/architectureDependencyDiscovery.js";
+import {
+  runSemanticSymbolCorrelation,
+  SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+  SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
+} from "../claims/semanticSymbolCorrelation.js";
 import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
@@ -34,6 +78,27 @@ import {
 import { load as yamlLoad } from "js-yaml";
 import { ClaimsGit, ClaimsGitError } from "../claims/git.js";
 import type { GitRename } from "../claims/git.js";
+import {
+  CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
+  ClaimsPortableStateFileError,
+  claimsPortableStatePath,
+  loadPortableClaimsState,
+  parsePortableClaimsStateYaml,
+} from "../claims/portableState.js";
+import {
+  persistPortableAssessmentReview,
+  projectPortableAssessmentReviews,
+  type PortableReviewProjectionIssue,
+} from "../claims/portableReviewProjection.js";
+import {
+  candidateDisplayLines,
+  candidateInboxLines,
+  claimTypeLabel,
+  describeClaim,
+  displaySubject,
+  humanizeReason,
+  shortCandidateReference,
+} from "../claims/presentation.js";
 
 const defaultContracts: ClaimsContractVersions = {
   r1RuleContractVersion: "r1-v1",
@@ -113,6 +178,7 @@ function currentRevision(workspaceRoot: string): string {
     return execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: workspaceRoot,
       encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   } catch {
     return "working-tree";
@@ -255,9 +321,11 @@ function persistSnapshotEvidence(
   return observations;
 }
 
-function formatText(result: {
+export interface ClaimsCheckOutput {
+  gateStatus: "evaluated" | "no_active_claims";
   claims: Array<{
-    parameterKey: string;
+    claimIdentityId?: string;
+    parameterKey: string | null;
     claimType: string;
     ruleStatuses: string[];
     assessmentStatuses: string[];
@@ -274,10 +342,30 @@ function formatText(result: {
     scope: string | null;
     reviewReopened: boolean;
   }>;
-}): string {
+  portableStateIssues: PortableReviewProjectionIssue[];
+  candidates: {
+    discovered: number;
+    active: number;
+    issues: unknown[];
+  };
+}
+
+export interface ClaimsCheckExecution {
+  output: ClaimsCheckOutput;
+  exitCode: number;
+}
+
+export function formatClaimsCheckText(
+  result: Pick<
+    ClaimsCheckOutput,
+    "claims" | "scopes" | "retiredClaims" | "portableStateIssues"
+  >,
+): string {
   const lines: string[] = [];
   for (const claim of result.claims) {
-    lines.push(`Claim: ${claim.parameterKey} (${claim.claimType})`);
+    lines.push(
+      `Claim: ${claim.parameterKey ?? claim.claimIdentityId} (${claim.claimType})`,
+    );
     lines.push(`  Rule results: ${claim.ruleStatuses.join(", ")}`);
     lines.push(
       `  Assessments: ${claim.assessmentStatuses.join(", ") || "none"}`,
@@ -298,6 +386,10 @@ function formatText(result: {
     lines.push(
       `  Review: ${claim.reviewReopened ? "reopened" : "not previously reviewed"}`,
     );
+  }
+  for (const issue of result.portableStateIssues) {
+    lines.push(`Portable state: ${issue.kind} (${issue.claimIdentityId})`);
+    lines.push(`  ${issue.message}`);
   }
   return lines.join("\n");
 }
@@ -325,9 +417,754 @@ function claimsDatabase(workspaceRoot: string): Database.Database {
       `Index not found at ${dbPath}. Run \`iw index build\` first.`,
     );
   }
-  const database = new Database(dbPath);
-  migrateSchemaToCurrent(database);
-  return database;
+  return openMigratedDatabase(dbPath);
+}
+
+function optionalArchitectureRulesConfig(
+  text: string | undefined,
+): RulesConfig | undefined {
+  if (text === undefined) return undefined;
+  try {
+    return parseArchitectureRulesConfig(yamlLoad(text));
+  } catch (error) {
+    throw new ClaimsBindingError(
+      `Invalid .iw/rules.yaml: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+export async function runClaimsDiscover(options: {
+  all?: boolean;
+  verbose?: boolean;
+  semantic?: boolean;
+  provider?: string;
+  model?: string;
+  semanticLimit?: string;
+  format: string;
+}): Promise<void> {
+  const workspaceRoot = process.cwd();
+  try {
+    const bindings = loadOptionalClaimsBindings(workspaceRoot) ?? {
+      parameters: {},
+    };
+    const files = await discoverWorkingTreeCodeFiles(workspaceRoot);
+    const readCode = (filePath: string) =>
+      fs.readFileSync(path.join(workspaceRoot, filePath), "utf-8");
+    const observations = extractDiscoveredCodeEvidence(
+      files,
+      readCode,
+      bindings,
+    );
+    const boundObservations = extractBoundCodeEvidence(
+      bindings,
+      readCode,
+    ).filter((observation) => "identityKey" in observation);
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const store = new CandidateStore(database);
+      const existingCompatibilityKeys = currentR1ClaimCandidateKeys(database);
+      const existingPromotedKeys = promotedCandidateIdentityKeys(database);
+      const portableState = loadPortableClaimsState(workspaceRoot);
+      const revision = currentRevision(workspaceRoot);
+      const r1Candidates = persistR1Candidates(
+        store,
+        [...observations, ...boundObservations],
+        revision,
+      );
+      const publicSymbolCandidates = persistPublicSymbolCandidates(
+        database,
+        revision,
+      );
+      const endpointCandidates = persistNestEndpointCandidates(
+        database,
+        revision,
+        (filePath) => {
+          const absolutePath = path.join(workspaceRoot, filePath);
+          return fs.existsSync(absolutePath)
+            ? fs.readFileSync(absolutePath, "utf-8")
+            : undefined;
+        },
+      );
+      const rulesPath = path.join(workspaceRoot, ".iw", "rules.yaml");
+      const architectureCandidates = persistArchitectureDependencyCandidates(
+        database,
+        revision,
+        workspaceRoot,
+        optionalArchitectureRulesConfig(
+          fs.existsSync(rulesPath)
+            ? fs.readFileSync(rulesPath, "utf-8")
+            : undefined,
+        ),
+      );
+      const discovered = [
+        ...r1Candidates,
+        ...publicSymbolCandidates,
+        ...endpointCandidates,
+        ...architectureCandidates,
+      ];
+      let semanticDiscovery;
+      if (options.semantic) {
+        const semanticLimit = Number.parseInt(
+          options.semanticLimit ?? "20",
+          10,
+        );
+        if (!Number.isInteger(semanticLimit) || semanticLimit <= 0) {
+          throw new ClaimsBindingError(
+            "Semantic correlation limit must be a positive integer",
+          );
+        }
+        semanticDiscovery = await runSemanticSymbolCorrelation({
+          database,
+          provider: await resolveSemanticClaimsProvider(
+            options.provider ?? "openai",
+            options.model,
+          ),
+          model: options.model,
+          limit: semanticLimit,
+        });
+      }
+      const explicitBindingKeys = new Set(
+        boundObservations.map(
+          (observation) =>
+            `r1:${observation.parameterKey}:${observation.claimType}`,
+        ),
+      );
+      const projectionIssues = applyEffectiveCandidateDecisions(
+        database,
+        discovered.map((candidate) => candidate.identityKey),
+        existingCompatibilityKeys,
+        existingPromotedKeys,
+        portableState,
+        resolveContracts(),
+        explicitBindingKeys,
+      );
+      const candidates = discovered.map((candidate) => {
+        const current = store.current(candidate.identityKey)!;
+        const details = store.details(current.id)!;
+        return {
+          ...candidate,
+          ...current,
+          confidence: details.confidence,
+          ...(details.inferenceId ? { inferenceId: details.inferenceId } : {}),
+          surfaced:
+            candidate.surfaced ||
+            (Boolean(details.inferenceId) && details.confidence === "probable"),
+        };
+      });
+      const surfaced = candidates.filter(
+        (candidate) => options.all || candidate.surfaced,
+      );
+      const output = {
+        adapter: {
+          id: R1_DISCOVERY_ADAPTER_ID,
+          contractVersion: R1_DISCOVERY_CONTRACT_VERSION,
+          mode: "deterministic",
+        },
+        adapters: [
+          {
+            id: R1_DISCOVERY_ADAPTER_ID,
+            contractVersion: R1_DISCOVERY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+          {
+            id: PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+            contractVersion: PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+          {
+            id: NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
+            contractVersion: NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+          {
+            id: ARCHITECTURE_DEPENDENCY_ADAPTER_ID,
+            contractVersion: ARCHITECTURE_DEPENDENCY_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
+          ...(options.semantic
+            ? [
+                {
+                  id: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+                  contractVersion: SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
+                  mode: "model",
+                },
+              ]
+            : []),
+        ],
+        semanticDiscovery: semanticDiscovery ?? "not_run",
+        discoveredCount: candidates.length,
+        surfacedCount: candidates.filter((candidate) => candidate.surfaced)
+          .length,
+        hiddenCount: candidates.filter((candidate) => !candidate.surfaced)
+          .length,
+        projectionIssues,
+        candidates: surfaced,
+      };
+      if (options.format === "json") {
+        console.log(JSON.stringify(output, null, 2));
+      } else {
+        console.log(
+          `Discovered ${output.discoveredCount} Candidate${output.discoveredCount === 1 ? "" : "s"} ` +
+            `(${output.surfacedCount} surfaced, ${output.hiddenCount} visible with --all).`,
+        );
+        if (!semanticDiscovery) {
+          console.log("Semantic discovery was not run.");
+        } else if (semanticDiscovery.status === "not_applicable") {
+          console.log(
+            "Semantic discovery found no ambiguous Symbol documentation groups.",
+          );
+        } else {
+          console.log(
+            `Semantic discovery evaluated ${semanticDiscovery.groups} group${semanticDiscovery.groups === 1 ? "" : "s"}: ` +
+              `${semanticDiscovery.providerCalls} provider call${semanticDiscovery.providerCalls === 1 ? "" : "s"}, ` +
+              `${semanticDiscovery.cacheHits} cache hit${semanticDiscovery.cacheHits === 1 ? "" : "s"}, ` +
+              `${semanticDiscovery.correlatedCandidateIds.length} probable correlation${semanticDiscovery.correlatedCandidateIds.length === 1 ? "" : "s"}.`,
+          );
+          for (const failure of semanticDiscovery.failures) {
+            console.log(
+              `  Semantic ${failure.kind}: ${failure.message} (${failure.evidenceKey})`,
+            );
+          }
+        }
+        for (const candidate of surfaced) {
+          const details = store.details(candidate.id);
+          if (!details) continue;
+          for (const line of candidateDisplayLines(details, {
+            verbose: options.verbose,
+          })) {
+            console.log(line);
+          }
+          if (options.verbose) {
+            console.log(`  Sources: ${candidate.sourceKinds.join(", ")}`);
+          }
+        }
+      }
+      process.exitCode = semanticDiscovery?.status === "failed" ? 1 : 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode =
+      error instanceof ClaimsBindingError ||
+      error instanceof ClaimsPortableStateFileError
+        ? 64
+        : 1;
+  }
+}
+
+async function resolveSemanticClaimsProvider(
+  providerName: string,
+  model?: string,
+): Promise<LLMProvider> {
+  if (providerName !== "openai") {
+    throw new ClaimsBindingError(
+      `Unsupported semantic Claims provider ${providerName}; expected openai`,
+    );
+  }
+  const { OpenAILLMProvider } = await import("@intentweave/plugin-llm");
+  return new OpenAILLMProvider({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL,
+    organization: process.env.OPENAI_ORGANIZATION,
+    model: model ?? process.env.IW_LLM_MODEL,
+  });
+}
+
+const CANDIDATE_STATES: readonly CandidateState[] = [
+  "discovered",
+  "correlated",
+  "triaged",
+  "promoted",
+  "rejected",
+  "suppressed",
+  "superseded",
+];
+const SUBJECT_KINDS: readonly SubjectKind[] = [
+  "parameter",
+  "symbol",
+  "module",
+  "endpoint",
+];
+const CANDIDATE_DECISIONS: readonly CandidateReviewDecision[] = [
+  "promote",
+  "reject",
+  "suppress",
+  "defer",
+];
+
+interface CandidateProjectionIssue {
+  identityKey: string;
+  reason: "stale-portable-decision" | "closed-candidate-conflict";
+}
+
+function currentR1ClaimCandidateKeys(database: Database.Database): Set<string> {
+  return new Set(
+    (
+      database
+        .prepare(
+          `SELECT DISTINCT parameter.canonical_key, claim.claim_type
+           FROM claim_identities claim
+           JOIN parameter_identities parameter
+             ON parameter.id = claim.parameter_identity_id
+           JOIN claim_versions version ON version.claim_identity_id = claim.id
+           JOIN claim_assessments assessment
+             ON assessment.claim_version_id = version.id
+            AND assessment.is_current = 1
+           WHERE claim.claim_type IN ('CLM-DEFAULT', 'CLM-LITERAL')`,
+        )
+        .all() as Array<{ canonical_key: string; claim_type: string }>
+    ).map((row) => `r1:${row.canonical_key}:${row.claim_type}`),
+  );
+}
+
+function promotedCandidateIdentityKeys(
+  database: Database.Database,
+): Set<string> {
+  return new Set(
+    (
+      database
+        .prepare(
+          `SELECT DISTINCT candidate.identity_key
+           FROM candidate_reviews review
+           JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+           WHERE review.decision = 'promote'
+             AND review.effect = 'effective'
+             AND review.promoted_claim_identity_id IS NOT NULL`,
+        )
+        .all() as Array<{ identity_key: string }>
+    ).map((row) => row.identity_key),
+  );
+}
+
+function architectureRuleId(candidate: CandidateDetails): string {
+  const statement = candidate.normalizedStatement;
+  if (
+    statement === null ||
+    typeof statement !== "object" ||
+    Array.isArray(statement) ||
+    typeof (statement as { ruleId?: unknown }).ruleId !== "string"
+  ) {
+    throw new ClaimsBindingError(
+      `Architecture Candidate ${candidate.id} has no static Rule ID`,
+    );
+  }
+  return (statement as { ruleId: string }).ruleId;
+}
+
+function applyEffectiveCandidateDecisions(
+  database: Database.Database,
+  identityKeys: readonly string[],
+  existingCompatibilityKeys: ReadonlySet<string>,
+  existingPromotedKeys: ReadonlySet<string>,
+  portableState: PortableClaimsState | undefined,
+  contracts: ClaimsContractVersions,
+  explicitBindingKeys: ReadonlySet<string>,
+): CandidateProjectionIssue[] {
+  const store = new CandidateStore(database);
+  const issues: CandidateProjectionIssue[] = [];
+  const continuousPolicy =
+    portableState?.policies["r1-continuous-auto-promote"];
+  const architecturePolicy =
+    portableState?.policies["explicit-architecture-rule"];
+  if (architecturePolicy?.enabled && architecturePolicy.version !== "1") {
+    throw new ClaimsBindingError(
+      "Policy explicit-architecture-rule must use version 1",
+    );
+  }
+  if (
+    architecturePolicy?.enabled &&
+    Object.keys(architecturePolicy.configuration).length > 0
+  ) {
+    throw new ClaimsBindingError(
+      "Policy explicit-architecture-rule@1 does not accept configuration",
+    );
+  }
+  for (const identityKey of identityKeys) {
+    const current = store.current(identityKey);
+    if (!current) continue;
+    let candidate = store.details(current.id)!;
+    const portableDecision = portableState?.candidateDecisions[identityKey];
+    if (explicitBindingKeys.has(identityKey)) continue;
+    if (portableDecision) {
+      if (
+        portableDecision.candidateFingerprint !==
+        candidate.observationFingerprint
+      ) {
+        if (
+          !existingCompatibilityKeys.has(identityKey) &&
+          !existingPromotedKeys.has(identityKey)
+        ) {
+          issues.push({ identityKey, reason: "stale-portable-decision" });
+          continue;
+        }
+      } else {
+        const targetState =
+          portableDecision.decision === "promote"
+            ? "promoted"
+            : portableDecision.decision === "reject"
+              ? "rejected"
+              : "suppressed";
+        if (candidate.state === targetState) continue;
+        if (
+          !["discovered", "correlated", "triaged"].includes(candidate.state)
+        ) {
+          issues.push({ identityKey, reason: "closed-candidate-conflict" });
+          continue;
+        }
+        if (portableDecision.actor.kind === "policy") {
+          applyCandidatePolicy(database, {
+            candidateId: candidate.id,
+            policyId: portableDecision.actor.id,
+            policyVersion: portableDecision.actor.version!,
+            decision: portableDecision.decision,
+            rationale: portableDecision.rationale,
+            provenance: { source: CLAIMS_PORTABLE_STATE_RELATIVE_PATH },
+            contracts,
+          });
+        } else {
+          candidate = store.details(
+            store.triage(candidate.id, {
+              basis: "portable-candidate-decision",
+            }).id,
+          )!;
+          reviewCandidate(database, {
+            candidateId: candidate.id,
+            actor: portableDecision.actor.id,
+            decision: portableDecision.decision,
+            rationale: portableDecision.rationale,
+            provenance: { source: CLAIMS_PORTABLE_STATE_RELATIVE_PATH },
+            contracts,
+          });
+        }
+        continue;
+      }
+    }
+
+    const policy = existingPromotedKeys.has(identityKey)
+      ? {
+          id: "promoted-claim-continuity",
+          version: "1",
+        }
+      : existingCompatibilityKeys.has(identityKey)
+        ? {
+            id:
+              candidate.ordinal === 1
+                ? "r1-compatibility"
+                : "promoted-claim-continuity",
+            version: "1",
+          }
+        : identityKey.startsWith("r1:") && continuousPolicy?.enabled
+          ? {
+              id: "r1-continuous-auto-promote",
+              version: continuousPolicy.version,
+            }
+          : candidate.candidateKind === "architecture-dependency-conformance" &&
+              candidate.proposedClaimType === "CLM-DEPENDENCY-CONFORMANCE" &&
+              candidate.confidence === "certain" &&
+              architecturePolicy?.enabled
+            ? {
+                id: "explicit-architecture-rule",
+                version: architecturePolicy.version,
+              }
+            : undefined;
+    if (!policy || candidate.state === "promoted") continue;
+    if (!["discovered", "correlated", "triaged"].includes(candidate.state)) {
+      issues.push({ identityKey, reason: "closed-candidate-conflict" });
+      continue;
+    }
+    applyCandidatePolicy(database, {
+      candidateId: candidate.id,
+      policyId: policy.id,
+      policyVersion: policy.version,
+      decision: "promote",
+      rationale:
+        policy.id === "r1-compatibility"
+          ? "Preserve a Claim active before Candidate migration"
+          : policy.id === "promoted-claim-continuity"
+            ? "Continue governance for an already active Claim identity"
+            : policy.id === "r1-continuous-auto-promote"
+              ? "Continuous R1 auto-promotion is explicitly enabled"
+              : "Static repository Architecture Rule promotion is explicitly enabled",
+      provenance:
+        policy.id === "explicit-architecture-rule"
+          ? {
+              source: CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
+              architectureRuleId: architectureRuleId(candidate),
+              ruleContract: {
+                adapterId: candidate.discoveryAdapterId,
+                version: candidate.discoveryContractVersion,
+              },
+              candidateFingerprint: candidate.observationFingerprint,
+            }
+          : { source: "candidate-policy" },
+      contracts,
+    });
+  }
+  return issues;
+}
+
+function candidateState(value: string | undefined): CandidateState | undefined {
+  if (!value) return undefined;
+  if (!CANDIDATE_STATES.includes(value as CandidateState)) {
+    throw new ClaimsBindingError(
+      `Candidate state must be one of: ${CANDIDATE_STATES.join(", ")}`,
+    );
+  }
+  return value as CandidateState;
+}
+
+function resolveCandidateReference(
+  database: Database.Database,
+  reference: string,
+  currentOnly: boolean,
+): string {
+  const exact = database
+    .prepare(`SELECT id, identity_key FROM claim_candidates WHERE id = ?`)
+    .get(reference) as { id: string; identity_key: string } | undefined;
+  let matches = exact ? [exact] : [];
+  if (!exact) {
+    const parsed = /^candidate:([a-f0-9]{8,64})@(\d+)$/.exec(reference);
+    if (!parsed) {
+      throw new ClaimsBindingError(
+        `Candidate reference ${reference} must be a full ID or candidate:<8+ hex prefix>@<version>`,
+      );
+    }
+    matches = database
+      .prepare(
+        `SELECT id, identity_key FROM claim_candidates
+           WHERE id LIKE ? ORDER BY id`,
+      )
+      .all(`candidate:${parsed[1]}%@${parsed[2]}`) as Array<{
+      id: string;
+      identity_key: string;
+    }>;
+  }
+  if (currentOnly) {
+    const store = new CandidateStore(database);
+    matches = matches.filter(
+      (candidate) => store.current(candidate.identity_key)?.id === candidate.id,
+    );
+  }
+  if (matches.length === 0) {
+    throw new ClaimsBindingError(
+      `No ${currentOnly ? "current " : ""}Candidate matches ${reference}`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new ClaimsBindingError(
+      `Candidate reference ${reference} is ambiguous: ${matches
+        .map((candidate) => shortCandidateReference(candidate.id))
+        .join(", ")}`,
+    );
+  }
+  return matches[0]!.id;
+}
+
+function candidateSubjectKind(
+  value: string | undefined,
+): SubjectKind | undefined {
+  if (!value) return undefined;
+  if (!SUBJECT_KINDS.includes(value as SubjectKind)) {
+    throw new ClaimsBindingError(
+      `Subject kind must be one of: ${SUBJECT_KINDS.join(", ")}`,
+    );
+  }
+  return value as SubjectKind;
+}
+
+export async function runClaimsCandidatesList(options: {
+  state?: string;
+  subjectKind?: string;
+  all?: boolean;
+  verbose?: boolean;
+  format: string;
+}): Promise<void> {
+  try {
+    const database = claimsDatabase(process.cwd());
+    try {
+      const store = new CandidateStore(database);
+      const state = candidateState(options.state);
+      const candidates = store
+        .listCurrent({
+          ...(state ? { state } : {}),
+          ...(options.subjectKind
+            ? { subjectKind: candidateSubjectKind(options.subjectKind)! }
+            : {}),
+        })
+        .filter(
+          (candidate) =>
+            options.all ||
+            state !== undefined ||
+            ["discovered", "correlated", "triaged"].includes(candidate.state),
+        );
+      if (options.format === "json") {
+        console.log(JSON.stringify({ candidates }, null, 2));
+      } else if (candidates.length === 0) {
+        console.log("No matching Candidates.");
+      } else {
+        for (const line of candidateInboxLines(candidates, {
+          verbose: options.verbose,
+        })) {
+          console.log(line);
+        }
+      }
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
+}
+
+export async function runClaimsCandidatesTriage(options: {
+  candidate?: string;
+  subjectKind?: string;
+  claimType?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    const database = claimsDatabase(process.cwd());
+    try {
+      const store = new CandidateStore(database);
+      const candidateId = options.candidate
+        ? resolveCandidateReference(database, options.candidate, true)
+        : undefined;
+      const candidates = store
+        .listCurrent({
+          ...(options.subjectKind
+            ? { subjectKind: candidateSubjectKind(options.subjectKind)! }
+            : {}),
+        })
+        .filter(
+          (candidate) =>
+            (!candidateId || candidate.id === candidateId) &&
+            (!options.claimType ||
+              candidate.proposedClaimType === options.claimType) &&
+            ["correlated", "triaged"].includes(candidate.state),
+        );
+      if (options.candidate && candidates.length === 0) {
+        throw new ClaimsBindingError(
+          `No triageable current Candidate matches ${options.candidate}`,
+        );
+      }
+      const triaged = database.transaction(() =>
+        candidates.map((candidate) =>
+          store.triage(candidate.id, {
+            basis: "manual-triage",
+            semanticInduction: "not_run",
+          }),
+        ),
+      )();
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ candidates: triaged }, null, 2)
+          : `Triaged ${triaged.length} Candidate${triaged.length === 1 ? "" : "s"}.`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
+}
+
+export async function runClaimsCandidateReview(options: {
+  candidate: string;
+  actor: string;
+  decision: string;
+  rationale: string;
+  format: string;
+}): Promise<void> {
+  try {
+    if (
+      !CANDIDATE_DECISIONS.includes(options.decision as CandidateReviewDecision)
+    ) {
+      throw new ClaimsBindingError(
+        `Candidate decision must be one of: ${CANDIDATE_DECISIONS.join(", ")}`,
+      );
+    }
+    const decision = options.decision as CandidateReviewDecision;
+    if (options.actor.trim().length === 0) {
+      throw new ClaimsBindingError("Candidate Review actor must not be empty");
+    }
+    if (options.rationale.trim().length === 0) {
+      throw new ClaimsBindingError(
+        "Candidate Review rationale must not be empty",
+      );
+    }
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const store = new CandidateStore(database);
+      const candidateId = resolveCandidateReference(
+        database,
+        options.candidate,
+        true,
+      );
+      const candidate = store.details(candidateId);
+      if (
+        !candidate ||
+        store.current(candidate.identityKey)?.id !== candidate.id
+      ) {
+        throw new ClaimsBindingError(
+          `Candidate ${options.candidate} is not a current Candidate`,
+        );
+      }
+      if (candidate.state !== "triaged") {
+        throw new ClaimsBindingError(
+          `Candidate ${candidate.id} must be triaged before Review`,
+        );
+      }
+      const decidedAt = new Date().toISOString();
+      const portableStatePath =
+        decision === "defer"
+          ? undefined
+          : claimsPortableStatePath(workspaceRoot);
+      const apply = database.transaction(() => {
+        const result = reviewCandidate(database, {
+          candidateId: candidate.id,
+          actor: options.actor,
+          decision,
+          rationale: options.rationale,
+          provenance: {
+            decidedAt,
+            portableStatePath: portableStatePath ?? null,
+          },
+          contracts: resolveContracts(),
+        });
+        if (decision !== "defer") {
+          persistPortableCandidateDecision(workspaceRoot, candidate, {
+            decision,
+            actor: { kind: "human", id: options.actor },
+            decidedAt,
+            rationale: options.rationale,
+          });
+        }
+        return result;
+      });
+      const result = apply();
+      const output = {
+        ...result,
+        portableStatePath: portableStatePath ?? null,
+      };
+      console.log(
+        options.format === "json"
+          ? JSON.stringify(output, null, 2)
+          : `Candidate Review recorded: ${result.review.id}${result.assessment ? `\nPromoted Claim: ${result.assessment.claimIdentityId}` : ""}${portableStatePath ? `\nPortable state: ${portableStatePath}` : ""}`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
 }
 
 function isMaterialChange(
@@ -367,7 +1204,7 @@ function renamedPredecessor(
   database: Database.Database,
   previousEvidence: Map<string, PersistedObservation>,
   current: PersistedObservation,
-  renames: GitRename[],
+  renames: readonly GitRename[],
 ):
   | {
       identityKey: string;
@@ -617,6 +1454,7 @@ interface RuleDependencySnapshot {
   warrant_polarity: string | null;
   assessment_effect: string;
   identity_key: string;
+  rule_id: string;
   rule_contract_version: string;
   implementation_fingerprint: string;
   normalized_status: string;
@@ -632,7 +1470,8 @@ function ruleDependencySnapshots(
     .prepare(
       `SELECT dependency.dependency_version_id, dependency.epistemic_role,
               dependency.warrant_polarity, dependency.assessment_effect,
-              identity.identity_key, result.rule_contract_version,
+              identity.identity_key, identity.rule_id,
+              result.rule_contract_version,
               result.implementation_fingerprint, result.normalized_status,
               result.normalized_output_json, result.normalized_reasons_json
        FROM claim_assessment_dependencies dependency
@@ -691,13 +1530,18 @@ function semanticContractDrift(
   referenceAssessmentId: string,
   baseRevision?: string,
 ):
-  | { dependencyVersionId: string; provenance: Record<string, unknown> }
+  | {
+      dependencyKind: "rule_result_version" | "claim_version";
+      dependencyVersionId: string;
+      provenance: Record<string, unknown>;
+    }
   | undefined {
   const assessmentRow = (assessmentId: string) =>
     database
       .prepare(
         `SELECT cv.id AS claim_version_id, cv.assessment_policy_id,
-                cv.assessment_policy_version, cv.normalized_statement_json
+                cv.assessment_policy_version, cv.normalized_statement_json,
+                cv.materiality_contract_id, cv.materiality_contract_version
          FROM claim_assessments ca
          JOIN claim_versions cv ON cv.id = ca.claim_version_id
          WHERE ca.id = ?`,
@@ -708,6 +1552,8 @@ function semanticContractDrift(
           assessment_policy_id: string;
           assessment_policy_version: string;
           normalized_statement_json: string;
+          materiality_contract_id: string | null;
+          materiality_contract_version: string | null;
         }
       | undefined;
   const current = assessmentRow(currentAssessmentId);
@@ -741,8 +1587,18 @@ function semanticContractDrift(
       currentRule.rule_contract_version !==
         referenceRule.rule_contract_version ||
       currentRule.normalized_status !== referenceRule.normalized_status ||
-      currentRule.normalized_output_json !==
-        referenceRule.normalized_output_json ||
+      fingerprint(
+        projectRuleWarrantMaterialOutput(
+          currentRule.rule_id,
+          JSON.parse(currentRule.normalized_output_json) as unknown,
+        ),
+      ) !==
+        fingerprint(
+          projectRuleWarrantMaterialOutput(
+            referenceRule.rule_id,
+            JSON.parse(referenceRule.normalized_output_json) as unknown,
+          ),
+        ) ||
       currentRule.normalized_reasons_json !==
         referenceRule.normalized_reasons_json;
     if (differs) {
@@ -773,7 +1629,17 @@ function semanticContractDrift(
   const policyChanged =
     current.assessment_policy_id !== reference.assessment_policy_id ||
     current.assessment_policy_version !== reference.assessment_policy_version;
-  if (changedRules.length === 0 && !policyChanged) return undefined;
+  const materialityContractChanged =
+    current.materiality_contract_id !== reference.materiality_contract_id ||
+    current.materiality_contract_version !==
+      reference.materiality_contract_version;
+  if (
+    changedRules.length === 0 &&
+    !policyChanged &&
+    !materialityContractChanged
+  ) {
+    return undefined;
+  }
 
   const changedDependency = changedRules.find((rule) => {
     const to = rule.to;
@@ -790,10 +1656,15 @@ function semanticContractDrift(
     changedDependency.to !== null &&
     "dependencyVersionId" in changedDependency.to
       ? String(changedDependency.to.dependencyVersionId)
-      : [...currentRules.values()][0]?.dependency_version_id;
-  if (!dependencyVersionId) return undefined;
+      : ([...currentRules.values()][0]?.dependency_version_id ??
+        current.claim_version_id);
+  const dependencyKind =
+    changedDependency || currentRules.size > 0
+      ? "rule_result_version"
+      : "claim_version";
 
   return {
+    dependencyKind,
     dependencyVersionId,
     provenance: {
       baseRevision: baseRevision ?? null,
@@ -808,6 +1679,18 @@ function semanticContractDrift(
             to: {
               id: current.assessment_policy_id,
               version: current.assessment_policy_version,
+            },
+          }
+        : null,
+      materialityContract: materialityContractChanged
+        ? {
+            from: {
+              id: reference.materiality_contract_id,
+              version: reference.materiality_contract_version,
+            },
+            to: {
+              id: current.materiality_contract_id,
+              version: current.materiality_contract_version,
             },
           }
         : null,
@@ -855,7 +1738,7 @@ function reopenContractChange(
   const reopened = reviews.reopen({
     claimIdentityId: current.claim_identity_id,
     basisAssessmentId: assessmentId,
-    dependencyKind: "rule_result_version",
+    dependencyKind: drift.dependencyKind,
     dependencyVersionId: drift.dependencyVersionId,
     reason: "warrant-changed",
     secondaryProvenance: drift.provenance,
@@ -902,13 +1785,40 @@ function promoteDiscoveredClaim(
   }
 }
 
+function linkExplicitBindingPromotion(
+  database: Database.Database,
+  codeDefault: Extract<
+    ReturnType<typeof extractBoundCodeEvidence>[number],
+    { identityKey: string }
+  >,
+  promotedClaimIdentityId: string,
+): void {
+  if (codeDefault.bindingBasis !== "explicit-map") return;
+  linkCandidatePolicyPromotion(database, {
+    candidateIdentityKey: `r1:${codeDefault.parameterKey}:${codeDefault.claimType}`,
+    promotedClaimIdentityId,
+    policyId: "explicit-binding",
+    policyVersion: "1",
+    rationale: "Activate the Claim selected by an explicit Parameter binding",
+    provenance: {
+      source: "intentweave.bindings.yaml",
+      bindingBasis: codeDefault.bindingBasis,
+      bindingConfidence: codeDefault.bindingConfidence,
+      evidenceIdentityKey: codeDefault.identityKey,
+    },
+  });
+}
+
 export async function runClaimsCheck(options: {
   scope?: string;
   since?: string;
   refresh?: boolean;
   format: string;
   contracts?: Partial<ClaimsContractVersions>;
-}): Promise<void> {
+  emit?: boolean;
+  setExitCode?: boolean;
+  throwOnError?: boolean;
+}): Promise<ClaimsCheckExecution | undefined> {
   const workspaceRoot = process.cwd();
   const contracts = resolveContracts(options.contracts);
   try {
@@ -917,6 +1827,15 @@ export async function runClaimsCheck(options: {
     const baseRevision = options.since
       ? claimsGit!.mergeBase(options.since)
       : undefined;
+    const symbolDiscoveryContext: PublicSymbolDiscoveryContext | undefined =
+      claimsGit && baseRevision && headRevision
+        ? {
+            baseRevision,
+            headRevision,
+            changedPaths: claimsGit.changedPaths(baseRevision, headRevision),
+            renames: claimsGit.renames(baseRevision, headRevision),
+          }
+        : undefined;
     const readOptionalCurrentFile = (filePath: string): string | undefined => {
       if (claimsGit && headRevision)
         return claimsGit.show(headRevision, filePath);
@@ -938,6 +1857,12 @@ export async function runClaimsCheck(options: {
     const bindings = bindingsText
       ? parseClaimsBindings(yamlLoad(bindingsText))
       : { parameters: {} };
+    const portableStateText = readOptionalCurrentFile(
+      CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
+    );
+    const portableState = portableStateText
+      ? parsePortableClaimsStateYaml(portableStateText)
+      : undefined;
     const registryText = readOptionalCurrentFile("config/environments.yaml");
     const registryPath = "config/environments.yaml";
     const scopes = registryText
@@ -975,10 +1900,70 @@ export async function runClaimsCheck(options: {
         const revision = headRevision ?? currentRevision(workspaceRoot);
         const readBoundFile = (filePath: string) =>
           readOptionalCurrentFile(filePath) ?? "";
-        const code = [
-          ...extractBoundCodeEvidence(bindings, readBoundFile),
-          ...discoveredCode,
+        const boundCode = extractBoundCodeEvidence(bindings, readBoundFile);
+        const boundCandidateEvidence = boundCode.filter(
+          (observation) => "identityKey" in observation,
+        );
+        const explicitBindingKeys = new Set(
+          boundCandidateEvidence.map(
+            (observation) =>
+              `r1:${observation.parameterKey}:${observation.claimType}`,
+          ),
+        );
+        const existingCompatibilityKeys = currentR1ClaimCandidateKeys(database);
+        const existingPromotedKeys = promotedCandidateIdentityKeys(database);
+        const candidateStore = new CandidateStore(database);
+        const r1Candidates = persistR1Candidates(
+          candidateStore,
+          [...discoveredCode, ...boundCandidateEvidence],
+          revision,
+        );
+        const publicSymbolCandidates = persistPublicSymbolCandidates(
+          database,
+          revision,
+          symbolDiscoveryContext,
+        );
+        const endpointCandidates = persistNestEndpointCandidates(
+          database,
+          revision,
+          readOptionalCurrentFile,
+        );
+        const architectureCandidates = persistArchitectureDependencyCandidates(
+          database,
+          revision,
+          workspaceRoot,
+          optionalArchitectureRulesConfig(
+            readOptionalCurrentFile(".iw/rules.yaml"),
+          ),
+        );
+        const discoveredCandidates = [
+          ...r1Candidates,
+          ...publicSymbolCandidates,
+          ...endpointCandidates,
+          ...architectureCandidates,
         ];
+        const candidateProjectionIssues = applyEffectiveCandidateDecisions(
+          database,
+          discoveredCandidates.map((candidate) => candidate.identityKey),
+          existingCompatibilityKeys,
+          existingPromotedKeys,
+          portableState,
+          contracts,
+          explicitBindingKeys,
+        );
+        const activeCandidateKeys = new Set(
+          discoveredCandidates.flatMap((candidate) =>
+            candidateStore.current(candidate.identityKey)?.state === "promoted"
+              ? [candidate.identityKey]
+              : [],
+          ),
+        );
+        const activeDiscoveredCode = discoveredCode.filter((observation) =>
+          activeCandidateKeys.has(
+            `r1:${observation.parameterKey}:${observation.claimType}`,
+          ),
+        );
+        const code = [...boundCode, ...activeDiscoveredCode];
         const docs = extractDocumentationAssertions(bindings, readBoundFile);
         const documentationInconclusive = docs.filter(
           (observation) => observation.kind === "inconclusive",
@@ -1034,6 +2019,10 @@ export async function runClaimsCheck(options: {
             baseCodeFiles,
             readBaseFile,
             baseBindings,
+          ).filter((observation) =>
+            activeCandidateKeys.has(
+              `r1:${observation.parameterKey}:${observation.claimType}`,
+            ),
           );
           return persistSnapshotEvidence(
             store,
@@ -1082,9 +2071,11 @@ export async function runClaimsCheck(options: {
         const selectedScopes = options.scope
           ? scopes.filter((scope) => scope.name === options.scope)
           : scopes;
-        const output = {
+        const output: ClaimsCheckOutput = {
+          gateStatus: "evaluated",
           claims: [] as Array<{
-            parameterKey: string;
+            claimIdentityId?: string;
+            parameterKey: string | null;
             claimType: string;
             ruleStatuses: string[];
             assessmentStatuses: string[];
@@ -1095,6 +2086,12 @@ export async function runClaimsCheck(options: {
             assessmentStatuses: string[];
           }>,
           retiredClaims: [] as RefreshedRetiredClaim[],
+          portableStateIssues: [] as PortableReviewProjectionIssue[],
+          candidates: {
+            discovered: discoveredCandidates.length,
+            active: activeCandidateKeys.size,
+            issues: candidateProjectionIssues,
+          },
         };
         const allRuleStatuses: Array<
           "passed" | "failed" | "inconclusive" | "not_applicable"
@@ -1102,6 +2099,9 @@ export async function runClaimsCheck(options: {
         const allAssessmentStatuses: Array<
           "supported" | "refuted" | "contested" | "inconclusive"
         > = [];
+        allAssessmentStatuses.push(
+          ...candidateProjectionIssues.map(() => "inconclusive" as const),
+        );
         const assessmentIds: string[] = [];
         const reopenedClaimIds = new Set<string>();
         allRuleStatuses.push(
@@ -1109,7 +2109,7 @@ export async function runClaimsCheck(options: {
         );
 
         const unscopedParameterKeys = new Set(
-          (scopes.length === 0 ? code : discoveredCode).map(
+          (scopes.length === 0 ? code : activeDiscoveredCode).map(
             (observation) => observation.parameterKey,
           ),
         );
@@ -1214,6 +2214,11 @@ export async function runClaimsCheck(options: {
             },
             contracts,
           });
+          linkExplicitBindingPromotion(
+            database,
+            codeDefault,
+            result.assessments[0]!.claimIdentityId,
+          );
           promoteDiscoveredClaim(
             database,
             reviews,
@@ -1449,6 +2454,11 @@ export async function runClaimsCheck(options: {
               contracts,
             });
             if (codeDefault && "identityKey" in codeDefault) {
+              linkExplicitBindingPromotion(
+                database,
+                codeDefault,
+                result.assessments[0]!.claimIdentityId,
+              );
               promoteDiscoveredClaim(
                 database,
                 reviews,
@@ -1514,12 +2524,63 @@ export async function runClaimsCheck(options: {
             ),
           );
         }
+        const genericClaims = database
+          .prepare(
+            `SELECT claim.id AS claim_identity_id, claim.claim_type,
+                    assessment.id AS assessment_id,
+                    assessment.epistemic_status
+             FROM claim_identities claim
+             JOIN claim_versions version ON version.claim_identity_id = claim.id
+             JOIN claim_assessments assessment
+               ON assessment.claim_version_id = version.id
+              AND assessment.is_current = 1
+             WHERE claim.parameter_identity_id IS NULL
+             ORDER BY claim.claim_type, claim.id`,
+          )
+          .all() as Array<{
+          claim_identity_id: string;
+          claim_type: string;
+          assessment_id: string;
+          epistemic_status:
+            | "supported"
+            | "refuted"
+            | "contested"
+            | "inconclusive";
+        }>;
+        for (const claim of genericClaims) {
+          const ruleStatuses = (
+            database
+              .prepare(
+                `SELECT result.normalized_status
+                 FROM claim_assessment_dependencies dependency
+                 JOIN rule_result_versions result
+                   ON result.id = dependency.dependency_version_id
+                 WHERE dependency.claim_assessment_id = ?
+                   AND dependency.dependency_kind = 'rule_result_version'
+                 ORDER BY result.id`,
+              )
+              .all(claim.assessment_id) as Array<{
+              normalized_status:
+                | "passed"
+                | "failed"
+                | "inconclusive"
+                | "not_applicable";
+            }>
+          ).map((result) => result.normalized_status);
+          output.claims.push({
+            claimIdentityId: claim.claim_identity_id,
+            parameterKey: null,
+            claimType: claim.claim_type,
+            ruleStatuses,
+            assessmentStatuses: [claim.epistemic_status],
+          });
+          allRuleStatuses.push(...ruleStatuses);
+          allAssessmentStatuses.push(claim.epistemic_status);
+          assessmentIds.push(claim.assessment_id);
+        }
         if (claimsGit && baseRevision && headRevision) {
-          const changedPaths = claimsGit.changedPaths(
-            baseRevision,
-            headRevision,
-          );
-          const renames = claimsGit.renames(baseRevision, headRevision);
+          const changedPaths = symbolDiscoveryContext!.changedPaths;
+          const renames = symbolDiscoveryContext!.renames;
           const continuedPreviousIdentityKeys = new Set<string>();
           for (const [identityKey, current] of currentEvidence) {
             const matchedRename = renamedPredecessor(
@@ -1653,6 +2714,16 @@ export async function runClaimsCheck(options: {
             }
           }
         }
+        if (portableState) {
+          const projection = projectPortableAssessmentReviews(
+            database,
+            portableState,
+          );
+          output.portableStateIssues.push(...projection.issues);
+          allAssessmentStatuses.push(
+            ...projection.issues.map(() => "inconclusive" as const),
+          );
+        }
         for (const assessmentId of assessmentIds) {
           const assessment = database
             .prepare(
@@ -1713,6 +2784,12 @@ export async function runClaimsCheck(options: {
               (row.reviewed === 0 || row.open_reopen === 1)
             );
           });
+        output.candidates.active = candidateStore.listCurrent({
+          state: "promoted",
+        }).length;
+        if (output.claims.length === 0 && output.scopes.length === 0) {
+          output.gateStatus = "no_active_claims";
+        }
         return {
           output,
           exitCode: claimsExitCode({
@@ -1725,22 +2802,31 @@ export async function runClaimsCheck(options: {
         };
       });
       const result = runCheck();
-      console.log(
-        options.format === "json"
-          ? JSON.stringify(result.output, null, 2)
-          : formatText(result.output),
-      );
-      process.exitCode = result.exitCode;
+      if (options.emit !== false) {
+        console.log(
+          options.format === "json"
+            ? JSON.stringify(result.output, null, 2)
+            : formatClaimsCheckText(result.output),
+        );
+      }
+      if (options.setExitCode !== false) process.exitCode = result.exitCode;
+      return result;
     } finally {
       database.close();
     }
   } catch (error) {
+    if (options.throwOnError) throw error;
     const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
-    process.exitCode =
-      error instanceof ClaimsBindingError || error instanceof ClaimsGitError
-        ? 64
-        : 1;
+    if (options.emit !== false) console.error(message);
+    if (options.setExitCode !== false) {
+      process.exitCode =
+        error instanceof ClaimsBindingError ||
+        error instanceof ClaimsGitError ||
+        error instanceof ClaimsPortableStateFileError
+          ? 64
+          : 1;
+    }
+    return undefined;
   }
 }
 
@@ -1752,9 +2838,191 @@ interface ClaimSelectorOptions {
 
 interface ClaimIdentitySelection {
   id: string;
-  parameter_key: string;
+  parameter_key: string | null;
   claim_type: string;
   scope: string | null;
+}
+
+function promotedClaimForCandidate(
+  database: Database.Database,
+  candidateReference: string,
+): string {
+  const candidateId = resolveCandidateReference(
+    database,
+    candidateReference,
+    false,
+  );
+  const promotedClaimIdentityId = promotedClaimForCandidateId(
+    database,
+    candidateId,
+  );
+  if (!promotedClaimIdentityId) {
+    throw new ClaimsBindingError(
+      `Candidate ${candidateId} has no effective promotion`,
+    );
+  }
+  return promotedClaimIdentityId;
+}
+
+function promotedClaimForCandidateId(
+  database: Database.Database,
+  candidateId: string,
+): string | undefined {
+  const selected = database
+    .prepare(
+      `SELECT identity_key, version_ordinal
+       FROM claim_candidates WHERE id = ?`,
+    )
+    .get(candidateId) as
+    | { identity_key: string; version_ordinal: number }
+    | undefined;
+  if (!selected) {
+    throw new ClaimsBindingError(`Candidate ${candidateId} does not exist`);
+  }
+  const cycle = database
+    .prepare(
+      `WITH versions AS (
+         SELECT version_ordinal, observation_fingerprint,
+                LAG(observation_fingerprint) OVER (
+                  ORDER BY version_ordinal
+                ) AS previous_observation_fingerprint
+         FROM claim_candidates WHERE identity_key = ?
+       )
+       SELECT MAX(version_ordinal) AS start_ordinal
+       FROM versions
+       WHERE version_ordinal <= ?
+         AND (
+           previous_observation_fingerprint IS NULL OR
+           observation_fingerprint != previous_observation_fingerprint
+         )`,
+    )
+    .get(selected.identity_key, selected.version_ordinal) as {
+    start_ordinal: number;
+  };
+  const nextCycle = database
+    .prepare(
+      `WITH versions AS (
+         SELECT version_ordinal, observation_fingerprint,
+                LAG(observation_fingerprint) OVER (
+                  ORDER BY version_ordinal
+                ) AS previous_observation_fingerprint
+         FROM claim_candidates WHERE identity_key = ?
+       )
+       SELECT MIN(version_ordinal) AS start_ordinal
+       FROM versions
+       WHERE version_ordinal > ?
+         AND observation_fingerprint != previous_observation_fingerprint`,
+    )
+    .get(selected.identity_key, cycle.start_ordinal) as {
+    start_ordinal: number | null;
+  };
+  const promotion = database
+    .prepare(
+      `SELECT review.promoted_claim_identity_id
+       FROM candidate_reviews review
+       JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+       WHERE candidate.identity_key = ?
+         AND candidate.version_ordinal >= ?
+         AND (? IS NULL OR candidate.version_ordinal < ?)
+         AND review.decision = 'promote'
+         AND review.effect = 'effective'
+         AND review.promoted_claim_identity_id IS NOT NULL
+       ORDER BY candidate.version_ordinal DESC, review.created_at DESC
+       LIMIT 1`,
+    )
+    .get(
+      selected.identity_key,
+      cycle.start_ordinal,
+      nextCycle.start_ordinal,
+      nextCycle.start_ordinal,
+    ) as { promoted_claim_identity_id: string } | undefined;
+  return promotion?.promoted_claim_identity_id;
+}
+
+function explainCandidate(
+  database: Database.Database,
+  candidateId: string,
+  format: string,
+): void {
+  const candidate = new CandidateStore(database).details(candidateId);
+  if (!candidate) {
+    throw new ClaimsBindingError(`Candidate ${candidateId} does not exist`);
+  }
+  const inference = candidate.inferenceId
+    ? (new CandidateInferenceStore(database).details(candidate.inferenceId) ??
+      null)
+    : null;
+  if (format === "json") {
+    console.log(
+      JSON.stringify({ kind: "candidate", candidate, inference }, null, 2),
+    );
+    return;
+  }
+  for (const line of candidateDisplayLines(candidate, { verbose: true })) {
+    console.log(line);
+  }
+  if (!inference) {
+    console.log("  Semantic inference: none");
+    return;
+  }
+  printCandidateInference(inference);
+}
+
+function printCandidateInference(
+  inference: CandidateInferenceDetails,
+  indent = "  ",
+): void {
+  console.log(
+    `${indent}Semantic inference: ${inference.confidence} via ${inference.adapterId}@${inference.contractVersion}`,
+  );
+  console.log(
+    `${indent}  Provider: ${inference.providerId}, model ${inference.modelId}, prompt ${inference.promptVersion}`,
+  );
+  console.log(`${indent}  Why: ${inference.rationale}`);
+  console.log(
+    `${indent}  EvidenceVersions: ${inference.evidenceVersionIds.length > 0 ? inference.evidenceVersionIds.join(", ") : "none"}`,
+  );
+  console.log(
+    `${indent}  Proposed Subjects: ${inference.proposedSubjectBindings.length > 0 ? JSON.stringify(inference.proposedSubjectBindings) : "none"}`,
+  );
+  console.log(`${indent}  Provenance: ${JSON.stringify(inference.provenance)}`);
+  console.log(`${indent}  Inference ID: ${inference.id}`);
+}
+
+function candidatePromotionExplanation(
+  database: Database.Database,
+  claimIdentityId: string,
+): Record<string, unknown> | null {
+  const promotion = database
+    .prepare(
+      `SELECT review.actor_kind, review.actor_id, review.decision,
+              candidate.identity_key AS candidate_identity_key,
+              candidate.observation_fingerprint,
+              candidate.inference_id,
+              policy.policy_id, policy.policy_version,
+              policy.rationale AS policy_rationale
+       FROM candidate_reviews review
+       JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+       LEFT JOIN candidate_policy_decisions policy
+         ON policy.candidate_id = review.candidate_id
+        AND policy.promoted_claim_identity_id = review.promoted_claim_identity_id
+       WHERE review.promoted_claim_identity_id = ?
+         AND review.decision = 'promote'
+         AND review.effect = 'effective'
+       ORDER BY candidate.version_ordinal DESC, review.created_at DESC
+       LIMIT 1`,
+    )
+    .get(claimIdentityId) as
+    | (Record<string, unknown> & { inference_id: string | null })
+    | undefined;
+  if (!promotion) return null;
+  const { inference_id: inferenceId, ...details } = promotion;
+  return {
+    ...details,
+    inference: inferenceId
+      ? (new CandidateInferenceStore(database).details(inferenceId) ?? null)
+      : null,
+  };
 }
 
 function matchingClaimIdentities(
@@ -1768,7 +3036,7 @@ function matchingClaimIdentities(
       `SELECT ci.id, parameter.canonical_key AS parameter_key,
               ci.claim_type, ci.scope
        FROM claim_identities ci
-       JOIN parameter_identities parameter
+       LEFT JOIN parameter_identities parameter
          ON parameter.id = ci.parameter_identity_id
        WHERE ((? IS NULL AND ? IS NULL)
               OR ci.id = ? OR parameter.canonical_key = ?)
@@ -1792,7 +3060,10 @@ function resolveSingleClaimIdentity(
   database: Database.Database,
   options: ClaimSelectorOptions & { claim: string },
 ): ClaimIdentitySelection {
-  const matches = matchingClaimIdentities(database, options);
+  const resolvedOptions = options.claim.startsWith("candidate:")
+    ? { ...options, claim: promotedClaimForCandidate(database, options.claim) }
+    : options;
+  const matches = matchingClaimIdentities(database, resolvedOptions);
   if (matches.length === 0) {
     throw new ClaimsBindingError(
       `No claim matches ${options.claim}${options.type ? ` with type ${options.type}` : ""}${options.scope ? ` in scope ${options.scope}` : ""}`,
@@ -1818,10 +3089,17 @@ export async function runClaimsReview(options: {
   scope?: string;
   actor: string;
   decision: string;
+  rationale?: string;
   format: string;
 }): Promise<void> {
   try {
-    const database = claimsDatabase(process.cwd());
+    if (options.decision !== "accepted" && options.decision !== "rejected") {
+      throw new ClaimsBindingError(
+        "Review decision must be accepted or rejected",
+      );
+    }
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
     try {
       const claim = resolveSingleClaimIdentity(database, options);
       const assessment = database
@@ -1850,11 +3128,27 @@ export async function runClaimsReview(options: {
           `No reviewable assessment for claim ${claim.id}`,
         );
       }
+      const decidedAt = new Date();
+      const portableStatePath = persistPortableAssessmentReview(
+        workspaceRoot,
+        database,
+        {
+          claimIdentityId: claim.id,
+          basisAssessmentId,
+          decision: options.decision,
+          actor: options.actor,
+          rationale:
+            options.rationale ??
+            `Recorded via iw claims review (${options.decision})`,
+          decidedAt: decidedAt.toISOString(),
+        },
+      );
       const result = new ClaimsReviewStore(database).record({
         claimIdentityId: claim.id,
         basisAssessmentId,
         decision: options.decision,
         actor: options.actor,
+        createdAt: decidedAt.getTime(),
       });
       const output = {
         claimIdentityId: claim.id,
@@ -1862,12 +3156,13 @@ export async function runClaimsReview(options: {
         claimType: claim.claim_type,
         scope: claim.scope,
         assessmentId: basisAssessmentId,
+        portableStatePath,
         ...result,
       };
       console.log(
         options.format === "json"
           ? JSON.stringify(output, null, 2)
-          : `Review recorded: ${result.id}`,
+          : `Review recorded: ${result.id}\nPortable state: ${portableStatePath}`,
       );
       process.exitCode = 0;
     } finally {
@@ -1894,9 +3189,31 @@ export async function runClaimsExplain(options: {
   try {
     const database = claimsDatabase(process.cwd());
     try {
-      const claimId = options.claim?.startsWith("claim:")
-        ? options.claim
-        : null;
+      let claimId: string | null = null;
+      if (options.claim?.startsWith("candidate:")) {
+        const candidateId = resolveCandidateReference(
+          database,
+          options.claim,
+          false,
+        );
+        const promotedClaimIdentityId = promotedClaimForCandidateId(
+          database,
+          candidateId,
+        );
+        if (!promotedClaimIdentityId) {
+          if (options.type || options.scope) {
+            throw new ClaimsBindingError(
+              "--type and --scope only apply after a Candidate has been promoted",
+            );
+          }
+          explainCandidate(database, candidateId, options.format);
+          process.exitCode = 0;
+          return;
+        }
+        claimId = promotedClaimIdentityId;
+      } else if (options.claim?.startsWith("claim:")) {
+        claimId = options.claim;
+      }
       const parameterKey = options.claim && !claimId ? options.claim : null;
       const assessments = database
         .prepare(
@@ -1918,10 +3235,12 @@ export async function runClaimsExplain(options: {
            SELECT ci.id AS claim_identity_id,
                   parameter.canonical_key AS parameter_key,
                   ci.claim_type, ci.scope,
+                  ci.identity_contract_id, ci.identity_contract_version,
                   ca.id AS assessment_id, ca.epistemic_status,
-                  cv.normalized_statement_json
+                  cv.normalized_statement_json,
+                  cv.materiality_contract_id, cv.materiality_contract_version
            FROM claim_identities ci
-           JOIN parameter_identities parameter
+           LEFT JOIN parameter_identities parameter
              ON parameter.id = ci.parameter_identity_id
            LEFT JOIN current_assessments current_assessment
              ON current_assessment.claim_identity_id = ci.id
@@ -1948,12 +3267,16 @@ export async function runClaimsExplain(options: {
           options.scope ?? null,
         ) as Array<{
         claim_identity_id: string;
-        parameter_key: string;
+        parameter_key: string | null;
         claim_type: string;
         scope: string | null;
+        identity_contract_id: string | null;
+        identity_contract_version: string | null;
         assessment_id: string;
         epistemic_status: string;
         normalized_statement_json: string;
+        materiality_contract_id: string | null;
+        materiality_contract_version: string | null;
       }>;
       if (options.claim && assessments.length === 0) {
         throw new ClaimsBindingError(
@@ -1965,16 +3288,99 @@ export async function runClaimsExplain(options: {
         parameterKey: assessment.parameter_key,
         claimType: assessment.claim_type,
         scope: assessment.scope,
+        identityContract:
+          assessment.identity_contract_id &&
+          assessment.identity_contract_version
+            ? {
+                id: assessment.identity_contract_id,
+                version: assessment.identity_contract_version,
+              }
+            : null,
+        materialityContract:
+          assessment.materiality_contract_id &&
+          assessment.materiality_contract_version
+            ? {
+                id: assessment.materiality_contract_id,
+                version: assessment.materiality_contract_version,
+              }
+            : null,
+        subjects: (
+          database
+            .prepare(
+              `SELECT subject.identity_key, subject.kind, subject.display_name,
+                      link.subject_role
+               FROM claim_subjects link
+               JOIN subject_identities subject
+                 ON subject.id = link.subject_identity_id
+               WHERE link.claim_identity_id = ?
+               ORDER BY link.subject_role, subject.identity_key`,
+            )
+            .all(assessment.claim_identity_id) as Array<{
+            identity_key: string;
+            kind: string;
+            display_name: string;
+            subject_role: string;
+          }>
+        ).map((subject) => ({
+          role: subject.subject_role,
+          kind: subject.kind,
+          identityKey: subject.identity_key,
+          displayName: subject.display_name,
+        })),
+        promotion: candidatePromotionExplanation(
+          database,
+          assessment.claim_identity_id,
+        ),
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),
-        dependencies: database
-          .prepare(
-            `SELECT dependency_kind, dependency_version_id, epistemic_role,
-                    warrant_polarity, assessment_effect
-             FROM claim_assessment_dependencies WHERE claim_assessment_id = ?`,
-          )
-          .all(assessment.assessment_id),
+        dependencies: (
+          database
+            .prepare(
+              `SELECT dependency.dependency_kind,
+                      dependency.dependency_version_id,
+                      dependency.epistemic_role,
+                      dependency.warrant_polarity,
+                      dependency.assessment_effect,
+                      rule.normalized_status AS rule_status,
+                      rule.normalized_output_json AS rule_output_json,
+                      rule.normalized_reasons_json AS rule_reasons_json,
+                      rule.rule_contract_version,
+                      rule.implementation_fingerprint
+               FROM claim_assessment_dependencies dependency
+               LEFT JOIN rule_result_versions rule
+                 ON dependency.dependency_kind = 'rule_result_version'
+                AND rule.id = dependency.dependency_version_id
+               WHERE dependency.claim_assessment_id = ?`,
+            )
+            .all(assessment.assessment_id) as Array<{
+            dependency_kind: string;
+            dependency_version_id: string;
+            epistemic_role: string;
+            warrant_polarity: string | null;
+            assessment_effect: string;
+            rule_status: string | null;
+            rule_output_json: string | null;
+            rule_reasons_json: string | null;
+            rule_contract_version: string | null;
+            implementation_fingerprint: string | null;
+          }>
+        ).map((dependency) => ({
+          dependency_kind: dependency.dependency_kind,
+          dependency_version_id: dependency.dependency_version_id,
+          epistemic_role: dependency.epistemic_role,
+          warrant_polarity: dependency.warrant_polarity,
+          assessment_effect: dependency.assessment_effect,
+          rule_status: dependency.rule_status,
+          rule_output: dependency.rule_output_json
+            ? JSON.parse(dependency.rule_output_json)
+            : null,
+          rule_reasons: dependency.rule_reasons_json
+            ? JSON.parse(dependency.rule_reasons_json)
+            : null,
+          rule_contract_version: dependency.rule_contract_version,
+          implementation_fingerprint: dependency.implementation_fingerprint,
+        })),
         review: database
           .prepare(
             `SELECT id, basis_assessment_id, decision, actor, decision_origin,
@@ -1998,12 +3404,62 @@ export async function runClaimsExplain(options: {
       } else {
         for (const claim of output) {
           console.log(
-            `${claim.claimType}${claim.scope ? ` (${claim.scope})` : ""}: ${claim.status}`,
+            describeClaim(claim.claimType, claim.statement, claim.parameterKey),
           );
-          console.log(`  Parameter: ${claim.parameterKey}`);
-          console.log(`  Statement: ${JSON.stringify(claim.statement)}`);
-          console.log(`  Claim: ${claim.claimIdentityId}`);
-          console.log(`  Assessment: ${claim.assessmentId}`);
+          console.log(`  Status: ${claim.status}`);
+          console.log(
+            `  Type: ${claimTypeLabel(claim.claimType)} (${claim.claimType})${claim.scope ? `, scope ${claim.scope}` : ""}`,
+          );
+          if (claim.parameterKey) {
+            console.log(`  Parameter: ${claim.parameterKey}`);
+          }
+          for (const subject of claim.subjects) {
+            console.log(
+              `  ${subject.role.charAt(0).toUpperCase()}${subject.role.slice(1)}: ${displaySubject(subject)} (${subject.kind})`,
+            );
+          }
+          if (claim.identityContract) {
+            console.log(
+              `  Identity contract: ${claim.identityContract.id}@${claim.identityContract.version}`,
+            );
+          }
+          if (claim.materialityContract) {
+            console.log(
+              `  Materiality contract: ${claim.materialityContract.id}@${claim.materialityContract.version}`,
+            );
+          }
+          if (claim.promotion) {
+            const promotion = claim.promotion as {
+              actor_kind: string;
+              actor_id: string;
+              candidate_identity_key: string;
+              policy_id: string | null;
+              policy_version: string | null;
+              inference: CandidateInferenceDetails | null;
+            };
+            console.log(
+              `  Promoted from: ${promotion.candidate_identity_key} by ${
+                promotion.policy_id && promotion.policy_version
+                  ? `policy ${promotion.policy_id}@${promotion.policy_version}`
+                  : `${promotion.actor_kind}:${promotion.actor_id}`
+              }`,
+            );
+            if (promotion.inference) {
+              printCandidateInference(promotion.inference, "    ");
+            }
+          }
+          for (const dependency of claim.dependencies as Array<{
+            dependency_kind: string;
+            dependency_version_id: string;
+            rule_status: string | null;
+            rule_reasons: string[] | null;
+          }>) {
+            if (!dependency.rule_status) continue;
+            console.log(`  Check: ${dependency.rule_status}`);
+            for (const reason of dependency.rule_reasons ?? []) {
+              console.log(`    Why: ${humanizeReason(reason)} (${reason})`);
+            }
+          }
           if (claim.review) {
             console.log(
               `  Review: ${(claim.review as { decision: string }).decision}`,
@@ -2016,7 +3472,9 @@ export async function runClaimsExplain(options: {
             dependency_version_id: string;
             secondary_provenance_json: string | null;
           }>) {
-            console.log(`  Reopen: ${reopen.reason} (${reopen.status})`);
+            console.log(
+              `  Reopen: ${humanizeReason(reopen.reason)} (${reopen.status}, ${reopen.reason})`,
+            );
             console.log(
               `    Dependency: ${reopen.dependency_kind}:${reopen.dependency_version_id}`,
             );
@@ -2026,6 +3484,8 @@ export async function runClaimsExplain(options: {
               );
             }
           }
+          console.log(`  Claim ID: ${claim.claimIdentityId}`);
+          console.log(`  Assessment ID: ${claim.assessmentId}`);
         }
       }
       process.exitCode = output.length === 0 ? 2 : 0;
@@ -2038,8 +3498,76 @@ export async function runClaimsExplain(options: {
   }
 }
 
+const claimsCandidatesCommand = new Command("candidates")
+  .description("Triage and govern discovered Claim Candidates")
+  .addCommand(
+    new Command("list")
+      .description("List the current Candidate inbox")
+      .option("--state <state>", "Restrict by Candidate state")
+      .option("--subject-kind <kind>", "Restrict by Subject kind")
+      .option("--all", "Include promoted and closed Candidates")
+      .option("--verbose", "Show full IDs, Subjects, types, and confidence")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidatesList),
+  )
+  .addCommand(
+    new Command("triage")
+      .description("Move correlated Candidates into the reviewable inbox")
+      .option(
+        "--candidate <ref>",
+        "Restrict triage to one current Candidate ID or short reference",
+      )
+      .option("--subject-kind <kind>", "Restrict by Subject kind")
+      .option("--claim-type <type>", "Restrict by proposed Claim type")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidatesTriage),
+  )
+  .addCommand(
+    new Command("review")
+      .description("Record an effective human Candidate decision")
+      .requiredOption(
+        "--candidate <ref>",
+        "Current triaged Candidate ID or short reference",
+      )
+      .requiredOption("--actor <name>", "Decision actor")
+      .requiredOption(
+        "--decision <decision>",
+        "promote, reject, suppress, or defer",
+      )
+      .requiredOption("--rationale <text>", "Reason for the decision")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidateReview),
+  );
+
 export const claimsCommand = new Command("claims")
   .description("Discover, assess, explain, and review repository claims")
+  .addCommand(
+    new Command("discover")
+      .description("Persist findings as Candidates without activating Claims")
+      .option("--all", "Include low-confidence and annotation-only Candidates")
+      .option(
+        "--verbose",
+        "Show full IDs, Subjects, types, and Evidence sources",
+      )
+      .option(
+        "--semantic",
+        "Opt in to grounded model-backed correlation for ambiguous findings",
+      )
+      .option(
+        "--provider <provider>",
+        "Semantic inference provider (currently openai)",
+        "openai",
+      )
+      .option("--model <model>", "Per-request semantic inference model")
+      .option(
+        "--semantic-limit <n>",
+        "Maximum ambiguous groups evaluated semantically",
+        "20",
+      )
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsDiscover),
+  )
+  .addCommand(claimsCandidatesCommand)
   .addCommand(
     new Command("check")
       .description(
@@ -2055,7 +3583,9 @@ export const claimsCommand = new Command("claims")
         "Reconcile current auto-discovered claims and retire stale entries",
       )
       .option("-f, --format <format>", "Output format: text or json", "text")
-      .action(runClaimsCheck),
+      .action(async (options) => {
+        await runClaimsCheck(options);
+      }),
   )
   .addCommand(
     new Command("review")
@@ -2063,13 +3593,14 @@ export const claimsCommand = new Command("claims")
         "Record a human decision against a claim's current assessment",
       )
       .requiredOption(
-        "--claim <claimIdentityIdOrParameterKey>",
-        "Claim identity ID or canonical parameter key",
+        "--claim <claimIdOrCandidateRefOrParameterKey>",
+        "Claim ID, promoted Candidate reference, or canonical parameter key",
       )
       .option("--type <claimType>", "Claim type used to resolve a parameter")
       .option("--scope <scope>", "Claim scope used to resolve a parameter")
       .requiredOption("--actor <name>", "Review decision actor")
       .requiredOption("--decision <decision>", "Review disposition")
+      .option("--rationale <text>", "Reason for the review decision")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsReview),
   )
@@ -2079,8 +3610,8 @@ export const claimsCommand = new Command("claims")
         "Show current claims with their versioned dependencies and reopens",
       )
       .option(
-        "--claim <claimIdentityIdOrParameterKey>",
-        "Restrict explanation by claim identity or canonical parameter key",
+        "--claim <claimIdOrCandidateRefOrParameterKey>",
+        "Restrict by Claim ID, promoted Candidate reference, or parameter key",
       )
       .option("--type <claimType>", "Restrict explanation to one claim type")
       .option("--scope <scope>", "Restrict explanation to one claim scope")

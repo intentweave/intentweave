@@ -16,10 +16,15 @@ export {
   initSchema,
   migrateSchema14To15,
   migrateSchema15To16,
+  migrateSchema16To17,
+  migrateSchema17To18,
+  migrateSchema18To19,
   migrateSchemaToCurrent,
+  openMigratedDatabase,
   replaceDatabaseAtomically,
   restoreClaimsHistory,
   snapshotClaimsHistory,
+  schemaMigrationBackupPath,
   temporaryDatabasePath,
 } from "./schema.js";
 export {
@@ -30,9 +35,55 @@ export {
   ruleResultFingerprint,
 } from "./claims/canonical.js";
 export { ClaimsStore } from "./claims/store.js";
+export { CandidateStore } from "./claims/candidates.js";
+export { CandidateInferenceStore } from "./claims/inferences.js";
+export type {
+  CandidateConfidence,
+  CandidateDetails,
+  CandidateDiscoveryMode,
+  CandidateEvidence,
+  CandidateEvidenceInput,
+  CandidateInferenceAttachmentInput,
+  CandidateListFilter,
+  CandidatePolicyDecisionInput,
+  CandidateReviewDecision,
+  CandidateReviewEffect,
+  CandidateReviewInput,
+  CandidateState,
+  CandidateSubject,
+  CandidateSubjectInput,
+  PersistClaimCandidateInput,
+  PersistedCandidate,
+  PersistedCandidateReview,
+} from "./claims/candidates.js";
+export type {
+  CandidateInferenceCacheKey,
+  CandidateInferenceConfidence,
+  CandidateInferenceDetails,
+  PersistCandidateInferenceInput,
+} from "./claims/inferences.js";
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
+export {
+  SUBJECT_IDENTITY_CONTRACT_VERSION,
+  affectedCurrentAssessmentsForSubject,
+  affectedCurrentAssessmentsForSubjectAlias,
+  affectedCurrentAssessmentsForSubjectContinuity,
+  parameterSubjectIdentity,
+  subjectIdentity,
+} from "./claims/subjects.js";
+export type {
+  SubjectIdentityV1,
+  SubjectImpactAssessment,
+  SubjectKind,
+} from "./claims/subjects.js";
 export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
+export {
+  CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
+  ClaimsPortableStateError,
+  emptyPortableClaimsState,
+  parsePortableClaimsState,
+} from "./claims/portableState.js";
 export { assessClaimPolicy, assessRuleResults } from "./claims/policies.js";
 export {
   r1LiteralBinding,
@@ -46,6 +97,7 @@ export type {
   AssessmentEffect,
   ClaimAssessmentDependencyInput,
   ClaimAssessmentStatus,
+  ClaimSubjectInput,
   ClaimPolicyDependencyInput,
   ClaimsExitInput,
   ClaimsContractVersions,
@@ -54,25 +106,43 @@ export type {
   ClaimDependencyKind,
   ClaimScalar,
   EpistemicRole,
+  EvidenceSubjectInput,
   MaterialFingerprintInput,
   NormalizedRuleResult,
   PersistEvidenceInput,
+  PersistGenericEvidenceInput,
+  PersistGenericClaimAssessmentInput,
+  PersistSubjectAliasInput,
+  PersistSubjectContinuityInput,
   PersistedVersion,
   PersistRuleResultInput,
   PersistClaimAssessmentInput,
   PersistedAssessment,
+  PersistedSubjectContinuity,
   PersistedReopen,
   PersistedReviewDecision,
   RecordReviewInput,
   ReopenReason,
   ReopenReviewInput,
+  ReviewDependencyKind,
   RuleApplicability,
   RuleResultFingerprintInput,
   RuleResultStatus,
   WarrantPolarity,
   VersionedClaimValue,
+  VersionedClaimContract,
   VersionedScopeEvidence,
 } from "./claims/types.js";
+export type {
+  PortableAssessmentReview,
+  PortableBaselineAcceptance,
+  PortableCandidateDecision,
+  PortableClaimsActor,
+  PortableClaimsPolicy,
+  PortableClaimsState,
+  PortableJsonValue,
+  PortableSubjectBinding,
+} from "./claims/portableState.js";
 
 // CypherLite CARI graph projection + query runner
 export {

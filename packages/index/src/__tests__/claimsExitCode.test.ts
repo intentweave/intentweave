@@ -12,6 +12,17 @@ const base: ClaimsExitInput = {
 };
 
 describe("claimsExitCode", () => {
+  it("pins the public v1 exit-code table", () => {
+    expect(CLAIMS_EXIT_CODE).toEqual({
+      success: 0,
+      failed: 1,
+      inconclusive: 2,
+      notApplicable: 3,
+      reviewRequired: 4,
+      invalidInput: 64,
+    });
+  });
+
   it("uses the specified priority order", () => {
     expect(
       claimsExitCode({

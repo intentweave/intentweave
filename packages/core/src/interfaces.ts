@@ -31,6 +31,9 @@ import type {
  * Does NOT own extraction logic - that's ExtractionProvider's job.
  */
 export interface LLMProvider {
+  /** Absent means the legacy v1 transport contract. */
+  readonly contractVersion?: 1 | 2;
+
   /** Provider name for logging/debugging */
   readonly name: string;
 
@@ -48,6 +51,24 @@ export interface LLMProvider {
 
   /** Provider capabilities at the transport level */
   readonly capabilities: LLMProviderCapabilities;
+
+  /** Resolve capabilities for a per-request model (required by v2). */
+  capabilitiesFor?(model?: string): LLMProviderCapabilities;
+}
+
+/** Claims-grade transport contract that preserves terminal provider outcomes. */
+export interface LLMProviderV2 extends LLMProvider {
+  readonly contractVersion: 2;
+  capabilitiesFor(model?: string): LLMProviderCapabilities;
+}
+
+export function isLLMProviderV2(
+  provider: LLMProvider,
+): provider is LLMProviderV2 {
+  return (
+    provider.contractVersion === 2 &&
+    typeof provider.capabilitiesFor === "function"
+  );
 }
 
 /**
@@ -63,6 +84,9 @@ export interface LLMRequest {
   /** JSON schema for structured output (if supported) */
   responseSchema?: Record<string, unknown>;
 
+  /** Stable schema name used by providers with native structured output. */
+  responseSchemaName?: string;
+
   /** Temperature (0-1) */
   temperature?: number;
 
@@ -74,6 +98,9 @@ export interface LLMRequest {
 
   /** Per-request timeout in milliseconds (overrides provider default) */
   timeoutMs?: number;
+
+  /** Caller-controlled cancellation, distinct from timeout. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -98,6 +125,8 @@ export interface LLMResponse {
   tokensUsed: {
     prompt: number;
     completion: number;
+    reasoning?: number;
+    cachedPrompt?: number;
   };
 
   /** Latency in milliseconds */
@@ -106,12 +135,45 @@ export interface LLMResponse {
   /** Model used */
   model: string;
 
+  /** Provider request ID, when exposed by the transport. */
+  requestId?: string;
+
+  /** Provider model revision or system fingerprint. */
+  modelRevision?: string;
+
   /** Finish reason */
-  finishReason: "stop" | "length" | "tool_calls" | "error";
+  finishReason: LLMFinishReason;
+
+  /** Provider refusal detail, when present. */
+  refusal?: string;
 
   /** Error message if finishReason is 'error' */
   error?: string;
+
+  /** Typed v2 transport failure classification. */
+  errorKind?: LLMTransportErrorKind;
+
+  /** HTTP status from the provider, when applicable. */
+  statusCode?: number;
 }
+
+export type LLMFinishReason =
+  | "stop"
+  | "length"
+  | "tool_calls"
+  | "refusal"
+  | "content_filter"
+  | "error"
+  | "other";
+
+export type LLMTransportErrorKind =
+  | "rate_limit"
+  | "timeout"
+  | "cancelled"
+  | "transport"
+  | "provider";
+
+export type LLMStructuredOutputMode = "strict" | "json" | "text";
 
 /**
  * LLM Provider Capabilities
@@ -131,6 +193,9 @@ export interface LLMProviderCapabilities {
 
   /** Supports embeddings */
   supportsEmbeddings: boolean;
+
+  /** Ordered structured-output modes supported for this effective model. */
+  structuredOutputModes?: readonly LLMStructuredOutputMode[];
 }
 
 // =============================================================================

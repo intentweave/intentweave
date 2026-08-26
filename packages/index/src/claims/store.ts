@@ -12,22 +12,69 @@ import type {
   PersistClaimAssessmentInput,
   PersistEvidenceContinuityInput,
   PersistEvidenceInput,
+  PersistGenericEvidenceInput,
+  PersistGenericClaimAssessmentInput,
+  PersistSubjectAliasInput,
+  PersistSubjectContinuityInput,
   PersistedAssessment,
+  PersistedSubjectContinuity,
   PersistedVersion,
   PersistRuleResultInput,
 } from "./types.js";
+import { parameterSubjectIdentity, subjectIdentity } from "./subjects.js";
 
 function idFor(kind: string, identityKey: string): string {
   return `${kind}:${fingerprint(identityKey)}`;
 }
 
+function persistParameterSubject(
+  db: Database.Database,
+  parameterKey: string,
+  now: number,
+): { parameterId: string; subjectId: string } {
+  const parameterId = idFor("parameter", parameterKey);
+  const subject = parameterSubjectIdentity(parameterKey);
+  db.prepare(
+    `INSERT OR IGNORE INTO subject_identities (
+       id, kind, identity_key, display_name, lifecycle_state,
+       contract_version, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    subject.id,
+    subject.kind,
+    subject.identityKey,
+    subject.displayName,
+    subject.lifecycleState,
+    subject.contractVersion,
+    now,
+  );
+  db.prepare(
+    `INSERT OR IGNORE INTO subject_aliases (
+       subject_identity_id, alias_kind, alias_key, created_at
+     ) VALUES (?, 'parameter-key', ?, ?)`,
+  ).run(subject.id, parameterKey, now);
+  db.prepare(
+    `INSERT INTO parameter_identities (
+       id, canonical_key, subject_identity_id, created_at
+     ) VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       subject_identity_id = COALESCE(parameter_identities.subject_identity_id, excluded.subject_identity_id)`,
+  ).run(parameterId, parameterKey, subject.id, now);
+  return { parameterId, subjectId: subject.id };
+}
+
 function nextOrdinal(
   db: Database.Database,
-  table: "evidence_versions" | "rule_result_versions" | "claim_versions",
+  table:
+    | "evidence_versions"
+    | "rule_result_versions"
+    | "claim_versions"
+    | "subject_continuity",
   identityColumn:
     | "evidence_identity_id"
     | "rule_result_identity_id"
-    | "claim_identity_id",
+    | "claim_identity_id"
+    | "continuity_identity_key",
   identityId: string,
 ): number {
   const row = db
@@ -55,13 +102,11 @@ export class ClaimsStore {
   persistEvidence(input: PersistEvidenceInput): PersistedVersion {
     const persist = this.db.transaction(() => {
       const now = Date.now();
-      const parameterId = idFor("parameter", input.parameterKey);
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO parameter_identities (id, canonical_key, created_at)
-           VALUES (?, ?, ?)`,
-        )
-        .run(parameterId, input.parameterKey, now);
+      const { parameterId, subjectId } = persistParameterSubject(
+        this.db,
+        input.parameterKey,
+        now,
+      );
 
       const evidenceIdentityId = idFor("evidence", input.identityKey);
       this.db
@@ -77,6 +122,14 @@ export class ClaimsStore {
           input.identityKey,
           now,
         );
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO evidence_subjects (
+             evidence_identity_id, subject_identity_id, subject_role,
+             basis, confidence, created_at
+           ) VALUES (?, ?, 'subject', 'parameter-compatibility', 'certain', ?)`,
+        )
+        .run(evidenceIdentityId, subjectId, now);
 
       const versions = this.db
         .prepare(
@@ -159,6 +212,124 @@ export class ClaimsStore {
     return persist();
   }
 
+  persistGenericEvidence(input: PersistGenericEvidenceInput): PersistedVersion {
+    if (input.subjects.length === 0) {
+      throw new Error("Generic Evidence requires at least one Subject");
+    }
+    const persist = this.db.transaction(() => {
+      const now = Date.now();
+      const evidenceIdentityId = idFor("evidence", input.identityKey);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO evidence_identities
+             (id, parameter_identity_id, source_kind, identity_key, created_at)
+           VALUES (?, NULL, ?, ?, ?)`,
+        )
+        .run(evidenceIdentityId, input.sourceKind, input.identityKey, now);
+      for (const subjectInput of input.subjects) {
+        const subject = subjectIdentity(
+          subjectInput.kind,
+          subjectInput.identityKey,
+          subjectInput.displayName,
+        );
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO subject_identities (
+               id, kind, identity_key, display_name, lifecycle_state,
+               contract_version, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            subject.id,
+            subject.kind,
+            subject.identityKey,
+            subject.displayName,
+            subject.lifecycleState,
+            subject.contractVersion,
+            now,
+          );
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO evidence_subjects (
+               evidence_identity_id, subject_identity_id, subject_role,
+               basis, confidence, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            evidenceIdentityId,
+            subject.id,
+            subjectInput.role,
+            subjectInput.basis,
+            subjectInput.confidence,
+            now,
+          );
+      }
+
+      const versions = this.db
+        .prepare(
+          `SELECT id, version_ordinal, fingerprint FROM evidence_versions
+           WHERE evidence_identity_id = ? ORDER BY version_ordinal DESC`,
+        )
+        .all(evidenceIdentityId) as Array<{
+        id: string;
+        version_ordinal: number;
+        fingerprint: string;
+      }>;
+      const current = versions[0];
+      if (
+        current &&
+        logicalFingerprint(current.fingerprint) === input.fingerprint
+      ) {
+        return {
+          id: current.id,
+          ordinal: current.version_ordinal,
+          created: false,
+        };
+      }
+      const returning = versions.find(
+        (version) =>
+          logicalFingerprint(version.fingerprint) === input.fingerprint,
+      );
+      const ordinal = nextOrdinal(
+        this.db,
+        "evidence_versions",
+        "evidence_identity_id",
+        evidenceIdentityId,
+      );
+      const id = `${evidenceIdentityId}@${ordinal}`;
+      const storedFingerprint = returning
+        ? reobservedFingerprint(input.fingerprint, ordinal)
+        : input.fingerprint;
+      this.db
+        .prepare(
+          `INSERT INTO evidence_versions (
+             id, evidence_identity_id, version_ordinal, fingerprint,
+             material_fingerprint, normalized_value, semantic_location,
+             file_path, symbol_id, span_start_line, span_end_line,
+             repository_revision, provenance_json, observed_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          evidenceIdentityId,
+          ordinal,
+          storedFingerprint,
+          input.materialFingerprint,
+          canonicalJson(input.normalizedValue),
+          input.semanticLocation,
+          input.filePath ?? null,
+          input.symbolId ?? null,
+          input.spanStartLine ?? null,
+          input.spanEndLine ?? null,
+          input.repositoryRevision ?? null,
+          canonicalJson(input.provenance),
+          now,
+        );
+      return { id, ordinal, created: true };
+    });
+    return persist();
+  }
+
   persistEvidenceContinuity(input: PersistEvidenceContinuityInput): boolean {
     const persist = this.db.transaction(() => {
       const id = `continuity:${fingerprint({
@@ -200,6 +371,128 @@ export class ClaimsStore {
       return true;
     });
 
+    return persist();
+  }
+
+  persistSubjectAlias(input: PersistSubjectAliasInput): boolean {
+    if (
+      input.aliasKind.trim().length === 0 ||
+      input.aliasKey.trim().length === 0
+    ) {
+      throw new Error("A Subject alias requires a non-empty kind and key");
+    }
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO subject_aliases (
+           subject_identity_id, alias_kind, alias_key, created_at
+         ) VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        input.subjectIdentityId,
+        input.aliasKind,
+        input.aliasKey,
+        Date.now(),
+      );
+    if (result.changes !== 0) return true;
+    const existing = this.db
+      .prepare(
+        `SELECT subject_identity_id FROM subject_aliases
+         WHERE alias_kind = ? AND alias_key = ?`,
+      )
+      .get(input.aliasKind, input.aliasKey) as
+      | { subject_identity_id: string }
+      | undefined;
+    if (existing?.subject_identity_id !== input.subjectIdentityId) {
+      throw new Error(
+        `Subject alias ${input.aliasKind}:${input.aliasKey} already belongs to another Subject`,
+      );
+    }
+    return false;
+  }
+
+  persistSubjectContinuity(
+    input: PersistSubjectContinuityInput,
+  ): PersistedSubjectContinuity {
+    if (input.fromSubjectIdentityId === input.toSubjectIdentityId) {
+      throw new Error("Subject continuity requires two different identities");
+    }
+    if (
+      input.basis.trim().length === 0 ||
+      input.confidence.trim().length === 0
+    ) {
+      throw new Error(
+        "Subject continuity requires a non-empty basis and confidence",
+      );
+    }
+    const identityKey = canonicalJson({
+      fromSubjectIdentityId: input.fromSubjectIdentityId,
+      toSubjectIdentityId: input.toSubjectIdentityId,
+      basis: input.basis,
+    });
+    const observationFingerprint = fingerprint({
+      confidence: input.confidence,
+      provenance: input.provenance,
+    });
+    const persist = this.db.transaction(() => {
+      const versions = this.db
+        .prepare(
+          `SELECT id, version_ordinal, fingerprint
+           FROM subject_continuity
+           WHERE continuity_identity_key = ?
+           ORDER BY version_ordinal DESC`,
+        )
+        .all(identityKey) as Array<{
+        id: string;
+        version_ordinal: number;
+        fingerprint: string;
+      }>;
+      const current = versions[0];
+      if (
+        current &&
+        logicalFingerprint(current.fingerprint) === observationFingerprint
+      ) {
+        return {
+          id: current.id,
+          ordinal: current.version_ordinal,
+          created: false,
+        };
+      }
+      const ordinal = nextOrdinal(
+        this.db,
+        "subject_continuity",
+        "continuity_identity_key",
+        identityKey,
+      );
+      const returning = versions.some(
+        (version) =>
+          logicalFingerprint(version.fingerprint) === observationFingerprint,
+      );
+      const storedFingerprint = returning
+        ? reobservedFingerprint(observationFingerprint, ordinal)
+        : observationFingerprint;
+      const id = `subject-continuity:${fingerprint(identityKey)}@${ordinal}`;
+      this.db
+        .prepare(
+          `INSERT INTO subject_continuity (
+             id, continuity_identity_key, version_ordinal, fingerprint,
+             from_subject_identity_id, to_subject_identity_id,
+             basis, confidence, provenance_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          identityKey,
+          ordinal,
+          storedFingerprint,
+          input.fromSubjectIdentityId,
+          input.toSubjectIdentityId,
+          input.basis,
+          input.confidence,
+          canonicalJson(input.provenance),
+          Date.now(),
+        );
+      return { id, ordinal, created: true };
+    });
     return persist();
   }
 
@@ -308,13 +601,11 @@ export class ClaimsStore {
   ): PersistedAssessment {
     const persist = this.db.transaction(() => {
       const now = Date.now();
-      const parameterId = idFor("parameter", input.parameterKey);
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO parameter_identities (id, canonical_key, created_at)
-           VALUES (?, ?, ?)`,
-        )
-        .run(parameterId, input.parameterKey, now);
+      const { parameterId, subjectId } = persistParameterSubject(
+        this.db,
+        input.parameterKey,
+        now,
+      );
 
       const identityKey = [
         input.parameterKey,
@@ -336,12 +627,182 @@ export class ClaimsStore {
           identityKey,
           now,
         );
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO claim_subjects (
+             claim_identity_id, subject_identity_id, subject_role, created_at
+           ) VALUES (?, ?, 'subject', ?)`,
+        )
+        .run(claimIdentityId, subjectId, now);
 
+      return this.persistAssessmentForClaimIdentity(
+        claimIdentityId,
+        input,
+        now,
+      );
+    });
+
+    return persist();
+  }
+
+  /**
+   * Persist a generic Claim whose identity is anchored in role-based Subjects
+   * (G1b). No ParameterIdentity is created; `claim_subjects` is authoritative.
+   */
+  persistGenericClaimAssessment(
+    input: PersistGenericClaimAssessmentInput,
+  ): PersistedAssessment {
+    if (input.subjects.length === 0) {
+      throw new Error("A generic Claim requires at least one Subject");
+    }
+    const identityRoles = input.identitySubjectRoles
+      ? new Set(input.identitySubjectRoles)
+      : undefined;
+    const identitySubjects = identityRoles
+      ? input.subjects.filter((subject) => identityRoles.has(subject.role))
+      : input.subjects;
+    if (identitySubjects.length === 0) {
+      throw new Error("A generic Claim identity requires at least one Subject");
+    }
+    if (
+      identityRoles &&
+      [...identityRoles].some(
+        (role) => !input.subjects.some((subject) => subject.role === role),
+      )
+    ) {
+      throw new Error(
+        "A generic Claim identity role is not attached to the Claim",
+      );
+    }
+    const subjectKeys = identitySubjects.map((subject) => ({
+      role: subject.role,
+      identityKey: subject.identityKey,
+    }));
+    const seen = new Set<string>();
+    for (const subject of subjectKeys) {
+      if (subject.role.trim().length === 0) {
+        throw new Error("A Claim Subject requires a non-empty role");
+      }
+      const key = canonicalJson([subject.role, subject.identityKey]);
+      if (seen.has(key)) {
+        throw new Error(
+          `Duplicate Claim Subject ${subject.role}:${subject.identityKey}`,
+        );
+      }
+      seen.add(key);
+    }
+    for (const [name, contract] of [
+      ["identity", input.identityContract],
+      ["materiality", input.materialityContract],
+    ] as const) {
+      if (
+        contract.id.trim().length === 0 ||
+        contract.version.trim().length === 0
+      ) {
+        throw new Error(
+          `A generic Claim requires a versioned ${name} contract`,
+        );
+      }
+    }
+    const persist = this.db.transaction(() => {
+      const now = Date.now();
+      const identityKey = canonicalJson({
+        claimType: input.claimType,
+        identityContract: input.identityContract,
+        scope: input.scope ?? "",
+        subjects: [...subjectKeys].sort(
+          (left, right) =>
+            left.role.localeCompare(right.role) ||
+            left.identityKey.localeCompare(right.identityKey),
+        ),
+      });
+      const claimIdentityId = idFor("claim", identityKey);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO claim_identities
+             (id, parameter_identity_id, claim_type, scope, identity_key,
+              identity_contract_id, identity_contract_version, created_at)
+           VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          claimIdentityId,
+          input.claimType,
+          input.scope ?? null,
+          identityKey,
+          input.identityContract.id,
+          input.identityContract.version,
+          now,
+        );
+      const insertSubject = this.db.prepare(
+        `INSERT OR IGNORE INTO subject_identities (
+           id, kind, identity_key, display_name, lifecycle_state,
+           contract_version, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertClaimSubject = this.db.prepare(
+        `INSERT OR IGNORE INTO claim_subjects (
+           claim_identity_id, subject_identity_id, subject_role, created_at
+         ) VALUES (?, ?, ?, ?)`,
+      );
+      for (const subjectInput of input.subjects) {
+        const subject = subjectIdentity(
+          subjectInput.kind,
+          subjectInput.identityKey,
+          subjectInput.displayName,
+        );
+        insertSubject.run(
+          subject.id,
+          subject.kind,
+          subject.identityKey,
+          subject.displayName,
+          subject.lifecycleState,
+          subject.contractVersion,
+          now,
+        );
+        insertClaimSubject.run(
+          claimIdentityId,
+          subject.id,
+          subjectInput.role,
+          now,
+        );
+      }
+
+      return this.persistAssessmentForClaimIdentity(
+        claimIdentityId,
+        input,
+        now,
+      );
+    });
+
+    return persist();
+  }
+
+  private persistAssessmentForClaimIdentity(
+    claimIdentityId: string,
+    input: {
+      normalizedStatement: unknown;
+      assessmentPolicyId: string;
+      assessmentPolicyVersion: string;
+      materialityContract?: {
+        id: string;
+        version: string;
+      };
+      repositoryRevision: string;
+      status: PersistClaimAssessmentInput["status"];
+      dependencies: PersistClaimAssessmentInput["dependencies"];
+    },
+    now: number,
+  ): PersistedAssessment {
+    {
       const statementJson = canonicalJson(input.normalizedStatement);
+      const materialityContractId = input.materialityContract?.id ?? null;
+      const materialityContractVersion =
+        input.materialityContract?.version ?? null;
       const latestVersion = this.db
         .prepare(
           `SELECT id, version_ordinal, normalized_statement_json,
-                  assessment_policy_id, assessment_policy_version
+                  assessment_policy_id, assessment_policy_version,
+                  materiality_contract_id, materiality_contract_version
            FROM claim_versions
            WHERE claim_identity_id = ?
            ORDER BY version_ordinal DESC LIMIT 1`,
@@ -353,6 +814,8 @@ export class ClaimsStore {
             normalized_statement_json: string;
             assessment_policy_id: string;
             assessment_policy_version: string;
+            materiality_contract_id: string | null;
+            materiality_contract_version: string | null;
           }
         | undefined;
       const unchangedClaim =
@@ -360,7 +823,10 @@ export class ClaimsStore {
         latestVersion.normalized_statement_json === statementJson &&
         latestVersion.assessment_policy_id === input.assessmentPolicyId &&
         latestVersion.assessment_policy_version ===
-          input.assessmentPolicyVersion;
+          input.assessmentPolicyVersion &&
+        latestVersion.materiality_contract_id === materialityContractId &&
+        latestVersion.materiality_contract_version ===
+          materialityContractVersion;
       const claimVersionId = unchangedClaim
         ? latestVersion.id
         : `${claimIdentityId}@${nextOrdinal(
@@ -374,8 +840,10 @@ export class ClaimsStore {
           .prepare(
             `INSERT INTO claim_versions (
                id, claim_identity_id, version_ordinal, normalized_statement_json,
-               assessment_policy_id, assessment_policy_version, repository_revision, created_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+               assessment_policy_id, assessment_policy_version,
+               materiality_contract_id, materiality_contract_version,
+               repository_revision, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             claimVersionId,
@@ -384,6 +852,8 @@ export class ClaimsStore {
             statementJson,
             input.assessmentPolicyId,
             input.assessmentPolicyVersion,
+            materialityContractId,
+            materialityContractVersion,
             input.repositoryRevision,
             now,
           );
@@ -482,8 +952,6 @@ export class ClaimsStore {
         claimVersionId,
         created: true,
       };
-    });
-
-    return persist();
+    }
   }
 }
