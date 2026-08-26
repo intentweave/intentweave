@@ -1,8 +1,8 @@
 # Generalized Repository Claims
 
-> **Version:** 1.4
+> **Version:** 1.5
 > **Status:** Follow-on concept / implementation plan with delivery checkpoints
-> **Date:** 2026-08-25
+> **Date:** 2026-08-26
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
 
 ## 1. Purpose
@@ -1590,7 +1590,7 @@ Acceptance:
 
 ### Phase G5.1: Candidate State Semantics and Explicit Rule Policy
 
-Status: proposed follow-up; not implemented in the current checkpoint.
+Completion checkpoint (2026-08-26): implemented.
 
 Before AI-assisted curation, make the Candidate state machine match the visible
 product language. Confidence and lifecycle state answer different questions:
@@ -1616,10 +1616,11 @@ The state invariants are fixed as follows:
 Deterministic and model-backed Correlation use the same state invariant.
 Architecture Candidates with complete `source`, `target`, and Rule bindings are
 therefore `correlated` immediately; an ambiguous semantic Subject proposal
-remains `discovered`. Triage must not manufacture an otherwise unsupported
-Correlation transition merely to advance the workflow. A human may resolve an
-ambiguous binding during Triage, but that resolution is persisted as an
-explicit grounded Correlation artifact first.
+remains `discovered`. Triage does not manufacture an otherwise unsupported
+Correlation transition merely to advance the workflow. A deterministic,
+semantic, or human-provided binding may resolve an ambiguity, but that
+resolution must be persisted as an explicit grounded Correlation artifact
+before Triage.
 
 Existing Candidate history remains append-only. Updating these invariants
 appends corrected current versions and preserves prior IDs, Reviews, Policies,
@@ -1627,13 +1628,28 @@ and promotion links. CLI text and filters explain confidence separately from
 state, and regression tests cover deterministic Correlation, semantic
 Correlation, ambiguity, Triage, and reclassification.
 
-Explicit repository declarations use deterministic governance before AI. Add
-an opt-in versioned `explicit-architecture-rule@1` Candidate Policy for static,
-supported `.iw/rules.yaml` Rules. Its materialized decision names the Rule ID,
-Rule contract, Candidate fingerprint, and promoted Claim identity. Unsupported,
-dynamic, incomplete, or ambiguous Rules remain Candidates and are never
-silently promoted. This Policy changes Claims governance only; it does not
-create a parallel Architecture Rule inventory or evaluator.
+Explicit repository declarations use deterministic governance before AI. The
+opt-in versioned `explicit-architecture-rule@1` Candidate Policy promotes
+static, supported `.iw/rules.yaml` Rules only when their evaluation is complete
+and their bindings are certain:
+
+```yaml
+schemaVersion: "1"
+policies:
+  explicit-architecture-rule:
+    version: "1"
+    enabled: true
+    configuration: {}
+```
+
+Its materialized decision names the Rule ID, Rule contract, Candidate
+fingerprint, and promoted Claim identity. Unsupported, dynamic, incomplete, or
+ambiguous Rules remain Candidates and are never silently promoted. The Policy
+changes Claims governance only; it does not create a parallel Architecture Rule
+inventory or evaluator. An effective Policy transitions a `correlated`
+Candidate directly to its terminal state and does not synthesize the
+human-only `triaged` state. Repeated projection is idempotent, while disabling
+the Policy leaves the raw Architecture Rule result unchanged.
 
 Acceptance:
 

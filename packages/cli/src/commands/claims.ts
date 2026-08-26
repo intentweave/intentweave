@@ -19,6 +19,7 @@ import {
   openMigratedDatabase,
 } from "@intentweave/index";
 import type {
+  CandidateDetails,
   CandidateInferenceDetails,
   CandidateReviewDecision,
   CandidateState,
@@ -736,6 +737,21 @@ function promotedCandidateIdentityKeys(
   );
 }
 
+function architectureRuleId(candidate: CandidateDetails): string {
+  const statement = candidate.normalizedStatement;
+  if (
+    statement === null ||
+    typeof statement !== "object" ||
+    Array.isArray(statement) ||
+    typeof (statement as { ruleId?: unknown }).ruleId !== "string"
+  ) {
+    throw new ClaimsBindingError(
+      `Architecture Candidate ${candidate.id} has no static Rule ID`,
+    );
+  }
+  return (statement as { ruleId: string }).ruleId;
+}
+
 function applyEffectiveCandidateDecisions(
   database: Database.Database,
   identityKeys: readonly string[],
@@ -749,6 +765,21 @@ function applyEffectiveCandidateDecisions(
   const issues: CandidateProjectionIssue[] = [];
   const continuousPolicy =
     portableState?.policies["r1-continuous-auto-promote"];
+  const architecturePolicy =
+    portableState?.policies["explicit-architecture-rule"];
+  if (architecturePolicy?.enabled && architecturePolicy.version !== "1") {
+    throw new ClaimsBindingError(
+      "Policy explicit-architecture-rule must use version 1",
+    );
+  }
+  if (
+    architecturePolicy?.enabled &&
+    Object.keys(architecturePolicy.configuration).length > 0
+  ) {
+    throw new ClaimsBindingError(
+      "Policy explicit-architecture-rule@1 does not accept configuration",
+    );
+  }
   for (const identityKey of identityKeys) {
     const current = store.current(identityKey);
     if (!current) continue;
@@ -781,11 +812,6 @@ function applyEffectiveCandidateDecisions(
           issues.push({ identityKey, reason: "closed-candidate-conflict" });
           continue;
         }
-        candidate = store.details(
-          store.triage(candidate.id, {
-            basis: "portable-candidate-decision",
-          }).id,
-        )!;
         if (portableDecision.actor.kind === "policy") {
           applyCandidatePolicy(database, {
             candidateId: candidate.id,
@@ -797,6 +823,11 @@ function applyEffectiveCandidateDecisions(
             contracts,
           });
         } else {
+          candidate = store.details(
+            store.triage(candidate.id, {
+              basis: "portable-candidate-decision",
+            }).id,
+          )!;
           reviewCandidate(database, {
             candidateId: candidate.id,
             actor: portableDecision.actor.id,
@@ -828,15 +859,20 @@ function applyEffectiveCandidateDecisions(
               id: "r1-continuous-auto-promote",
               version: continuousPolicy.version,
             }
-          : undefined;
+          : candidate.candidateKind === "architecture-dependency-conformance" &&
+              candidate.proposedClaimType === "CLM-DEPENDENCY-CONFORMANCE" &&
+              candidate.confidence === "certain" &&
+              architecturePolicy?.enabled
+            ? {
+                id: "explicit-architecture-rule",
+                version: architecturePolicy.version,
+              }
+            : undefined;
     if (!policy || candidate.state === "promoted") continue;
     if (!["discovered", "correlated", "triaged"].includes(candidate.state)) {
       issues.push({ identityKey, reason: "closed-candidate-conflict" });
       continue;
     }
-    candidate = store.details(
-      store.triage(candidate.id, { basis: policy.id }).id,
-    )!;
     applyCandidatePolicy(database, {
       candidateId: candidate.id,
       policyId: policy.id,
@@ -847,8 +883,21 @@ function applyEffectiveCandidateDecisions(
           ? "Preserve a Claim active before Candidate migration"
           : policy.id === "promoted-claim-continuity"
             ? "Continue governance for an already active Claim identity"
-            : "Continuous R1 auto-promotion is explicitly enabled",
-      provenance: { source: "candidate-policy" },
+            : policy.id === "r1-continuous-auto-promote"
+              ? "Continuous R1 auto-promotion is explicitly enabled"
+              : "Static repository Architecture Rule promotion is explicitly enabled",
+      provenance:
+        policy.id === "explicit-architecture-rule"
+          ? {
+              source: CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
+              architectureRuleId: architectureRuleId(candidate),
+              ruleContract: {
+                adapterId: candidate.discoveryAdapterId,
+                version: candidate.discoveryContractVersion,
+              },
+              candidateFingerprint: candidate.observationFingerprint,
+            }
+          : { source: "candidate-policy" },
       contracts,
     });
   }
@@ -994,7 +1043,7 @@ export async function runClaimsCandidatesTriage(options: {
             (!candidateId || candidate.id === candidateId) &&
             (!options.claimType ||
               candidate.proposedClaimType === options.claimType) &&
-            ["discovered", "correlated", "triaged"].includes(candidate.state),
+            ["correlated", "triaged"].includes(candidate.state),
         );
       if (options.candidate && candidates.length === 0) {
         throw new ClaimsBindingError(
@@ -2832,20 +2881,37 @@ function promotedClaimForCandidateId(
   }
   const cycle = database
     .prepare(
-      `SELECT MAX(version_ordinal) AS start_ordinal
-       FROM claim_candidates
-       WHERE identity_key = ? AND state = 'discovered'
-         AND version_ordinal <= ?`,
+      `WITH versions AS (
+         SELECT version_ordinal, observation_fingerprint,
+                LAG(observation_fingerprint) OVER (
+                  ORDER BY version_ordinal
+                ) AS previous_observation_fingerprint
+         FROM claim_candidates WHERE identity_key = ?
+       )
+       SELECT MAX(version_ordinal) AS start_ordinal
+       FROM versions
+       WHERE version_ordinal <= ?
+         AND (
+           previous_observation_fingerprint IS NULL OR
+           observation_fingerprint != previous_observation_fingerprint
+         )`,
     )
     .get(selected.identity_key, selected.version_ordinal) as {
     start_ordinal: number;
   };
   const nextCycle = database
     .prepare(
-      `SELECT MIN(version_ordinal) AS start_ordinal
-       FROM claim_candidates
-       WHERE identity_key = ? AND state = 'discovered'
-         AND version_ordinal > ?`,
+      `WITH versions AS (
+         SELECT version_ordinal, observation_fingerprint,
+                LAG(observation_fingerprint) OVER (
+                  ORDER BY version_ordinal
+                ) AS previous_observation_fingerprint
+         FROM claim_candidates WHERE identity_key = ?
+       )
+       SELECT MIN(version_ordinal) AS start_ordinal
+       FROM versions
+       WHERE version_ordinal > ?
+         AND observation_fingerprint != previous_observation_fingerprint`,
     )
     .get(selected.identity_key, cycle.start_ordinal) as {
     start_ordinal: number | null;
@@ -3446,7 +3512,7 @@ const claimsCandidatesCommand = new Command("candidates")
   )
   .addCommand(
     new Command("triage")
-      .description("Move deterministic Candidates into the reviewable inbox")
+      .description("Move correlated Candidates into the reviewable inbox")
       .option(
         "--candidate <ref>",
         "Restrict triage to one current Candidate ID or short reference",

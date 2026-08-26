@@ -57,7 +57,7 @@ describe("iw claims discover", () => {
         semanticDiscovery: "not_run",
       });
       expect(first.candidates[0]).toMatchObject({
-        state: "discovered",
+        state: "correlated",
         sourceKinds: ["code-annotation", "code-default"],
       });
       const semantic = JSON.parse(String(log.mock.calls[2]?.[0])) as {
@@ -186,11 +186,11 @@ describe("iw claims discover", () => {
         expect.arrayContaining([
           expect.objectContaining({
             identityKey: "r1:ui.pageSize:CLM-DEFAULT",
-            state: "discovered",
+            state: "correlated",
             confidence: "certain",
           }),
           expect.objectContaining({
-            state: "discovered",
+            state: "correlated",
             confidence: "probable",
           }),
         ]),

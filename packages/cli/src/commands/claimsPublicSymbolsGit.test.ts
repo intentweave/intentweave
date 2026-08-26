@@ -146,7 +146,9 @@ describe("G3 public Symbol Git slice", () => {
 
     process.chdir(workspace);
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
     await runClaimsDiscover({ all: true, format: "json" });
     const baselineDiscovery = JSON.parse(
       String(log.mock.calls.at(-1)?.[0]),
@@ -210,7 +212,7 @@ describe("G3 public Symbol Git slice", () => {
            WHERE identity_key = ? ORDER BY version_ordinal DESC LIMIT 1`,
         )
         .get(`public-symbol-doc:${movedSymbol.id}`),
-    ).toEqual({ state: "discovered" });
+    ).toEqual({ state: "correlated" });
     preSince.close();
     process.exitCode = undefined;
     await runClaimsCheck({ since: s0, format: "json" });
@@ -482,31 +484,34 @@ describe("G3 public Symbol Git slice", () => {
     database.close();
 
     log.mockClear();
+    error.mockClear();
+    process.exitCode = undefined;
     await runClaimsCandidatesTriage({
       candidate: ambiguous[0]!.id,
       format: "json",
     });
-    const ambiguousTriage = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
-      candidates: Array<{ id: string }>;
-    };
-    await runClaimsCandidateReview({
-      candidate: ambiguousTriage.candidates[0]!.id,
-      actor: "g3-reviewer",
-      decision: "promote",
-      rationale: "Exercise the conservative ambiguous-assignment Rule path",
-      format: "json",
-    });
-    const ambiguousPromotion = JSON.parse(
-      String(log.mock.calls.at(-1)?.[0]),
-    ) as { assessment: { id: string } };
+    expect(process.exitCode).toBe(64);
+    expect(error.mock.calls.at(-1)?.[0]).toContain(
+      "No triageable current Candidate matches",
+    );
     database = new Database(path.join(workspace, ".iw/index.db"), {
       readonly: true,
     });
     expect(
       database
-        .prepare(`SELECT epistemic_status FROM claim_assessments WHERE id = ?`)
-        .get(ambiguousPromotion.assessment.id),
-    ).toEqual({ epistemic_status: "inconclusive" });
+        .prepare(`SELECT state FROM claim_candidates WHERE id = ?`)
+        .get(ambiguous[0]!.id),
+    ).toEqual({ state: "discovered" });
+    expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM candidate_reviews review
+           JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+           WHERE candidate.identity_key LIKE 'public-symbol-doc-correlation:%'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 });
     database.close();
 
     log.mockClear();

@@ -921,9 +921,17 @@ export function linkCandidatePolicyPromotion(
     }
     const cycle = database
       .prepare(
-        `SELECT MAX(version_ordinal) AS start_ordinal
-         FROM claim_candidates
-         WHERE identity_key = ? AND state = 'discovered'`,
+        `WITH versions AS (
+           SELECT version_ordinal, observation_fingerprint,
+                  LAG(observation_fingerprint) OVER (
+                    ORDER BY version_ordinal
+                  ) AS previous_observation_fingerprint
+           FROM claim_candidates WHERE identity_key = ?
+         )
+         SELECT MAX(version_ordinal) AS start_ordinal
+         FROM versions
+         WHERE previous_observation_fingerprint IS NULL OR
+               observation_fingerprint != previous_observation_fingerprint`,
       )
       .get(input.candidateIdentityKey) as { start_ordinal: number };
     const existing = database
@@ -955,12 +963,8 @@ export function linkCandidatePolicyPromotion(
       }
       return undefined;
     }
-    const triaged = candidates.triage(current.id, {
-      basis: input.policyId,
-      policyVersion: input.policyVersion,
-    });
     return candidates.applyPolicyDecision({
-      candidateId: triaged.id,
+      candidateId: current.id,
       policyId: input.policyId,
       policyVersion: input.policyVersion,
       decision: "promote",

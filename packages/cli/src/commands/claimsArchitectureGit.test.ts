@@ -101,6 +101,24 @@ rules:
 `;
   }
 
+  function writeArchitecturePolicy(workspace: string, enabled: boolean): void {
+    mkdirSync(path.join(workspace, ".iw", "claims"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".iw", "claims", "state.yaml"),
+      `schemaVersion: "1"
+policies:
+  explicit-architecture-rule:
+    version: "1"
+    enabled: ${enabled}
+    configuration: {}
+candidateDecisions: {}
+subjectBindings: {}
+assessmentReviews: {}
+baselineAcceptances: {}
+`,
+    );
+  }
+
   function currentAssessment(
     database: Database.Database,
     claimIdentityId: string,
@@ -529,6 +547,92 @@ rules:
         )
         .get(promoted.claimIdentityId),
     ).toEqual({ status: "open" });
+    database.close();
+  }, 120_000);
+
+  it("applies explicit-architecture-rule@1 only when enabled and remains idempotent", async () => {
+    const workspace = mkdtempSync(
+      path.join(tmpdir(), "intentweave-g5-architecture-policy-"),
+    );
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw"), { recursive: true });
+    mkdirSync(path.join(workspace, "src/ui"), { recursive: true });
+    writeFileSync(path.join(workspace, ".iw/rules.yaml"), rulesYaml());
+    writeFileSync(path.join(workspace, "README.md"), "# Policy fixture\n");
+    writeFileSync(
+      path.join(workspace, "src/ui/view.ts"),
+      "export const render = (): string => 'ok';\n",
+    );
+    git(workspace, "init");
+    git(workspace, "config", "user.email", "claims@example.test");
+    git(workspace, "config", "user.name", "Claims Test");
+    commit(workspace, "P0 static architecture rule");
+    buildIndex(workspace);
+    process.chdir(workspace);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    writeArchitecturePolicy(workspace, false);
+    await runClaimsDiscover({ all: true, format: "json" });
+    let database = new Database(path.join(workspace, ".iw/index.db"));
+    expect(
+      database
+        .prepare(
+          `SELECT state FROM claim_candidates
+           WHERE candidate_kind = 'architecture-dependency-conformance'
+           ORDER BY version_ordinal DESC LIMIT 1`,
+        )
+        .get(),
+    ).toEqual({ state: "correlated" });
+    expect(
+      database.prepare(`SELECT COUNT(*) AS count FROM claim_identities`).get(),
+    ).toEqual({ count: 0 });
+    database.close();
+
+    writeArchitecturePolicy(workspace, true);
+    log.mockClear();
+    await runClaimsDiscover({ all: true, format: "json" });
+    await runClaimsDiscover({ all: true, format: "json" });
+    database = new Database(path.join(workspace, ".iw/index.db"), {
+      readonly: true,
+    });
+    const decision = database
+      .prepare(
+        `SELECT decision.policy_id, decision.policy_version,
+                decision.promoted_claim_identity_id, decision.provenance_json,
+                candidate.observation_fingerprint
+         FROM candidate_policy_decisions decision
+         JOIN claim_candidates candidate ON candidate.id = decision.candidate_id
+         WHERE decision.policy_id = 'explicit-architecture-rule'`,
+      )
+      .get() as {
+      policy_id: string;
+      policy_version: string;
+      promoted_claim_identity_id: string;
+      provenance_json: string;
+      observation_fingerprint: string;
+    };
+    expect(decision).toMatchObject({
+      policy_id: "explicit-architecture-rule",
+      policy_version: "1",
+      promoted_claim_identity_id: expect.stringMatching(/^claim:/),
+    });
+    expect(JSON.parse(decision.provenance_json)).toMatchObject({
+      architectureRuleId: "no-ui-to-persistence",
+      candidateFingerprint: decision.observation_fingerprint,
+      ruleContract: {
+        adapterId: "cari-architecture-dependency-conformance",
+        version: "1",
+      },
+    });
+    expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM candidate_policy_decisions
+           WHERE policy_id = 'explicit-architecture-rule'`,
+        )
+        .get(),
+    ).toEqual({ count: 1 });
     database.close();
   }, 120_000);
 });

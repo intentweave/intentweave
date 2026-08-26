@@ -119,13 +119,13 @@ describe("CLM-PUBLIC-SYMBOL-DOCUMENTED", () => {
           expect.objectContaining({
             identityKey: "public-symbol-doc:symbol-documented",
             proposedClaimType: "CLM-PUBLIC-SYMBOL-DOCUMENTED",
-            state: "discovered",
+            state: "correlated",
             sourceKinds: ["code-documentation", "code-symbol"],
           }),
           expect.objectContaining({
             identityKey: "public-symbol-doc:symbol-undocumented",
             proposedClaimType: "CLM-PUBLIC-SYMBOL-DOCUMENTED",
-            state: "discovered",
+            state: "correlated",
           }),
         ]),
       );

@@ -188,6 +188,14 @@ function sortedCanonical<T>(items: T[]): T[] {
   );
 }
 
+function correlatedState(
+  subjects: readonly CandidateSubjectInput[],
+): "discovered" | "correlated" {
+  return subjects.every((subject) => subject.confidence !== "ambiguous")
+    ? "correlated"
+    : "discovered";
+}
+
 export class CandidateStore {
   constructor(private readonly db: Database.Database) {}
 
@@ -214,6 +222,7 @@ export class CandidateStore {
           confidence: item.confidence,
         })),
       );
+      const initialState = correlatedState(subjects);
       const observationFingerprint = fingerprint({
         candidateKind: input.candidateKind,
         proposedClaimType: input.proposedClaimType,
@@ -233,13 +242,20 @@ export class CandidateStore {
         logicalFingerprint(current.observation_fingerprint) ===
           observationFingerprint
       ) {
+        if (current.state === "discovered" && initialState === "correlated") {
+          return this.appendTransition(current, "correlated", {
+            basis: "candidate-correlation-invariant",
+            discoveryAdapterId: input.discoveryAdapterId,
+            discoveryContractVersion: input.discoveryContractVersion,
+          });
+        }
         return persistedCandidate(current, false);
       }
 
       const ordinal = (current?.version_ordinal ?? 0) + 1;
       const baseVersionFingerprint = fingerprint({
         observationFingerprint,
-        state: "discovered",
+        state: initialState,
       });
       const returning = versions.some(
         (version) =>
@@ -258,7 +274,7 @@ export class CandidateStore {
              discovery_contract_version, inference_id, confidence, state,
              fingerprint, observation_fingerprint, normalized_statement_json,
              provenance_json, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered', ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           candidateId,
@@ -271,6 +287,7 @@ export class CandidateStore {
           input.discoveryContractVersion,
           input.inferenceId ?? null,
           input.confidence,
+          initialState,
           versionFingerprint,
           observationFingerprint,
           canonicalJson(input.normalizedStatement),
@@ -339,7 +356,7 @@ export class CandidateStore {
         id: candidateId,
         identityKey: input.identityKey,
         ordinal,
-        state: "discovered" as const,
+        state: initialState,
         fingerprint: versionFingerprint,
         observationFingerprint,
         created: true,
@@ -511,12 +528,12 @@ export class CandidateStore {
   }
 
   triage(candidateId: string, provenance: unknown): PersistedCandidate {
-    let current = this.details(candidateId);
+    const current = this.details(candidateId);
     if (!current) throw new Error(`Candidate ${candidateId} does not exist`);
     if (current.state === "discovered") {
-      current = this.details(
-        this.transition(current.id, "correlated", provenance).id,
-      )!;
+      throw new Error(
+        `Candidate ${candidateId} must be correlated before Triage`,
+      );
     }
     if (current.state === "correlated") {
       return this.transition(current.id, "triaged", provenance);
@@ -564,7 +581,11 @@ export class CandidateStore {
           `Candidate ${input.candidateId} is not the current version`,
         );
       }
-      if (current.state !== "triaged") {
+      const directPolicyDecision =
+        input.actorKind === "policy" &&
+        input.effect === "effective" &&
+        current.state === "correlated";
+      if (current.state !== "triaged" && !directPolicyDecision) {
         throw new Error(
           `Candidate ${input.candidateId} must be triaged before Review`,
         );
@@ -713,8 +734,7 @@ export class CandidateStore {
       .prepare(
         `SELECT provenance_json FROM claim_candidates
          WHERE identity_key = ? AND observation_fingerprint = ?
-           AND state = 'discovered'
-         ORDER BY version_ordinal DESC LIMIT 1`,
+         ORDER BY version_ordinal ASC LIMIT 1`,
       )
       .get(row.identity_key, row.observation_fingerprint) as
       | { provenance_json: string }

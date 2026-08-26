@@ -1510,7 +1510,7 @@ baselineAcceptances: {}
            WHERE candidate.proposed_claim_type = 'CLM-LITERAL'`,
         )
         .get(),
-    ).toEqual({ state: "discovered" });
+    ).toEqual({ state: "correlated" });
     expect(
       c4Index
         .prepare(

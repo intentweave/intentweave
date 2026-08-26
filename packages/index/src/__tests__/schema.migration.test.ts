@@ -353,7 +353,7 @@ describe("migrateSchema14To15 hardening", () => {
       rebuilt
         .prepare(`SELECT state, candidate_kind FROM claim_candidates`)
         .get(),
-    ).toEqual({ state: "discovered", candidate_kind: "r1-code-value" });
+    ).toEqual({ state: "correlated", candidate_kind: "r1-code-value" });
     rebuilt.close();
     discardClaimsHistory(snapshot);
     rmSync(directory, { recursive: true, force: true });

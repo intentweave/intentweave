@@ -73,9 +73,35 @@ describe("CandidateStore", () => {
         )
         .all(),
     ).toEqual([
+      { version_ordinal: 1, state: "correlated" },
+      { version_ordinal: 2, state: "correlated" },
+      { version_ordinal: 3, state: "correlated" },
+    ]);
+  });
+
+  it("corrects a legacy discovered version append-only when Subjects are grounded", () => {
+    const legacy = store.persist(input(1800));
+    db.prepare(
+      `UPDATE claim_candidates SET state = 'discovered' WHERE id = ?`,
+    ).run(legacy.id);
+
+    const corrected = store.persist(input(1800));
+
+    expect(corrected).toMatchObject({
+      ordinal: 2,
+      state: "correlated",
+      created: true,
+    });
+    expect(
+      db
+        .prepare(
+          `SELECT version_ordinal, state FROM claim_candidates
+           ORDER BY version_ordinal`,
+        )
+        .all(),
+    ).toEqual([
       { version_ordinal: 1, state: "discovered" },
-      { version_ordinal: 2, state: "discovered" },
-      { version_ordinal: 3, state: "discovered" },
+      { version_ordinal: 2, state: "correlated" },
     ]);
   });
 
@@ -212,7 +238,7 @@ describe("CandidateStore", () => {
 
     expect(recommendation.candidate.state).toBe("triaged");
     expect(deferred.candidate.state).toBe("triaged");
-    expect(rejected.candidate).toMatchObject({ state: "rejected", ordinal: 4 });
+    expect(rejected.candidate).toMatchObject({ state: "rejected", ordinal: 3 });
     expect(
       db.prepare(`SELECT COUNT(*) AS count FROM candidate_reviews`).get(),
     ).toEqual({ count: 3 });
@@ -239,13 +265,10 @@ describe("CandidateStore", () => {
   });
 
   it("materializes versioned Policy decisions with effective provenance", () => {
-    const discovered = store.persist(input(1800));
-    const triaged = store.triage(discovered.id, {
-      basis: "deterministic-correlation",
-    });
+    const correlated = store.persist(input(1800));
 
     const decision = store.applyPolicyDecision({
-      candidateId: triaged.id,
+      candidateId: correlated.id,
       policyId: "suppress-internal-defaults",
       policyVersion: "1",
       decision: "suppress",
@@ -253,7 +276,7 @@ describe("CandidateStore", () => {
       provenance: { configurationFingerprint: "policy-config-v1" },
     });
     const repeated = store.applyPolicyDecision({
-      candidateId: triaged.id,
+      candidateId: correlated.id,
       policyId: "suppress-internal-defaults",
       policyVersion: "1",
       decision: "suppress",
@@ -263,6 +286,14 @@ describe("CandidateStore", () => {
 
     expect(decision.candidate.state).toBe("suppressed");
     expect(repeated).toMatchObject({ id: decision.id, created: false });
+    expect(
+      db
+        .prepare(
+          `SELECT state FROM claim_candidates
+           WHERE identity_key = ? ORDER BY version_ordinal`,
+        )
+        .all(correlated.identityKey),
+    ).toEqual([{ state: "correlated" }, { state: "suppressed" }]);
     expect(
       db
         .prepare(
@@ -286,11 +317,27 @@ describe("CandidateStore", () => {
     });
   });
 
-  it("rejects skipped lifecycle states", () => {
-    const discovered = store.persist(input(1800));
+  it("keeps ambiguous Subjects discovered and rejects synthetic Triage", () => {
+    const discovered = store.persist({
+      ...input(1800),
+      confidence: "ambiguous",
+      subjects: input(1800).subjects.map((subject) => ({
+        ...subject,
+        confidence: "ambiguous" as const,
+      })),
+    });
 
-    expect(() => store.transition(discovered.id, "promoted", {})).toThrow(
-      "discovered -> promoted is not allowed",
+    expect(discovered.state).toBe("discovered");
+    expect(() => store.triage(discovered.id, {})).toThrow(
+      "must be correlated before Triage",
+    );
+  });
+
+  it("rejects skipped lifecycle states", () => {
+    const correlated = store.persist(input(1800));
+
+    expect(() => store.transition(correlated.id, "promoted", {})).toThrow(
+      "correlated -> promoted is not allowed",
     );
   });
 });
