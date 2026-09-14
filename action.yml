@@ -210,13 +210,19 @@ runs:
     - name: Post PR comment
       if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
       uses: actions/github-script@v8
+      env:
+        IW_DRIFT_COUNT: ${{ steps.check.outputs.drift-count }}
+        IW_CHECK_OUTPUT: ${{ steps.check.outputs.check-output }}
+        IW_SCORE: ${{ steps.score.outputs.score }}
+        IW_GRADE: ${{ steps.score.outputs.grade }}
+        IW_SEVERITY_THRESHOLD: ${{ inputs.severity-threshold }}
       with:
         script: |
-          const driftCount = parseInt('${{ steps.check.outputs.drift-count }}' || '0', 10);
-          const checkOutput = `${{ steps.check.outputs.check-output }}`;
-          const score = '${{ steps.score.outputs.score }}';
-          const grade = '${{ steps.score.outputs.grade }}';
-          const threshold = '${{ inputs.severity-threshold }}';
+          const driftCount = Number.parseInt(process.env.IW_DRIFT_COUNT || '0', 10);
+          const checkOutput = process.env.IW_CHECK_OUTPUT || '';
+          const score = process.env.IW_SCORE || '0';
+          const grade = process.env.IW_GRADE || '?';
+          const threshold = process.env.IW_SEVERITY_THRESHOLD || 'warning';
 
           const gradeEmoji = { A: '🟢', B: '🟡', C: '🟠', D: '🔴', F: '🔴' }[grade] ?? '⚪';
           const driftEmoji = driftCount === 0 ? '✅' : '⚠️';
