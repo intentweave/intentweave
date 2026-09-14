@@ -1,6 +1,6 @@
 # Generalized Repository Claims
 
-> **Version:** 1.7
+> **Version:** 1.8
 > **Status:** Follow-on concept / implementation plan with delivery checkpoints
 > **Date:** 2026-09-14
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
@@ -1777,9 +1777,9 @@ Acceptance:
 
 ### Phase G5.2: Origin-Neutral Justification Kernel
 
-Status: G5.2a implemented on 2026-09-14; the remaining G5.2 lifecycle cases
-stay proposed. The already implemented, model-free G6a preview remains valid
-and does not need to be redesigned.
+Status: G5.2a-G5.2d implemented and verified on 2026-09-14. The already
+implemented, model-free G6a preview remains valid and does not need to be
+redesigned.
 
 Goal: prove that Brownfield reconstruction is the first Claim ingress adapter,
 not a hidden downstream dependency of the Core. This phase is deliberately
@@ -1967,10 +1967,10 @@ IntentWeave and Backstage repositories. Both runs reported
 `networkCallPerformed: false`; no provider call was made. Precision and recall
 remain intentionally `null` until labeled evaluation exists.
 
-| Repository | Current Candidates | Eligible | Excluded | Included context | Budget-deferred | Estimated input | Duplicate groups |
-| ---------- | -----------------: | -------: | -------: | ---------------: | ---------------: | ---------------: | ----------------: |
-| IntentWeave | 1,763 | 1,577 | 186 | 14 | 1,563 | 9,794 tokens | 52 |
-| Backstage | 10,590 | 9,274 | 1,316 | 14 | 9,260 | 9,939 tokens | 697 |
+| Repository  | Current Candidates | Eligible | Excluded | Included context | Budget-deferred | Estimated input | Duplicate groups |
+| ----------- | -----------------: | -------: | -------: | ---------------: | --------------: | --------------: | ---------------: |
+| IntentWeave |              1,763 |    1,577 |      186 |               14 |           1,563 |    9,794 tokens |               52 |
+| Backstage   |             10,590 |    9,274 |    1,316 |               14 |           9,260 |    9,939 tokens |              697 |
 
 Exclusions may overlap by Candidate. IntentWeave reported 141 closed
 Candidates, 28 explicit-declaration Policy exclusions, 84 low-value literals,
@@ -1987,6 +1987,22 @@ existing index was schema 14 and contained no Candidate projection. A full
 Backstage discovery refresh is materially more expensive than previewing its
 existing projection; this baseline measures the bounded G6a context stage, not
 equal discovery latency across repositories.
+
+Review checkpoint (2026-09-14): the G5.2/G6a-focused regression passed 37 tests
+across seven test files; the complete repository regression then passed 1,169
+tests across 84 test files with four intentional skips. Workspace typechecking
+and document formatting also passed. The self-checking 90-second workflow
+completed locally in 3 seconds and asserted the expected initial
+`review_required` exit, the Evidence-backed `supported` Assessment, the later
+`contested` Assessment, and the open `material-change` Reopen. No blocking
+implementation finding remained after the documentation-reference correction.
+
+The G6a implementation substrate is therefore complete, but its external
+quality release gate remains open. IntentWeave is the product repository and
+Backstage is only one external repository; at least two further external
+repositories need labeled Candidate decisions before G6b may claim measured
+precision, recall, or first-screen noise reduction. Preview volume and token
+budget measurements alone do not satisfy that quality gate.
 
 Before batch inference, define which Candidates are eligible and which context
 may be sent to a provider:
@@ -2144,6 +2160,39 @@ Acceptance:
   Adapter, grounded Subject anchors, reviewed quality thresholds, and a
   completed report-only period,
 - `iw claims check` and `iw intent check` never require a model call.
+
+### Communication and Public Validation Track
+
+Status: preparation starts after the G5.2 and 90-second acceptance checkpoint;
+publication is deliberately staged by the strength of the available evidence.
+
+Content preparation does not need to wait for G6b. The deterministic product
+story is already concrete enough for a first blog post and YouTube script:
+Candidate discovery, explicit promotion, Evidence-backed Assessment, human
+Review, `--since`, selective Reopen, and Explain. The reproducible 90-second
+workflow is the canonical narrative and recording source. Drafts must label the
+generalized Claims work as pre-release until the branch is merged and avoid
+claims about AI precision or automated relevance decisions.
+
+Publish in three checkpoints:
+
+1. **Deterministic slice:** publish after the feature branch has a clean full
+   regression, the 90-second workflow is green from a fresh checkout, the CLI
+   examples match the shipped commands, and the compatibility surfaces are
+   called out as `0.x` where appropriate.
+2. **External validation:** follow with a field report after at least three
+   external repositories have labeled Candidate sets. Report Candidate volume,
+   exclusions, duplicate groups, context size, first-screen usefulness, and
+   false-positive classes, including negative results.
+3. **AI curation:** publish the AI-assisted recommendation story only after G6b
+   persists grounded recommendations, keeps human or Policy promotion
+   authoritative, and demonstrates measured inbox-noise reduction on the
+   labeled external set. Do not present G6a context preview as an AI feature.
+
+The first blog post and video should teach the user-visible lifecycle rather
+than the schema migration. A separate technical article may explain the
+Origin-neutral Justification kernel and why declared and reconstructed Claims
+share the same downstream verification model.
 
 ## 16. Test Strategy
 
@@ -2308,8 +2357,9 @@ Generalization is robust when:
     `r1-continuous-auto-promote` Policy; explicit bindings use their separate
     `explicit-binding` Policy,
 29. `.iw/claims/state.yaml` reproduces effective Policies, Candidate decisions,
-    Subject bindings, Assessment Reviews, and baseline acceptances between fresh
-    checkouts without SQLite-local IDs or non-deterministic serialization.
+    Subject bindings, Assessment Reviews, baseline acceptances, and Claim
+    Origins between fresh checkouts without SQLite-local IDs or
+    non-deterministic serialization.
 30. a ClaimVersion can be created before supporting Evidence is available and
     yields an explicit `inconclusive` Assessment without becoming reviewable or
     silently passing,
@@ -2322,6 +2372,9 @@ Generalization is robust when:
     its current Assessment is supported, refuted, contested, or inconclusive,
 34. an accepted engineering conclusion survives non-material change and reopens
     on a relevant basis change regardless of its Origin.
+35. the self-checking 90-second workflow validates the deterministic lifecycle,
+    expected exit semantics, and open material-change Reopen from a fresh
+    temporary repository without credentials or network access.
 
 ## 18. Explicit Non-Goals
 
