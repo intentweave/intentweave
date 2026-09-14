@@ -3559,7 +3559,9 @@ export async function runClaimsExplain(options: {
               console.log(
                 `    ${origin.kind} via ${origin.source}: ${origin.sourceIdentity} (${sourceReference})`,
               );
-              console.log(`      Provenance: ${JSON.stringify(origin.provenance)}`);
+              console.log(
+                `      Provenance: ${JSON.stringify(origin.provenance)}`,
+              );
             }
           }
           for (const dependency of claim.dependencies as Array<{

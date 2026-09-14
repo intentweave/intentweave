@@ -42,17 +42,17 @@ jobs:
 
     permissions:
       contents: read
-      pull-requests: write  # needed for PR comment
+      pull-requests: write # needed for PR comment
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Fetch enough history for git diff to work
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: "pnpm"
@@ -63,7 +63,7 @@ jobs:
       # Cache the CARI index so subsequent runs are fast (<1s for unchanged files)
       - name: Restore CARI index cache
         id: cache-index
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .iw/index.db
           key: cari-index-${{ github.ref }}-${{ hashFiles('**/*.ts','**/*.py','**/*.swift','**/*.md') }}
@@ -71,15 +71,14 @@ jobs:
             cari-index-${{ github.ref }}-
             cari-index-
 
+      - name: Build pull-request CLI
+        run: pnpm --filter @intentweave/cli... build
+
       - name: Run IntentWeave Doc Health
         uses: ./
         with:
+          cli-path: ${{ github.workspace }}/packages/cli/dist/cli.js
           severity-threshold: warning
           post-comment: true
           # Skip full build if we restored a warm cache; use update instead
           build-index: ${{ steps.cache-index.outputs.cache-hit != 'true' && 'true' || 'false' }}
-
-      # Incremental update when cache was hit
-      - name: Incremental index update (cache hit)
-        if: steps.cache-index.outputs.cache-hit == 'true'
-        run: pnpm --filter @intentweave/cli exec iw index update -v

@@ -46,9 +46,10 @@ const declaredOrigin = {
   },
 };
 
-function persistDeclaredSessionTimeout(
-  database: Database.Database,
-): { claimIdentityId: string; assessmentId: string } {
+function persistDeclaredSessionTimeout(database: Database.Database): {
+  claimIdentityId: string;
+  assessmentId: string;
+} {
   const candidates = new CandidateStore(database);
   const candidate = candidates.persist({
     identityKey: "adr:ADR-017#session.timeout",
@@ -103,12 +104,17 @@ function persistDeclaredSessionTimeout(
     provenance: { origin: declaredOrigin },
     promotedClaimIdentityId: assessment.claimIdentityId,
   });
-  return { claimIdentityId: assessment.claimIdentityId, assessmentId: assessment.id };
+  return {
+    claimIdentityId: assessment.claimIdentityId,
+    assessmentId: assessment.id,
+  };
 }
 
-function persistReconstructedSessionTimeout(
-  database: Database.Database,
-): { claimIdentityId: string; assessmentId: string; claimVersionId: string } {
+function persistReconstructedSessionTimeout(database: Database.Database): {
+  claimIdentityId: string;
+  assessmentId: string;
+  claimVersionId: string;
+} {
   const observation: CodeEvidenceObservation = {
     parameterKey: "session.timeout",
     claimType: "CLM-DEFAULT",
@@ -123,11 +129,7 @@ function persistReconstructedSessionTimeout(
     bindingConfidence: "probable",
   };
   const candidates = new CandidateStore(database);
-  const candidate = persistR1Candidates(
-    candidates,
-    [observation],
-    "c0",
-  )[0]!;
+  const candidate = persistR1Candidates(candidates, [observation], "c0")[0]!;
   const triaged = candidates.triage(candidate.id, {
     basis: "test-reconstruction-triage",
   });
@@ -154,13 +156,17 @@ function persistSessionTimeoutAssessment(
     line: number;
     repositoryRevision: string;
   },
-): { assessmentId: string; claimIdentityId: string; claimVersionId: string; ruleResultId: string } {
+): {
+  assessmentId: string;
+  claimIdentityId: string;
+  claimVersionId: string;
+  ruleResultId: string;
+} {
   const store = new ClaimsStore(database);
   const evidence = store.persistEvidence({
     parameterKey: "session.timeout",
     sourceKind: "code-default",
-    identityKey:
-      "session.timeout:code-default:src/session.ts:SESSION_TIMEOUT",
+    identityKey: "session.timeout:code-default:src/session.ts:SESSION_TIMEOUT",
     fingerprint: fingerprint({
       sourceKind: "code-default",
       value: input.value,
@@ -322,9 +328,9 @@ describe("G5.2 session.timeout Twin-Origin lifecycle fixture", () => {
     });
     expect(moved.claimIdentityId).toBe(reconstructed.claimIdentityId);
     expect(moved.claimVersionId).toBe(reconstructed.claimVersionId);
-    expect(reviews.carryForward(moved.claimIdentityId, moved.assessmentId)).toEqual(
-      expect.objectContaining({ carriedForward: true }),
-    );
+    expect(
+      reviews.carryForward(moved.claimIdentityId, moved.assessmentId),
+    ).toEqual(expect.objectContaining({ carriedForward: true }));
     expect(
       database
         .prepare(

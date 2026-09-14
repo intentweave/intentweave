@@ -26,7 +26,7 @@ describe("CARI drift check", () => {
       INSERT INTO annotations (
         doc_path, line, text, symbol_id, confidence, source, idf_score
       ) VALUES
-        ('docs/api.md', 12, 'ClaimsCheckExecution', 'sym.claims', 0.9, 'code_span', 0.9),
+        ('docs/api.md', 12, 'ClaimsCheckExecution', 'sym.claims', 0.9, 'code-span', 0.9),
         ('docs/architecture.md', 20, 'execution', 'sym.claims', 0.97, 'bold', 0.2),
         ('docs/operations.md', 25, 'selection', 'sym.claims', 0.9, 'identifier', 0.9),
         ('packages/types.ts', 40, 'execution', 'sym.claims', 0.97, 'body', 0.2);

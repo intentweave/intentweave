@@ -108,16 +108,13 @@ describe("G5.2a ClaimOrigin projection", () => {
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
 
-    const reconstructed = persistCandidate(
-      database,
-      "test:reconstructed",
-      { repositoryRevision: "rev:1" },
-    );
-    const declared = persistCandidate(
-      database,
-      "test:declared",
-      { repositoryRevision: "rev:1", origin: declaredOrigin },
-    );
+    const reconstructed = persistCandidate(database, "test:reconstructed", {
+      repositoryRevision: "rev:1",
+    });
+    const declared = persistCandidate(database, "test:declared", {
+      repositoryRevision: "rev:1",
+      origin: declaredOrigin,
+    });
 
     expect(declared.claimIdentityId).toBe(reconstructed.claimIdentityId);
     expect(
@@ -137,7 +134,10 @@ describe("G5.2a ClaimOrigin projection", () => {
         .get(reconstructed.id),
     ).toEqual({ epistemic_status: "inconclusive" });
 
-    const origins = projectClaimOrigins(database, reconstructed.claimIdentityId);
+    const origins = projectClaimOrigins(
+      database,
+      reconstructed.claimIdentityId,
+    );
     expect(origins.map((origin) => origin.kind)).toEqual([
       "declared",
       "reconstructed",
@@ -220,9 +220,7 @@ describe("G5.2a ClaimOrigin projection", () => {
 
     expect(
       database
-        .prepare(
-          `SELECT epistemic_status FROM claim_assessments WHERE id = ?`,
-        )
+        .prepare(`SELECT epistemic_status FROM claim_assessments WHERE id = ?`)
         .get(assessment.id),
     ).toEqual({ epistemic_status: "supported" });
     database.close();
@@ -234,11 +232,10 @@ describe("G5.2a ClaimOrigin projection", () => {
     mkdirSync(path.join(workspace, ".iw"));
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
-    const assessment = persistCandidate(
-      database,
-      "test:declared-explain",
-      { repositoryRevision: "rev:1", origin: declaredOrigin },
-    );
+    const assessment = persistCandidate(database, "test:declared-explain", {
+      repositoryRevision: "rev:1",
+      origin: declaredOrigin,
+    });
     const claimId = assessment.claimIdentityId;
     database.close();
     process.chdir(workspace);

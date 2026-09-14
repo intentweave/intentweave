@@ -16,10 +16,7 @@ import type { CheckParams, CheckResult, CheckFinding } from "../types.js";
 import { openIndex } from "./shared.js";
 
 /** Annotation sources with enough structure to block CI on stale docs. */
-const BLOCKING_ANNOTATION_SOURCES = new Set([
-  "code_span",
-  "exact",
-]);
+const BLOCKING_ANNOTATION_SOURCES = new Set(["code-span"]);
 const MIN_BLOCKING_ANNOTATION_IDF = 0.5;
 const MIN_BLOCKING_ANNOTATION_CONFIDENCE = 0.7;
 

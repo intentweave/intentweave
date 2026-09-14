@@ -117,11 +117,15 @@ export function projectClaimOrigins(
     )
     .all(claimIdentityId) as CandidateOriginRow[];
 
-  const origins: ClaimOrigin[] = [...portableOrigins, ...rows.map((row) => {
-    const candidateProvenance = parseRecord(row.candidate_provenance_json);
-    return parseClaimOrigin(candidateProvenance.origin) ??
-      reconstructedOrigin(row);
-  })];
+  const origins: ClaimOrigin[] = [
+    ...portableOrigins,
+    ...rows.map((row) => {
+      const candidateProvenance = parseRecord(row.candidate_provenance_json);
+      return (
+        parseClaimOrigin(candidateProvenance.origin) ?? reconstructedOrigin(row)
+      );
+    }),
+  ];
   if (origins.length > 0) return normalizeClaimOrigins(origins);
 
   const legacy = database
@@ -155,7 +159,9 @@ export function projectClaimOrigins(
 function portableOrigin(origin: ClaimOrigin): PortableClaimOrigin {
   return {
     ...origin,
-    provenance: JSON.parse(canonicalJson(origin.provenance)) as PortableClaimOrigin["provenance"],
+    provenance: JSON.parse(
+      canonicalJson(origin.provenance),
+    ) as PortableClaimOrigin["provenance"],
   };
 }
 
@@ -165,7 +171,8 @@ export function persistPortableClaimOrigins(
   database: Database.Database,
   claimIdentityId: string,
 ): string {
-  const state = loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
   const origins = projectClaimOrigins(database, claimIdentityId, state);
   if (origins.length === 0) {
     throw new Error(`Claim ${claimIdentityId} has no Origin to persist`);

@@ -439,7 +439,10 @@ function parseClaimOrigin(value: unknown, path: string): PortableClaimOrigin {
   const sourceFingerprint =
     origin.sourceFingerprint === undefined
       ? undefined
-      : requireFingerprint(origin.sourceFingerprint, `${path}.sourceFingerprint`);
+      : requireFingerprint(
+          origin.sourceFingerprint,
+          `${path}.sourceFingerprint`,
+        );
   if (sourceVersion === undefined && sourceFingerprint === undefined) {
     throw new ClaimsPortableStateError(
       `${path} requires sourceVersion or sourceFingerprint`,
@@ -576,10 +579,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       "baselineAcceptances",
       parseBaselineAcceptance,
     ),
-    claimOrigins: parseClaimOrigins(
-      state.claimOrigins ?? {},
-      "claimOrigins",
-    ),
+    claimOrigins: parseClaimOrigins(state.claimOrigins ?? {}, "claimOrigins"),
   };
   assertNoSubjectBindingConflicts(parsed.subjectBindings);
   assertNoBaselineConflicts(parsed.baselineAcceptances);
