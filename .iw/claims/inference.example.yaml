@@ -1,0 +1,22 @@
+# IntentWeave Claims semantic-authoring configuration example.
+# Copy to .iw/claims/inference.yaml and review every provider and path before use.
+
+schemaVersion: "1"
+
+providers:
+  allow:
+    - openai
+
+sensitivePaths:
+  - "**/.env*"
+  - "secrets/**"
+  - "private/**"
+
+budgets:
+  maxCandidates: 20
+  maxEvidencePerCandidate: 8
+  maxExcerptChars: 1200
+  maxTokensPerCandidate: 2000
+  maxTotalTokens: 10000
+  maxEstimatedCostUsd: 1
+  maxConcurrency: 2

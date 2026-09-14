@@ -9,6 +9,8 @@ dist/
 .iw/*
 !.iw/claims/
 .iw/claims/*
+!.iw/claims/inference.example.yaml
+!.iw/claims/inference.yaml
 !.iw/claims/state.yaml
 
 # Environment

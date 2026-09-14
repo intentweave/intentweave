@@ -86,6 +86,11 @@ import {
   parsePortableClaimsStateYaml,
 } from "../claims/portableState.js";
 import {
+  buildCandidateRecommendationPreview,
+  CandidateInferenceConfigError,
+  loadCandidateInferenceConfig,
+} from "../claims/candidateRecommendationContext.js";
+import {
   persistPortableAssessmentReview,
   projectPortableAssessmentReviews,
   type PortableReviewProjectionIssue,
@@ -1070,6 +1075,86 @@ export async function runClaimsCandidatesTriage(options: {
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
+}
+
+export async function runClaimsCandidatesRecommend(options: {
+  semantic?: boolean;
+  preview?: boolean;
+  provider?: string;
+  candidate?: string;
+  limit?: string;
+  format: string;
+}): Promise<void> {
+  const workspaceRoot = process.cwd();
+  try {
+    if (!options.semantic) {
+      throw new ClaimsBindingError(
+        "Candidate recommendations require the explicit --semantic opt-in",
+      );
+    }
+    if (!options.preview) {
+      throw new ClaimsBindingError(
+        "Model-backed Candidate recommendations are not enabled yet; use --preview to inspect the G6a context",
+      );
+    }
+    if (!["text", "json"].includes(options.format)) {
+      throw new ClaimsBindingError(
+        "Recommendation format must be text or json",
+      );
+    }
+    const limit = options.limit ? Number(options.limit) : undefined;
+    if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
+      throw new ClaimsBindingError(
+        "Candidate recommendation limit must be a positive integer",
+      );
+    }
+    const config = loadCandidateInferenceConfig(workspaceRoot);
+    const portableState = loadPortableClaimsState(workspaceRoot);
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const candidateId = options.candidate
+        ? resolveCandidateReference(database, options.candidate, true)
+        : undefined;
+      const preview = buildCandidateRecommendationPreview({
+        database,
+        workspaceRoot,
+        provider: options.provider ?? "openai",
+        config,
+        enabledPolicyIds: Object.entries(portableState?.policies ?? {})
+          .filter(([, policy]) => policy.enabled)
+          .map(([policyId]) => policyId),
+        ...(candidateId ? { candidateId } : {}),
+        ...(limit ? { limit } : {}),
+      });
+      if (options.format === "json") {
+        console.log(JSON.stringify(preview, null, 2));
+      } else {
+        const lines = [
+          "Candidate recommendation context preview",
+          `  Provider: ${preview.provider} (allowed, no network call)`,
+          `  Candidates: ${preview.summary.includedCandidates} included, ${preview.summary.excludedCandidates} excluded, ${preview.summary.deferredByBudget} deferred by budget`,
+          `  Estimated input: ${preview.summary.estimatedInputTokens} tokens`,
+          `  Quality: precision/recall ${preview.summary.qualityMeasurement}`,
+        ];
+        for (const context of preview.contexts) {
+          lines.push("", `Payload for ${context.candidate.id}:`);
+          lines.push(JSON.stringify(context, null, 2));
+        }
+        console.log(lines.join("\n"));
+      }
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode =
+      error instanceof ClaimsBindingError ||
+      error instanceof CandidateInferenceConfigError ||
+      error instanceof ClaimsPortableStateFileError
+        ? 64
+        : 1;
   }
 }
 
@@ -3521,6 +3606,27 @@ const claimsCandidatesCommand = new Command("candidates")
       .option("--claim-type <type>", "Restrict by proposed Claim type")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsCandidatesTriage),
+  )
+  .addCommand(
+    new Command("recommend")
+      .description("Preview bounded context for AI-assisted Candidate curation")
+      .option("--semantic", "Explicitly opt in to semantic processing")
+      .option(
+        "--preview",
+        "Show the exact redacted context without calling a provider",
+      )
+      .option(
+        "--provider <provider>",
+        "Configured inference provider",
+        "openai",
+      )
+      .option(
+        "--candidate <ref>",
+        "Restrict the preview to one current Candidate",
+      )
+      .option("--limit <n>", "Lower the configured Candidate limit")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidatesRecommend),
   )
   .addCommand(
     new Command("review")
