@@ -1159,6 +1159,7 @@ candidateDecisions
 subjectBindings
 assessmentReviews
 baselineAcceptances
+claimOrigins
 ```
 
 The contract is fixed as follows:
@@ -1197,17 +1198,26 @@ The contract is fixed as follows:
 - CLI commands own atomic updates, but manual edits are supported when they pass
   the same validation contract.
 
+`claimOrigins` is an optional effective-state map within portable state v1 for
+backward-compatible Origin persistence. Older files that omit the map remain
+valid and parse as an empty map. New Candidate promotions and portable Review
+writes project the normalized Origin list into this map. Explain merges the
+portable Origins with any local Candidate/Promotion projection and keeps them
+separate from Assessment dependencies. A fresh SQLite projection can therefore
+explain the declared and reconstructed Origins without the original Candidate
+rows, a provider call, or a second Origin/Justification table.
+
 Once published, the file path and schema are compatibility surfaces. Schema
 changes require an explicit version, migration, and round-trip tests.
 Repositories that ignore `.iw/` must add a narrow exception for
 `.iw/claims/state.yaml`; runtime artifacts such as `.iw/index.db` remain ignored.
 
-G5.2 does not silently add Claim Origins to portable state v1. Before a public
-declared or imported Claim workflow ships, effective Origin provenance must
-survive export, fresh-index import, and offline Explain through an explicit
-portable schema migration or a separately versioned declaration artifact. The
-Twin-Origin test determines the smallest representation; it may not encode
-Origin in Claim identity, Claim type, or Assessment status.
+G5.2d confirms that a separate schema migration is not required for the bounded
+workflow: the optional `claimOrigins` map is additive within portable state v1,
+validated and canonically serialized by the existing contract. It may not encode
+Origin in Claim identity, Claim type, or Assessment status. A future public
+declaration workflow may still version the artifact if it needs additional
+declaration-specific fields.
 
 ## 11. CLI Target
 
@@ -1849,6 +1859,40 @@ The fixture asserts that both paths converge on:
 
 The declaration adapter is intentionally test-only. It proves the ingress
 contract without adding a public declaration CLI or a second Claim writer.
+
+### G5.2c: Shared Lifecycle
+
+Status: implemented on 2026-09-14.
+
+The same fixture now records an accepted Review on the Evidence-backed
+`session.timeout` Claim and exercises both materiality branches. Moving the
+file and span while retaining the semantic location and value creates a new
+Evidence/RuleResult/Assessment basis but keeps the ClaimVersion unchanged; the
+accepted Review is carried forward. Changing the value from `1800` to `3600`
+creates a new ClaimVersion and Assessment, then opens a `material-change`
+Reopen against the new RuleResult dependency.
+
+The lifecycle assertions use the same persistence and Review services for both
+Origins. Origin data is passed only as provenance in the test fixture; no Rule,
+Assessment, Review, materiality, or impact branch selects behavior based on
+`origin.kind`.
+
+### G5.2d: Explain and Portability
+
+Status: implemented on 2026-09-14.
+
+The existing portable state contract now has an optional `claimOrigins` map.
+Legacy state files without that map remain valid. Candidate promotions and
+portable Assessment Review writes persist normalized effective Origins through
+the existing atomic `.iw/claims/state.yaml` writer; no SQLite Origin relation
+or Justification schema was introduced.
+
+Explain merges portable Origins with local Candidate/Promotion provenance and
+continues to render them separately from Assessment dependencies. The
+`session.timeout` fixture creates a fresh SQLite projection with zero Candidate
+rows, imports only the portable Origin map, and verifies that offline Explain
+still shows both declared and reconstructed Origins while the Assessment stays
+`inconclusive` with no dependencies.
 
 ### Unified Intent Gate
 

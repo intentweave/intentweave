@@ -4,10 +4,18 @@
 import type Database from "@intentweave/sqlite-compat";
 import {
   CLAIM_ORIGIN_CONTRACT_VERSION,
+  canonicalJson,
+  emptyPortableClaimsState,
   normalizeClaimOrigins,
   parseClaimOrigin,
   type ClaimOrigin,
+  type PortableClaimOrigin,
+  type PortableClaimsState,
 } from "@intentweave/index";
+import {
+  loadPortableClaimsState,
+  writePortableClaimsState,
+} from "./portableState.js";
 
 interface CandidateOriginRow {
   candidate_id: string;
@@ -71,7 +79,9 @@ function reconstructedOrigin(row: CandidateOriginRow): ClaimOrigin {
 export function projectClaimOrigins(
   database: Database.Database,
   claimIdentityId: string,
+  portableState?: PortableClaimsState,
 ): ClaimOrigin[] {
+  const portableOrigins = portableState?.claimOrigins[claimIdentityId] ?? [];
   const rows = database
     .prepare(
       `SELECT candidate.id AS candidate_id,
@@ -107,11 +117,11 @@ export function projectClaimOrigins(
     )
     .all(claimIdentityId) as CandidateOriginRow[];
 
-  const origins = rows.map((row) => {
+  const origins: ClaimOrigin[] = [...portableOrigins, ...rows.map((row) => {
     const candidateProvenance = parseRecord(row.candidate_provenance_json);
     return parseClaimOrigin(candidateProvenance.origin) ??
       reconstructedOrigin(row);
-  });
+  })];
   if (origins.length > 0) return normalizeClaimOrigins(origins);
 
   const legacy = database
@@ -140,4 +150,26 @@ export function projectClaimOrigins(
       },
     },
   ];
+}
+
+function portableOrigin(origin: ClaimOrigin): PortableClaimOrigin {
+  return {
+    ...origin,
+    provenance: JSON.parse(canonicalJson(origin.provenance)) as PortableClaimOrigin["provenance"],
+  };
+}
+
+/** Persist effective Origins without introducing a SQLite Origin relation. */
+export function persistPortableClaimOrigins(
+  workspaceRoot: string,
+  database: Database.Database,
+  claimIdentityId: string,
+): string {
+  const state = loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  const origins = projectClaimOrigins(database, claimIdentityId, state);
+  if (origins.length === 0) {
+    throw new Error(`Claim ${claimIdentityId} has no Origin to persist`);
+  }
+  state.claimOrigins[claimIdentityId] = origins.map(portableOrigin);
+  return writePortableClaimsState(workspaceRoot, state);
 }

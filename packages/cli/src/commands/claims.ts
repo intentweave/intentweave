@@ -90,7 +90,10 @@ import {
   CandidateInferenceConfigError,
   loadCandidateInferenceConfig,
 } from "../claims/candidateRecommendationContext.js";
-import { projectClaimOrigins } from "../claims/origins.js";
+import {
+  persistPortableClaimOrigins,
+  projectClaimOrigins,
+} from "../claims/origins.js";
 import {
   persistPortableAssessmentReview,
   projectPortableAssessmentReviews,
@@ -1230,6 +1233,13 @@ export async function runClaimsCandidateReview(options: {
             decidedAt,
             rationale: options.rationale,
           });
+          if (result.assessment) {
+            persistPortableClaimOrigins(
+              workspaceRoot,
+              database,
+              result.assessment.claimIdentityId,
+            );
+          }
         }
         return result;
       });
@@ -3273,7 +3283,9 @@ export async function runClaimsExplain(options: {
   format: string;
 }): Promise<void> {
   try {
-    const database = claimsDatabase(process.cwd());
+    const workspaceRoot = process.cwd();
+    const portableState = loadPortableClaimsState(workspaceRoot);
+    const database = claimsDatabase(workspaceRoot);
     try {
       let claimId: string | null = null;
       if (options.claim?.startsWith("candidate:")) {
@@ -3417,7 +3429,11 @@ export async function runClaimsExplain(options: {
           database,
           assessment.claim_identity_id,
         ),
-        origins: projectClaimOrigins(database, assessment.claim_identity_id),
+        origins: projectClaimOrigins(
+          database,
+          assessment.claim_identity_id,
+          portableState,
+        ),
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),

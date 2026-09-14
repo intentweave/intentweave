@@ -148,6 +148,7 @@ export type {
   PortableAssessmentReview,
   PortableBaselineAcceptance,
   PortableCandidateDecision,
+  PortableClaimOrigin,
   PortableClaimsActor,
   PortableClaimsPolicy,
   PortableClaimsState,

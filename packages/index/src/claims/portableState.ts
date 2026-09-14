@@ -1,6 +1,8 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
+import { canonicalJson } from "./canonical.js";
+
 export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "1" as const;
 
 export type PortableJsonValue =
@@ -61,6 +63,16 @@ export interface PortableBaselineAcceptance {
   rationale: string;
 }
 
+export interface PortableClaimOrigin {
+  contractVersion: "1";
+  kind: "reconstructed" | "declared" | "imported";
+  source: "cari" | "human" | "adr" | "spec" | "agent" | "external-rm";
+  sourceIdentity: string;
+  sourceVersion?: string;
+  sourceFingerprint?: string;
+  provenance: PortableJsonValue;
+}
+
 export interface PortableClaimsState {
   schemaVersion: typeof CLAIMS_PORTABLE_STATE_SCHEMA_VERSION;
   policies: Record<string, PortableClaimsPolicy>;
@@ -68,6 +80,8 @@ export interface PortableClaimsState {
   subjectBindings: Record<string, PortableSubjectBinding>;
   assessmentReviews: Record<string, PortableAssessmentReview>;
   baselineAcceptances: Record<string, PortableBaselineAcceptance>;
+  /** Effective ingress provenance; absent in legacy v1 files. */
+  claimOrigins: Record<string, PortableClaimOrigin[]>;
 }
 
 export class ClaimsPortableStateError extends Error {
@@ -407,6 +421,84 @@ function parseBaselineAcceptance(
   };
 }
 
+function parseClaimOrigin(value: unknown, path: string): PortableClaimOrigin {
+  const origin = requireRecord(value, path);
+  assertOnlyKeys(origin, path, [
+    "contractVersion",
+    "kind",
+    "source",
+    "sourceIdentity",
+    "sourceVersion",
+    "sourceFingerprint",
+    "provenance",
+  ]);
+  const sourceVersion = optionalString(
+    origin.sourceVersion,
+    `${path}.sourceVersion`,
+  );
+  const sourceFingerprint =
+    origin.sourceFingerprint === undefined
+      ? undefined
+      : requireFingerprint(origin.sourceFingerprint, `${path}.sourceFingerprint`);
+  if (sourceVersion === undefined && sourceFingerprint === undefined) {
+    throw new ClaimsPortableStateError(
+      `${path} requires sourceVersion or sourceFingerprint`,
+    );
+  }
+  return {
+    contractVersion: requireEnum(
+      origin.contractVersion,
+      `${path}.contractVersion`,
+      ["1"],
+    ),
+    kind: requireEnum(origin.kind, `${path}.kind`, [
+      "reconstructed",
+      "declared",
+      "imported",
+    ]),
+    source: requireEnum(origin.source, `${path}.source`, [
+      "cari",
+      "human",
+      "adr",
+      "spec",
+      "agent",
+      "external-rm",
+    ]),
+    sourceIdentity: requireString(
+      origin.sourceIdentity,
+      `${path}.sourceIdentity`,
+    ),
+    ...(sourceVersion === undefined ? {} : { sourceVersion }),
+    ...(sourceFingerprint === undefined ? {} : { sourceFingerprint }),
+    provenance: parseJsonValue(origin.provenance ?? {}, `${path}.provenance`),
+  };
+}
+
+function parseClaimOrigins(
+  value: unknown,
+  path: string,
+): Record<string, PortableClaimOrigin[]> {
+  return parseMap(value, path, (entry, entryPath) => {
+    if (!Array.isArray(entry) || entry.length === 0) {
+      throw new ClaimsPortableStateError(
+        `${entryPath} must be a non-empty Origin array`,
+      );
+    }
+    const origins = entry.map((origin, index) =>
+      parseClaimOrigin(origin, `${entryPath}[${index}]`),
+    );
+    const unique = new Set(origins.map((origin) => canonicalJson(origin)));
+    if (unique.size !== origins.length) {
+      throw new ClaimsPortableStateError(
+        `${entryPath} must not contain duplicate Origins`,
+      );
+    }
+    return origins.sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
+    );
+  });
+}
+
 function assertNoSubjectBindingConflicts(
   bindings: Record<string, PortableSubjectBinding>,
 ): void {
@@ -453,6 +545,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     "subjectBindings",
     "assessmentReviews",
     "baselineAcceptances",
+    "claimOrigins",
   ]);
   if (state.schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION) {
     throw new ClaimsPortableStateError(
@@ -483,6 +576,10 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       "baselineAcceptances",
       parseBaselineAcceptance,
     ),
+    claimOrigins: parseClaimOrigins(
+      state.claimOrigins ?? {},
+      "claimOrigins",
+    ),
   };
   assertNoSubjectBindingConflicts(parsed.subjectBindings);
   assertNoBaselineConflicts(parsed.baselineAcceptances);
@@ -497,5 +594,6 @@ export function emptyPortableClaimsState(): PortableClaimsState {
     subjectBindings: {},
     assessmentReviews: {},
     baselineAcceptances: {},
+    claimOrigins: {},
   };
 }

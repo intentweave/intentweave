@@ -64,6 +64,18 @@ function validState(): PortableClaimsState {
         rationale: "Initial reviewed baseline",
       },
     },
+    claimOrigins: {
+      "claim:endpoint-admin-users-authenticated": [
+        {
+          contractVersion: "1",
+          kind: "declared",
+          source: "adr",
+          sourceIdentity: "docs/ADR-017.md#admin-users",
+          sourceVersion: "adr-017@1",
+          provenance: { section: "Security" },
+        },
+      ],
+    },
   };
 }
 
@@ -86,6 +98,7 @@ describe("Claims portable state", () => {
       subjectBindings: {},
       assessmentReviews: {},
       baselineAcceptances: {},
+      claimOrigins: {},
     });
   });
 

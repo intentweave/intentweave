@@ -14,6 +14,7 @@ import {
   loadPortableClaimsState,
   writePortableClaimsState,
 } from "./portableState.js";
+import { persistPortableClaimOrigins } from "./origins.js";
 
 interface AssessmentBasis {
   id: string;
@@ -284,5 +285,7 @@ export function persistPortableAssessmentReview(
     decidedAt: input.decidedAt,
     rationale: input.rationale,
   };
-  return writePortableClaimsState(workspaceRoot, state);
+  const filePath = writePortableClaimsState(workspaceRoot, state);
+  persistPortableClaimOrigins(workspaceRoot, database, input.claimIdentityId);
+  return filePath;
 }

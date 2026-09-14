@@ -1,13 +1,27 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import Database from "@intentweave/sqlite-compat";
-import { CandidateStore, ClaimsStore, initSchema } from "@intentweave/index";
+import {
+  CandidateStore,
+  ClaimsEngine,
+  ClaimsReviewStore,
+  ClaimsStore,
+  emptyPortableClaimsState,
+  fingerprint,
+  initSchema,
+  materialFingerprint,
+} from "@intentweave/index";
 import { persistR1Candidates } from "./candidateDiscovery.js";
 import { reviewCandidate } from "./candidateGovernance.js";
 import type { CodeEvidenceObservation } from "./discovery.js";
 import { projectClaimOrigins } from "./origins.js";
+import { writePortableClaimsState } from "./portableState.js";
+import { runClaimsExplain } from "../commands/claims.js";
 
 const contracts = {
   r1RuleContractVersion: "r1-v1",
@@ -94,7 +108,7 @@ function persistDeclaredSessionTimeout(
 
 function persistReconstructedSessionTimeout(
   database: Database.Database,
-): { claimIdentityId: string; assessmentId: string } {
+): { claimIdentityId: string; assessmentId: string; claimVersionId: string } {
   const observation: CodeEvidenceObservation = {
     parameterKey: "session.timeout",
     claimType: "CLM-DEFAULT",
@@ -128,10 +142,75 @@ function persistReconstructedSessionTimeout(
   return {
     claimIdentityId: result.assessment!.claimIdentityId,
     assessmentId: result.assessment!.id,
+    claimVersionId: result.assessment!.claimVersionId,
   };
 }
 
-describe("G5.2b session.timeout Twin-Origin fixture", () => {
+function persistSessionTimeoutAssessment(
+  database: Database.Database,
+  input: {
+    value: number;
+    filePath: string;
+    line: number;
+    repositoryRevision: string;
+  },
+): { assessmentId: string; claimIdentityId: string; claimVersionId: string; ruleResultId: string } {
+  const store = new ClaimsStore(database);
+  const evidence = store.persistEvidence({
+    parameterKey: "session.timeout",
+    sourceKind: "code-default",
+    identityKey:
+      "session.timeout:code-default:src/session.ts:SESSION_TIMEOUT",
+    fingerprint: fingerprint({
+      sourceKind: "code-default",
+      value: input.value,
+      semanticLocation: "session.timeout",
+      filePath: input.filePath,
+      symbolId: "SESSION_TIMEOUT",
+      line: input.line,
+    }),
+    materialFingerprint: materialFingerprint({
+      parameterIdentity: "session.timeout",
+      semanticLocation: "session.timeout",
+      normalizedValue: input.value,
+    }),
+    normalizedValue: input.value,
+    semanticLocation: "session.timeout",
+    provenance: {
+      filePath: input.filePath,
+      symbolId: "SESSION_TIMEOUT",
+      line: input.line,
+      repositoryRevision: input.repositoryRevision,
+    },
+    filePath: input.filePath,
+    symbolId: "SESSION_TIMEOUT",
+    spanStartLine: input.line,
+    spanEndLine: input.line,
+    repositoryRevision: input.repositoryRevision,
+    bindingBasis: "r1-discovery",
+    bindingConfidence: "probable",
+  });
+  const result = new ClaimsEngine(store).evaluateDefault({
+    parameterKey: "session.timeout",
+    claimType: "CLM-DEFAULT",
+    repositoryRevision: input.repositoryRevision,
+    codeDefault: {
+      versionId: evidence.id,
+      value: input.value,
+    },
+    contracts,
+  });
+  const assessment = result.assessments[0]!;
+  const rule = result.ruleResults[0]!;
+  return {
+    assessmentId: assessment.id,
+    claimIdentityId: assessment.claimIdentityId,
+    claimVersionId: assessment.claimVersionId,
+    ruleResultId: rule.id,
+  };
+}
+
+describe("G5.2 session.timeout Twin-Origin lifecycle fixture", () => {
   it("converges ADR declaration and code reconstruction on one legacy-v1 Claim", () => {
     const database = new Database(":memory:");
     initSchema(database);
@@ -216,5 +295,172 @@ describe("G5.2b session.timeout Twin-Origin fixture", () => {
       }),
     );
     database.close();
+  });
+
+  it("keeps Origin-neutral lifecycle semantics across location and value changes", () => {
+    const database = new Database(":memory:");
+    initSchema(database);
+
+    const declared = persistDeclaredSessionTimeout(database);
+    const reconstructed = persistReconstructedSessionTimeout(database);
+    expect(reconstructed.claimIdentityId).toBe(declared.claimIdentityId);
+
+    const reviews = new ClaimsReviewStore(database);
+    const accepted = reviews.record({
+      claimIdentityId: reconstructed.claimIdentityId,
+      basisAssessmentId: reconstructed.assessmentId,
+      decision: "accepted",
+      actor: "lifecycle-reviewer",
+    });
+
+    // The file and span move, but the semantic location and value remain the same.
+    const moved = persistSessionTimeoutAssessment(database, {
+      value: 1800,
+      filePath: "src/config/session.ts",
+      line: 12,
+      repositoryRevision: "c1",
+    });
+    expect(moved.claimIdentityId).toBe(reconstructed.claimIdentityId);
+    expect(moved.claimVersionId).toBe(reconstructed.claimVersionId);
+    expect(reviews.carryForward(moved.claimIdentityId, moved.assessmentId)).toEqual(
+      expect.objectContaining({ carriedForward: true }),
+    );
+    expect(
+      database
+        .prepare(
+          `SELECT decision, basis_assessment_id, is_current
+           FROM review_decisions WHERE claim_identity_id = ? AND is_current = 1`,
+        )
+        .get(reconstructed.claimIdentityId),
+    ).toEqual({
+      decision: "accepted",
+      basis_assessment_id: moved.assessmentId,
+      is_current: 1,
+    });
+    expect(
+      database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM review_decision_reopens
+           WHERE claim_identity_id = ? AND status = 'open'`,
+        )
+        .get(reconstructed.claimIdentityId),
+    ).toEqual({ count: 0 });
+
+    // The value changes, so the material fingerprint changes as well.
+    const changed = persistSessionTimeoutAssessment(database, {
+      value: 3600,
+      filePath: "src/config/session.ts",
+      line: 12,
+      repositoryRevision: "c2",
+    });
+    expect(changed.claimIdentityId).toBe(reconstructed.claimIdentityId);
+    expect(changed.claimVersionId).not.toBe(moved.claimVersionId);
+    expect(
+      reviews.reopen({
+        claimIdentityId: changed.claimIdentityId,
+        basisAssessmentId: changed.assessmentId,
+        dependencyKind: "rule_result_version",
+        dependencyVersionId: changed.ruleResultId,
+        reason: "material-change",
+        secondaryProvenance: {
+          trigger: "session-timeout-lifecycle-fixture",
+          originKinds: projectClaimOrigins(
+            database,
+            changed.claimIdentityId,
+          ).map((origin) => origin.kind),
+        },
+      }),
+    ).toMatchObject({ created: true });
+    expect(
+      database
+        .prepare(
+          `SELECT decision, is_current FROM review_decisions
+           WHERE claim_identity_id = ? ORDER BY created_at DESC LIMIT 1`,
+        )
+        .get(changed.claimIdentityId),
+    ).toEqual({ decision: "accepted", is_current: 0 });
+    expect(
+      database
+        .prepare(
+          `SELECT reason, status, dependency_kind, dependency_version_id
+           FROM review_decision_reopens
+           WHERE claim_identity_id = ? AND status = 'open'`,
+        )
+        .get(changed.claimIdentityId),
+    ).toEqual({
+      reason: "material-change",
+      status: "open",
+      dependency_kind: "rule_result_version",
+      dependency_version_id: changed.ruleResultId,
+    });
+
+    expect(
+      projectClaimOrigins(database, changed.claimIdentityId).map(
+        (origin) => origin.kind,
+      ),
+    ).toEqual(["declared", "reconstructed"]);
+    expect(accepted.carriedForward).toBe(false);
+    database.close();
+  });
+
+  it("replays Origins from state.yaml in a fresh SQLite projection", async () => {
+    const source = new Database(":memory:");
+    initSchema(source);
+    const declared = persistDeclaredSessionTimeout(source);
+    persistReconstructedSessionTimeout(source);
+    const origins = projectClaimOrigins(source, declared.claimIdentityId);
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-origin-"));
+    const originalCwd = process.cwd();
+    try {
+      mkdirSync(path.join(workspace, ".iw"));
+      const portableState = emptyPortableClaimsState();
+      portableState.claimOrigins[declared.claimIdentityId] = origins.map(
+        (origin) => ({
+          ...origin,
+          provenance: JSON.parse(JSON.stringify(origin.provenance)),
+        }),
+      );
+      writePortableClaimsState(workspace, portableState);
+
+      const fresh = new Database(path.join(workspace, ".iw", "index.db"));
+      initSchema(fresh);
+      const freshAssessment = new ClaimsStore(fresh).persistClaimAssessment({
+        parameterKey: "session.timeout",
+        claimType: "CLM-DEFAULT",
+        normalizedStatement: { value: 1800 },
+        assessmentPolicyId: "default-contract",
+        assessmentPolicyVersion: contracts.defaultPolicyVersion,
+        repositoryRevision: "fresh-checkout",
+        status: "inconclusive",
+        dependencies: [],
+      });
+      expect(freshAssessment.claimIdentityId).toBe(declared.claimIdentityId);
+      expect(
+        fresh.prepare(`SELECT COUNT(*) AS count FROM claim_candidates`).get(),
+      ).toEqual({ count: 0 });
+      fresh.close();
+
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      process.chdir(workspace);
+      await runClaimsExplain({
+        claim: declared.claimIdentityId,
+        format: "json",
+      });
+      const explained = JSON.parse(String(log.mock.calls[0][0])) as Array<{
+        origins: unknown[];
+        dependencies: unknown[];
+        status: string;
+      }>;
+      expect(explained[0]).toMatchObject({
+        origins,
+        dependencies: [],
+        status: "inconclusive",
+      });
+      vi.restoreAllMocks();
+    } finally {
+      process.chdir(originalCwd);
+      source.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });
