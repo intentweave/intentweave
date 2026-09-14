@@ -90,6 +90,7 @@ import {
   CandidateInferenceConfigError,
   loadCandidateInferenceConfig,
 } from "../claims/candidateRecommendationContext.js";
+import { projectClaimOrigins } from "../claims/origins.js";
 import {
   persistPortableAssessmentReview,
   projectPortableAssessmentReviews,
@@ -3416,6 +3417,7 @@ export async function runClaimsExplain(options: {
           database,
           assessment.claim_identity_id,
         ),
+        origins: projectClaimOrigins(database, assessment.claim_identity_id),
         assessmentId: assessment.assessment_id,
         status: assessment.epistemic_status,
         statement: JSON.parse(assessment.normalized_statement_json),
@@ -3531,6 +3533,17 @@ export async function runClaimsExplain(options: {
             );
             if (promotion.inference) {
               printCandidateInference(promotion.inference, "    ");
+            }
+          }
+          if (claim.origins.length > 0) {
+            console.log("  Origins:");
+            for (const origin of claim.origins) {
+              const sourceReference =
+                origin.sourceVersion ?? origin.sourceFingerprint ?? "unknown";
+              console.log(
+                `    ${origin.kind} via ${origin.source}: ${origin.sourceIdentity} (${sourceReference})`,
+              );
+              console.log(`      Provenance: ${JSON.stringify(origin.provenance)}`);
             }
           }
           for (const dependency of claim.dependencies as Array<{

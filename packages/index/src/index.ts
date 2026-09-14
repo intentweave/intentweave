@@ -65,6 +65,17 @@ export type {
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export {
+  CLAIM_ORIGIN_CONTRACT_VERSION,
+  claimOriginFingerprint,
+  normalizeClaimOrigins,
+  parseClaimOrigin,
+} from "./claims/origin.js";
+export type {
+  ClaimOrigin,
+  ClaimOriginKind,
+  ClaimOriginSource,
+} from "./claims/origin.js";
+export {
   SUBJECT_IDENTITY_CONTRACT_VERSION,
   affectedCurrentAssessmentsForSubject,
   affectedCurrentAssessmentsForSubjectAlias,

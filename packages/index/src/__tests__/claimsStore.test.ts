@@ -523,6 +523,13 @@ describe("ClaimsStore generic Subjects (G1b)", () => {
     const assessment = store.persistGenericClaimAssessment(dependencyClaim());
 
     expect(assessment.created).toBe(true);
+    expect(
+      db
+        .prepare(
+          `SELECT epistemic_status FROM claim_assessments WHERE id = ?`,
+        )
+        .get(assessment.id),
+    ).toEqual({ epistemic_status: "inconclusive" });
     const claim = db
       .prepare(
         `SELECT parameter_identity_id, claim_type, identity_key

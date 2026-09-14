@@ -1767,9 +1767,9 @@ Acceptance:
 
 ### Phase G5.2: Origin-Neutral Justification Kernel
 
-Status: proposed on 2026-09-14. Complete this bounded architecture test before
-G6b. The already implemented, model-free G6a preview remains valid and does not
-need to be redesigned.
+Status: G5.2a implemented on 2026-09-14; the remaining G5.2 lifecycle cases
+stay proposed. The already implemented, model-free G6a preview remains valid
+and does not need to be redesigned.
 
 Goal: prove that Brownfield reconstruction is the first Claim ingress adapter,
 not a hidden downstream dependency of the Core. This phase is deliberately
@@ -1811,6 +1811,20 @@ Acceptance:
   has its current status",
 - no public declaration CLI, standards pack, or new Justification persistence
   hierarchy is required to complete the phase.
+
+G5.2a implementation result: the existing Candidate promotion and provenance records
+are sufficient for the bounded kernel. `ClaimOrigin` is an internal v1 type and
+Explain projects reconstructed and declared Origins at read time; no Origin or
+Justification table was added. The generic Claim persistence seam creates a
+ClaimVersion independently of Evidence capture. The shared Assessment
+persistence kernel forces a Claim with no persisted Evidence dependency to
+`inconclusive`, so a declared Claim can exist before Evidence arrives without
+passing or being reviewable. Later Evidence reuses the existing RuleResult,
+Assessment, Review, continuity, materiality, Reverse Impact, and Explain paths.
+
+The Twin-Origin fixture confirms that two ingress Candidates with the same
+normalized Claim produce one Claim identity and one ClaimVersion while Explain
+exposes both Origins separately from Assessment dependencies.
 
 ### Unified Intent Gate
 
@@ -1877,6 +1891,34 @@ tokens. Precision and recall remain explicitly `null` with
 `requires-labeled-evaluation`; collecting labeled results on external
 repositories remains the operational G6a release gate before G6b automation is
 enabled.
+
+#### G6a real-repository preview baseline (2026-09-14)
+
+The model-free preview was run with an explicit `openai` allowlist on the
+IntentWeave and Backstage repositories. Both runs reported
+`networkCallPerformed: false`; no provider call was made. Precision and recall
+remain intentionally `null` until labeled evaluation exists.
+
+| Repository | Current Candidates | Eligible | Excluded | Included context | Budget-deferred | Estimated input | Duplicate groups |
+| ---------- | -----------------: | -------: | -------: | ---------------: | ---------------: | ---------------: | ----------------: |
+| IntentWeave | 1,763 | 1,577 | 186 | 14 | 1,563 | 9,794 tokens | 52 |
+| Backstage | 10,590 | 9,274 | 1,316 | 14 | 9,260 | 9,939 tokens | 697 |
+
+Exclusions may overlap by Candidate. IntentWeave reported 141 closed
+Candidates, 28 explicit-declaration Policy exclusions, 84 low-value literals,
+and 158 Candidates without versioned Evidence. Backstage reported 3
+fixture/example artifacts, 382 generated artifacts, 487 low-value literals,
+and 931 Candidates without versioned Evidence. The configured context budget
+was at most 20 Candidates, 8 Evidence items per Candidate, 1,200 excerpt
+characters, 2,000 tokens per Candidate, and 10,000 total estimated input
+tokens; the 14 included contexts in each run stayed below the total-token
+budget.
+
+`codegraphchat-v2` was not used as a comparable Candidate baseline because its
+existing index was schema 14 and contained no Candidate projection. A full
+Backstage discovery refresh is materially more expensive than previewing its
+existing projection; this baseline measures the bounded G6a context stage, not
+equal discovery latency across repositories.
 
 Before batch inference, define which Candidates are eligible and which context
 may be sent to a provider:

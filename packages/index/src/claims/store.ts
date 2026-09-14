@@ -827,6 +827,10 @@ export class ClaimsStore {
         latestVersion.materiality_contract_id === materialityContractId &&
         latestVersion.materiality_contract_version ===
           materialityContractVersion;
+      const assessmentStatus = this.assessmentStatusWithEvidence(
+        input.status,
+        input.dependencies,
+      );
       const claimVersionId = unchangedClaim
         ? latestVersion.id
         : `${claimIdentityId}@${nextOrdinal(
@@ -913,7 +917,7 @@ export class ClaimsStore {
           assessmentId,
           claimVersionId,
           storedKey,
-          input.status,
+          assessmentStatus,
           input.repositoryRevision,
           now,
         );
@@ -953,5 +957,31 @@ export class ClaimsStore {
         created: true,
       };
     }
+  }
+
+  private assessmentStatusWithEvidence(
+    requestedStatus: PersistClaimAssessmentInput["status"],
+    dependencies: PersistClaimAssessmentInput["dependencies"],
+  ): PersistClaimAssessmentInput["status"] {
+    const hasEvidence = dependencies.some((dependency) => {
+      if (dependency.dependencyKind === "evidence_version") {
+        return Boolean(
+          this.db
+            .prepare(`SELECT 1 AS present FROM evidence_versions WHERE id = ?`)
+            .get(dependency.dependencyVersionId),
+        );
+      }
+      return Boolean(
+        this.db
+          .prepare(
+            `SELECT 1 AS present
+             FROM rule_result_evidence
+             WHERE rule_result_version_id = ?
+             LIMIT 1`,
+          )
+          .get(dependency.dependencyVersionId),
+      );
+    });
+    return hasEvidence ? requestedStatus : "inconclusive";
   }
 }

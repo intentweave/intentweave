@@ -80,7 +80,7 @@ describe("iw claims explain — generic Subjects (G1b)", () => {
         claimIdentityId: assessment.claimIdentityId,
         parameterKey: null,
         claimType: "CLM-DEPENDENCY-CONFORMANCE",
-        status: "supported",
+        status: "inconclusive",
         identityContract: { id: "dependency-claim-identity", version: "1" },
         materialityContract: {
           id: "dependency-claim-materiality",
@@ -111,7 +111,7 @@ describe("iw claims explain — generic Subjects (G1b)", () => {
     expect(lines).toEqual(
       expect.arrayContaining([
         "module:workspace:@intentweave/ui must not import module:workspace:@intentweave/persistence",
-        "  Status: supported",
+        "  Status: inconclusive",
         "  Type: Architecture dependency (CLM-DEPENDENCY-CONFORMANCE)",
         "  Source: module:workspace:@intentweave/ui (module)",
         "  Target: module:workspace:@intentweave/persistence (module)",
@@ -190,6 +190,25 @@ describe("iw claims explain — generic Subjects (G1b)", () => {
     const database = new Database(path.join(workspace, ".iw", "index.db"));
     initSchema(database);
     const store = new ClaimsStore(database);
+    const evidence = store.persistGenericEvidence({
+      subjects: [
+        {
+          kind: "module",
+          identityKey: "module:workspace:@intentweave/ui",
+          role: "subject",
+          basis: "test-anchor",
+          confidence: "certain",
+        },
+      ],
+      sourceKind: "test-observation",
+      identityKey: "test:module-conformance",
+      fingerprint: "test-module-conformance-v1",
+      materialFingerprint: "test-module-conformance-material-v1",
+      normalizedValue: { compliant: true },
+      semanticLocation: "module:workspace:@intentweave/ui.conformance",
+      provenance: { test: true },
+      repositoryRevision: "rev:1",
+    });
     const input = {
       subjects: [
         {
@@ -206,7 +225,15 @@ describe("iw claims explain — generic Subjects (G1b)", () => {
       assessmentPolicyVersion: "1",
       repositoryRevision: "rev:1",
       status: "supported" as const,
-      dependencies: [],
+      dependencies: [
+        {
+          dependencyKind: "evidence_version" as const,
+          dependencyVersionId: evidence.id,
+          epistemicRole: "assertion" as const,
+          warrantPolarity: "supports" as const,
+          assessmentEffect: "supports" as const,
+        },
+      ],
     };
     const initial = store.persistGenericClaimAssessment(input);
     persistPortableAssessmentReview(workspace, database, {

@@ -22,6 +22,31 @@ describe("ClaimsReviewStore", () => {
   afterEach(() => db.close());
 
   function assessment(value: number, dependencyVersionId: string) {
+    const evidence = claims.persistEvidence({
+      parameterKey: "session.timeout",
+      sourceKind: "test-review",
+      identityKey: `claims-review:${dependencyVersionId}`,
+      fingerprint: `claims-review-evidence:${dependencyVersionId}:${value}`,
+      materialFingerprint: `claims-review-material:${dependencyVersionId}:${value}`,
+      normalizedValue: value,
+      semanticLocation: "session.timeout",
+      provenance: { test: true },
+      repositoryRevision: `c${value}`,
+    });
+    const warrant = claims.persistRuleResult(
+      {
+        ruleId: "test-review-warrant",
+        subjectKey: dependencyVersionId,
+        applicability: "applicable",
+        normalizedStatus: "passed",
+        normalizedOutput: { value },
+        normalizedReasons: ["test-evidence-present"],
+        evidenceVersionIds: [evidence.id],
+        ruleContractVersion: "test-review-v1",
+        implementationFingerprint: "test-review-impl-v1",
+      },
+      [evidence.id],
+    );
     return claims.persistClaimAssessment({
       parameterKey: "session.timeout",
       claimType: "CLM-EFFECTIVE",
@@ -34,7 +59,7 @@ describe("ClaimsReviewStore", () => {
       dependencies: [
         {
           dependencyKind: "rule_result_version",
-          dependencyVersionId,
+          dependencyVersionId: warrant.id,
           epistemicRole: "warrant",
           warrantPolarity: "supports",
           assessmentEffect: "supports",
