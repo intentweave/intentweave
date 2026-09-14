@@ -1826,6 +1826,30 @@ The Twin-Origin fixture confirms that two ingress Candidates with the same
 normalized Claim produce one Claim identity and one ClaimVersion while Explain
 exposes both Origins separately from Assessment dependencies.
 
+### G5.2b: Twin-Origin Fixture
+
+Status: implemented on 2026-09-14.
+
+The `session.timeout` fixture now exercises the two actual parameter ingress
+paths: a deterministic R1 code reconstruction and a test-only ADR/Human
+Declaration adapter. The declaration materializes the frozen Parameter Claim
+contract without Evidence, so its first Assessment is `inconclusive`; the code
+reconstruction then arrives through the existing R1 promotion path and produces
+the Evidence-backed `supported` Assessment.
+
+The fixture asserts that both paths converge on:
+
+- the same `ClaimIdentity` and legacy-v1 identity key,
+- exactly one `ClaimVersion`,
+- `CLM-DEFAULT`, unscoped `session.timeout`, and normalized `{ value: 1800 }`,
+- the same `parameter:session.timeout` Subject role,
+- the same frozen v1 contract representation (`NULL` contract columns), and
+- two read-time Origins: declared ADR provenance and reconstructed CARI
+  provenance.
+
+The declaration adapter is intentionally test-only. It proves the ingress
+contract without adding a public declaration CLI or a second Claim writer.
+
 ### Unified Intent Gate
 
 Completion checkpoint (2026-08-24): `iw intent check` is the primary combined
