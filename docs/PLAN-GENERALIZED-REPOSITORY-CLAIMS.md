@@ -1,8 +1,8 @@
 # Generalized Repository Claims
 
-> **Version:** 1.5
+> **Version:** 1.7
 > **Status:** Follow-on concept / implementation plan with delivery checkpoints
-> **Date:** 2026-08-26
+> **Date:** 2026-09-14
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
 
 ## 1. Purpose
@@ -21,10 +21,27 @@ discover
 -> explain why
 ```
 
-This plan extends that slice to general, verifiable statements about a
-repository. It does not replace the existing parameter slice. The parameter
-slice continues as the first specialized claim family under a more general
-Subject model.
+This plan extends that slice into an engineering justification layer for
+general, verifiable statements about a repository. It does not replace the
+existing parameter slice. The parameter slice continues as the first
+specialized Claim family and the first controlled Brownfield reconstruction
+path under a more general Subject model.
+
+The product definition, initial wedge, and first implementation slice are kept
+separate:
+
+- **Product definition:** IntentWeave maintains the justification of engineering
+  Claims as systems evolve.
+- **Initial product wedge:** reconstruct Claims from existing software, justify
+  them from code, configuration, documentation, tests, and Rules, and reopen
+  reviewed conclusions when their material basis changes.
+- **First implementation slice:** `session.timeout` followed by the P-001
+  real-repository validation.
+
+Declared Greenfield intent, reconstructed Brownfield intent, and imported intent
+are different Claim ingress paths, not different downstream Claim models. The
+current slice implements the reconstructed path first; it must not make that
+path the permanent Core boundary.
 
 The goal is not to ask an LLM whether arbitrary statements are true or false.
 The goal remains an evidence-grounded lifecycle with explicit identities,
@@ -84,66 +101,84 @@ IntentWeave treats general repository Claims as verifiable, versioned
 statements:
 
 ```text
-CARI evidence adapters
--> Deterministic and semantic induction
--> Candidate discovery
--> Subject correlation
--> Candidate triage
--> Candidate promotion
--> Claim derivation
--> Rule evaluation
--> Claim assessment
--> Assessment review
--> Reverse impact
--> Explanation and history
+                 Claim origin
+             /        |        \
+    reconstructed   declared   imported
+             \        |        /
+                ClaimVersion
+                     |
+             Justification basis
+          /          |           \
+      Evidence    RuleResults    Context
+          \          |           /
+                ClaimAssessment
+                     |
+               ReviewDecision
+                     |
+                system change
+                     |
+             selective re-justification
+              /                  \
+      decision survives       review reopens
 ```
 
-The layers have separate responsibilities:
+Brownfield reconstruction reaches `ClaimVersion` through Evidence adapters,
+Discovery, Correlation, Triage, and Promotion. Declared and imported Claims use
+their own governed ingress adapters. Downstream of `ClaimVersion`, the Core must
+not branch on whether a Claim was reconstructed, declared, or imported.
 
-1. **Evidence** records deterministic observations from code, documents,
+The reconstructed path and shared downstream layers have separate
+responsibilities:
+
+1. **Claim Origins** record whether governed intent was reconstructed, declared,
+   or imported and retain its source provenance.
+2. **Evidence** records deterministic observations from code, documents,
    configuration, and Git.
-2. **Discovery and semantic induction** find possible Claim Candidates through
+3. **Discovery and semantic induction** find possible Claim Candidates through
    deterministic adapters, semantic adapters, or both.
-3. **Correlation** determines which durable repository Subjects the Evidence and
+4. **Correlation** determines which durable repository Subjects the Evidence and
    Candidates refer to.
-4. **Candidate triage** decides whether a possible statement is relevant enough
+5. **Candidate triage** decides whether a possible statement is relevant enough
    to govern over time.
-5. **Promotion** turns only accepted Candidates into active Claims.
-6. **Derivation** creates normalized Claims from promoted, correlated
+6. **Promotion or governed declaration/import** turns accepted intent into an
+   active Claim.
+7. **Derivation** creates normalized Claims from governed, correlated
    observations.
-7. **Rules** evaluate applicable predicates with sufficient Evidence.
-8. **Policies** aggregate assertions and warrants into Assessments.
-9. **Assessment Review** records human decisions about current Assessments and
-   their lifecycle.
-10. **Impact** identifies affected Claims through persisted Dependencies.
+8. **Rules** evaluate applicable predicates with sufficient Evidence.
+9. **Policies** aggregate assertions and warrants into Assessments.
+10. **Assessment Review** records human decisions about current Assessments and
+    their lifecycle.
+11. **Impact** identifies affected Claims through persisted Dependencies and
+    determines whether an accepted conclusion survives or must reopen.
 
 ### 3.1 Product and Component Boundary
 
-Generalization does not create a third IntentWeave product. It adds a Claims
-lifecycle to the Intent Engine that turns CARI Evidence into curated, verifiable
-statements:
+Generalization does not create a third IntentWeave product. It adds a Claims and
+Justification lifecycle to the Intent Engine. Governed Claim Origins and
+Evidence Sources enter through separate adapters and converge before Assessment:
 
 ```text
-CARI Evidence Engine
-observe code, documents, configuration, and Git
-        |
-        v
-Semantic Induction and Claims Lifecycle (part of the Intent Engine)
-discover, extract, correlate, triage, promote, assess, review, and explain
-        |
-        v
-Intent Runtime
-deterministically enforce promoted Claims in CI
+Claim Origins                       Evidence Sources
+human, ADR, spec, agent             CARI, tests, config
+reconstructed through CARI          external systems later
+          \                              /
+           \                            /
+            Claims and Justification Lifecycle
+            correlate, govern, assess, review, explain
+                           |
+                           v
+                    Intent Runtime
+        deterministically reevaluate governed Claims in CI
 ```
 
 The logical responsibilities are explicitly separated:
 
-| Component                          | Owns                                                                                                             | Explicitly does not own                                              |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| CARI Evidence Engine               | AST, documentation, import, call-graph, and Git observations plus queryable Evidence                             | human Reviews, Candidate promotion, or semantic truth judgments      |
-| Semantic Discovery and Correlation | grounded Candidate and Subject proposals from deterministic rules or models                                      | authoritative promotion, Assessment, or silent `certain` correlation |
-| Claims Lifecycle                   | Subject and Candidate identity, promotion, Claim versions, Assessments, Reviews, continuity, reopen, and explain | raw code indexing or unconstrained truth judgments                   |
-| Intent Runtime                     | versioned Rule and Policy contracts, deterministic evaluation, unified Findings, and CI exit semantics           | repeated AI evaluation on every check                                |
+| Component                          | Owns                                                                                                                                            | Explicitly does not own                                                    |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| CARI Evidence Engine               | AST, documentation, import, call-graph, and Git observations plus queryable Evidence                                                            | human Reviews, Candidate promotion, or semantic truth judgments            |
+| Semantic Discovery and Correlation | grounded Candidate and Subject proposals from deterministic rules or models                                                                     | authoritative promotion, Assessment, or silent `certain` correlation       |
+| Claims and Justification Lifecycle | Subject, Candidate, Claim Origin and Claim identity, promotion, Claim versions, Assessments, Reviews, continuity, selective reopen, and explain | raw code indexing, generic argumentation, or unconstrained truth judgments |
+| Intent Runtime                     | versioned Rule and Policy contracts, deterministic evaluation, unified Findings, and CI exit semantics                                          | repeated AI evaluation on every check                                      |
 
 CARI guarantees a deterministic Evidence substrate, not complete Claim
 discovery. Generalized Claims may need semantic extraction to achieve useful
@@ -153,10 +188,10 @@ CARI index, and CARI commands do not create, interpret, or modify human
 decisions. A shared SQLite database may carry those decisions in logically
 separate Claims tables.
 
-The Claims lifecycle supports deterministic and semantic Discovery and
+The Claims and Justification lifecycle supports deterministic and semantic Discovery and
 Correlation adapters. Semantic adapters may propose grounded Candidates and
 Subject mappings. Humans or explicitly approved project Policies decide whether
-those proposals become effective. Promoted Claims are then checked
+those proposals become effective. Governed Claims are then checked
 reproducibly, without a required model call.
 
 The CLI reflects this separation:
@@ -171,6 +206,29 @@ The CLI reflects this separation:
 point. It must not become a second check engine with different semantics.
 `iw claims check` and the Claims portion of `iw intent check` use the same
 Runtime contract and persisted results.
+
+### 3.2 Justification Semantics
+
+A **Justification** is the reproducible projection of a `ClaimVersion`, its
+Subjects and Scope, the effective Policy and versioned contracts, and the
+EvidenceVersions and RuleResultVersions on which a `ClaimAssessment` is based.
+It includes the Rule-to-Evidence links and the provenance needed to inspect and
+challenge that basis. It is broader than the rows in
+`claim_assessment_dependencies` alone.
+
+**Justifiability** is the property that this basis can be reproduced, inspected,
+challenged, and reevaluated against a changed system state. The existing
+`ClaimAssessment`, its versioned dependencies, Scope, Policy, contracts, and
+provenance form the persisted Justification basis. This plan does not introduce
+`justifications` or `justification_versions` tables. A separate persisted
+Justification entity is considered only if later export, caching, or assurance
+case requirements cannot be represented as this deterministic projection.
+
+Claim origin answers **why the Claim entered governance**. The Justification
+basis answers **why its current Assessment has a particular status**. An origin
+is therefore not automatically supporting Evidence and does not affect an
+Assessment unless a Claim-family contract explicitly consumes the underlying
+artifact as Evidence.
 
 ## 4. Guiding Principles
 
@@ -188,6 +246,13 @@ The extension preserves the contracts established by the vertical slice:
 - **Deterministic substrate, hybrid induction:** CARI records reproducible facts;
   deterministic or semantic adapters may infer possible Claims from those
   facts.
+- **Origin-neutral lifecycle:** reconstructed, declared, and imported intent are
+  governed ingress paths into the same Claim lifecycle; origin is not a Claim
+  type and does not create downstream Assessment semantics.
+- **Claim creation is independent of Evidence acquisition:** a valid
+  `ClaimVersion` may exist before supporting Evidence is available; missing
+  Evidence produces an explicit `inconclusive` Assessment rather than no Claim
+  or implicit success.
 - **Grounded model output:** every semantic proposal cites Evidence versions and
   records its model, prompt, contract, input, and output fingerprints.
 - **AI proposes; Policies or humans decide:** a model cannot promote a Candidate
@@ -357,6 +422,36 @@ the G1b recovery window. A failed upgrade closes the partial database and
 atomically restores this snapshot. Rebuild-based index creation remains covered
 by its existing temporary-database replacement and Claims-history snapshot
 path; it does not create a second in-place migration backup.
+
+### 5.4 `ClaimOrigin` Is Ingress Provenance
+
+`ClaimOrigin` is a logical, append-only provenance contract attached to a Claim,
+not a Claim subtype and not an input to Claim identity or materiality:
+
+```text
+ClaimOrigin
+  kind: reconstructed | declared | imported
+  source: cari | human | adr | spec | agent | external-rm
+  sourceIdentity
+  sourceVersion or fingerprint
+  provenance
+```
+
+A Claim may have multiple Origins. For example, an ADR may declare a Claim that
+CARI later reconstructs independently from implementation artifacts. Both
+Origins converge on the same Claim identity when Claim family, identity-defining
+Subjects, Scope, and identity contract are equal. Adding an equivalent Origin
+does not create a duplicate Claim or a new ClaimVersion merely to record the
+additional provenance.
+
+The G5.2 Twin-Origin test initially projects reconstructed Origin from existing
+Candidate, Policy, promotion, and Evidence provenance. Its declared test adapter
+uses explicit declaration provenance. This deliberately tests whether the
+existing records can represent multiple Origins without changing Claim
+identity. A dedicated append-only Origin relation is added in a later schema
+version only if the projection cannot survive export, fresh-index import, and
+offline Explain without ambiguity. No Origin representation may be embedded in
+`claim_type`.
 
 ## 6. Candidate Discovery as a Separate Layer
 
@@ -960,6 +1055,8 @@ table-count limit.
 
 - Subject identities are durable and are not derived from file paths when a more
   stable domain basis exists.
+- Claim identity and ClaimVersion semantics are independent of Origin kind and
+  of whether supporting Evidence has already been acquired.
 - Candidates, inferences, Evidence, RuleResults, Claims, and Assessments remain
   append-only.
 - Candidate Reviews and materialized Policy decisions remain append-only and
@@ -1104,6 +1201,13 @@ Once published, the file path and schema are compatibility surfaces. Schema
 changes require an explicit version, migration, and round-trip tests.
 Repositories that ignore `.iw/` must add a narrow exception for
 `.iw/claims/state.yaml`; runtime artifacts such as `.iw/index.db` remain ignored.
+
+G5.2 does not silently add Claim Origins to portable state v1. Before a public
+declared or imported Claim workflow ships, effective Origin provenance must
+survive export, fresh-index import, and offline Explain through an explicit
+portable schema migration or a separately versioned declaration artifact. The
+Twin-Origin test determines the smallest representation; it may not encode
+Origin in Claim identity, Claim type, or Assessment status.
 
 ## 11. CLI Target
 
@@ -1661,6 +1765,53 @@ Acceptance:
   explainable, and idempotent,
 - disabling the Policy leaves raw Architecture Rule evaluation unchanged.
 
+### Phase G5.2: Origin-Neutral Justification Kernel
+
+Status: proposed on 2026-09-14. Complete this bounded architecture test before
+G6b. The already implemented, model-free G6a preview remains valid and does not
+need to be redesigned.
+
+Goal: prove that Brownfield reconstruction is the first Claim ingress adapter,
+not a hidden downstream dependency of the Core. This phase is deliberately
+smaller than a public Greenfield authoring feature and does not add a standards
+or generic argumentation model.
+
+- define a versioned internal `ClaimOrigin` projection with
+  `reconstructed | declared | imported` kinds and source provenance,
+- add one deterministic test-only declaration adapter for the same normalized
+  Claim exercised by the Brownfield fixture,
+- introduce only the narrow persistence seam required to create a ClaimVersion
+  before supporting Evidence is available; do not add a Justification table,
+- produce an explicit `inconclusive` Assessment when a governed declared Claim
+  has no sufficient Evidence,
+- keep declaration or promotion governance separate from Assessment Review;
+  the existing rule that an `inconclusive` Assessment is not reviewable remains,
+- project multiple equivalent Origins onto one Claim identity without making
+  Origin an identity or materiality input,
+- render Origin separately from the Assessment basis in Explain,
+- use the test to decide whether existing Candidate, Policy, promotion, and
+  portable-state provenance can preserve Origins, or whether a later additive
+  Origin relation is required.
+
+Acceptance:
+
+- isolated reconstructed and declared fixtures produce the same durable Claim
+  identity, normalized statement, Subject roles, Scope, and Claim contracts,
+- a declared Claim can exist before Evidence acquisition and receives an
+  `inconclusive` Assessment rather than disappearing or passing,
+- combining declared and reconstructed Origins creates one current Claim and
+  does not append a semantically unchanged ClaimVersion,
+- adding Evidence later uses the existing RuleResult, Assessment, Review,
+  continuity, materiality, Reverse Impact, and Explain paths,
+- a location-only Evidence change carries an accepted Review forward, while a
+  material basis change appends a new Assessment and reopens the Review,
+- no Rule, Assessment, Review, or impact implementation downstream of
+  ClaimVersion branches on Origin kind,
+- Explain distinguishes "why this Claim is governed" from "why this Assessment
+  has its current status",
+- no public declaration CLI, standards pack, or new Justification persistence
+  hierarchy is required to complete the phase.
+
 ### Unified Intent Gate
 
 Completion checkpoint (2026-08-24): `iw intent check` is the primary combined
@@ -1679,8 +1830,8 @@ entry point for baseline and diagnostic Rules workflows.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
-Status: proposed follow-on; not implemented beyond the bounded G2 reference
-adapter.
+Status: implementation in progress. G6a preview substrate is implemented; G6b
+and G6c remain proposed beyond the bounded G2 reference adapter.
 
 G6 starts only after the generalized lifecycle has been proven by one vertical
 slice and then broadened through the Symbol, Endpoint, and Architecture Claim
@@ -1699,6 +1850,33 @@ AI relevance reviewer. G6 turns that reference path into reusable product
 capabilities without making a model part of `claims check` or `intent check`.
 
 #### G6a: Eligibility, Context, and Noise Baseline
+
+Implementation checkpoint (2026-08-27): the model-free preview substrate is
+implemented. `candidate-recommendation-eligibility@1` classifies only current,
+unresolved Candidate versions and excludes already recommended versions,
+generated or example artifacts, known low-value literals, sensitive-only
+Evidence, and explicit Architecture declarations that should use deterministic
+Policy. `candidate-recommendation-context@1` builds a provider-neutral payload
+from Candidate, Subjects, versioned Evidence, enabled repository Policies, and
+bounded source spans. Built-in `.env`, private-key, PEM, and `secrets/**`
+patterns are always active; configured sensitive paths extend rather than
+replace those defaults, and source symlinks cannot escape the workspace.
+
+Provider access is fail-closed and repository-portable in
+`.iw/claims/inference.yaml`. No provider is enabled by default. The repository
+contains `.iw/claims/inference.example.yaml`; after copying and reviewing it,
+the exact outbound context can be inspected with no model or network call:
+
+```text
+iw claims candidates recommend --semantic --preview --provider openai
+```
+
+The preview reports Candidate volume, deterministic exclusions, duplicate
+groups, first-screen policy exclusions, budget deferrals, and estimated input
+tokens. Precision and recall remain explicitly `null` with
+`requires-labeled-evaluation`; collecting labeled results on external
+repositories remains the operational G6a release gate before G6b automation is
+enabled.
 
 Before batch inference, define which Candidates are eligible and which context
 may be sent to a provider:
@@ -1861,6 +2039,26 @@ Acceptance:
 
 Each Claim family receives a temporary Git fixture with fixed commits.
 
+### Twin-Origin Justification
+
+The G5.2 fixture tests the same normalized Claim through two ingress paths and
+then exercises one shared lifecycle:
+
+```text
+J0  Brownfield Evidence reconstructs Claim C
+J1  an isolated declaration produces the same Claim identity C
+J2  the declared Claim has no Evidence and is explicitly inconclusive
+J3  both Origins coexist without a duplicate Claim or ClaimVersion
+J4  Evidence arrives and the shared Rule and Assessment path becomes supported
+J5  a location-only change preserves the accepted Review
+J6  a material Evidence change re-assesses C and reopens the Review
+J7  Explain separates Claim Origin from the reproducible Assessment basis
+```
+
+The comparison is canonical. It checks Claim family, identity-defining Subject
+roles, Scope, identity contract, normalized statement, and materiality contract;
+it does not expect two independently created rows both to be `ClaimVersion V1`.
+
 ### Symbol Contract
 
 ```text
@@ -2002,13 +2200,28 @@ Generalization is robust when:
 29. `.iw/claims/state.yaml` reproduces effective Policies, Candidate decisions,
     Subject bindings, Assessment Reviews, and baseline acceptances between fresh
     checkouts without SQLite-local IDs or non-deterministic serialization.
+30. a ClaimVersion can be created before supporting Evidence is available and
+    yields an explicit `inconclusive` Assessment without becoming reviewable or
+    silently passing,
+31. reconstructed, declared, and imported Origins are ingress provenance rather
+    than Claim types, identity inputs, or automatic supporting Evidence,
+32. equivalent reconstructed and declared Origins converge on one Claim identity
+    and use the same Rule, Assessment, Review, continuity, impact, and Explain
+    implementation downstream of ClaimVersion,
+33. Explain and portable provenance distinguish why a Claim is governed from why
+    its current Assessment is supported, refuted, contested, or inconclusive,
+34. an accepted engineering conclusion survives non-material change and reopens
+    on a relevant basis change regardless of its Origin.
 
 ## 18. Explicit Non-Goals
 
 The first extension does not include:
 
 - automatic truth assessment of arbitrary natural language,
+- a generic argumentation, deliberation, or universal reasoning-graph engine,
 - complete general Claim recall in deterministic-only mode,
+- a complete public Greenfield Claim authoring or external requirements import
+  workflow in the current Brownfield slice,
 - mandatory model calls during check or CI,
 - a second Claims-specific LLM transport API alongside `LLMProvider`,
 - a new graph backend or a second Claims database,
@@ -2016,6 +2229,9 @@ The first extension does not include:
 - fully automatic LLM correlation without verifiable provenance,
 - autonomous AI promotion by default without an explicit project Policy,
 - organization-wide permissions and SaaS Review workflows,
+- built-in ISO 26262, ASPICE, AI Act, or security compliance semantics; these may
+  later ship as domain packs of Claim types, expected Evidence, Rules, Warrants,
+  Scope semantics, Review Policies, exports, and integrations,
 - every framework and programming language in the first release.
 
 ## 19. Open Decisions Before G1
@@ -2066,11 +2282,17 @@ Recommendation:
 
 ## 20. Core Statement
 
-The current vertical slice proves that IntentWeave can support versioned,
-evidence-grounded Claims technically. The next step is not to add more and more
-Parameter Rules, but to separate:
+The current vertical slice proves that IntentWeave can maintain a versioned,
+evidence-grounded engineering conclusion across system change. The product is
+not a generic Justification Graph, an Agent Context service, or a specification
+manager. Its distinguishing mechanism is selective re-justification: determine
+whether the material basis of a previously accepted conclusion still survives
+the current system state and preserve or reopen its Review accordingly.
+
+The next step is not to add more and more Parameter Rules, but to separate:
 
 ```text
+Claim origin
 Deterministic evidence
 Semantic induction
 Subject identity
@@ -2083,7 +2305,13 @@ Assessment policy
 ```
 
 With this separation, `session.timeout` becomes the first compatible Claim
-family, not the permanent boundary of the model. CARI remains the deterministic
-source of observed facts; semantic induction expands what IntentWeave can
-recognize; governance determines what matters; and the Intent Runtime verifies
-accepted Claims reproducibly.
+family and Brownfield reconstruction becomes the first ingress path, not the
+permanent boundary of the model. CARI remains the deterministic source of
+observed facts; semantic induction expands what IntentWeave can recognize;
+governance determines what matters; and the Intent Runtime verifies accepted
+Claims reproducibly as reality changes.
+
+> **IntentWeave turns declared or reconstructed engineering intent into Claims,
+> connects those Claims to their Evidence and reasoning, and continuously
+> determines whether previously accepted conclusions remain justified as the
+> system evolves.**
