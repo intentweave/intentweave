@@ -6,6 +6,38 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
+- **Generalized repository Claims lifecycle** — schema versions 17-19 add
+  durable Subjects, Subject continuity, append-only Claim Candidates,
+  Candidate Evidence, Reviews, versioned Policy decisions, and semantic
+  Inference artifacts while preserving the Parameter Claims V1 identities and
+  history.
+- **Candidate curation CLI** — `iw claims discover`, `claims candidates list`,
+  `claims candidates triage`, and `claims candidates review` separate possible
+  repository statements from active governed Claims. Effective human and Policy
+  decisions remain explainable and repository-portable.
+- **Non-Parameter Claim families** — deterministic end-to-end slices now cover
+  public Symbol documentation, bounded NestJS Endpoint authentication, and
+  Architecture import-pattern conformance, including Git continuity,
+  materiality, `--since`, selective Review reopen, and Explain.
+- **Unified Intent gate** — `iw intent check` evaluates promoted Claims through
+  the same Runtime as `iw claims check` and avoids reporting governed
+  Architecture violations twice.
+- **Structured Inference v2** — the provider contract now preserves refusal,
+  content filtering, truncation, typed transport failures, effective-model and
+  request provenance, and detailed usage metadata. Local JSON Schema validation
+  remains mandatory for model-backed Claims adapters.
+- **Grounded semantic Symbol correlation** — `iw claims discover --semantic`
+  can resolve a documentation reference that ambiguously matches multiple
+  public Symbols. Results are Evidence-grounded, append-only, cached, limited to
+  `probable` confidence, explainable, and never promote a Candidate or run in CI.
+
+### Changed
+
+- **Unbound Claims Discovery is Candidate-first** — newly discovered unbound
+  findings no longer become active Claims merely because they were observed.
+  Only explicit bindings, compatibility Policies, human promotion, or another
+  enabled versioned Candidate Policy activate governance and CI behavior.
+
 ### Fixed
 
 ## [0.17.2] — 2026-07-31

@@ -16,6 +16,7 @@ interface CurrentDecision {
   basis_assessment_id: string;
   decision: string;
   actor: string;
+  decision_origin: string;
 }
 
 interface CurrentAssessment {
@@ -25,6 +26,8 @@ interface CurrentAssessment {
   claim_type: string;
   assessment_policy_id: string;
   assessment_policy_version: string;
+  materiality_contract_id: string | null;
+  materiality_contract_version: string | null;
 }
 
 function assertReviewable(
@@ -56,7 +59,7 @@ function currentDecision(
 ): CurrentDecision | undefined {
   return db
     .prepare(
-      `SELECT id, basis_assessment_id, decision, actor
+      `SELECT id, basis_assessment_id, decision, actor, decision_origin
        FROM review_decisions
        WHERE claim_identity_id = ? AND is_current = 1`,
     )
@@ -70,7 +73,8 @@ function currentAssessment(
   return db
     .prepare(
       `SELECT ca.id, ca.epistemic_status, cv.normalized_statement_json,
-              ci.claim_type, cv.assessment_policy_id, cv.assessment_policy_version
+              ci.claim_type, cv.assessment_policy_id, cv.assessment_policy_version,
+              cv.materiality_contract_id, cv.materiality_contract_version
        FROM claim_assessments ca
        JOIN claim_versions cv ON cv.id = ca.claim_version_id
        JOIN claim_identities ci ON ci.id = cv.claim_identity_id
@@ -112,6 +116,9 @@ export class ClaimsReviewStore {
         source.claim_type === target.claim_type &&
         source.assessment_policy_id === target.assessment_policy_id &&
         source.assessment_policy_version === target.assessment_policy_version &&
+        source.materiality_contract_id === target.materiality_contract_id &&
+        source.materiality_contract_version ===
+          target.materiality_contract_version &&
         target.epistemic_status !== "inconclusive";
       if (!equivalent) {
         const reopenId = `reopen:${fingerprint({
@@ -195,7 +202,13 @@ export class ClaimsReviewStore {
     const record = this.db.transaction(() => {
       assertReviewable(this.db, input.claimIdentityId, input.basisAssessmentId);
       const previous = currentDecision(this.db, input.claimIdentityId);
-      if (previous?.basis_assessment_id === input.basisAssessmentId) {
+      const decisionOrigin = input.decisionOrigin ?? "manual";
+      if (
+        previous?.basis_assessment_id === input.basisAssessmentId &&
+        previous.decision === input.decision &&
+        previous.actor === input.actor &&
+        previous.decision_origin === decisionOrigin
+      ) {
         return { id: previous.id, carriedForward: false };
       }
 
@@ -209,12 +222,13 @@ export class ClaimsReviewStore {
         )
         .get(input.claimIdentityId) as { id: string } | undefined;
 
-      const now = Date.now();
+      const now = input.createdAt ?? Date.now();
       const id = `review:${fingerprint({
         claimIdentityId: input.claimIdentityId,
         basisAssessmentId: input.basisAssessmentId,
         decision: input.decision,
         actor: input.actor,
+        decisionOrigin,
         reopenId: openReopen?.id ?? null,
       })}`;
       if (previous) {
@@ -227,7 +241,7 @@ export class ClaimsReviewStore {
           `INSERT INTO review_decisions (
              id, claim_identity_id, basis_assessment_id, decision, actor,
              decision_origin, superseded_by_decision_id, is_current, created_at
-           ) VALUES (?, ?, ?, ?, ?, 'manual', NULL, 1, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, ?)`,
         )
         .run(
           id,
@@ -235,6 +249,7 @@ export class ClaimsReviewStore {
           input.basisAssessmentId,
           input.decision,
           input.actor,
+          decisionOrigin,
           now,
         );
       if (previous) {

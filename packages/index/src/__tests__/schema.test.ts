@@ -91,7 +91,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("16");
+    expect(row?.value).toBe("19");
   });
 
   it("migrates a schema-14 index with the claims companion tables", () => {
@@ -176,7 +176,7 @@ describe("initSchema", () => {
     });
   });
 
-  it("runs chained 14->15->16 migration through migrateSchemaToCurrent", () => {
+  it("runs chained 14->15->16->17->18->19 migration through migrateSchemaToCurrent", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
@@ -186,7 +186,7 @@ describe("initSchema", () => {
 
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "16" });
+    ).toEqual({ value: "19" });
     expect(
       db
         .prepare(
@@ -195,12 +195,59 @@ describe("initSchema", () => {
         )
         .get(),
     ).toEqual({ name: "claim_assessment_references" });
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'subject_continuity'`,
+        )
+        .get(),
+    ).toEqual({ name: "subject_continuity" });
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'claim_candidates'`,
+        )
+        .get(),
+    ).toEqual({ name: "claim_candidates" });
+    expect(
+      (
+        db.prepare(`PRAGMA table_info(candidate_reviews)`).all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    ).toContain("promoted_claim_identity_id");
+    expect(
+      (
+        db.prepare(`PRAGMA table_info(claim_identities)`).all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    ).toEqual(
+      expect.arrayContaining([
+        "identity_contract_id",
+        "identity_contract_version",
+      ]),
+    );
+    expect(
+      (
+        db.prepare(`PRAGMA table_info(claim_versions)`).all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    ).toEqual(
+      expect.arrayContaining([
+        "materiality_contract_id",
+        "materiality_contract_version",
+      ]),
+    );
   });
 
   it("rejects unknown newer schema versions instead of downgrading", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      INSERT INTO _meta (key, value) VALUES ('schema_version', '17');
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '20');
       CREATE TABLE future_only (id TEXT PRIMARY KEY);
     `);
     const schemaBefore = db
@@ -211,10 +258,10 @@ describe("initSchema", () => {
       )
       .all();
 
-    expect(() => initSchema(db)).toThrow(/schema version 17 is incompatible/i);
+    expect(() => initSchema(db)).toThrow(/schema version 20 is incompatible/i);
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "17" });
+    ).toEqual({ value: "20" });
     expect(
       db
         .prepare(

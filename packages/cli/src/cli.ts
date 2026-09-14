@@ -58,7 +58,6 @@ const { version } = require("../package.json");
 // original subcommand implementation.
 (function translateIntentArgs(): void {
   const intentMap: Record<string, string[]> = {
-    check: ["index", "rules-check"],
     extract: ["index", "rules-extract"],
     scan: ["index", "scan-diagrams"],
     living: ["doc-health"],
@@ -67,8 +66,28 @@ const { version } = require("../package.json");
 
   const [node, bin, cmd, sub, ...rest] = process.argv;
 
+  const legacyCheckOptions = [
+    "--list-presets",
+    "--save-baseline",
+    "--baseline",
+    "--fail-on-increase",
+    "--dry-run-query",
+    "--no-diagram",
+  ];
+  if (
+    cmd === "intent" &&
+    sub === "check" &&
+    rest.some((arg) =>
+      legacyCheckOptions.some(
+        (option) => arg === option || arg.startsWith(`${option}=`),
+      ),
+    )
+  ) {
+    process.argv = [node, bin, "index", "rules-check", ...rest];
+    return;
+  }
+
   if (cmd === "intent" && sub && intentMap[sub]) {
-    // iw intent check [--domain X] [...] → iw index rules-check [--domain X] [...]
     process.argv = [node, bin, ...intentMap[sub], ...rest];
     return;
   }

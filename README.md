@@ -412,6 +412,13 @@ Additional CARI queries are available as CLI subcommands, MCP tools, and via the
 | `iw index layers-from-decorators`          | `cari_layers_from_decorators` | Derive layer assignment from class decorators                    |
 | `iw index rules-trend`                     | `cari_rules_trend`            | ADR conformance trend over git history                           |
 | `iw index test-intent`                     | `cari_test_intent`            | Test descriptions that reference no matching symbol              |
+| `iw claims discover`                       | —                             | Persist deterministic findings as non-governing Claim Candidates |
+| `iw claims discover --semantic`            | —                             | Opt in to grounded model-backed correlation for ambiguous finds  |
+| `iw claims candidates list`                | —                             | Inspect the Candidate inbox and lifecycle state                  |
+| `iw claims candidates triage`              | —                             | Move selected Candidates into explicit relevance review          |
+| `iw claims candidates review`              | —                             | Promote, reject, suppress, or defer a triaged Candidate          |
+| `iw claims check`                          | —                             | Evaluate promoted Claims without requiring model access          |
+| `iw claims explain`                        | —                             | Explain Candidate inference or active Claim dependencies         |
 | `iw intent check`                          | `intent_check`                | Three-domain enforcement: structural + behavioral + documentary  |
 | `iw intent check --domain behavioral`      | —                             | Mermaid-based behavioral rules only                              |
 | `iw intent check --domain documentary`     | —                             | Built-in documentary checks + documentary rules.yaml entries     |

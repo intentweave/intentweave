@@ -41,6 +41,13 @@ inputs:
     required: false
     default: "latest"
 
+  cli-path:
+    description: >
+      Optional path to a locally built IntentWeave CLI entry point. When set,
+      the action runs it with Node.js instead of installing @intentweave/cli.
+    required: false
+    default: ""
+
   working-directory:
     description: "Workspace root to run iw commands from."
     required: false
@@ -80,6 +87,7 @@ runs:
   steps:
     # ── 1. Install iw CLI ──────────────────────────────────────────────────
     - name: Install IntentWeave CLI
+      if: inputs.cli-path == ''
       shell: bash
       run: npm install -g @intentweave/cli@${{ inputs.iw-version }}
 
@@ -93,12 +101,19 @@ runs:
     - name: Build or update CARI index
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IW_CLI_PATH: ${{ inputs.cli-path }}
       run: |
+        if [ -n "$IW_CLI_PATH" ]; then
+          IW=(node "$IW_CLI_PATH")
+        else
+          IW=(iw)
+        fi
         if [ "${{ inputs.build-index }}" = "true" ]; then
-          iw index build -v
+          "${IW[@]}" index build -v
         elif [ -f .iw/index.db ]; then
           echo "Restored cached index found — running incremental update"
-          iw index update -v
+          "${IW[@]}" index update -v
         else
           echo "::error::build-index is 'false' but no .iw/index.db was found. Restore a cache before this action (see docs/CLI-USAGE.md#ci-caching), or set build-index: true."
           exit 1
@@ -124,7 +139,14 @@ runs:
       id: check
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IW_CLI_PATH: ${{ inputs.cli-path }}
       run: |
+        if [ -n "$IW_CLI_PATH" ]; then
+          IW=(node "$IW_CLI_PATH")
+        else
+          IW=(iw)
+        fi
         FILES="${{ steps.changed.outputs.files }}"
         if [ -z "$FILES" ]; then
           echo "No changed files detected — skipping drift check."
@@ -135,7 +157,7 @@ runs:
 
         # Run check, capture output + exit code
         set +e
-        OUTPUT=$(iw index check \
+        OUTPUT=$("${IW[@]}" index check \
           --severity "${{ inputs.severity-threshold }}" \
           --format github \
           $FILES 2>&1)
@@ -162,8 +184,15 @@ runs:
       id: score
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IW_CLI_PATH: ${{ inputs.cli-path }}
       run: |
-        OUTPUT=$(iw verify --score --format json 2>/dev/null || echo '{}')
+        if [ -n "$IW_CLI_PATH" ]; then
+          IW=(node "$IW_CLI_PATH")
+        else
+          IW=(iw)
+        fi
+        OUTPUT=$("${IW[@]}" verify --score --format json 2>/dev/null || echo '{}')
         SCORE=$(echo "$OUTPUT" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const o=JSON.parse(d);process.stdout.write(String(o.score??0))}catch{process.stdout.write('0')}})" 2>/dev/null || echo "0")
         GRADE=$(echo "$OUTPUT" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const o=JSON.parse(d);process.stdout.write(String(o.grade??'?'))}catch{process.stdout.write('?')}})" 2>/dev/null || echo "?")
 
@@ -180,14 +209,20 @@ runs:
     # ── 6. Post PR comment ─────────────────────────────────────────────────
     - name: Post PR comment
       if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
+      env:
+        IW_DRIFT_COUNT: ${{ steps.check.outputs.drift-count }}
+        IW_CHECK_OUTPUT: ${{ steps.check.outputs.check-output }}
+        IW_SCORE: ${{ steps.score.outputs.score }}
+        IW_GRADE: ${{ steps.score.outputs.grade }}
+        IW_SEVERITY_THRESHOLD: ${{ inputs.severity-threshold }}
       with:
         script: |
-          const driftCount = parseInt('${{ steps.check.outputs.drift-count }}' || '0', 10);
-          const checkOutput = `${{ steps.check.outputs.check-output }}`;
-          const score = '${{ steps.score.outputs.score }}';
-          const grade = '${{ steps.score.outputs.grade }}';
-          const threshold = '${{ inputs.severity-threshold }}';
+          const driftCount = Number.parseInt(process.env.IW_DRIFT_COUNT || '0', 10);
+          const checkOutput = process.env.IW_CHECK_OUTPUT || '';
+          const score = process.env.IW_SCORE || '0';
+          const grade = process.env.IW_GRADE || '?';
+          const threshold = process.env.IW_SEVERITY_THRESHOLD || 'warning';
 
           const gradeEmoji = { A: '🟢', B: '🟡', C: '🟠', D: '🔴', F: '🔴' }[grade] ?? '⚪';
           const driftEmoji = driftCount === 0 ? '✅' : '⚠️';

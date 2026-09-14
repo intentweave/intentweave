@@ -22,6 +22,31 @@ describe("ClaimsReviewStore", () => {
   afterEach(() => db.close());
 
   function assessment(value: number, dependencyVersionId: string) {
+    const evidence = claims.persistEvidence({
+      parameterKey: "session.timeout",
+      sourceKind: "test-review",
+      identityKey: `claims-review:${dependencyVersionId}`,
+      fingerprint: `claims-review-evidence:${dependencyVersionId}:${value}`,
+      materialFingerprint: `claims-review-material:${dependencyVersionId}:${value}`,
+      normalizedValue: value,
+      semanticLocation: "session.timeout",
+      provenance: { test: true },
+      repositoryRevision: `c${value}`,
+    });
+    const warrant = claims.persistRuleResult(
+      {
+        ruleId: "test-review-warrant",
+        subjectKey: dependencyVersionId,
+        applicability: "applicable",
+        normalizedStatus: "passed",
+        normalizedOutput: { value },
+        normalizedReasons: ["test-evidence-present"],
+        evidenceVersionIds: [evidence.id],
+        ruleContractVersion: "test-review-v1",
+        implementationFingerprint: "test-review-impl-v1",
+      },
+      [evidence.id],
+    );
     return claims.persistClaimAssessment({
       parameterKey: "session.timeout",
       claimType: "CLM-EFFECTIVE",
@@ -34,7 +59,7 @@ describe("ClaimsReviewStore", () => {
       dependencies: [
         {
           dependencyKind: "rule_result_version",
-          dependencyVersionId,
+          dependencyVersionId: warrant.id,
           epistemicRole: "warrant",
           warrantPolarity: "supports",
           assessmentEffect: "supports",
@@ -71,6 +96,46 @@ describe("ClaimsReviewStore", () => {
         decision_origin: "carry-forward",
         carried_forward_from_decision_id: review.id,
         is_current: 1,
+      },
+    ]);
+  });
+
+  it("supersedes a changed decision on the same assessment", () => {
+    const current = assessment(3600, "r3@1");
+    const accepted = reviews.record({
+      claimIdentityId: current.claimIdentityId,
+      basisAssessmentId: current.id,
+      decision: "accepted",
+      actor: "reviewer",
+    });
+
+    const rejected = reviews.record({
+      claimIdentityId: current.claimIdentityId,
+      basisAssessmentId: current.id,
+      decision: "rejected",
+      actor: "reviewer",
+    });
+
+    expect(rejected.id).not.toBe(accepted.id);
+    expect(
+      db
+        .prepare(
+          `SELECT id, decision, is_current, superseded_by_decision_id
+           FROM review_decisions ORDER BY is_current ASC`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: accepted.id,
+        decision: "accepted",
+        is_current: 0,
+        superseded_by_decision_id: rejected.id,
+      },
+      {
+        id: rejected.id,
+        decision: "rejected",
+        is_current: 1,
+        superseded_by_decision_id: null,
       },
     ]);
   });

@@ -1,6 +1,8 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
+import type { SubjectKind } from "./subjects.js";
+
 /** Values supported by the claims slice's normalized observations. */
 export type ClaimScalar = string | number | boolean | null | string[];
 
@@ -16,6 +18,7 @@ export type ClaimAssessmentStatus =
   | "contested"
   | "inconclusive";
 export type ClaimDependencyKind = "evidence_version" | "rule_result_version";
+export type ReviewDependencyKind = ClaimDependencyKind | "claim_version";
 export type EpistemicRole = "assertion" | "warrant";
 export type WarrantPolarity = "supports" | "contradicts" | null;
 export type AssessmentEffect = "supports" | "contradicts" | "neutral";
@@ -108,6 +111,82 @@ export interface PersistClaimAssessmentInput {
   dependencies: ClaimAssessmentDependencyInput[];
 }
 
+/** A typed Subject role attached to a generic Claim identity (G1b). */
+export interface ClaimSubjectInput {
+  kind: SubjectKind;
+  identityKey: string;
+  displayName?: string;
+  role: string;
+}
+
+export interface EvidenceSubjectInput extends ClaimSubjectInput {
+  basis: string;
+  confidence: string;
+}
+
+/** Generic Evidence anchored in role-based Subjects rather than a Parameter. */
+export interface PersistGenericEvidenceInput {
+  subjects: EvidenceSubjectInput[];
+  sourceKind: string;
+  identityKey: string;
+  fingerprint: string;
+  materialFingerprint: string;
+  normalizedValue: unknown;
+  semanticLocation: string;
+  provenance: unknown;
+  filePath?: string;
+  symbolId?: string;
+  spanStartLine?: number;
+  spanEndLine?: number;
+  repositoryRevision?: string;
+}
+
+/** Identifies the versioned algorithm used for generalized Claim semantics. */
+export interface VersionedClaimContract {
+  id: string;
+  version: string;
+}
+
+/**
+ * Canonical input for a generic Claim assessment whose identity is anchored
+ * exclusively in role-based Subjects — no ParameterIdentity is created.
+ */
+export interface PersistGenericClaimAssessmentInput {
+  subjects: ClaimSubjectInput[];
+  /** Subject roles that define identity; all Subjects remain attached. */
+  identitySubjectRoles?: string[];
+  claimType: string;
+  scope?: string;
+  identityContract: VersionedClaimContract;
+  materialityContract: VersionedClaimContract;
+  normalizedStatement: unknown;
+  assessmentPolicyId: string;
+  assessmentPolicyVersion: string;
+  repositoryRevision: string;
+  status: ClaimAssessmentStatus;
+  dependencies: ClaimAssessmentDependencyInput[];
+}
+
+export interface PersistSubjectAliasInput {
+  subjectIdentityId: string;
+  aliasKind: string;
+  aliasKey: string;
+}
+
+export interface PersistSubjectContinuityInput {
+  fromSubjectIdentityId: string;
+  toSubjectIdentityId: string;
+  basis: string;
+  confidence: string;
+  provenance: unknown;
+}
+
+export interface PersistedSubjectContinuity {
+  id: string;
+  ordinal: number;
+  created: boolean;
+}
+
 export interface PersistedAssessment {
   id: string;
   claimIdentityId: string;
@@ -126,12 +205,14 @@ export interface RecordReviewInput {
   basisAssessmentId: string;
   decision: string;
   actor: string;
+  decisionOrigin?: "manual" | "portable";
+  createdAt?: number;
 }
 
 export interface ReopenReviewInput {
   claimIdentityId: string;
   basisAssessmentId: string;
-  dependencyKind: ClaimDependencyKind;
+  dependencyKind: ReviewDependencyKind;
   dependencyVersionId: string;
   reason: ReopenReason;
   secondaryProvenance?: unknown;
