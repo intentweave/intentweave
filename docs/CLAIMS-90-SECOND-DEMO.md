@@ -1,7 +1,7 @@
 # Claims in 90 Seconds
 
-This workflow demonstrates the deterministic Claims lifecycle without an API key
-or network access:
+This self-checking workflow demonstrates the deterministic Claims lifecycle
+without an API key or network access:
 
 ```text
 CARI build
@@ -35,9 +35,16 @@ Expected signals:
 - the initial check exits with the review-required status after discovering the
   bound Claim;
 - Explain shows the Claim, assessment dependencies, review, and Origin;
+- the changed check exits with the contested status because the retained JSDoc
+  `@default 1800` now contradicts the implementation value `3600`;
 - the changed check creates a new material Assessment and leaves the prior review
   invalidated by an open `material-change` reopen;
 - the final Explain output shows the reopen dependency and provenance.
+
+The script asserts these exit codes, Assessment states, and the final open
+Reopen. It exits non-zero when the lifecycle behavior regresses. The name is a
+usability target rather than a hard timing assertion, so slower CI machines do
+not fail solely because they exceed 90 seconds.
 
 The script uses `iw.sh` from the current checkout, so it exercises the same
 working-tree CLI that is being developed. A production installation can use the

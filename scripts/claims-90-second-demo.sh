@@ -16,6 +16,17 @@ say() {
   printf '\n== %s ==\n' "$1"
 }
 
+assert_exit() {
+  local actual="$1"
+  local expected="$2"
+  local stage="$3"
+  if [[ "${actual}" != "${expected}" ]]; then
+    printf 'Expected %s to exit %s, received %s.\n' \
+      "${stage}" "${expected}" "${actual}" >&2
+    exit 1
+  fi
+}
+
 run_claims_check() {
   local output_path="$1"
   shift
@@ -72,12 +83,18 @@ INITIAL_EXIT="$(run_claims_check "${INITIAL_JSON}" --format json)"
 node -e '
   const fs = require("node:fs");
   const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  if (value.gateStatus !== "evaluated" ||
+      value.claims?.[0]?.assessmentStatuses?.[0] !== "supported" ||
+      value.candidates?.active !== 1) {
+    throw new Error("Initial check did not produce the expected governed Claim");
+  }
   console.log(JSON.stringify({
     gateStatus: value.gateStatus,
     claims: value.claims,
     candidates: value.candidates,
   }, null, 2));
 ' "${INITIAL_JSON}"
+assert_exit "${INITIAL_EXIT}" 4 "initial Claims check"
 printf 'Initial claims exit: %s (review required is expected)\n' "${INITIAL_EXIT}"
 
 say "3/6 Inspect Candidate governance"
@@ -118,18 +135,28 @@ CHANGED_EXIT="$(run_claims_check "${CHANGED_JSON}" --since HEAD~1 --format json)
 node -e '
   const fs = require("node:fs");
   const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  if (value.claims?.[0]?.assessmentStatuses?.[0] !== "contested") {
+    throw new Error("Changed check did not detect the stale @default assertion");
+  }
   console.log(JSON.stringify({
     claims: value.claims,
     retiredClaims: value.retiredClaims,
   }, null, 2));
 ' "${CHANGED_JSON}"
-printf 'Changed claims exit: %s (an open review/reopen is expected)\n' "${CHANGED_EXIT}"
+assert_exit "${CHANGED_EXIT}" 1 "changed Claims check"
+printf 'Changed claims exit: %s (contested plus an open reopen is expected)\n' "${CHANGED_EXIT}"
 
 say "6/6 Explain the reopened lifecycle"
+FINAL_EXPLAIN="${DEMO_DIR}/final-explain.txt"
 (cd "${DEMO_DIR}" && "${IW}" claims explain \
   --claim session.timeout \
   --type CLM-DEFAULT \
-  --format text)
+  --format text) >"${FINAL_EXPLAIN}"
+cat "${FINAL_EXPLAIN}"
+if ! grep -q 'Reopen: Material change. (open, material-change)' "${FINAL_EXPLAIN}"; then
+  printf 'Final Explain did not contain the expected open material-change Reopen.\n' >&2
+  exit 1
+fi
 
 ELAPSED="$(( $(date +%s) - STARTED_AT ))"
 printf '\nDemo completed in %ss. Temporary workspace was removed.\n' "${ELAPSED}"
