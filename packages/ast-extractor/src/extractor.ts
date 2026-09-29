@@ -27,7 +27,6 @@ import type {
   SymbolKind,
   ExportKind,
   SourceRange,
-  ExtractedDecorator,
 } from "./types.js";
 
 /**
@@ -432,7 +431,7 @@ export class AstExtractor {
     const docSummary = options.includeDocSummary
       ? this.extractDocComment(node, content)
       : undefined;
-    const decoratorDetails = this.extractDecoratorDetails(node);
+    const decoratorList = this.extractDecorators(node);
 
     symbols.push({
       name,
@@ -445,12 +444,7 @@ export class AstExtractor {
       docSummary,
       parameters: options.includeParameters ? params : undefined,
       signature: this.extractSignature(node, content),
-      decorators:
-        decoratorDetails.length > 0
-          ? decoratorDetails.map((decorator) => decorator.name)
-          : undefined,
-      decoratorDetails:
-        decoratorDetails.length > 0 ? decoratorDetails : undefined,
+      decorators: decoratorList.length > 0 ? decoratorList : undefined,
     });
   }
 
@@ -475,7 +469,7 @@ export class AstExtractor {
 
     // Parse implements clause
     const implementsList = this.extractImplements(node);
-    const decoratorDetails = this.extractDecoratorDetails(node);
+    const decoratorList = this.extractDecorators(node);
 
     symbols.push({
       name,
@@ -486,12 +480,7 @@ export class AstExtractor {
       docSummary,
       signature: this.extractSignature(node, content) ?? `class ${name}`,
       implements: implementsList.length > 0 ? implementsList : undefined,
-      decorators:
-        decoratorDetails.length > 0
-          ? decoratorDetails.map((decorator) => decorator.name)
-          : undefined,
-      decoratorDetails:
-        decoratorDetails.length > 0 ? decoratorDetails : undefined,
+      decorators: decoratorList.length > 0 ? decoratorList : undefined,
     });
 
     // Extract class members
@@ -534,7 +523,6 @@ export class AstExtractor {
           const isSetter = child.children.some((c) => c.text === "set");
           const isAsync = child.children.some((c) => c.type === "async");
           const visibility = this.extractVisibility(child);
-          const decoratorDetails = this.extractDecoratorDetails(child);
 
           if (!options.includePrivate && visibility === "private") continue;
 
@@ -563,12 +551,6 @@ export class AstExtractor {
               ? this.extractDocComment(child, content)
               : undefined,
             signature: this.extractSignature(child, content),
-            decorators:
-              decoratorDetails.length > 0
-                ? decoratorDetails.map((decorator) => decorator.name)
-                : undefined,
-            decoratorDetails:
-              decoratorDetails.length > 0 ? decoratorDetails : undefined,
           });
           break;
         }
@@ -1124,46 +1106,42 @@ export class AstExtractor {
     }
   }
 
-  /** Extract only the contiguous decorators directly attached to a symbol. */
-  private extractDecoratorDetails(
-    node: Parser.SyntaxNode,
-  ): ExtractedDecorator[] {
-    const result: ExtractedDecorator[] = [];
+  /**
+   * Extract decorator names from a class or function node.
+   * Decorators appear as sibling nodes immediately before the class/function in
+   * the parent node. Returns bare names, e.g. ["Controller", "Injectable"].
+   */
+  private extractDecorators(node: Parser.SyntaxNode): string[] {
+    const result: string[] = [];
     const parent = node.parent;
     if (!parent) return result;
 
-    const siblings = parent.namedChildren;
-    const nodeIndex = siblings.findIndex((child) => child.id === node.id);
-    if (nodeIndex < 0) return result;
-    const attached: Parser.SyntaxNode[] = [];
-    for (let index = nodeIndex - 1; index >= 0; index--) {
-      const sibling = siblings[index]!;
-      if (sibling.type !== "decorator") break;
-      attached.unshift(sibling);
-    }
+    for (const child of parent.children) {
+      if (child.id === node.id) break;
+      if (child.type !== "decorator") continue;
 
-    for (const decorator of attached) {
-      const expressionNode = decorator.namedChildren[0];
-      if (!expressionNode) continue;
-      const callNode =
-        expressionNode.type === "call_expression" ? expressionNode : undefined;
-      const callee = callNode
-        ? (callNode.childForFieldName("function") ?? callNode.firstNamedChild)
-        : expressionNode;
-      if (!callee) continue;
-      const property =
-        callee.type === "member_expression"
-          ? (callee.childForFieldName("property") ?? callee.lastNamedChild)
-          : callee;
-      const name = property?.text.replace(/^@/, "");
-      if (!name) continue;
-      const argumentsNode = callNode?.childForFieldName("arguments");
-      result.push({
-        name,
-        expression: expressionNode.text.replace(/^@/, ""),
-        arguments:
-          argumentsNode?.namedChildren.map((argument) => argument.text) ?? [],
-      });
+      // @Foo        → identifier child
+      // @Foo(args)  → call_expression child; callee is identifier/member_expression
+      let nameNode: Parser.SyntaxNode | null = null;
+      for (const dc of child.children) {
+        if (dc.type === "identifier") {
+          nameNode = dc;
+          break;
+        }
+        if (dc.type === "call_expression") {
+          nameNode = dc.childForFieldName("function") ?? dc.firstNamedChild;
+          break;
+        }
+        if (dc.type === "member_expression") {
+          nameNode = dc.childForFieldName("property") ?? dc.lastNamedChild;
+          break;
+        }
+      }
+      if (nameNode) {
+        // Strip leading @ if present in text
+        const raw = nameNode.text.replace(/^@/, "");
+        if (raw) result.push(raw);
+      }
     }
     return result;
   }

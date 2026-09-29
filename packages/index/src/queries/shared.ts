@@ -7,13 +7,12 @@
 
 import Database from "@intentweave/sqlite-compat";
 import * as fs from "fs";
-import { openMigratedDatabase } from "../schema.js";
 
 /**
  * Open the index database in read-only mode.
  * Throws if the file doesn't exist.
  */
-const EXPECTED_SCHEMA_VERSION = "19";
+const EXPECTED_SCHEMA_VERSION = "14";
 
 export function openIndex(dbPath: string): Database.Database {
   if (!fs.existsSync(dbPath)) {
@@ -21,15 +20,7 @@ export function openIndex(dbPath: string): Database.Database {
       `Index not found at ${dbPath}. Run \`iw index build\` first.`,
     );
   }
-  let db: Database.Database;
-  try {
-    db = openMigratedDatabase(dbPath);
-  } catch (error) {
-    if (!(error instanceof Error && error.message.includes("_meta"))) {
-      throw error;
-    }
-    db = new Database(dbPath, { readonly: false });
-  }
+  const db = new Database(dbPath, { readonly: false });
   db.pragma("journal_mode = WAL");
 
   // Ensure performance indexes exist (one-time cost, idempotent IF NOT EXISTS).

@@ -9,7 +9,7 @@
  */
 
 import type {
-  LLMProviderV2,
+  LLMProvider,
   LLMRequest,
   LLMResponse,
   LLMProviderCapabilities,
@@ -85,23 +85,12 @@ const MODEL_CAPABILITIES: Record<string, ModelCapabilities> = {
   "gpt-4o": { maxTokens: 128000, supportsJsonSchema: true },
   "gpt-4o-mini": { maxTokens: 128000, supportsJsonSchema: true },
   "gpt-4o-mini-2024-07-18": { maxTokens: 128000, supportsJsonSchema: true },
-  "gpt-4-turbo": { maxTokens: 128000, supportsJsonSchema: false },
+  "gpt-4-turbo": { maxTokens: 128000, supportsJsonSchema: true },
   "gpt-4": { maxTokens: 8192, supportsJsonSchema: false },
-  "gpt-3.5-turbo": { maxTokens: 16385, supportsJsonSchema: false },
+  "gpt-3.5-turbo": { maxTokens: 16385, supportsJsonSchema: true },
 };
 
 const DEFAULT_MODEL = "gpt-5-mini";
-
-function resolveModelCapabilities(model: string): ModelCapabilities {
-  const exact = MODEL_CAPABILITIES[model];
-  if (exact) return exact;
-  if (model.startsWith("gpt-5")) return MODEL_CAPABILITIES["gpt-5"]!;
-  if (model.startsWith("gpt-4o-mini")) {
-    return MODEL_CAPABILITIES["gpt-4o-mini"]!;
-  }
-  if (model.startsWith("gpt-4o")) return MODEL_CAPABILITIES["gpt-4o"]!;
-  return { maxTokens: 16_384, supportsJsonSchema: false };
-}
 
 function usesCompletionTokensParam(model: string): boolean {
   const caps = MODEL_CAPABILITIES[model];
@@ -134,9 +123,8 @@ function getModelTemperature(model: string, requestedTemp?: number): number {
 // Provider implementation
 // =============================================================================
 
-export class OpenAILLMProvider implements LLMProviderV2 {
+export class OpenAILLMProvider implements LLMProvider {
   readonly name = "openai";
-  readonly contractVersion = 2 as const;
 
   private readonly config: Required<
     Pick<
@@ -169,21 +157,16 @@ export class OpenAILLMProvider implements LLMProviderV2 {
   }
 
   get capabilities(): LLMProviderCapabilities {
-    return this.capabilitiesFor(this.config.model);
-  }
-
-  capabilitiesFor(model = this.config.model): LLMProviderCapabilities {
-    const modelCaps = resolveModelCapabilities(model);
+    const model = this.config.model;
+    const modelCaps =
+      MODEL_CAPABILITIES[model] ?? MODEL_CAPABILITIES[DEFAULT_MODEL];
 
     return {
       maxInputTokens: modelCaps.maxTokens,
       supportsJsonSchema: modelCaps.supportsJsonSchema,
-      supportsStreaming: false,
-      supportsToolCalls: false,
+      supportsStreaming: true,
+      supportsToolCalls: true,
       supportsEmbeddings: true,
-      structuredOutputModes: modelCaps.supportsJsonSchema
-        ? ["strict", "text"]
-        : ["text"],
     };
   }
 
@@ -204,7 +187,6 @@ export class OpenAILLMProvider implements LLMProviderV2 {
         finishReason: "error",
         error:
           "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
-        errorKind: "provider",
       };
     }
 
@@ -236,26 +218,16 @@ export class OpenAILLMProvider implements LLMProviderV2 {
         body.max_tokens = maxTokensValue;
       }
 
-      if (
-        request.responseSchema &&
-        this.capabilitiesFor(model).supportsJsonSchema
-      ) {
+      if (request.responseSchema && this.capabilities.supportsJsonSchema) {
         body.response_format = {
           type: "json_schema",
           json_schema: {
-            name: request.responseSchemaName ?? "extraction_response",
+            name: "extraction_response",
             strict: true,
             schema: request.responseSchema,
           },
         };
       }
-
-      const timeoutSignal = AbortSignal.timeout(
-        request.timeoutMs ?? this.config.timeoutMs,
-      );
-      const signal = request.signal
-        ? AbortSignal.any([request.signal, timeoutSignal])
-        : timeoutSignal;
 
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         method: "POST",
@@ -267,10 +239,8 @@ export class OpenAILLMProvider implements LLMProviderV2 {
           }),
         },
         body: JSON.stringify(body),
-        signal,
+        signal: AbortSignal.timeout(request.timeoutMs ?? this.config.timeoutMs),
       });
-
-      const requestId = response.headers.get("x-request-id") ?? undefined;
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -281,16 +251,12 @@ export class OpenAILLMProvider implements LLMProviderV2 {
           model,
           finishReason: "error",
           error: `OpenAI API error (${response.status}): ${errorText}`,
-          errorKind: response.status === 429 ? "rate_limit" : "provider",
-          statusCode: response.status,
-          ...(requestId ? { requestId } : {}),
         };
       }
 
       const data = (await response.json()) as OpenAICompletionResponse;
       const choice = data.choices?.[0];
       const content = choice?.message?.content ?? "";
-      const refusal = choice?.message?.refusal ?? undefined;
 
       let parsed: unknown;
       if (request.responseSchema && content) {
@@ -307,32 +273,12 @@ export class OpenAILLMProvider implements LLMProviderV2 {
         tokensUsed: {
           prompt: data.usage?.prompt_tokens ?? 0,
           completion: data.usage?.completion_tokens ?? 0,
-          ...(data.usage?.completion_tokens_details?.reasoning_tokens ===
-          undefined
-            ? {}
-            : {
-                reasoning:
-                  data.usage.completion_tokens_details.reasoning_tokens,
-              }),
-          ...(data.usage?.prompt_tokens_details?.cached_tokens === undefined
-            ? {}
-            : { cachedPrompt: data.usage.prompt_tokens_details.cached_tokens }),
         },
         latencyMs: Date.now() - startTime,
         model: data.model ?? model,
-        finishReason: mapFinishReason(choice?.finish_reason, refusal),
-        ...(refusal ? { refusal } : {}),
-        ...(requestId ? { requestId } : {}),
-        ...(data.system_fingerprint
-          ? { modelRevision: data.system_fingerprint }
-          : {}),
+        finishReason: mapFinishReason(choice?.finish_reason),
       };
     } catch (error) {
-      const cancelled = request.signal?.aborted === true;
-      const timeout =
-        !cancelled &&
-        error instanceof Error &&
-        ["TimeoutError", "AbortError"].includes(error.name);
       return {
         content: "",
         tokensUsed: { prompt: 0, completion: 0 },
@@ -340,7 +286,6 @@ export class OpenAILLMProvider implements LLMProviderV2 {
         model,
         finishReason: "error",
         error: error instanceof Error ? error.message : String(error),
-        errorKind: cancelled ? "cancelled" : timeout ? "timeout" : "transport",
       };
     }
   }
@@ -376,11 +321,7 @@ export class OpenAILLMProvider implements LLMProviderV2 {
 // Helpers
 // =============================================================================
 
-function mapFinishReason(
-  reason?: string,
-  refusal?: string,
-): LLMResponse["finishReason"] {
-  if (refusal) return "refusal";
+function mapFinishReason(reason?: string): LLMResponse["finishReason"] {
   switch (reason) {
     case "stop":
       return "stop";
@@ -388,30 +329,21 @@ function mapFinishReason(
       return "length";
     case "tool_calls":
       return "tool_calls";
-    case "content_filter":
-      return "content_filter";
     default:
-      return "other";
+      return "stop";
   }
 }
 
 interface OpenAICompletionResponse {
   id: string;
   model: string;
-  system_fingerprint?: string;
   choices?: Array<{
-    message?: { content?: string | null; refusal?: string | null };
+    message?: { content?: string };
     finish_reason?: string;
   }>;
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
-    prompt_tokens_details?: {
-      cached_tokens?: number;
-    };
-    completion_tokens_details?: {
-      reasoning_tokens?: number;
-    };
   };
 }
 

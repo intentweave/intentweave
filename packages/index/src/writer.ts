@@ -12,15 +12,7 @@ import Database from "@intentweave/sqlite-compat";
 import * as path from "path";
 import * as fs from "fs";
 
-import {
-  discardClaimsHistory,
-  discardDatabaseFiles,
-  initSchema,
-  replaceDatabaseAtomically,
-  restoreClaimsHistory,
-  snapshotClaimsHistory,
-  temporaryDatabasePath,
-} from "./schema.js";
+import { initSchema } from "./schema.js";
 import { rulesCheckFromDb } from "./queries/rulesCheck.js";
 import type {
   IndexBuildOptions,
@@ -72,70 +64,60 @@ export function buildIndex(
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  const claimsHistory = snapshotClaimsHistory(dbPath);
-  const temporaryDbPath = temporaryDatabasePath(dbPath);
-  let result: IndexBuildResult | undefined;
+  // Remove existing database for clean rebuild
+  if (fs.existsSync(dbPath)) {
+    fs.unlinkSync(dbPath);
+  }
 
+  const db = new Database(dbPath);
   try {
-    const db = new Database(temporaryDbPath);
-    try {
-      initSchema(db);
-      restoreClaimsHistory(db, claimsHistory);
+    initSchema(db);
 
-      const knownPaths = collectKnownPaths(ax, tcg);
+    const knownPaths = collectKnownPaths(ax, tcg);
 
-      const counts = {
-        symbols: writeSymbols(db, ax),
-        annotations: writeAnnotations(db, annotations),
-        coOccurrences: writeCoOccurrences(db, cox),
-        coChanges: writeCoChanges(db, tcg),
-        files: writeFiles(db, ax, tcg, opts.docGroupOverride, knownPaths),
-        imports: writeImports(db, ax, knownPaths),
-        todos: writeTodos(db, ax),
-        rationale: writeRationale(db, ax),
-        calls: writeCalls(db, ax),
-        propertyAccesses: writePropertyAccesses(db, ax),
-        typeAssertions: writeTypeAssertions(db, ax),
-        testDescriptions: writeTestDescriptions(db, ax),
-        variableAssignments: writeVariableAssignments(db, ax),
-        defUseChains: writeDefUseChains(db, ax),
-      };
+    const counts = {
+      symbols: writeSymbols(db, ax),
+      annotations: writeAnnotations(db, annotations),
+      coOccurrences: writeCoOccurrences(db, cox),
+      coChanges: writeCoChanges(db, tcg),
+      files: writeFiles(db, ax, tcg, opts.docGroupOverride, knownPaths),
+      imports: writeImports(db, ax, knownPaths),
+      todos: writeTodos(db, ax),
+      rationale: writeRationale(db, ax),
+      calls: writeCalls(db, ax),
+      propertyAccesses: writePropertyAccesses(db, ax),
+      typeAssertions: writeTypeAssertions(db, ax),
+      testDescriptions: writeTestDescriptions(db, ax),
+      variableAssignments: writeVariableAssignments(db, ax),
+      defUseChains: writeDefUseChains(db, ax),
+    };
 
-      // Populate FTS indexes
-      rebuildFts(db);
+    // Populate FTS indexes
+    rebuildFts(db);
 
-      // Store build metadata
-      const meta = db.prepare(
-        `INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)`,
-      );
-      meta.run("session", opts.session);
-      meta.run("built_at", new Date().toISOString());
-      meta.run("depth", opts.depth);
-      meta.run("workspace_root", opts.workspaceRoot);
-      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-
-      const durationMs = Date.now() - start;
-      result = { dbPath, counts, durationMs };
-    } finally {
-      db.close();
-    }
-
-    replaceDatabaseAtomically(temporaryDbPath, dbPath);
-    opts.log?.(`Index built in ${result.durationMs}ms → ${dbPath}`);
-    opts.log?.(
-      `  symbols=${result.counts.symbols} annotations=${result.counts.annotations} ` +
-        `co_occurrences=${result.counts.coOccurrences} co_changes=${result.counts.coChanges} ` +
-        `files=${result.counts.files} imports=${result.counts.imports} todos=${result.counts.todos} rationale=${result.counts.rationale} ` +
-        `calls=${result.counts.calls} property_accesses=${result.counts.propertyAccesses} ` +
-        `type_assertions=${result.counts.typeAssertions} test_descriptions=${result.counts.testDescriptions} ` +
-        `variable_assignments=${result.counts.variableAssignments} def_use_chains=${result.counts.defUseChains}`,
+    // Store build metadata
+    const meta = db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)`,
     );
-    return result;
-  } catch (error) {
-    discardDatabaseFiles(temporaryDbPath);
-    throw error;
+    meta.run("session", opts.session);
+    meta.run("built_at", new Date().toISOString());
+    meta.run("depth", opts.depth);
+    meta.run("workspace_root", opts.workspaceRoot);
+
+    const durationMs = Date.now() - start;
+    opts.log?.(`Index built in ${durationMs}ms → ${dbPath}`);
+    opts.log?.(
+      `  symbols=${counts.symbols} annotations=${counts.annotations} ` +
+        `co_occurrences=${counts.coOccurrences} co_changes=${counts.coChanges} ` +
+        `files=${counts.files} imports=${counts.imports} todos=${counts.todos} rationale=${counts.rationale} ` +
+        `calls=${counts.calls} property_accesses=${counts.propertyAccesses} ` +
+        `type_assertions=${counts.typeAssertions} test_descriptions=${counts.testDescriptions} ` +
+        `variable_assignments=${counts.variableAssignments} def_use_chains=${counts.defUseChains}`,
+    );
+
+    return { dbPath, counts, durationMs };
   } finally {
-    discardClaimsHistory(claimsHistory);
+    db.close();
   }
 }
 
