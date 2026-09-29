@@ -378,17 +378,14 @@ function resolveCariNativeBinary(): string | null {
   // createRequire so this function stays synchronous.
   try {
     const _require = createRequire(import.meta.url);
-    const exeSuffix = process.platform === "win32" ? ".exe" : "";
     const platformPkgs: Record<string, string> = {
       "darwin-arm64": "@intentweave/cari-native-darwin-arm64",
-      "darwin-x64": "@intentweave/cari-native-darwin-x64",
       "linux-x64": "@intentweave/cari-native-linux-x64",
       "linux-arm64": "@intentweave/cari-native-linux-arm64",
-      "win32-x64": "@intentweave/cari-native-win32-x64",
     };
     const pkgName = platformPkgs[`${process.platform}-${process.arch}`];
     if (pkgName) {
-      const binPath = _require.resolve(`${pkgName}/bin/cari-build${exeSuffix}`);
+      const binPath = _require.resolve(`${pkgName}/bin/cari-build`);
       accessSync(binPath, fsConstants.X_OK);
       return binPath;
     }

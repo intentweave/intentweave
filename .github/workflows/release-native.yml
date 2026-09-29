@@ -11,8 +11,7 @@ name: Release Native Binary
 # Authentication: requires NPM_TOKEN repo secret (classic automation token).
 # Set it at: GitHub repo → Settings → Secrets → Actions → NPM_TOKEN.
 #
-# Supported targets (Windows not included — add win32-x64 / windows-latest
-# to the matrix below if Windows user demand warrants it):
+# Supported targets: macOS arm64 and Linux arm64/x64.
 
 on:
   release:
@@ -76,14 +75,17 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build cari-build binary
-        run: ./scripts/package-native.sh
+        shell: bash
+        run: bash ./scripts/package-native.sh
 
       - name: Verify binary runs
+        shell: bash
         run: packages/cari-native-${{ matrix.target }}/bin/cari-build --version
 
       - name: Publish @intentweave/cari-native-${{ matrix.target }}
         if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/cari-native-${{ matrix.target }}
+        shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -129,5 +131,5 @@ jobs:
           if npm view "${PKG}@${VER}" version >/dev/null 2>&1; then
             echo "Already published ${PKG}@${VER} — skipping"
           else
-            npm publish --access public --provenance
+            pnpm publish --access public --provenance
           fi

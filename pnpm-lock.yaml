@@ -80,19 +80,12 @@ importers:
       '@intentweave/cari-native-linux-x64':
         specifier: workspace:*
         version: link:../cari-native-linux-x64
-      '@intentweave/cari-native-win32-x64':
-        specifier: workspace:*
-        version: link:../cari-native-win32-x64
 
   packages/cari-native-darwin-arm64: {}
-
-  packages/cari-native-darwin-x64: {}
 
   packages/cari-native-linux-arm64: {}
 
   packages/cari-native-linux-x64: {}
-
-  packages/cari-native-win32-x64: {}
 
   packages/cli:
     dependencies:
