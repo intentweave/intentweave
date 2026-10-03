@@ -1,6 +1,6 @@
 {
   "name": "@intentweave/cari-native",
-  "version": "0.17.4",
+  "version": "0.17.5",
   "description": "Native Rust binary for CARI index building — platform-specific binary resolver",
   "type": "module",
   "files": [
