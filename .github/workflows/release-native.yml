@@ -1,15 +1,14 @@
-name: Release Native Binary
+name: Release Packages
 
-# Builds cari-build for each supported platform and publishes the
-# platform-specific npm packages, then publishes the @intentweave/cari-native
-# wrapper that consumers depend on.
+# Builds the workspace and native binaries, then stages every package for npm
+# review. A maintainer approves staged packages on npm to publish them.
 #
 # Triggers:
 #   - GitHub Release published (automatic on tag v*)
 #   - Manual workflow_dispatch (for re-publishing or dry runs)
 #
 # Authentication: npm Trusted Publishing via GitHub Actions OIDC; no npm token
-# is needed. Configure each published package with owner `intentweave`, repo
+# is needed. Configure every package with owner `intentweave`, repo
 # `intentweave`, and workflow filename `release-native.yml` on npmjs.com.
 #
 # Supported targets: macOS arm64 and Linux arm64/x64.
@@ -38,7 +37,6 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     permissions:
-      id-token: write # Required for npm OIDC (Trusted Publishers)
       contents: read
     strategy:
       fail-fast: false
@@ -69,10 +67,6 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      # npm's OIDC trusted publishing support requires npm CLI >= 11.5.1.
-      - name: Install npm CLI with trusted publishing support
-        run: npm install --global npm@11.5.1
-
       # --no-frozen-lockfile: platform packages whose os/cpu don't match the
       # current runner are skipped by pnpm and won't be in the lockfile for
       # that platform — that's expected behaviour for optional native packages.
@@ -87,22 +81,17 @@ jobs:
         shell: bash
         run: packages/cari-native-${{ matrix.target }}/bin/cari-build --version
 
-      - name: Publish @intentweave/cari-native-${{ matrix.target }}
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        working-directory: packages/cari-native-${{ matrix.target }}
-        shell: bash
-        run: |
-          PKG=$(node -p "require('./package.json').name")
-          VER=$(node -p "require('./package.json').version")
-          if npm view "${PKG}@${VER}" version >/dev/null 2>&1; then
-            echo "Already published ${PKG}@${VER} — skipping"
-          else
-            npm publish --access public
-          fi
+      - name: Upload native binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cari-build-${{ matrix.target }}
+          path: packages/cari-native-${{ matrix.target }}/bin/cari-build
+          if-no-files-found: error
+          retention-days: 1
 
-  # ─── Publish the wrapper package once all platform builds succeed ─────────
-  publish-wrapper:
-    name: Publish @intentweave/cari-native wrapper
+  # ─── Build and stage every workspace package after all native builds pass ──
+  stage-release:
+    name: Build and stage packages
     runs-on: ubuntu-latest
     needs: build-native
     permissions:
@@ -120,24 +109,83 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      # npm's OIDC trusted publishing support requires npm CLI >= 11.5.1.
-      - name: Install npm CLI with trusted publishing support
-        run: npm install --global npm@11.5.1
+      # Staged publishing requires npm CLI >= 11.15.0.
+      - name: Install npm CLI with staged publishing support
+        run: npm install --global npm@11.15.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Publish @intentweave/cari-native
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Test workspace packages
+        run: pnpm test
+
+      - name: Download macOS arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cari-build-darwin-arm64
+          path: packages/cari-native-darwin-arm64/bin
+
+      - name: Download Linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cari-build-linux-x64
+          path: packages/cari-native-linux-x64/bin
+
+      - name: Download Linux arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cari-build-linux-arm64
+          path: packages/cari-native-linux-arm64/bin
+
+      - name: Restore native binary permissions
+        run: chmod +x packages/cari-native-*/bin/cari-build
+
+      - name: Stage all workspace packages
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        working-directory: packages/cari-native
+        shell: bash
         run: |
-          PKG=$(node -p "require('./package.json').name")
-          VER=$(node -p "require('./package.json').version")
-          if npm view "${PKG}@${VER}" version >/dev/null 2>&1; then
-            echo "Already published ${PKG}@${VER} — skipping"
-          else
-            # pnpm pack rewrites workspace:* dependencies to the matching
-            # package versions; npm performs the actual OIDC-authenticated publish.
-            pnpm pack --pack-destination "$RUNNER_TEMP"
-            npm publish "$RUNNER_TEMP/intentweave-cari-native-${VER}.tgz" --access public
-          fi
+          set -euo pipefail
+
+          stage_package() {
+            local package_dir="$1"
+            local package_name version archive_name tarball
+
+            package_name=$(node -p "require('./${package_dir}/package.json').name")
+            version=$(node -p "require('./${package_dir}/package.json').version")
+
+            if npm view "${package_name}@${version}" version >/dev/null 2>&1; then
+              echo "Already published ${package_name}@${version} — skipping"
+              return
+            fi
+
+            archive_name="${package_name#@}"
+            archive_name="${archive_name//\//-}"
+            tarball="${RUNNER_TEMP}/${archive_name}-${version}.tgz"
+
+            (cd "$package_dir" && pnpm pack --pack-destination "$RUNNER_TEMP")
+            test -f "$tarball"
+            stage_log="${RUNNER_TEMP}/npm-stage.log"
+            if npm stage publish "$tarball" --access public >"$stage_log" 2>&1; then
+              cat "$stage_log"
+            elif grep -Fq "previously staged version" "$stage_log"; then
+              cat "$stage_log"
+              echo "A stage already exists for ${package_name}@${version}; keeping it."
+            else
+              cat "$stage_log" >&2
+              exit 1
+            fi
+          }
+
+          for manifest in packages/*/package.json; do
+            package_dir="${manifest%/package.json}"
+            package_name=$(node -p "require('./${manifest}').name")
+            if [ "$package_name" = "@intentweave/cari-native" ]; then
+              continue
+            fi
+            stage_package "$package_dir"
+          done
+
+          stage_package packages/cari-native
