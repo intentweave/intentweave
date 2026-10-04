@@ -24,8 +24,8 @@
     "typecheck": "turbo run typecheck",
     "format": "prettier --write '**/*.{ts,tsx,json,md}'",
     "format:check": "prettier --check '**/*.{ts,tsx,json,md}'",
-    "publish:all": "pnpm build && pnpm -r publish --access public",
-    "publish:dry": "pnpm build && pnpm -r publish --access public --dry-run",
+    "publish:all": "gh workflow run release-native.yml --ref main",
+    "publish:dry": "gh workflow run release-native.yml --ref main -f dry_run=true",
     "version:bump": "./scripts/bump-version.sh",
     "docs:gate:intentweave-org": "node scripts/check-intentweave-org-docs.mjs"
   },

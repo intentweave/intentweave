@@ -35,7 +35,6 @@ ARCH_RAW="$(uname -m)"
 case "$OS_RAW" in
   Darwin) NPM_OS="darwin" ;;
   Linux)  NPM_OS="linux"  ;;
-  MINGW*|MSYS*|CYGWIN*) NPM_OS="win32" ;;
   *) echo "error: unsupported OS: $OS_RAW" >&2; exit 1 ;;
 esac
 
@@ -45,10 +44,14 @@ case "$ARCH_RAW" in
   *) echo "error: unsupported arch: $ARCH_RAW" >&2; exit 1 ;;
 esac
 
+if [ "$NPM_OS" = "darwin" ] && [ "$NPM_ARCH" != "arm64" ]; then
+  echo "error: unsupported macOS architecture: $ARCH_RAW" >&2
+  exit 1
+fi
+
 PKG_NAME="cari-native-${NPM_OS}-${NPM_ARCH}"
 PKG_DIR="$REPO_ROOT/packages/$PKG_NAME"
 BIN_NAME="cari-build"
-[ "$NPM_OS" = "win32" ] && BIN_NAME="cari-build.exe"
 
 echo "==> Building $BIN_NAME for ${NPM_OS}-${NPM_ARCH} ($PROFILE)"
 

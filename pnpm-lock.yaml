@@ -83,19 +83,12 @@ importers:
       '@intentweave/cari-native-linux-x64':
         specifier: workspace:*
         version: link:../cari-native-linux-x64
-      '@intentweave/cari-native-win32-x64':
-        specifier: workspace:*
-        version: link:../cari-native-win32-x64
 
   packages/cari-native-darwin-arm64: {}
-
-  packages/cari-native-darwin-x64: {}
 
   packages/cari-native-linux-arm64: {}
 
   packages/cari-native-linux-x64: {}
-
-  packages/cari-native-win32-x64: {}
 
   packages/cli:
     dependencies:
@@ -2457,6 +2450,14 @@ snapshots:
     optionalDependencies:
       vite: 5.4.21(@types/node@20.19.41)(lightningcss@1.31.1)
 
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.8.0)(lightningcss@1.31.1))':
+    dependencies:
+      '@vitest/spy': 2.1.9
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 5.4.21(@types/node@25.8.0)(lightningcss@1.31.1)
+
   '@vitest/pretty-format@2.1.9':
     dependencies:
       tinyrainbow: 1.2.0
@@ -3525,7 +3526,7 @@ snapshots:
   vitest@2.1.9(@types/node@25.8.0)(lightningcss@1.31.1):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@20.19.41)(lightningcss@1.31.1))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.8.0)(lightningcss@1.31.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9

@@ -76,9 +76,11 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build cari-build binary
-        run: ./scripts/package-native.sh
+        shell: bash
+        run: bash ./scripts/package-native.sh
 
       - name: Verify binary runs
+        shell: bash
         run: packages/cari-native-${{ matrix.target }}/bin/cari-build --version
 
       - name: Publish @intentweave/cari-native-${{ matrix.target }}
@@ -86,6 +88,7 @@ jobs:
         working-directory: packages/cari-native-${{ matrix.target }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
         run: |
           PKG=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
@@ -123,11 +126,12 @@ jobs:
         working-directory: packages/cari-native
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
         run: |
           PKG=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
           if npm view "${PKG}@${VER}" version >/dev/null 2>&1; then
             echo "Already published ${PKG}@${VER} — skipping"
           else
-            npm publish --access public --provenance
+            pnpm publish --access public --provenance
           fi
