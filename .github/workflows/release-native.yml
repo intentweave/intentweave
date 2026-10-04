@@ -1,7 +1,7 @@
 name: Release Packages
 
-# Builds the workspace and native binaries, then stages every package for npm
-# review. A maintainer approves staged packages on npm to publish them.
+# Builds the workspace and native binaries, then publishes every package
+# directly to npm using GitHub Actions OIDC.
 #
 # Triggers:
 #   - GitHub Release published (automatic on tag v*)
@@ -89,9 +89,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # ─── Build and stage every workspace package after all native builds pass ──
-  stage-release:
-    name: Build and stage packages
+  # ─── Build and publish every workspace package after native builds pass ──
+  publish-release:
+    name: Build and publish packages
     runs-on: ubuntu-latest
     needs: build-native
     permissions:
@@ -109,9 +109,9 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      # Staged publishing requires npm CLI >= 11.15.0.
-      - name: Install npm CLI with staged publishing support
-        run: npm install --global npm@11.15.0
+      # npm's OIDC trusted publishing support requires npm CLI >= 11.5.1.
+      - name: Install npm CLI with trusted publishing support
+        run: npm install --global npm@11.21.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -143,13 +143,13 @@ jobs:
       - name: Restore native binary permissions
         run: chmod +x packages/cari-native-*/bin/cari-build
 
-      - name: Stage all workspace packages
+      - name: Publish all workspace packages
         if: ${{ github.event.inputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          stage_package() {
+          publish_package() {
             local package_dir="$1"
             local package_name version archive_name tarball
 
@@ -167,16 +167,7 @@ jobs:
 
             (cd "$package_dir" && pnpm pack --pack-destination "$RUNNER_TEMP")
             test -f "$tarball"
-            stage_log="${RUNNER_TEMP}/npm-stage.log"
-            if npm stage publish "$tarball" --access public >"$stage_log" 2>&1; then
-              cat "$stage_log"
-            elif grep -Fq "previously staged version" "$stage_log"; then
-              cat "$stage_log"
-              echo "A stage already exists for ${package_name}@${version}; keeping it."
-            else
-              cat "$stage_log" >&2
-              exit 1
-            fi
+            npm publish "$tarball" --access public
           }
 
           for manifest in packages/*/package.json; do
@@ -185,7 +176,7 @@ jobs:
             if [ "$package_name" = "@intentweave/cari-native" ]; then
               continue
             fi
-            stage_package "$package_dir"
+            publish_package "$package_dir"
           done
 
-          stage_package packages/cari-native
+          publish_package packages/cari-native
