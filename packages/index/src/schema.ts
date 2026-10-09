@@ -428,7 +428,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "19";
+export const CURRENT_SCHEMA_VERSION = "20";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -642,6 +642,7 @@ export function openMigratedDatabase(
   migrateG1a: (db: Database.Database) => void = migrateSchema16To17,
   migrateG1b: (db: Database.Database) => void = migrateSchema17To18,
   migrateG2: (db: Database.Database) => void = migrateSchema18To19,
+  migrateG6b: (db: Database.Database) => void = migrateSchema19To20,
 ): Database.Database {
   let database = new Database(dbPath);
   let closed = false;
@@ -684,6 +685,10 @@ export function openMigratedDatabase(
     if (readSchemaVersion(database) === "18") {
       // G2 is additive and transactionally rolls back without a restore snapshot.
       migrateG2(database);
+    }
+    if (readSchemaVersion(database) === "19") {
+      // G6b rebuilds candidate_reviews atomically and preserves all history.
+      migrateG6b(database);
     }
     migrateSchemaToCurrent(database);
     return database;
@@ -1317,10 +1322,192 @@ export function migrateSchema18To19(db: Database.Database): void {
 }
 
 /**
+ * Upgrade schema 19 Candidate Reviews with recommendation provenance links.
+ * Existing rows retain their IDs and timestamps. Historical AI recommendations
+ * are backfilled from the Candidate version's single inference_id; malformed
+ * rows fail before the old table is replaced.
+ */
+export function migrateSchema19To20(db: Database.Database): void {
+  const columns = db
+    .prepare(`PRAGMA table_info(candidate_reviews)`)
+    .all() as Array<{ name: string }>;
+  const requiredColumns = [
+    "id",
+    "candidate_id",
+    "promoted_claim_identity_id",
+    "actor_kind",
+    "actor_id",
+    "decision",
+    "effect",
+    "rationale",
+    "provenance_json",
+    "created_at",
+  ];
+  if (
+    requiredColumns.some(
+      (name) => !columns.some((column) => column.name === name),
+    )
+  ) {
+    throw new Error(
+      "Schema 19 database has malformed candidate_reviews; expected the schema-19 review columns",
+    );
+  }
+
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      const rows = db
+        .prepare(
+          `SELECT id, candidate_id, promoted_claim_identity_id, actor_kind,
+                  actor_id, decision, effect, rationale, provenance_json, created_at
+           FROM candidate_reviews ORDER BY created_at, id`,
+        )
+        .all() as Array<{
+        id: string;
+        candidate_id: string;
+        promoted_claim_identity_id: string | null;
+        actor_kind: string;
+        actor_id: string;
+        decision: string;
+        effect: string;
+        rationale: string;
+        provenance_json: string;
+        created_at: number;
+      }>;
+
+      const migrated = rows.map((row) => {
+        if (row.actor_kind === "ai") {
+          if (
+            row.effect !== "recommendation" ||
+            row.promoted_claim_identity_id !== null
+          ) {
+            throw new Error(
+              `Schema 19 candidate review ${row.id} is an invalid AI recommendation`,
+            );
+          }
+          const candidate = db
+            .prepare(`SELECT inference_id FROM claim_candidates WHERE id = ?`)
+            .get(row.candidate_id) as
+            | { inference_id: string | null }
+            | undefined;
+          if (!candidate) {
+            throw new Error(
+              `Schema 19 candidate review ${row.id} references missing Candidate ${row.candidate_id}`,
+            );
+          }
+          if (!candidate.inference_id) {
+            throw new Error(
+              `Schema 19 AI recommendation ${row.id} has no unique Candidate inference to backfill`,
+            );
+          }
+          const inference = db
+            .prepare(
+              `SELECT 1 AS present FROM candidate_inferences WHERE id = ?`,
+            )
+            .get(candidate.inference_id) as { present: number } | undefined;
+          if (!inference) {
+            throw new Error(
+              `Schema 19 AI recommendation ${row.id} references missing Inference ${candidate.inference_id}`,
+            );
+          }
+          return { ...row, inferenceId: candidate.inference_id };
+        }
+        if (
+          !["human", "policy"].includes(row.actor_kind) ||
+          row.effect !== "effective"
+        ) {
+          throw new Error(
+            `Schema 19 candidate review ${row.id} has unsupported historical actor/effect semantics`,
+          );
+        }
+        return { ...row, inferenceId: null as string | null };
+      });
+
+      db.exec(`
+        CREATE TABLE candidate_reviews_g6b (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+          promoted_claim_identity_id TEXT REFERENCES claim_identities(id),
+          actor_kind TEXT NOT NULL,
+          actor_id TEXT NOT NULL,
+          decision TEXT NOT NULL,
+          effect TEXT NOT NULL,
+          rationale TEXT NOT NULL,
+          provenance_json TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          inference_id TEXT REFERENCES candidate_inferences(id),
+          based_on_recommendation_id TEXT REFERENCES candidate_reviews_g6b(id),
+          CHECK (actor_kind IN ('human', 'ai', 'policy')),
+          CHECK (decision IN ('promote', 'reject', 'suppress', 'defer')),
+          CHECK (effect IN ('recommendation', 'effective')),
+          CHECK (
+            (actor_kind = 'ai' AND effect = 'recommendation'
+              AND inference_id IS NOT NULL
+              AND promoted_claim_identity_id IS NULL
+              AND based_on_recommendation_id IS NULL)
+            OR
+            (actor_kind IN ('human', 'policy') AND effect = 'effective'
+              AND inference_id IS NULL)
+          ),
+          CHECK (
+            based_on_recommendation_id IS NULL
+            OR (actor_kind IN ('human', 'policy') AND effect = 'effective')
+          )
+        );
+      `);
+      const insert = db.prepare(
+        `INSERT INTO candidate_reviews_g6b (
+           id, candidate_id, promoted_claim_identity_id, actor_kind, actor_id,
+           decision, effect, rationale, provenance_json, created_at,
+           inference_id, based_on_recommendation_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      );
+      for (const row of migrated) {
+        insert.run(
+          row.id,
+          row.candidate_id,
+          row.promoted_claim_identity_id,
+          row.actor_kind,
+          row.actor_id,
+          row.decision,
+          row.effect,
+          row.rationale,
+          row.provenance_json,
+          row.created_at,
+          row.inferenceId,
+        );
+      }
+      db.exec(`
+        DROP TABLE candidate_reviews;
+        ALTER TABLE candidate_reviews_g6b RENAME TO candidate_reviews;
+        CREATE INDEX idx_candidate_reviews_candidate
+          ON candidate_reviews(candidate_id, created_at);
+        CREATE INDEX idx_candidate_reviews_inference
+          ON candidate_reviews(inference_id, created_at);
+        CREATE INDEX idx_candidate_reviews_basis
+          ON candidate_reviews(based_on_recommendation_id);
+      `);
+      db.prepare(
+        `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '20')`,
+      ).run();
+      const violations = db
+        .prepare(`PRAGMA foreign_key_check`)
+        .all() as unknown[];
+      if (violations.length > 0) {
+        throw new Error("Schema 20 migration left foreign key violations");
+      }
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
+/**
  * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
- * Supported transitions: 14 -> 15 -> 16 -> 17 -> 18 -> 19,
- * 15 -> 16 -> 17 -> 18 -> 19, 16 -> 17 -> 18 -> 19,
- * 17 -> 18 -> 19, and 18 -> 19.
+ * Supported transitions: 14 -> 15 -> 16 -> 17 -> 18 -> 19 -> 20,
+ * 15 -> 16 -> 17 -> 18 -> 19 -> 20, 16 -> 17 -> 18 -> 19 -> 20,
+ * 17 -> 18 -> 19 -> 20, 18 -> 19 -> 20, and 19 -> 20.
  * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
  */
 export function migrateSchemaToCurrent(db: Database.Database): void {
@@ -1331,6 +1518,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema16To17(db);
     migrateSchema17To18(db);
     migrateSchema18To19(db);
+    migrateSchema19To20(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1338,21 +1526,29 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema16To17(db);
     migrateSchema17To18(db);
     migrateSchema18To19(db);
+    migrateSchema19To20(db);
     return;
   }
   if (schemaVersion === "16") {
     migrateSchema16To17(db);
     migrateSchema17To18(db);
     migrateSchema18To19(db);
+    migrateSchema19To20(db);
     return;
   }
   if (schemaVersion === "17") {
     migrateSchema17To18(db);
     migrateSchema18To19(db);
+    migrateSchema19To20(db);
     return;
   }
   if (schemaVersion === "18") {
     migrateSchema18To19(db);
+    migrateSchema19To20(db);
+    return;
+  }
+  if (schemaVersion === "19") {
+    migrateSchema19To20(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1374,6 +1570,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "16" &&
     schemaVersion !== "17" &&
     schemaVersion !== "18" &&
+    schemaVersion !== "19" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

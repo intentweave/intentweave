@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "@intentweave/sqlite-compat";
 import {
+  CandidateInferenceStore,
   CandidateStore,
   ClaimsStore,
   fingerprint,
@@ -325,15 +326,58 @@ describe("G6a Candidate recommendation context", () => {
       normalizedValue: { method: "POST", path: "/admin" },
       statement: { method: "POST", path: "/admin" },
     });
+    const candidate = new CandidateStore(fixture.database).details(
+      candidateId,
+    )!;
+    const initialPreview = buildCandidateRecommendationPreview({
+      database: fixture.database,
+      workspaceRoot: fixture.root,
+      provider: "openai",
+      config: config(),
+    });
+    const context = initialPreview.contexts[0]!;
+    const inference = new CandidateInferenceStore(fixture.database).persist({
+      identityKey: candidate.identityKey,
+      adapterId: "candidate-triage-recommendation",
+      contractVersion: "1",
+      providerId: "openai",
+      modelId: "provider-default",
+      promptVersion: "1",
+      inputFingerprint: context.contextFingerprint,
+      normalizedOutput: { recommendation: "promote" },
+      evidenceVersionIds: candidate.evidence.flatMap((evidence) =>
+        evidence.evidenceVersionId ? [evidence.evidenceVersionId] : [],
+      ),
+      proposedSubjectBindings: candidate.subjects.map((subject) => ({
+        kind: subject.kind,
+        identityKey: subject.identityKey,
+        role: subject.role,
+      })),
+      confidence: "probable",
+      rationale: "Relevant endpoint",
+      provenance: { test: true },
+    });
     fixture.database
       .prepare(
         `INSERT INTO candidate_reviews (
            id, candidate_id, promoted_claim_identity_id, actor_kind, actor_id,
-           decision, effect, rationale, provenance_json, created_at
+           decision, effect, rationale, provenance_json, created_at,
+           inference_id, based_on_recommendation_id
          ) VALUES (?, ?, NULL, 'ai', 'fixture-model', 'promote',
-                   'recommendation', 'Relevant endpoint', '{}', ?)`,
+                   'recommendation', 'Relevant endpoint', ?, ?, ?, NULL)`,
       )
-      .run("candidate-review:existing-recommendation", candidateId, Date.now());
+      .run(
+        "candidate-review:existing-recommendation",
+        candidateId,
+        JSON.stringify({
+          recommendation: {
+            candidateObservationFingerprint: candidate.observationFingerprint,
+            contextFingerprint: context.contextFingerprint,
+          },
+        }),
+        Date.now(),
+        inference.id,
+      );
 
     const preview = buildCandidateRecommendationPreview({
       database: fixture.database,
@@ -350,6 +394,45 @@ describe("G6a Candidate recommendation context", () => {
         reasons: ["already-recommended"],
       }),
     ]);
+    fixture.database.close();
+  });
+
+  it("keeps the context fingerprint stable across lifecycle-only Triage", () => {
+    const fixture = workspace();
+    writeFileSync(
+      path.join(fixture.root, "src", "admin.ts"),
+      "export const admin = true;\n",
+    );
+    const candidateId = persistCandidate(fixture.database, {
+      identityKey: "endpoint:triage-stability",
+      claimType: "CLM-ENDPOINT-AUTHENTICATED",
+      candidateKind: "endpoint-authentication",
+      confidence: "certain",
+      sourceKind: "endpoint-handler",
+      filePath: "src/admin.ts",
+      normalizedValue: { method: "POST", path: "/admin" },
+      statement: { method: "POST", path: "/admin" },
+    });
+
+    const before = buildCandidateRecommendationPreview({
+      database: fixture.database,
+      workspaceRoot: fixture.root,
+      provider: "openai",
+      config: config(),
+    }).contexts[0]!;
+    const triaged = new CandidateStore(fixture.database).triage(candidateId, {
+      basis: "test",
+    });
+    const after = buildCandidateRecommendationPreview({
+      database: fixture.database,
+      workspaceRoot: fixture.root,
+      provider: "openai",
+      config: config(),
+    }).contexts[0]!;
+
+    expect(after.candidate.id).toBe(triaged.id);
+    expect(after.candidate.state).toBe("triaged");
+    expect(after.contextFingerprint).toBe(before.contextFingerprint);
     fixture.database.close();
   });
 });

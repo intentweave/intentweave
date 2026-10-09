@@ -7,6 +7,7 @@ import { CandidateStore } from "../claims/candidates.js";
 import { CandidateInferenceStore } from "../claims/inferences.js";
 import { ClaimsStore } from "../claims/store.js";
 import { fingerprint } from "../claims/canonical.js";
+import { createCandidateTriageRecommendation } from "../claims/recommendations.js";
 import { initSchema } from "../schema.js";
 
 describe("CandidateStore", () => {
@@ -208,15 +209,45 @@ describe("CandidateStore", () => {
     const discovered = store.persist(input(1800));
     const correlated = store.transition(discovered.id, "correlated", {});
     const triaged = store.transition(correlated.id, "triaged", {});
-    const recommendation = store.review({
-      candidateId: triaged.id,
-      actorKind: "ai",
-      actorId: "triage-model",
-      decision: "promote",
-      effect: "recommendation",
+    const inference = new CandidateInferenceStore(db).persist({
+      identityKey: triaged.identityKey,
+      adapterId: "g6b-test",
+      contractVersion: "1",
+      providerId: "fixture",
+      modelId: "fixture-model",
+      promptVersion: "1",
+      inputFingerprint: "candidate-context",
+      normalizedOutput: {
+        recommendation: "defer",
+        rationale: "Strong default convention",
+        evidenceVersionIds: [],
+        confidence: "ambiguous",
+        priority: "low",
+      },
+      evidenceVersionIds: [],
+      proposedSubjectBindings: [],
+      confidence: "ambiguous",
       rationale: "Strong default convention",
-      provenance: { model: "test" },
+      provenance: { fixture: true },
     });
+    const recommendation = store.persistRecommendation(
+      createCandidateTriageRecommendation(
+        {
+          recommendation: "defer",
+          rationale: "Strong default convention",
+          evidenceVersionIds: [],
+          confidence: "ambiguous",
+          priority: "low",
+        },
+        {
+          inferenceId: inference.id,
+          candidateId: triaged.id,
+          candidateFingerprint: triaged.fingerprint,
+          candidateObservationFingerprint: triaged.observationFingerprint,
+          contextFingerprint: "candidate-context",
+        },
+      ),
+    );
     const deferred = store.review({
       candidateId: triaged.id,
       actorKind: "human",
@@ -242,6 +273,224 @@ describe("CandidateStore", () => {
     expect(
       db.prepare(`SELECT COUNT(*) AS count FROM candidate_reviews`).get(),
     ).toEqual({ count: 3 });
+  });
+
+  it("attaches recommendations to discovered Candidates without changing state", () => {
+    const discovered = store.persist(input(1800));
+    const inference = new CandidateInferenceStore(db).persist({
+      identityKey: discovered.identityKey,
+      adapterId: "g6b-test",
+      contractVersion: "1",
+      providerId: "fixture",
+      modelId: "fixture-model",
+      promptVersion: "1",
+      inputFingerprint: "discovered-context",
+      normalizedOutput: {
+        recommendation: "defer",
+        rationale: "Needs human triage",
+        evidenceVersionIds: [],
+        confidence: "ambiguous",
+        priority: "low",
+      },
+      evidenceVersionIds: [],
+      proposedSubjectBindings: [],
+      confidence: "ambiguous",
+      rationale: "Needs human triage",
+      provenance: { fixture: true },
+    });
+    const envelope = createCandidateTriageRecommendation(
+      {
+        recommendation: "defer",
+        rationale: "Needs human triage",
+        evidenceVersionIds: [],
+        confidence: "ambiguous",
+        priority: "low",
+      },
+      {
+        inferenceId: inference.id,
+        candidateId: discovered.id,
+        candidateFingerprint: discovered.fingerprint,
+        candidateObservationFingerprint: discovered.observationFingerprint,
+        contextFingerprint: "discovered-context",
+      },
+    );
+    expect(() =>
+      store.persistRecommendation({
+        ...envelope,
+        rationale: "Tampered after inference persistence",
+      }),
+    ).toThrow("does not match the persisted Inference output");
+    expect(() =>
+      store.persistRecommendation({
+        ...envelope,
+        contextFingerprint: "different-context",
+      }),
+    ).toThrow(
+      "context fingerprint does not match the persisted Inference input",
+    );
+    const recommendation = store.persistRecommendation(envelope);
+
+    expect(recommendation.candidate).toMatchObject({
+      id: discovered.id,
+      state: "correlated",
+    });
+    expect(
+      db.prepare(`SELECT COUNT(*) AS count FROM candidate_reviews`).get(),
+    ).toEqual({ count: 1 });
+    expect(
+      store.recommendationStatus({
+        identityKey: discovered.identityKey,
+        observationFingerprint: discovered.observationFingerprint,
+        contextFingerprint: "discovered-context",
+        adapterId: inference.adapterId,
+        adapterContractVersion: inference.contractVersion,
+        promptVersion: inference.promptVersion,
+        providerId: inference.providerId,
+        requestedModelId: inference.modelId,
+      }),
+    ).toEqual({
+      currentRecommendationIds: [recommendation.id],
+      staleRecommendationIds: [],
+    });
+    expect(
+      store.recommendationStatus({
+        identityKey: discovered.identityKey,
+        observationFingerprint: discovered.observationFingerprint,
+        contextFingerprint: "changed-context",
+        adapterId: inference.adapterId,
+        adapterContractVersion: inference.contractVersion,
+        promptVersion: inference.promptVersion,
+        providerId: inference.providerId,
+        requestedModelId: inference.modelId,
+      }),
+    ).toEqual({
+      currentRecommendationIds: [],
+      staleRecommendationIds: [recommendation.id],
+    });
+    expect(
+      store.recommendationStatus({
+        identityKey: discovered.identityKey,
+        observationFingerprint: discovered.observationFingerprint,
+        contextFingerprint: "discovered-context",
+        adapterId: "different-adapter",
+        adapterContractVersion: inference.contractVersion,
+        promptVersion: inference.promptVersion,
+        providerId: inference.providerId,
+        requestedModelId: inference.modelId,
+      }),
+    ).toEqual({
+      currentRecommendationIds: [],
+      staleRecommendationIds: [recommendation.id],
+    });
+
+    const triaged = store.triage(recommendation.candidate.id, {
+      basis: "human-review-inbox",
+    });
+    expect(
+      store.recommendationStatus({
+        identityKey: discovered.identityKey,
+        observationFingerprint: discovered.observationFingerprint,
+        contextFingerprint: "discovered-context",
+        adapterId: inference.adapterId,
+        adapterContractVersion: inference.contractVersion,
+        promptVersion: inference.promptVersion,
+        providerId: inference.providerId,
+        requestedModelId: inference.modelId,
+      }),
+    ).toEqual({
+      currentRecommendationIds: [recommendation.id],
+      staleRecommendationIds: [],
+    });
+    expect(() =>
+      store.review({
+        candidateId: triaged.id,
+        actorKind: "human",
+        actorId: "reviewer",
+        decision: "reject",
+        effect: "effective",
+        rationale: "Wrong context",
+        provenance: {
+          recommendation: {
+            candidateObservationFingerprint: discovered.observationFingerprint,
+            contextFingerprint: "changed-context",
+          },
+        },
+        basedOnRecommendationId: recommendation.id,
+      }),
+    ).toThrow("current Candidate observation and context");
+    const effective = store.review({
+      candidateId: triaged.id,
+      actorKind: "human",
+      actorId: "reviewer",
+      decision: "reject",
+      effect: "effective",
+      rationale: "Not a governed contract after review",
+      provenance: {
+        basedOnRecommendationId: recommendation.id,
+        recommendation: {
+          candidateObservationFingerprint: discovered.observationFingerprint,
+          contextFingerprint: "discovered-context",
+        },
+      },
+      basedOnRecommendationId: recommendation.id,
+    });
+    expect(effective.candidate.state).toBe("rejected");
+    expect(
+      db
+        .prepare(
+          `SELECT based_on_recommendation_id FROM candidate_reviews
+           WHERE id = ?`,
+        )
+        .get(effective.id),
+    ).toEqual({ based_on_recommendation_id: recommendation.id });
+  });
+
+  it("rejects Recommendations for completed Candidates and generic Review calls", () => {
+    const correlated = store.persist(input(1800));
+    const triaged = store.transition(correlated.id, "triaged", {});
+    const rejected = store.review({
+      candidateId: triaged.id,
+      actorKind: "human",
+      actorId: "reviewer",
+      decision: "reject",
+      effect: "effective",
+      rationale: "Not governed",
+      provenance: {},
+    });
+    const current = store.current(correlated.identityKey)!;
+    const envelope = createCandidateTriageRecommendation(
+      {
+        recommendation: "defer",
+        rationale: "Needs human review",
+        evidenceVersionIds: [],
+        confidence: "ambiguous",
+        priority: "low",
+      },
+      {
+        inferenceId: "candidate-inference:not-used",
+        candidateId: current.id,
+        candidateFingerprint: current.fingerprint,
+        candidateObservationFingerprint: current.observationFingerprint,
+        contextFingerprint: "context",
+      },
+    );
+
+    expect(rejected.candidate.state).toBe("rejected");
+    expect(() => store.persistRecommendation(envelope)).toThrow(
+      "cannot receive a Recommendation from rejected",
+    );
+    expect(() =>
+      store.review({
+        candidateId: current.id,
+        actorKind: "ai",
+        actorId: "model",
+        decision: "defer",
+        effect: "recommendation",
+        rationale: "Use the dedicated path",
+        provenance: {},
+        inferenceId: "candidate-inference:not-used",
+      }),
+    ).toThrow("Use persistRecommendation");
   });
 
   it("retains a rejected unchanged Candidate instead of recreating work", () => {

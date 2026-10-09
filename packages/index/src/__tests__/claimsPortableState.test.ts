@@ -6,6 +6,7 @@ import {
   ClaimsPortableStateError,
   emptyPortableClaimsState,
   parsePortableClaimsState,
+  portableRecommendationBasisKey,
   type PortableClaimsState,
 } from "../claims/portableState.js";
 
@@ -92,7 +93,7 @@ describe("Claims portable state", () => {
       "zebra",
     ]);
     expect(emptyPortableClaimsState()).toEqual({
-      schemaVersion: "1",
+      schemaVersion: "2",
       policies: {},
       candidateDecisions: {},
       subjectBindings: {},
@@ -104,8 +105,8 @@ describe("Claims portable state", () => {
 
   it("fails closed for unsupported versions and unknown fields", () => {
     expect(() =>
-      parsePortableClaimsState({ ...validState(), schemaVersion: "2" }),
-    ).toThrow("schemaVersion must be 1");
+      parsePortableClaimsState({ ...validState(), schemaVersion: "3" }),
+    ).toThrow("must be one of: 1, 2");
     expect(() =>
       parsePortableClaimsState({ ...validState(), providerPayloads: {} }),
     ).toThrow("providerPayloads is not supported");
@@ -128,6 +129,73 @@ describe("Claims portable state", () => {
     };
     expect(() => parsePortableClaimsState(inferenceBinding)).toThrow(
       "inferenceFingerprint is required for inference basis",
+    );
+  });
+
+  it("validates and preserves a canonical v2 recommendation basis", () => {
+    const basisWithoutKey = {
+      contractVersion: "candidate-triage-recommendation@1" as const,
+      candidateObservationFingerprint: fingerprint("d"),
+      contextFingerprint: fingerprint("e"),
+      inferenceFingerprint: fingerprint("f"),
+      adapterId: "candidate-triage",
+      adapterContractVersion: "1",
+      promptVersion: "prompt-1",
+      providerId: "openai",
+      requestedModelId: "gpt-test",
+      effectiveModelId: "gpt-test-2026",
+      outputFingerprint: fingerprint("a"),
+      recommendation: "promote" as const,
+      priority: "high" as const,
+    };
+    const state = validState();
+    state.schemaVersion = "2";
+    state.candidateDecisions["candidate:endpoint-admin-users"] = {
+      ...state.candidateDecisions["candidate:endpoint-admin-users"],
+      recommendationBasis: {
+        ...basisWithoutKey,
+        recommendationKey: portableRecommendationBasisKey(basisWithoutKey),
+      },
+    };
+
+    const parsed = parsePortableClaimsState(state);
+    expect(parsed.schemaVersion).toBe("2");
+    expect(
+      parsed.candidateDecisions["candidate:endpoint-admin-users"]
+        .recommendationBasis,
+    ).toEqual({
+      ...basisWithoutKey,
+      recommendationKey: portableRecommendationBasisKey(basisWithoutKey),
+    });
+  });
+
+  it("rejects recommendation basis data in legacy schema v1", () => {
+    const state = validState();
+    const basisWithoutKey = {
+      contractVersion: "candidate-triage-recommendation@1" as const,
+      candidateObservationFingerprint: fingerprint("d"),
+      contextFingerprint: fingerprint("e"),
+      inferenceFingerprint: fingerprint("f"),
+      adapterId: "candidate-triage",
+      adapterContractVersion: "1",
+      promptVersion: "prompt-1",
+      providerId: "openai",
+      requestedModelId: "gpt-test",
+      effectiveModelId: "gpt-test-2026",
+      outputFingerprint: fingerprint("a"),
+      recommendation: "promote" as const,
+      priority: "high" as const,
+    };
+    state.candidateDecisions["candidate:endpoint-admin-users"] = {
+      ...state.candidateDecisions["candidate:endpoint-admin-users"],
+      recommendationBasis: {
+        ...basisWithoutKey,
+        recommendationKey: portableRecommendationBasisKey(basisWithoutKey),
+      },
+    };
+
+    expect(() => parsePortableClaimsState(state)).toThrow(
+      "recommendationBasis requires schemaVersion 2",
     );
   });
 

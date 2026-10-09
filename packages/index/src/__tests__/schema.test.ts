@@ -91,7 +91,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("19");
+    expect(row?.value).toBe("20");
   });
 
   it("migrates a schema-14 index with the claims companion tables", () => {
@@ -176,7 +176,7 @@ describe("initSchema", () => {
     });
   });
 
-  it("runs chained 14->15->16->17->18->19 migration through migrateSchemaToCurrent", () => {
+  it("runs chained 14->15->16->17->18->19->20 migration through migrateSchemaToCurrent", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
@@ -186,7 +186,7 @@ describe("initSchema", () => {
 
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "19" });
+    ).toEqual({ value: "20" });
     expect(
       db
         .prepare(
@@ -242,12 +242,21 @@ describe("initSchema", () => {
         "materiality_contract_version",
       ]),
     );
+    expect(
+      (
+        db.prepare(`PRAGMA table_info(candidate_reviews)`).all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    ).toEqual(
+      expect.arrayContaining(["inference_id", "based_on_recommendation_id"]),
+    );
   });
 
   it("rejects unknown newer schema versions instead of downgrading", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      INSERT INTO _meta (key, value) VALUES ('schema_version', '20');
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '21');
       CREATE TABLE future_only (id TEXT PRIMARY KEY);
     `);
     const schemaBefore = db
@@ -258,10 +267,10 @@ describe("initSchema", () => {
       )
       .all();
 
-    expect(() => initSchema(db)).toThrow(/schema version 20 is incompatible/i);
+    expect(() => initSchema(db)).toThrow(/schema version 21 is incompatible/i);
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "20" });
+    ).toEqual({ value: "21" });
     expect(
       db
         .prepare(

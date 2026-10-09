@@ -8,6 +8,9 @@ import { Command } from "commander";
 import Database from "@intentweave/sqlite-compat";
 import type { LLMProvider } from "@intentweave/core";
 import {
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+  CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
   CandidateInferenceStore,
   CandidateStore,
   ClaimsEngine,
@@ -17,6 +20,7 @@ import {
   fingerprint,
   materialFingerprint,
   openMigratedDatabase,
+  portableRecommendationBasisKey,
 } from "@intentweave/index";
 import type {
   CandidateDetails,
@@ -26,6 +30,7 @@ import type {
   ClaimScalar,
   ClaimsContractVersions,
   PersistedVersion,
+  PortableRecommendationBasisV1,
   PortableClaimsState,
   RulesConfig,
   SubjectKind,
@@ -86,10 +91,12 @@ import {
   parsePortableClaimsStateYaml,
 } from "../claims/portableState.js";
 import {
+  buildCandidateRecommendationContext,
   buildCandidateRecommendationPreview,
   CandidateInferenceConfigError,
   loadCandidateInferenceConfig,
 } from "../claims/candidateRecommendationContext.js";
+import { executeCandidateRecommendation } from "../claims/candidateRecommendationExecution.js";
 import {
   persistPortableClaimOrigins,
   projectClaimOrigins,
@@ -701,6 +708,20 @@ const CANDIDATE_DECISIONS: readonly CandidateReviewDecision[] = [
   "suppress",
   "defer",
 ];
+const DEFAULT_RECOMMENDATION_PROVIDER = "openai";
+const DEFAULT_RECOMMENDATION_MODEL = "gpt-5-mini";
+
+function recommendationModel(model?: string): string {
+  return model ?? process.env.IW_LLM_MODEL ?? DEFAULT_RECOMMENDATION_MODEL;
+}
+
+function enabledRecommendationPolicyIds(
+  portableState: PortableClaimsState | undefined,
+): string[] {
+  return Object.entries(portableState?.policies ?? {})
+    .filter(([, policy]) => policy.enabled)
+    .map(([policyId]) => policyId);
+}
 
 interface CandidateProjectionIssue {
   identityKey: string;
@@ -987,12 +1008,15 @@ export async function runClaimsCandidatesList(options: {
   subjectKind?: string;
   all?: boolean;
   verbose?: boolean;
+  provider?: string;
+  model?: string;
   format: string;
 }): Promise<void> {
   try {
     const database = claimsDatabase(process.cwd());
     try {
       const store = new CandidateStore(database);
+      const portableState = loadPortableClaimsState(process.cwd());
       const state = candidateState(options.state);
       const candidates = store
         .listCurrent({
@@ -1007,8 +1031,19 @@ export async function runClaimsCandidatesList(options: {
             state !== undefined ||
             ["discovered", "correlated", "triaged"].includes(candidate.state),
         );
+      const candidateOutput = candidates.map((candidate) => ({
+        ...candidate,
+        recommendations: candidateRecommendationViews(
+          database,
+          candidate,
+          process.cwd(),
+          portableState,
+          options.provider ?? DEFAULT_RECOMMENDATION_PROVIDER,
+          recommendationModel(options.model),
+        ),
+      }));
       if (options.format === "json") {
-        console.log(JSON.stringify({ candidates }, null, 2));
+        console.log(JSON.stringify({ candidates: candidateOutput }, null, 2));
       } else if (candidates.length === 0) {
         console.log("No matching Candidates.");
       } else {
@@ -1017,6 +1052,25 @@ export async function runClaimsCandidatesList(options: {
         })) {
           console.log(line);
         }
+        for (const candidate of candidateOutput) {
+          for (const recommendation of candidate.recommendations) {
+            console.log(
+              `  Recommendation ${String(recommendation.status)}: ${String(recommendation.decision ?? "legacy")} (${shortCandidateReference(String(recommendation.id))})` +
+                (recommendation.priority
+                  ? ` priority ${String(recommendation.priority)}`
+                  : ""),
+            );
+            if (recommendation.rationale) {
+              console.log(`    Rationale: ${String(recommendation.rationale)}`);
+            }
+            for (const line of recommendationDetailLines(
+              recommendation,
+              "    ",
+            )) {
+              console.log(line);
+            }
+          }
+        }
       }
       process.exitCode = 0;
     } finally {
@@ -1024,7 +1078,12 @@ export async function runClaimsCandidatesList(options: {
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+    process.exitCode =
+      error instanceof ClaimsBindingError ||
+      error instanceof CandidateInferenceConfigError ||
+      error instanceof ClaimsPortableStateFileError
+        ? 64
+        : 1;
   }
 }
 
@@ -1088,6 +1147,8 @@ export async function runClaimsCandidatesRecommend(options: {
   provider?: string;
   candidate?: string;
   limit?: string;
+  model?: string;
+  refresh?: boolean;
   format: string;
 }): Promise<void> {
   const workspaceRoot = process.cwd();
@@ -1097,9 +1158,9 @@ export async function runClaimsCandidatesRecommend(options: {
         "Candidate recommendations require the explicit --semantic opt-in",
       );
     }
-    if (!options.preview) {
+    if (!options.preview && !options.candidate) {
       throw new ClaimsBindingError(
-        "Model-backed Candidate recommendations are not enabled yet; use --preview to inspect the G6a context",
+        "Single-Candidate recommendation execution requires --candidate; use --preview to inspect bounded context",
       );
     }
     if (!["text", "json"].includes(options.format)) {
@@ -1120,34 +1181,118 @@ export async function runClaimsCandidatesRecommend(options: {
       const candidateId = options.candidate
         ? resolveCandidateReference(database, options.candidate, true)
         : undefined;
-      const preview = buildCandidateRecommendationPreview({
+      const providerName = options.provider ?? "openai";
+      const enabledPolicyIds = Object.entries(portableState?.policies ?? {})
+        .filter(([, policy]) => policy.enabled)
+        .map(([policyId]) => policyId);
+      if (options.preview) {
+        const preview = buildCandidateRecommendationPreview({
+          database,
+          workspaceRoot,
+          provider: providerName,
+          requestedModelId: options.model,
+          refresh: options.refresh,
+          config,
+          enabledPolicyIds,
+          ...(candidateId ? { candidateId } : {}),
+          ...(limit ? { limit } : {}),
+        });
+        if (options.format === "json") {
+          console.log(JSON.stringify(preview, null, 2));
+        } else {
+          const lines = [
+            "Candidate recommendation context preview",
+            `  Provider: ${preview.provider} (allowed, no network call)`,
+            `  Candidates: ${preview.summary.includedCandidates} included, ${preview.summary.excludedCandidates} excluded, ${preview.summary.deferredByBudget} deferred by budget`,
+            `  Estimated input: ${preview.summary.estimatedInputTokens} tokens`,
+            `  Quality: precision/recall ${preview.summary.qualityMeasurement}`,
+          ];
+          for (const context of preview.contexts) {
+            lines.push("", `Payload for ${context.candidate.id}:`);
+            lines.push(JSON.stringify(context, null, 2));
+          }
+          console.log(lines.join("\n"));
+        }
+        process.exitCode = 0;
+        return;
+      }
+
+      if (!candidateId) {
+        throw new ClaimsBindingError(
+          "Recommendation execution requires a current Candidate",
+        );
+      }
+      const candidate = new CandidateStore(database).details(candidateId);
+      if (!candidate) {
+        throw new ClaimsBindingError(`Candidate ${candidateId} does not exist`);
+      }
+      const provider = await resolveSemanticClaimsProvider(
+        providerName,
+        options.model,
+      );
+      const requestedModelId =
+        options.model ?? provider.getModelName?.() ?? "provider-default";
+      const executionPreview = buildCandidateRecommendationPreview({
         database,
         workspaceRoot,
-        provider: options.provider ?? "openai",
+        provider: providerName,
+        requestedModelId,
+        refresh: true,
         config,
-        enabledPolicyIds: Object.entries(portableState?.policies ?? {})
-          .filter(([, policy]) => policy.enabled)
-          .map(([policyId]) => policyId),
-        ...(candidateId ? { candidateId } : {}),
-        ...(limit ? { limit } : {}),
+        enabledPolicyIds,
+        candidateId,
+      });
+      const context = executionPreview.contexts[0];
+      if (!context) {
+        const eligibility = executionPreview.eligibility.find(
+          (item) => item.candidateId === candidateId,
+        );
+        throw new ClaimsBindingError(
+          `Candidate ${candidateId} is not eligible for recommendation${eligibility?.reasons.length ? `: ${eligibility.reasons.join(", ")}` : ""}`,
+        );
+      }
+      const result = await executeCandidateRecommendation({
+        database,
+        workspaceRoot,
+        candidate,
+        config,
+        enabledPolicyIds,
+        provider,
+        requestedModelId,
+        refresh: options.refresh === true,
       });
       if (options.format === "json") {
-        console.log(JSON.stringify(preview, null, 2));
+        console.log(JSON.stringify(result, null, 2));
+        if (result.status === "failed") process.exitCode = 1;
+      } else if (result.status === "failed") {
+        console.log(
+          [
+            `Recommendation failed for ${candidateId}`,
+            `  Failure: ${result.failure.kind}`,
+            `  Message: ${result.failure.message}`,
+            ...(result.providerMeta
+              ? [
+                  `  Finish: ${result.providerMeta.finishReason}`,
+                  `  Model: ${result.providerMeta.effectiveModelId}`,
+                ]
+              : []),
+          ].join("\n"),
+        );
+        process.exitCode = 1;
       } else {
-        const lines = [
-          "Candidate recommendation context preview",
-          `  Provider: ${preview.provider} (allowed, no network call)`,
-          `  Candidates: ${preview.summary.includedCandidates} included, ${preview.summary.excludedCandidates} excluded, ${preview.summary.deferredByBudget} deferred by budget`,
-          `  Estimated input: ${preview.summary.estimatedInputTokens} tokens`,
-          `  Quality: precision/recall ${preview.summary.qualityMeasurement}`,
-        ];
-        for (const context of preview.contexts) {
-          lines.push("", `Payload for ${context.candidate.id}:`);
-          lines.push(JSON.stringify(context, null, 2));
-        }
-        console.log(lines.join("\n"));
+        console.log(
+          [
+            `Recommendation ${result.status}: ${result.recommendation.recommendation}`,
+            `  Candidate: ${shortCandidateReference(result.recommendation.candidateId)}`,
+            `  Priority: ${result.recommendation.priority}`,
+            `  Confidence: ${result.recommendation.confidence}`,
+            `  Rationale: ${result.recommendation.rationale}`,
+            `  Review: ${result.review.id}`,
+            `  Inference: ${result.inference?.id ?? result.recommendation.inferenceId}`,
+          ].join("\n"),
+        );
+        process.exitCode = 0;
       }
-      process.exitCode = 0;
     } finally {
       database.close();
     }
@@ -1167,6 +1312,9 @@ export async function runClaimsCandidateReview(options: {
   actor: string;
   decision: string;
   rationale: string;
+  basedOnRecommendation?: string;
+  provider?: string;
+  model?: string;
   format: string;
 }): Promise<void> {
   try {
@@ -1209,6 +1357,69 @@ export async function runClaimsCandidateReview(options: {
           `Candidate ${candidate.id} must be triaged before Review`,
         );
       }
+      const recommendation = options.basedOnRecommendation
+        ? store.recommendation(options.basedOnRecommendation)
+        : undefined;
+      if (options.basedOnRecommendation && !recommendation?.envelope) {
+        throw new ClaimsBindingError(
+          `Recommendation ${options.basedOnRecommendation} does not contain a valid current Recommendation envelope`,
+        );
+      }
+      let currentRecommendationContext:
+        | ReturnType<typeof buildCandidateRecommendationContext>
+        | undefined;
+      if (recommendation?.envelope) {
+        const config = loadCandidateInferenceConfig(workspaceRoot);
+        const portableState = loadPortableClaimsState(workspaceRoot);
+        const activeProvider =
+          options.provider ?? DEFAULT_RECOMMENDATION_PROVIDER;
+        const provider = await resolveSemanticClaimsProvider(
+          activeProvider,
+          options.model,
+        );
+        const activeModel =
+          options.model ?? provider.getModelName?.() ?? recommendationModel();
+        currentRecommendationContext = buildCandidateRecommendationContext({
+          database,
+          workspaceRoot,
+          candidate,
+          config,
+          enabledPolicyIds: enabledRecommendationPolicyIds(portableState),
+        });
+        const currentIds = store.recommendationStatus({
+          identityKey: candidate.identityKey,
+          observationFingerprint: candidate.observationFingerprint,
+          contextFingerprint: currentRecommendationContext.contextFingerprint,
+          adapterId: CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+          adapterContractVersion:
+            CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+          promptVersion: CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
+          providerId: provider.name,
+          requestedModelId: activeModel,
+        }).currentRecommendationIds;
+        if (!currentIds.includes(recommendation.id)) {
+          throw new ClaimsBindingError(
+            `Recommendation ${options.basedOnRecommendation} is stale for the current Candidate context or provider configuration`,
+          );
+        }
+      }
+      if (
+        recommendation?.envelope &&
+        recommendation.envelope.candidateObservationFingerprint !==
+          candidate.observationFingerprint
+      ) {
+        throw new ClaimsBindingError(
+          `Recommendation ${options.basedOnRecommendation} is stale for Candidate ${candidate.id}`,
+        );
+      }
+      const recommendationBasis = recommendation?.envelope
+        ? portableRecommendationBasis(database, recommendation.envelope)
+        : undefined;
+      if (options.basedOnRecommendation && !recommendationBasis) {
+        throw new ClaimsBindingError(
+          `Recommendation ${options.basedOnRecommendation} has no portable inference provenance`,
+        );
+      }
       const decidedAt = new Date().toISOString();
       const portableStatePath =
         decision === "defer"
@@ -1223,8 +1434,21 @@ export async function runClaimsCandidateReview(options: {
           provenance: {
             decidedAt,
             portableStatePath: portableStatePath ?? null,
+            ...(recommendation?.envelope
+              ? {
+                  recommendation: {
+                    candidateObservationFingerprint:
+                      recommendation.envelope.candidateObservationFingerprint,
+                    contextFingerprint:
+                      currentRecommendationContext!.contextFingerprint,
+                  },
+                }
+              : {}),
           },
           contracts: resolveContracts(),
+          ...(options.basedOnRecommendation
+            ? { basedOnRecommendationId: options.basedOnRecommendation }
+            : {}),
         });
         if (decision !== "defer") {
           persistPortableCandidateDecision(workspaceRoot, candidate, {
@@ -1232,6 +1456,7 @@ export async function runClaimsCandidateReview(options: {
             actor: { kind: "human", id: options.actor },
             decidedAt,
             rationale: options.rationale,
+            ...(recommendationBasis ? { recommendationBasis } : {}),
           });
           if (result.assessment) {
             persistPortableClaimOrigins(
@@ -1247,6 +1472,9 @@ export async function runClaimsCandidateReview(options: {
       const output = {
         ...result,
         portableStatePath: portableStatePath ?? null,
+        ...(options.basedOnRecommendation
+          ? { basedOnRecommendationId: options.basedOnRecommendation }
+          : {}),
       };
       console.log(
         options.format === "json"
@@ -1259,8 +1487,105 @@ export async function runClaimsCandidateReview(options: {
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+    process.exitCode =
+      error instanceof ClaimsBindingError ||
+      error instanceof CandidateInferenceConfigError ||
+      error instanceof ClaimsPortableStateFileError
+        ? 64
+        : 1;
   }
+}
+
+function portableRecommendationBasis(
+  database: Database.Database,
+  recommendation: {
+    contractVersion: "candidate-triage-recommendation@1";
+    candidateObservationFingerprint: string;
+    contextFingerprint: string;
+    inferenceId: string;
+    recommendation: "promote" | "reject" | "suppress" | "defer";
+    priority: "critical" | "high" | "medium" | "low";
+  },
+): PortableRecommendationBasisV1 | undefined {
+  const inference = new CandidateInferenceStore(database).details(
+    recommendation.inferenceId,
+  );
+  if (!inference) return undefined;
+  const provenance =
+    inference.provenance &&
+    typeof inference.provenance === "object" &&
+    !Array.isArray(inference.provenance)
+      ? (inference.provenance as Record<string, unknown>)
+      : {};
+  const structured =
+    provenance.structuredInference &&
+    typeof provenance.structuredInference === "object" &&
+    !Array.isArray(provenance.structuredInference)
+      ? (provenance.structuredInference as Record<string, unknown>)
+      : {};
+  const meta =
+    structured.meta &&
+    typeof structured.meta === "object" &&
+    !Array.isArray(structured.meta)
+      ? (structured.meta as Record<string, unknown>)
+      : structured;
+  const effectiveModelId =
+    typeof meta.effectiveModelId === "string"
+      ? meta.effectiveModelId
+      : inference.modelId;
+  const evidenceMaterialInputs =
+    inference.evidenceVersionIds.length === 0
+      ? []
+      : (
+          database
+            .prepare(
+              `SELECT identity.identity_key, evidence.material_fingerprint
+             FROM evidence_versions evidence
+             JOIN evidence_identities identity
+               ON identity.id = evidence.evidence_identity_id
+             WHERE evidence.id IN (${inference.evidenceVersionIds.map(() => "?").join(", ")})
+             ORDER BY identity.identity_key, evidence.material_fingerprint`,
+            )
+            .all(...inference.evidenceVersionIds) as Array<{
+            identity_key: string;
+            material_fingerprint: string;
+          }>
+        ).map((evidence) => ({
+          identityKey: evidence.identity_key,
+          materialFingerprint: evidence.material_fingerprint,
+        }));
+  const basisWithoutKey = {
+    contractVersion: recommendation.contractVersion,
+    candidateObservationFingerprint:
+      recommendation.candidateObservationFingerprint,
+    contextFingerprint: recommendation.contextFingerprint,
+    inferenceFingerprint: fingerprint({
+      adapterId: inference.adapterId,
+      adapterContractVersion: inference.contractVersion,
+      providerId: inference.providerId,
+      requestedModelId: inference.modelId,
+      promptVersion: inference.promptVersion,
+      inputFingerprint: inference.inputFingerprint,
+      outputFingerprint: inference.outputFingerprint,
+      evidence: evidenceMaterialInputs,
+      proposedSubjectBindings: inference.proposedSubjectBindings,
+      confidence: inference.confidence,
+      rationale: inference.rationale,
+    }),
+    adapterId: inference.adapterId,
+    adapterContractVersion: inference.contractVersion,
+    promptVersion: inference.promptVersion,
+    providerId: inference.providerId,
+    requestedModelId: inference.modelId,
+    effectiveModelId,
+    outputFingerprint: inference.outputFingerprint,
+    recommendation: recommendation.recommendation,
+    priority: recommendation.priority,
+  } satisfies Omit<PortableRecommendationBasisV1, "recommendationKey">;
+  return {
+    ...basisWithoutKey,
+    recommendationKey: portableRecommendationBasisKey(basisWithoutKey),
+  };
 }
 
 function isMaterialChange(
@@ -3035,10 +3360,193 @@ function promotedClaimForCandidateId(
   return promotion?.promoted_claim_identity_id;
 }
 
+function candidateRecommendationViews(
+  database: Database.Database,
+  candidate: CandidateDetails,
+  workspaceRoot: string,
+  portableState?: PortableClaimsState,
+  activeProvider = DEFAULT_RECOMMENDATION_PROVIDER,
+  activeModel = recommendationModel(),
+): Array<Record<string, unknown>> {
+  type RecommendationView = Record<string, unknown> & {
+    status: "current" | "stale" | "unknown" | "legacy" | "portable";
+    recommendationBasis?: PortableRecommendationBasisV1;
+  };
+  const store = new CandidateStore(database);
+  let context:
+    | ReturnType<typeof buildCandidateRecommendationContext>
+    | undefined;
+  try {
+    const config = loadCandidateInferenceConfig(workspaceRoot);
+    const enabledPolicyIds = Object.entries(portableState?.policies ?? {})
+      .filter(([, policy]) => policy.enabled)
+      .map(([policyId]) => policyId);
+    context = buildCandidateRecommendationContext({
+      database,
+      workspaceRoot,
+      candidate,
+      config,
+      enabledPolicyIds,
+    });
+  } catch {
+    context = undefined;
+  }
+  const recommendations: RecommendationView[] = store
+    .recommendations(candidate.identityKey)
+    .map((record): RecommendationView => {
+      const envelope = record.envelope;
+      const inference = envelope
+        ? new CandidateInferenceStore(database).details(envelope.inferenceId)
+        : undefined;
+      let status: "current" | "stale" | "unknown" | "legacy" = "legacy";
+      if (envelope && inference && context) {
+        const current = store.recommendationStatus({
+          identityKey: candidate.identityKey,
+          observationFingerprint: candidate.observationFingerprint,
+          contextFingerprint: context.contextFingerprint,
+          adapterId: CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+          adapterContractVersion:
+            CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+          promptVersion: CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
+          providerId: activeProvider,
+          requestedModelId: activeModel,
+        });
+        status = current.currentRecommendationIds.includes(record.id)
+          ? "current"
+          : "stale";
+      } else if (envelope) {
+        status = "unknown";
+      }
+      const inferenceMetadata = inference
+        ? recommendationInferenceMetadata(inference)
+        : {};
+      return {
+        id: record.id,
+        status,
+        ...(envelope
+          ? {
+              envelope,
+              decision: envelope.recommendation,
+              priority: envelope.priority,
+              confidence: envelope.confidence,
+              rationale: envelope.rationale,
+              inferenceId: envelope.inferenceId,
+              evidenceVersionIds: envelope.evidenceVersionIds,
+              proposedClaimType: envelope.proposedClaimType,
+              proposedSubjectBindings: envelope.proposedSubjectBindings,
+            }
+          : {}),
+        ...(inference
+          ? {
+              inference: {
+                id: inference.id,
+                adapterId: inference.adapterId,
+                contractVersion: inference.contractVersion,
+                providerId: inference.providerId,
+                modelId: inference.modelId,
+                promptVersion: inference.promptVersion,
+                outputFingerprint: inference.outputFingerprint,
+              },
+            }
+          : {}),
+        ...inferenceMetadata,
+      };
+    });
+  const portableBasis =
+    portableState?.candidateDecisions[candidate.identityKey]
+      ?.recommendationBasis;
+  if (
+    portableBasis &&
+    !recommendations.some(
+      (recommendation) =>
+        recommendation.recommendationBasis &&
+        (recommendation.recommendationBasis as { recommendationKey?: string })
+          .recommendationKey === portableBasis.recommendationKey,
+    )
+  ) {
+    recommendations.push({
+      id: portableBasis.recommendationKey,
+      status: "portable",
+      source: CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
+      decision: portableBasis.recommendation,
+      priority: portableBasis.priority,
+      recommendationBasis: portableBasis,
+    });
+  }
+  return recommendations;
+}
+
+function recommendationInferenceMetadata(
+  inference: CandidateInferenceDetails,
+): Record<string, unknown> {
+  const provenance =
+    inference.provenance &&
+    typeof inference.provenance === "object" &&
+    !Array.isArray(inference.provenance)
+      ? (inference.provenance as Record<string, unknown>)
+      : {};
+  const structured =
+    provenance.structuredInference &&
+    typeof provenance.structuredInference === "object" &&
+    !Array.isArray(provenance.structuredInference)
+      ? (provenance.structuredInference as Record<string, unknown>)
+      : {};
+  const meta =
+    structured.meta &&
+    typeof structured.meta === "object" &&
+    !Array.isArray(structured.meta)
+      ? (structured.meta as Record<string, unknown>)
+      : structured;
+  return {
+    ...(meta.effectiveModelId
+      ? { effectiveModelId: meta.effectiveModelId }
+      : {}),
+    ...(meta.modelRevision ? { modelRevision: meta.modelRevision } : {}),
+    ...(meta.requestId ? { requestId: meta.requestId } : {}),
+    ...(meta.finishReason ? { finishReason: meta.finishReason } : {}),
+    ...(meta.usage ? { usage: meta.usage } : {}),
+  };
+}
+
+function recommendationDetailLines(
+  recommendation: Record<string, unknown>,
+  indent: string,
+): string[] {
+  const lines: string[] = [];
+  const evidence = recommendation.evidenceVersionIds;
+  if (Array.isArray(evidence)) {
+    lines.push(
+      `${indent}Evidence: ${evidence.length > 0 ? evidence.join(", ") : "none"}`,
+    );
+  }
+  if (typeof recommendation.proposedClaimType === "string") {
+    lines.push(`${indent}Claim family: ${recommendation.proposedClaimType}`);
+  }
+  if (Array.isArray(recommendation.proposedSubjectBindings)) {
+    lines.push(
+      `${indent}Proposed Subjects: ${recommendation.proposedSubjectBindings.length > 0 ? JSON.stringify(recommendation.proposedSubjectBindings) : "none"}`,
+    );
+  }
+  if (recommendation.usage) {
+    lines.push(`${indent}Usage: ${JSON.stringify(recommendation.usage)}`);
+  }
+  if (typeof recommendation.finishReason === "string") {
+    lines.push(`${indent}Finish: ${recommendation.finishReason}`);
+  }
+  if (typeof recommendation.effectiveModelId === "string") {
+    lines.push(`${indent}Effective model: ${recommendation.effectiveModelId}`);
+  }
+  return lines;
+}
+
 function explainCandidate(
   database: Database.Database,
   candidateId: string,
   format: string,
+  workspaceRoot: string,
+  portableState?: PortableClaimsState,
+  activeProvider = DEFAULT_RECOMMENDATION_PROVIDER,
+  activeModel = recommendationModel(),
 ): void {
   const candidate = new CandidateStore(database).details(candidateId);
   if (!candidate) {
@@ -3048,14 +3556,40 @@ function explainCandidate(
     ? (new CandidateInferenceStore(database).details(candidate.inferenceId) ??
       null)
     : null;
+  const recommendations = candidateRecommendationViews(
+    database,
+    candidate,
+    workspaceRoot,
+    portableState,
+    activeProvider,
+    activeModel,
+  );
   if (format === "json") {
     console.log(
-      JSON.stringify({ kind: "candidate", candidate, inference }, null, 2),
+      JSON.stringify(
+        { kind: "candidate", candidate, inference, recommendations },
+        null,
+        2,
+      ),
     );
     return;
   }
   for (const line of candidateDisplayLines(candidate, { verbose: true })) {
     console.log(line);
+  }
+  for (const recommendation of recommendations) {
+    console.log(
+      `  Recommendation: ${String(recommendation.status)} ${String(recommendation.decision ?? "legacy")} (${String(recommendation.id)})`,
+    );
+    if (recommendation.priority) {
+      console.log(`    Priority: ${String(recommendation.priority)}`);
+    }
+    if (recommendation.rationale) {
+      console.log(`    Rationale: ${String(recommendation.rationale)}`);
+    }
+    for (const line of recommendationDetailLines(recommendation, "    ")) {
+      console.log(line);
+    }
   }
   if (!inference) {
     console.log("  Semantic inference: none");
@@ -3088,10 +3622,12 @@ function printCandidateInference(
 function candidatePromotionExplanation(
   database: Database.Database,
   claimIdentityId: string,
+  portableState?: PortableClaimsState,
 ): Record<string, unknown> | null {
   const promotion = database
     .prepare(
       `SELECT review.actor_kind, review.actor_id, review.decision,
+              review.candidate_id, review.based_on_recommendation_id,
               candidate.identity_key AS candidate_identity_key,
               candidate.observation_fingerprint,
               candidate.inference_id,
@@ -3109,12 +3645,33 @@ function candidatePromotionExplanation(
        LIMIT 1`,
     )
     .get(claimIdentityId) as
-    | (Record<string, unknown> & { inference_id: string | null })
+    | (Record<string, unknown> & {
+        inference_id: string | null;
+        candidate_id: string;
+        based_on_recommendation_id: string | null;
+        candidate_identity_key: string;
+      })
     | undefined;
   if (!promotion) return null;
-  const { inference_id: inferenceId, ...details } = promotion;
+  const {
+    inference_id: inferenceId,
+    candidate_id: candidateId,
+    based_on_recommendation_id: basedOnRecommendationId,
+    candidate_identity_key: candidateIdentityKey,
+    ...details
+  } = promotion;
+  const recommendation = basedOnRecommendationId
+    ? new CandidateStore(database).recommendation(basedOnRecommendationId)
+    : undefined;
+  const recommendationBasis =
+    portableState?.candidateDecisions[candidateIdentityKey]
+      ?.recommendationBasis;
   return {
     ...details,
+    candidateId,
+    ...(basedOnRecommendationId ? { basedOnRecommendationId } : {}),
+    ...(recommendation ? { recommendation } : {}),
+    ...(recommendationBasis ? { recommendationBasis } : {}),
     inference: inferenceId
       ? (new CandidateInferenceStore(database).details(inferenceId) ?? null)
       : null,
@@ -3280,6 +3837,8 @@ export async function runClaimsExplain(options: {
   claim?: string;
   type?: string;
   scope?: string;
+  provider?: string;
+  model?: string;
   format: string;
 }): Promise<void> {
   try {
@@ -3304,7 +3863,15 @@ export async function runClaimsExplain(options: {
               "--type and --scope only apply after a Candidate has been promoted",
             );
           }
-          explainCandidate(database, candidateId, options.format);
+          explainCandidate(
+            database,
+            candidateId,
+            options.format,
+            workspaceRoot,
+            portableState,
+            options.provider ?? DEFAULT_RECOMMENDATION_PROVIDER,
+            recommendationModel(options.model),
+          );
           process.exitCode = 0;
           return;
         }
@@ -3428,6 +3995,7 @@ export async function runClaimsExplain(options: {
         promotion: candidatePromotionExplanation(
           database,
           assessment.claim_identity_id,
+          portableState,
         ),
         origins: projectClaimOrigins(
           database,
@@ -3623,6 +4191,12 @@ const claimsCandidatesCommand = new Command("candidates")
       .option("--subject-kind <kind>", "Restrict by Subject kind")
       .option("--all", "Include promoted and closed Candidates")
       .option("--verbose", "Show full IDs, Subjects, types, and confidence")
+      .option(
+        "--provider <provider>",
+        "Active Recommendation provider",
+        "openai",
+      )
+      .option("--model <model>", "Active Recommendation requested model")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsCandidatesList),
   )
@@ -3651,11 +4225,16 @@ const claimsCandidatesCommand = new Command("candidates")
         "Configured inference provider",
         "openai",
       )
-      .option(
-        "--candidate <ref>",
-        "Restrict the preview to one current Candidate",
-      )
+      .option("--candidate <ref>", "Execute or preview one current Candidate")
       .option("--limit <n>", "Lower the configured Candidate limit")
+      .option(
+        "--model <model>",
+        "Requested model for single-Candidate execution",
+      )
+      .option(
+        "--refresh",
+        "Ignore a current reusable Recommendation and call the provider",
+      )
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsCandidatesRecommend),
   )
@@ -3672,6 +4251,16 @@ const claimsCandidatesCommand = new Command("candidates")
         "promote, reject, suppress, or defer",
       )
       .requiredOption("--rationale <text>", "Reason for the decision")
+      .option(
+        "--based-on-recommendation <review-id>",
+        "Link the effective human decision to a Recommendation Review",
+      )
+      .option(
+        "--provider <provider>",
+        "Active Recommendation provider",
+        "openai",
+      )
+      .option("--model <model>", "Active Recommendation requested model")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsCandidateReview),
   );
@@ -3752,6 +4341,12 @@ export const claimsCommand = new Command("claims")
       )
       .option("--type <claimType>", "Restrict explanation to one claim type")
       .option("--scope <scope>", "Restrict explanation to one claim scope")
+      .option(
+        "--provider <provider>",
+        "Active Recommendation provider",
+        "openai",
+      )
+      .option("--model <model>", "Active Recommendation requested model")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsExplain),
   );

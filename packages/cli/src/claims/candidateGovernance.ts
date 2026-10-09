@@ -20,6 +20,7 @@ import {
   type PersistedAssessment,
   type PersistedCandidateReview,
   type PortableClaimsActor,
+  type PortableRecommendationBasisV1,
 } from "@intentweave/index";
 import {
   loadPortableClaimsState,
@@ -854,6 +855,7 @@ export function reviewCandidate(
     rationale: string;
     provenance: unknown;
     contracts: ClaimsContractVersions;
+    basedOnRecommendationId?: string;
   },
 ): CandidateGovernanceResult {
   const apply = database.transaction(() => {
@@ -874,6 +876,7 @@ export function reviewCandidate(
       rationale: input.rationale,
       provenance: input.provenance,
       promotedClaimIdentityId: assessment?.claimIdentityId,
+      basedOnRecommendationId: input.basedOnRecommendationId,
     });
     return { review, ...(assessment ? { assessment } : {}) };
   });
@@ -984,6 +987,7 @@ export function persistPortableCandidateDecision(
     actor: PortableClaimsActor;
     rationale: string;
     decidedAt: string;
+    recommendationBasis?: PortableRecommendationBasisV1;
   },
 ): string {
   const state =
@@ -994,6 +998,9 @@ export function persistPortableCandidateDecision(
     actor: input.actor,
     decidedAt: input.decidedAt,
     rationale: input.rationale,
+    ...(input.recommendationBasis
+      ? { recommendationBasis: input.recommendationBasis }
+      : {}),
   };
   return writePortableClaimsState(workspaceRoot, state);
 }

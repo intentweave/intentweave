@@ -19,6 +19,7 @@ export {
   migrateSchema16To17,
   migrateSchema17To18,
   migrateSchema18To19,
+  migrateSchema19To20,
   migrateSchemaToCurrent,
   openMigratedDatabase,
   replaceDatabaseAtomically,
@@ -46,6 +47,7 @@ export type {
   CandidateInferenceAttachmentInput,
   CandidateListFilter,
   CandidatePolicyDecisionInput,
+  CandidateRecommendationRecord,
   CandidateReviewDecision,
   CandidateReviewEffect,
   CandidateReviewInput,
@@ -64,6 +66,30 @@ export type {
 } from "./claims/inferences.js";
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
+export {
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+  CANDIDATE_TRIAGE_RECOMMENDATION_CONTRACT,
+  CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
+  CANDIDATE_TRIAGE_RECOMMENDATION_SCHEMA,
+  CandidateRecommendationValidationError,
+  candidateRecommendationKey,
+  candidateRecommendationOutputFingerprint,
+  createCandidateTriageRecommendationSchema,
+  createCandidateTriageRecommendation,
+  validateCandidateTriageRecommendation,
+  validateCandidateTriageRecommendationOutput,
+} from "./claims/recommendations.js";
+export type {
+  CandidateTriageRecommendationConfidence,
+  CandidateTriageRecommendationDecision,
+  CandidateTriageRecommendationOutputV1,
+  CandidateTriageRecommendationPriority,
+  CandidateTriageRecommendationSubjectBinding,
+  CandidateTriageRecommendationV1,
+  RecommendationGroundingContext,
+  RecommendationGroundingSubject,
+} from "./claims/recommendations.js";
 export {
   CLAIM_ORIGIN_CONTRACT_VERSION,
   claimOriginFingerprint,
@@ -90,10 +116,12 @@ export type {
 } from "./claims/subjects.js";
 export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
 export {
+  CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
   CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
   ClaimsPortableStateError,
   emptyPortableClaimsState,
   parsePortableClaimsState,
+  portableRecommendationBasisKey,
 } from "./claims/portableState.js";
 export { assessClaimPolicy, assessRuleResults } from "./claims/policies.js";
 export {
@@ -149,6 +177,7 @@ export type {
   PortableBaselineAcceptance,
   PortableCandidateDecision,
   PortableClaimOrigin,
+  PortableRecommendationBasisV1,
   PortableClaimsActor,
   PortableClaimsPolicy,
   PortableClaimsState,

@@ -6,6 +6,9 @@ import path from "node:path";
 import type Database from "@intentweave/sqlite-compat";
 import { sanitizeExcerpt } from "@intentweave/core";
 import {
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+  CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
   CandidateStore,
   canonicalJson,
   fingerprint,
@@ -51,6 +54,7 @@ export type CandidateEligibilityReason =
 export interface CandidateRecommendationEligibility {
   candidateId: string;
   candidateFingerprint: string;
+  candidateObservationFingerprint: string;
   claimType: string;
   state: string;
   confidence: string;
@@ -63,6 +67,7 @@ export interface CandidateRecommendationContext {
   candidate: {
     id: string;
     fingerprint: string;
+    observationFingerprint: string;
     kind: string;
     claimType: string;
     state: string;
@@ -471,7 +476,6 @@ function candidateArtifactReasons(
 }
 
 function eligibility(
-  database: Database.Database,
   candidate: CandidateDetails,
   rows: readonly EvidenceRow[],
   sensitivePaths: readonly string[],
@@ -503,17 +507,10 @@ function eligibility(
   ) {
     reasons.push("sensitive-only-evidence");
   }
-  const recommended = database
-    .prepare(
-      `SELECT 1 AS present FROM candidate_reviews
-       WHERE candidate_id = ? AND actor_kind = 'ai'
-         AND effect = 'recommendation' LIMIT 1`,
-    )
-    .get(candidate.id);
-  if (recommended) reasons.push("already-recommended");
   return {
     candidateId: candidate.id,
-    candidateFingerprint: candidate.observationFingerprint,
+    candidateFingerprint: candidate.fingerprint,
+    candidateObservationFingerprint: candidate.observationFingerprint,
     claimType: candidate.proposedClaimType,
     state: candidate.state,
     confidence: candidate.confidence,
@@ -621,7 +618,8 @@ function buildContext(
     contract: "candidate-recommendation-context@1" as const,
     candidate: {
       id: candidate.id,
-      fingerprint: candidate.observationFingerprint,
+      fingerprint: candidate.fingerprint,
+      observationFingerprint: candidate.observationFingerprint,
       kind: candidate.candidateKind,
       claimType: candidate.proposedClaimType,
       state: candidate.state,
@@ -675,7 +673,19 @@ function buildContext(
       omittedSensitiveEvidence,
     },
   };
-  const contextFingerprint = fingerprint(base);
+  const contextFingerprint = fingerprint({
+    contract: base.contract,
+    candidate: {
+      kind: base.candidate.kind,
+      claimType: base.candidate.claimType,
+      confidence: base.candidate.confidence,
+      statement: base.candidate.statement,
+    },
+    subjects: base.subjects,
+    evidence: base.evidence,
+    repositoryPolicies: base.repositoryPolicies,
+    security: base.security,
+  });
   let estimatedTokens = estimateTokens({
     ...base,
     estimatedTokens: 0,
@@ -689,10 +699,28 @@ function buildContext(
   return { ...base, estimatedTokens, contextFingerprint };
 }
 
+export function buildCandidateRecommendationContext(input: {
+  database: Database.Database;
+  workspaceRoot: string;
+  candidate: CandidateDetails;
+  config: CandidateInferenceConfig;
+  enabledPolicyIds?: readonly string[];
+}): CandidateRecommendationContext {
+  return buildContext(
+    input.workspaceRoot,
+    input.candidate,
+    evidenceRows(input.database, input.candidate),
+    input.config,
+    input.enabledPolicyIds ?? [],
+  );
+}
+
 export function buildCandidateRecommendationPreview(input: {
   database: Database.Database;
   workspaceRoot: string;
   provider: string;
+  requestedModelId?: string;
+  refresh?: boolean;
   config: CandidateInferenceConfig;
   enabledPolicyIds?: readonly string[];
   candidateId?: string;
@@ -716,13 +744,12 @@ export function buildCandidateRecommendationPreview(input: {
   );
   const decisions = all.map((candidate) =>
     eligibility(
-      input.database,
       candidate,
       (rows.get(candidate.id) ?? []).map((item) => item.row),
       input.config.sensitivePaths,
     ),
   );
-  const eligible = all.filter(
+  const initiallyEligible = all.filter(
     (candidate) =>
       decisions.find((item) => item.candidateId === candidate.id)?.eligible,
   );
@@ -733,18 +760,46 @@ export function buildCandidateRecommendationPreview(input: {
   const contexts: CandidateRecommendationContext[] = [];
   let estimatedInputTokens = 0;
   let deferredByBudget = 0;
-  for (const candidate of eligible) {
+  const candidateStore = new CandidateStore(input.database);
+  for (const candidate of initiallyEligible) {
     if (contexts.length >= maxCandidates) {
       deferredByBudget += 1;
       continue;
     }
-    const context = buildContext(
-      input.workspaceRoot,
+    const context = buildCandidateRecommendationContext({
+      database: input.database,
+      workspaceRoot: input.workspaceRoot,
       candidate,
-      rows.get(candidate.id) ?? [],
-      input.config,
-      input.enabledPolicyIds ?? [],
-    );
+      config: input.config,
+      enabledPolicyIds: input.enabledPolicyIds,
+    });
+    const decision = decisions.find(
+      (item) => item.candidateId === candidate.id,
+    )!;
+    const recommendationStatus = candidateStore.recommendationStatus({
+      identityKey: candidate.identityKey,
+      observationFingerprint: candidate.observationFingerprint,
+      contextFingerprint: context.contextFingerprint,
+      adapterId: CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+      adapterContractVersion:
+        CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+      promptVersion: CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
+      providerId: input.provider,
+      requestedModelId: input.requestedModelId ?? "provider-default",
+    });
+    if (
+      recommendationStatus.currentRecommendationIds.length > 0 &&
+      !input.refresh
+    ) {
+      decision.eligible = false;
+      decision.reasons = [
+        ...new Set<CandidateEligibilityReason>([
+          ...decision.reasons,
+          "already-recommended",
+        ]),
+      ].sort();
+      continue;
+    }
     if (
       context.estimatedTokens > input.config.budgets.maxTokensPerCandidate ||
       estimatedInputTokens + context.estimatedTokens >
@@ -775,7 +830,8 @@ export function buildCandidateRecommendationPreview(input: {
     budgets: input.config.budgets,
     summary: {
       observedCandidates: all.length,
-      eligibleCandidates: eligible.length,
+      eligibleCandidates: decisions.filter((decision) => decision.eligible)
+        .length,
       includedCandidates: contexts.length,
       excludedCandidates: decisions.filter((item) => !item.eligible).length,
       deferredByBudget,

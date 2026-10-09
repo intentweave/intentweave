@@ -3,6 +3,12 @@
 
 import type Database from "@intentweave/sqlite-compat";
 import { canonicalJson, fingerprint } from "./canonical.js";
+import { CandidateInferenceStore } from "./inferences.js";
+import {
+  candidateRecommendationOutputFingerprint,
+  validateCandidateTriageRecommendation,
+  type CandidateTriageRecommendationV1,
+} from "./recommendations.js";
 import { subjectIdentity, type SubjectKind } from "./subjects.js";
 
 export type CandidateDiscoveryMode = "deterministic" | "semantic" | "manual";
@@ -73,12 +79,30 @@ export interface CandidateReviewInput {
   rationale: string;
   provenance: unknown;
   promotedClaimIdentityId?: string;
+  inferenceId?: string;
+  basedOnRecommendationId?: string;
 }
 
 export interface PersistedCandidateReview {
   id: string;
   created: boolean;
   candidate: PersistedCandidate;
+  inferenceId?: string;
+  basedOnRecommendationId?: string;
+}
+
+export interface CandidateRecommendationStatus {
+  currentRecommendationIds: string[];
+  staleRecommendationIds: string[];
+}
+
+export interface CandidateRecommendationRecord {
+  id: string;
+  candidateId: string;
+  candidateIdentityKey: string;
+  createdAt: number;
+  provenance: unknown;
+  envelope?: CandidateTriageRecommendationV1;
 }
 
 export interface CandidatePolicyDecisionInput {
@@ -194,6 +218,33 @@ function correlatedState(
   return subjects.every((subject) => subject.confidence !== "ambiguous")
     ? "correlated"
     : "discovered";
+}
+
+function recommendationBasis(
+  value: unknown,
+):
+  | { candidateObservationFingerprint: string; contextFingerprint: string }
+  | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const valueRecord = value as Record<string, unknown>;
+  const root =
+    valueRecord.recommendation &&
+    typeof valueRecord.recommendation === "object" &&
+    !Array.isArray(valueRecord.recommendation)
+      ? (valueRecord.recommendation as Record<string, unknown>)
+      : valueRecord;
+  const candidateObservationFingerprint =
+    typeof root.candidateObservationFingerprint === "string"
+      ? root.candidateObservationFingerprint
+      : undefined;
+  const contextFingerprint =
+    typeof root.contextFingerprint === "string"
+      ? root.contextFingerprint
+      : undefined;
+  if (!candidateObservationFingerprint || !contextFingerprint) return undefined;
+  return { candidateObservationFingerprint, contextFingerprint };
 }
 
 export class CandidateStore {
@@ -546,7 +597,185 @@ export class CandidateStore {
     );
   }
 
+  persistRecommendation(
+    envelope: CandidateTriageRecommendationV1,
+  ): PersistedCandidateReview {
+    const persist = this.db.transaction(() => {
+      const basis = this.rowById(envelope.candidateId);
+      if (!basis) {
+        throw new Error(`Candidate ${envelope.candidateId} does not exist`);
+      }
+      const current = this.rowsForIdentity(basis.identity_key)[0];
+      if (!current || current.id !== envelope.candidateId) {
+        throw new Error(
+          `Candidate ${envelope.candidateId} is not the current version`,
+        );
+      }
+      if (!this.recommendationState(current.state)) {
+        throw new Error(
+          `Candidate ${envelope.candidateId} cannot receive a Recommendation from ${current.state}`,
+        );
+      }
+      const details = this.details(current.id)!;
+      const validated = validateCandidateTriageRecommendation(envelope, {
+        candidateId: current.id,
+        candidateFingerprint: current.fingerprint,
+        candidateObservationFingerprint: current.observation_fingerprint,
+        contextFingerprint: envelope.contextFingerprint,
+        candidateClaimType: details.proposedClaimType,
+        evidenceVersionIds: details.evidence.flatMap((item) =>
+          item.evidenceVersionId ? [item.evidenceVersionId] : [],
+        ),
+        subjects: details.subjects.map((subject) => ({
+          kind: subject.kind,
+          identityKey: subject.identityKey,
+          roles: [subject.role],
+        })),
+        requiredSubjectRoles: details.subjects.map((subject) => subject.role),
+        allowedClaimTypes: [details.proposedClaimType],
+        currentCandidateIds: this.listCurrent().map(
+          (candidate) => candidate.id,
+        ),
+      });
+      const inference = new CandidateInferenceStore(this.db).details(
+        validated.inferenceId,
+      );
+      if (!inference) {
+        throw new Error(
+          `Candidate Inference ${validated.inferenceId} does not exist`,
+        );
+      }
+      if (inference.identityKey !== current.identity_key) {
+        throw new Error(
+          "Recommendation Inference does not belong to the current Candidate identity",
+        );
+      }
+      if (inference.inputFingerprint !== validated.contextFingerprint) {
+        throw new Error(
+          "Recommendation envelope context fingerprint does not match the persisted Inference input",
+        );
+      }
+      if (
+        inference.outputFingerprint !==
+        candidateRecommendationOutputFingerprint(validated)
+      ) {
+        throw new Error(
+          "Recommendation envelope does not match the persisted Inference output",
+        );
+      }
+      if (
+        inference.confidence !== validated.confidence ||
+        inference.rationale !== validated.rationale ||
+        canonicalJson(inference.evidenceVersionIds) !==
+          canonicalJson([...validated.evidenceVersionIds].sort()) ||
+        canonicalJson(inference.proposedSubjectBindings) !==
+          canonicalJson(
+            [...(validated.proposedSubjectBindings ?? [])].sort((left, right) =>
+              canonicalJson(left).localeCompare(canonicalJson(right)),
+            ),
+          )
+      ) {
+        throw new Error(
+          "Recommendation envelope does not match the persisted Inference details",
+        );
+      }
+      return this.persistReview({
+        candidateId: validated.candidateId,
+        actorKind: "ai",
+        actorId: inference.providerId,
+        decision: validated.recommendation,
+        effect: "recommendation",
+        rationale: validated.rationale,
+        provenance: { recommendation: validated },
+        inferenceId: validated.inferenceId,
+      });
+    });
+    return persist();
+  }
+
+  recommendation(reviewId: string): CandidateRecommendationRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT review.id, review.candidate_id, candidate.identity_key,
+                review.provenance_json, review.created_at
+         FROM candidate_reviews review
+         JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+         WHERE review.id = ?
+           AND review.actor_kind = 'ai'
+           AND review.effect = 'recommendation'`,
+      )
+      .get(reviewId) as
+      | {
+          id: string;
+          candidate_id: string;
+          identity_key: string;
+          provenance_json: string;
+          created_at: number;
+        }
+      | undefined;
+    return row ? this.recommendationFromRow(row) : undefined;
+  }
+
+  recommendations(identityKey: string): CandidateRecommendationRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT review.id, review.candidate_id, candidate.identity_key,
+                review.provenance_json, review.created_at
+         FROM candidate_reviews review
+         JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+         WHERE candidate.identity_key = ?
+           AND review.actor_kind = 'ai'
+           AND review.effect = 'recommendation'
+         ORDER BY review.created_at, review.id`,
+      )
+      .all(identityKey) as Array<{
+      id: string;
+      candidate_id: string;
+      identity_key: string;
+      provenance_json: string;
+      created_at: number;
+    }>;
+    return rows.map((row) => this.recommendationFromRow(row));
+  }
+
+  private recommendationFromRow(row: {
+    id: string;
+    candidate_id: string;
+    identity_key: string;
+    provenance_json: string;
+    created_at: number;
+  }): CandidateRecommendationRecord {
+    const provenance = JSON.parse(row.provenance_json) as unknown;
+    const recommendation =
+      provenance && typeof provenance === "object" && !Array.isArray(provenance)
+        ? (provenance as Record<string, unknown>).recommendation
+        : undefined;
+    return {
+      id: row.id,
+      candidateId: row.candidate_id,
+      candidateIdentityKey: row.identity_key,
+      createdAt: row.created_at,
+      provenance,
+      ...(recommendation &&
+      typeof recommendation === "object" &&
+      !Array.isArray(recommendation) &&
+      (recommendation as Record<string, unknown>).contractVersion ===
+        "candidate-triage-recommendation@1"
+        ? { envelope: recommendation as CandidateTriageRecommendationV1 }
+        : {}),
+    };
+  }
+
   review(input: CandidateReviewInput): PersistedCandidateReview {
+    if (input.effect === "recommendation") {
+      throw new Error(
+        "Use persistRecommendation with a validated Recommendation envelope",
+      );
+    }
+    return this.persistReview(input);
+  }
+
+  private persistReview(input: CandidateReviewInput): PersistedCandidateReview {
     const review = this.db.transaction(() => {
       requireNonEmpty(input.actorId, "Candidate Review actor");
       requireNonEmpty(input.rationale, "Candidate Review rationale");
@@ -559,6 +788,8 @@ export class CandidateStore {
         rationale: input.rationale,
         provenance: input.provenance,
         promotedClaimIdentityId: input.promotedClaimIdentityId ?? null,
+        inferenceId: input.inferenceId ?? null,
+        basedOnRecommendationId: input.basedOnRecommendationId ?? null,
       })}`;
       const existing = this.db
         .prepare(`SELECT id FROM candidate_reviews WHERE id = ?`)
@@ -573,6 +804,10 @@ export class CandidateStore {
           id: existing.id,
           created: false,
           candidate: persistedCandidate(current, false),
+          ...(input.inferenceId ? { inferenceId: input.inferenceId } : {}),
+          ...(input.basedOnRecommendationId
+            ? { basedOnRecommendationId: input.basedOnRecommendationId }
+            : {}),
         };
       }
       const current = this.rowsForIdentity(basis.identity_key)[0];
@@ -581,11 +816,67 @@ export class CandidateStore {
           `Candidate ${input.candidateId} is not the current version`,
         );
       }
+      if (input.basedOnRecommendationId) {
+        if (input.effect !== "effective" || input.actorKind === "ai") {
+          throw new Error(
+            "Only effective human or Policy Reviews may reference a Recommendation",
+          );
+        }
+        const currentBasis = recommendationBasis(input.provenance);
+        const recommendationRow = this.db
+          .prepare(
+            `SELECT candidate.identity_key, candidate.observation_fingerprint,
+                    review.actor_kind, review.effect, review.provenance_json
+             FROM candidate_reviews review
+             JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+             WHERE review.id = ?`,
+          )
+          .get(input.basedOnRecommendationId) as
+          | {
+              identity_key: string;
+              observation_fingerprint: string;
+              actor_kind: string;
+              effect: string;
+              provenance_json: string;
+            }
+          | undefined;
+        let recommendationBasisValue: ReturnType<typeof recommendationBasis>;
+        try {
+          recommendationBasisValue = recommendationRow
+            ? recommendationBasis(JSON.parse(recommendationRow.provenance_json))
+            : undefined;
+        } catch {
+          recommendationBasisValue = undefined;
+        }
+        if (
+          !recommendationRow ||
+          recommendationRow.identity_key !== current.identity_key ||
+          recommendationRow.observation_fingerprint !==
+            current.observation_fingerprint ||
+          recommendationRow.actor_kind !== "ai" ||
+          recommendationRow.effect !== "recommendation" ||
+          !currentBasis ||
+          currentBasis.candidateObservationFingerprint !==
+            current.observation_fingerprint ||
+          !recommendationBasisValue ||
+          recommendationBasisValue.contextFingerprint !==
+            currentBasis.contextFingerprint
+        ) {
+          throw new Error(
+            "basedOnRecommendationId must reference a Recommendation for the current Candidate observation and context",
+          );
+        }
+      }
+      const recommendation = input.effect === "recommendation";
       const directPolicyDecision =
         input.actorKind === "policy" &&
         input.effect === "effective" &&
         current.state === "correlated";
-      if (current.state !== "triaged" && !directPolicyDecision) {
+      if (
+        !recommendation &&
+        current.state !== "triaged" &&
+        !directPolicyDecision
+      ) {
         throw new Error(
           `Candidate ${input.candidateId} must be triaged before Review`,
         );
@@ -601,8 +892,9 @@ export class CandidateStore {
         .prepare(
           `INSERT INTO candidate_reviews (
              id, candidate_id, promoted_claim_identity_id, actor_kind,
-             actor_id, decision, effect, rationale, provenance_json, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             actor_id, decision, effect, rationale, provenance_json, created_at,
+             inference_id, based_on_recommendation_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           reviewId,
@@ -615,6 +907,8 @@ export class CandidateStore {
           input.rationale,
           canonicalJson(input.provenance),
           Date.now(),
+          input.inferenceId ?? null,
+          input.basedOnRecommendationId ?? null,
         );
 
       let candidate = persistedCandidate(current, false);
@@ -629,9 +923,80 @@ export class CandidateStore {
           candidateReviewId: reviewId,
         });
       }
-      return { id: reviewId, created: true, candidate };
+      return {
+        id: reviewId,
+        created: true,
+        candidate,
+        ...(input.inferenceId ? { inferenceId: input.inferenceId } : {}),
+        ...(input.basedOnRecommendationId
+          ? { basedOnRecommendationId: input.basedOnRecommendationId }
+          : {}),
+      };
     });
     return review();
+  }
+
+  recommendationStatus(input: {
+    identityKey: string;
+    observationFingerprint: string;
+    contextFingerprint: string;
+    adapterId: string;
+    adapterContractVersion: string;
+    promptVersion: string;
+    providerId: string;
+    requestedModelId: string;
+  }): CandidateRecommendationStatus {
+    const rows = this.db
+      .prepare(
+        `SELECT review.id, candidate.observation_fingerprint,
+          review.provenance_json, inference.adapter_id,
+          inference.contract_version, inference.prompt_version,
+          inference.provider_id, inference.model_id
+         FROM candidate_reviews review
+         JOIN claim_candidates candidate ON candidate.id = review.candidate_id
+         LEFT JOIN candidate_inferences inference
+           ON inference.id = review.inference_id
+         WHERE candidate.identity_key = ?
+           AND review.actor_kind = 'ai'
+           AND review.effect = 'recommendation'
+         ORDER BY review.created_at, review.id`,
+      )
+      .all(input.identityKey) as Array<{
+      id: string;
+      observation_fingerprint: string;
+      provenance_json: string;
+      adapter_id: string | null;
+      contract_version: string | null;
+      prompt_version: string | null;
+      provider_id: string | null;
+      model_id: string | null;
+    }>;
+    const currentRecommendationIds: string[] = [];
+    const staleRecommendationIds: string[] = [];
+    for (const row of rows) {
+      let basis: ReturnType<typeof recommendationBasis>;
+      try {
+        basis = recommendationBasis(JSON.parse(row.provenance_json));
+      } catch {
+        basis = undefined;
+      }
+      if (
+        row.observation_fingerprint === input.observationFingerprint &&
+        basis?.candidateObservationFingerprint ===
+          input.observationFingerprint &&
+        basis.contextFingerprint === input.contextFingerprint &&
+        row.adapter_id === input.adapterId &&
+        row.contract_version === input.adapterContractVersion &&
+        row.prompt_version === input.promptVersion &&
+        row.provider_id === input.providerId &&
+        row.model_id === input.requestedModelId
+      ) {
+        currentRecommendationIds.push(row.id);
+      } else {
+        staleRecommendationIds.push(row.id);
+      }
+    }
+    return { currentRecommendationIds, staleRecommendationIds };
   }
 
   applyPolicyDecision(
@@ -918,6 +1283,12 @@ export class CandidateStore {
       (from === "correlated" && to === "triaged") ||
       (from === "triaged" &&
         (to === "promoted" || to === "rejected" || to === "suppressed"))
+    );
+  }
+
+  private recommendationState(state: CandidateState): boolean {
+    return (
+      state === "discovered" || state === "correlated" || state === "triaged"
     );
   }
 

@@ -1,9 +1,13 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import { canonicalJson } from "./canonical.js";
+import { canonicalJson, fingerprint } from "./canonical.js";
 
-export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "1" as const;
+export const CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION = "1" as const;
+export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "2" as const;
+export type ClaimsPortableStateSchemaVersion =
+  | typeof CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION
+  | typeof CLAIMS_PORTABLE_STATE_SCHEMA_VERSION;
 
 export type PortableJsonValue =
   | null
@@ -31,6 +35,30 @@ export interface PortableCandidateDecision {
   actor: PortableClaimsActor;
   decidedAt: string;
   rationale: string;
+  recommendationBasis?: PortableRecommendationBasisV1;
+}
+
+export interface PortableRecommendationBasisV1 {
+  contractVersion: "candidate-triage-recommendation@1";
+  recommendationKey: string;
+  candidateObservationFingerprint: string;
+  contextFingerprint: string;
+  inferenceFingerprint: string;
+  adapterId: string;
+  adapterContractVersion: string;
+  promptVersion: string;
+  providerId: string;
+  requestedModelId: string;
+  effectiveModelId: string;
+  outputFingerprint: string;
+  recommendation: "promote" | "reject" | "suppress" | "defer";
+  priority: "critical" | "high" | "medium" | "low";
+}
+
+export function portableRecommendationBasisKey(
+  basis: Omit<PortableRecommendationBasisV1, "recommendationKey">,
+): string {
+  return fingerprint(basis);
 }
 
 export interface PortableSubjectBinding {
@@ -74,7 +102,7 @@ export interface PortableClaimOrigin {
 }
 
 export interface PortableClaimsState {
-  schemaVersion: typeof CLAIMS_PORTABLE_STATE_SCHEMA_VERSION;
+  schemaVersion: ClaimsPortableStateSchemaVersion;
   policies: Record<string, PortableClaimsPolicy>;
   candidateDecisions: Record<string, PortableCandidateDecision>;
   subjectBindings: Record<string, PortableSubjectBinding>;
@@ -272,8 +300,16 @@ function parseCandidateDecision(
     "actor",
     "decidedAt",
     "rationale",
+    "recommendationBasis",
   ]);
   const actor = parseActor(decision.actor, `${path}.actor`);
+  const recommendationBasis =
+    decision.recommendationBasis === undefined
+      ? undefined
+      : parseRecommendationBasis(
+          decision.recommendationBasis,
+          `${path}.recommendationBasis`,
+        );
   return {
     decision: requireEnum(decision.decision, `${path}.decision`, [
       "promote",
@@ -287,7 +323,87 @@ function parseCandidateDecision(
     actor,
     decidedAt: requireTimestamp(decision.decidedAt, `${path}.decidedAt`),
     rationale: requireString(decision.rationale, `${path}.rationale`),
+    ...(recommendationBasis === undefined ? {} : { recommendationBasis }),
   };
+}
+
+function parseRecommendationBasis(
+  value: unknown,
+  path: string,
+): PortableRecommendationBasisV1 {
+  const basis = requireRecord(value, path);
+  assertOnlyKeys(basis, path, [
+    "contractVersion",
+    "recommendationKey",
+    "candidateObservationFingerprint",
+    "contextFingerprint",
+    "inferenceFingerprint",
+    "adapterId",
+    "adapterContractVersion",
+    "promptVersion",
+    "providerId",
+    "requestedModelId",
+    "effectiveModelId",
+    "outputFingerprint",
+    "recommendation",
+    "priority",
+  ]);
+  const normalized = {
+    contractVersion: requireEnum(
+      basis.contractVersion,
+      `${path}.contractVersion`,
+      ["candidate-triage-recommendation@1"],
+    ),
+    candidateObservationFingerprint: requireFingerprint(
+      basis.candidateObservationFingerprint,
+      `${path}.candidateObservationFingerprint`,
+    ),
+    contextFingerprint: requireFingerprint(
+      basis.contextFingerprint,
+      `${path}.contextFingerprint`,
+    ),
+    inferenceFingerprint: requireFingerprint(
+      basis.inferenceFingerprint,
+      `${path}.inferenceFingerprint`,
+    ),
+    adapterId: requireString(basis.adapterId, `${path}.adapterId`),
+    adapterContractVersion: requireString(
+      basis.adapterContractVersion,
+      `${path}.adapterContractVersion`,
+    ),
+    promptVersion: requireString(basis.promptVersion, `${path}.promptVersion`),
+    providerId: requireString(basis.providerId, `${path}.providerId`),
+    requestedModelId: requireString(
+      basis.requestedModelId,
+      `${path}.requestedModelId`,
+    ),
+    effectiveModelId: requireString(
+      basis.effectiveModelId,
+      `${path}.effectiveModelId`,
+    ),
+    outputFingerprint: requireFingerprint(
+      basis.outputFingerprint,
+      `${path}.outputFingerprint`,
+    ),
+    recommendation: requireEnum(
+      basis.recommendation,
+      `${path}.recommendation`,
+      ["promote", "reject", "suppress", "defer"],
+    ),
+    priority: requireEnum(basis.priority, `${path}.priority`, [
+      "critical",
+      "high",
+      "medium",
+      "low",
+    ]),
+  } satisfies Omit<PortableRecommendationBasisV1, "recommendationKey">;
+  const expectedKey = portableRecommendationBasisKey(normalized);
+  if (basis.recommendationKey !== expectedKey) {
+    throw new ClaimsPortableStateError(
+      `${path}.recommendationKey does not match its canonical recommendation basis`,
+    );
+  }
+  return { ...normalized, recommendationKey: expectedKey };
 }
 
 function parseSubjectBinding(
@@ -550,10 +666,35 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     "baselineAcceptances",
     "claimOrigins",
   ]);
-  if (state.schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION) {
+  const schemaVersion = requireEnum(
+    state.schemaVersion,
+    "Claims portable state.schemaVersion",
+    [
+      CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
+      CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
+    ],
+  );
+  if (
+    schemaVersion !== CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION &&
+    schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION
+  ) {
     throw new ClaimsPortableStateError(
-      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION} or ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
     );
+  }
+  if (schemaVersion === CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION) {
+    const candidateDecisions = requireRecord(
+      state.candidateDecisions,
+      "candidateDecisions",
+    );
+    for (const [key, value] of Object.entries(candidateDecisions)) {
+      const decision = requireRecord(value, `candidateDecisions.${key}`);
+      if (decision.recommendationBasis !== undefined) {
+        throw new ClaimsPortableStateError(
+          `candidateDecisions.${key}.recommendationBasis requires schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+        );
+      }
+    }
   }
 
   const parsed: PortableClaimsState = {

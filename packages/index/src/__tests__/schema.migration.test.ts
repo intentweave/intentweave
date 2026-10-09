@@ -14,6 +14,7 @@ import {
   migrateSchema16To17,
   migrateSchema17To18,
   migrateSchema18To19,
+  migrateSchema19To20,
   openMigratedDatabase,
   restoreClaimsHistory,
   snapshotClaimsHistory,
@@ -520,7 +521,7 @@ describe("migrateSchema14To15 hardening", () => {
       migrated
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "19" });
+    ).toEqual({ value: "20" });
     migrated.close();
 
     const backupPath = schemaMigrationBackupPath(dbPath, "16");
@@ -826,7 +827,7 @@ describe("migrateSchema14To15 hardening", () => {
       migrated
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "19" });
+    ).toEqual({ value: "20" });
     migrated.close();
 
     const backupPath = schemaMigrationBackupPath(dbPath, "17");
@@ -913,6 +914,148 @@ describe("migrateSchema14To15 hardening", () => {
     expect(db.prepare(`PRAGMA foreign_key_check`).all()).toEqual([]);
   });
 
+  it("migrates schema 19 Reviews and backfills a unique AI Candidate Inference", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    migrateSchema18To19(db);
+    db.exec(`
+      INSERT INTO candidate_inferences (
+        id, inference_identity_key, version_ordinal, adapter_id,
+        contract_version, mode, provider_id, model_id, prompt_version,
+        input_fingerprint, output_fingerprint, evidence_version_ids_json,
+        proposed_subject_bindings_json, confidence, rationale,
+        provenance_json, created_at
+      ) VALUES (
+        'candidate-inference:test@1', 'candidate:test', 1,
+        'test-adapter', '1', 'model', 'test-provider', 'test-model', 'prompt-1',
+        'input-fingerprint', 'output-fingerprint', '[]', '[]', 'ambiguous',
+        'defer this candidate', '{}', 100
+      );
+      INSERT INTO claim_candidates (
+        id, identity_key, version_ordinal, candidate_kind, proposed_claim_type,
+        discovery_mode, discovery_adapter_id, discovery_contract_version,
+        inference_id, confidence, state, fingerprint, observation_fingerprint,
+        normalized_statement_json, provenance_json, created_at
+      ) VALUES (
+        'candidate:test@1', 'candidate:test', 1, 'test', 'CLM-TEST',
+        'semantic', 'test-adapter', '1', 'candidate-inference:test@1',
+        'ambiguous', 'discovered', 'candidate-fingerprint',
+        'candidate-observation', '{}', '{}', 101
+      );
+      INSERT INTO candidate_reviews (
+        id, candidate_id, promoted_claim_identity_id, actor_kind, actor_id,
+        decision, effect, rationale, provenance_json, created_at
+      ) VALUES
+        ('candidate-review:human', 'candidate:test@1', NULL, 'human', 'reviewer',
+         'defer', 'effective', 'await evidence', '{}', 102),
+        ('candidate-review:ai', 'candidate:test@1', NULL, 'ai', 'test-provider',
+         'defer', 'recommendation', 'ambiguous candidate', '{}', 103);
+    `);
+
+    migrateSchema19To20(db);
+
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "20" });
+    expect(
+      (
+        db.prepare(`PRAGMA table_info(candidate_reviews)`).all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    ).toEqual(
+      expect.arrayContaining(["inference_id", "based_on_recommendation_id"]),
+    );
+    expect(
+      db
+        .prepare(
+          `SELECT id, candidate_id, actor_kind, effect, inference_id,
+                  based_on_recommendation_id, created_at
+           FROM candidate_reviews ORDER BY id`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: "candidate-review:ai",
+        candidate_id: "candidate:test@1",
+        actor_kind: "ai",
+        effect: "recommendation",
+        inference_id: "candidate-inference:test@1",
+        based_on_recommendation_id: null,
+        created_at: 103,
+      },
+      {
+        id: "candidate-review:human",
+        candidate_id: "candidate:test@1",
+        actor_kind: "human",
+        effect: "effective",
+        inference_id: null,
+        based_on_recommendation_id: null,
+        created_at: 102,
+      },
+    ]);
+    expect(db.prepare(`PRAGMA foreign_key_check`).all()).toEqual([]);
+  });
+
+  it("rejects malformed schema-19 AI recommendation history atomically", () => {
+    db.exec(`
+      CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '14');
+    `);
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    migrateSchema18To19(db);
+    db.exec(`
+      INSERT INTO claim_candidates (
+        id, identity_key, version_ordinal, candidate_kind, proposed_claim_type,
+        discovery_mode, discovery_adapter_id, discovery_contract_version,
+        inference_id, confidence, state, fingerprint, observation_fingerprint,
+        normalized_statement_json, provenance_json, created_at
+      ) VALUES (
+        'candidate:broken@1', 'candidate:broken', 1, 'test', 'CLM-TEST',
+        'semantic', 'test-adapter', '1', NULL, 'ambiguous', 'discovered',
+        'candidate-fingerprint', 'candidate-observation', '{}', '{}', 99
+      );
+      INSERT INTO candidate_reviews (
+        id, candidate_id, promoted_claim_identity_id, actor_kind, actor_id,
+        decision, effect, rationale, provenance_json, created_at
+      ) VALUES (
+        'candidate-review:broken', 'candidate:broken@1', NULL, 'ai', 'provider',
+        'defer', 'recommendation', 'broken history', '{}', 100
+      );
+    `);
+
+    expect(() => migrateSchema19To20(db)).toThrow(
+      /has no unique Candidate inference/i,
+    );
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "19" });
+    expect(
+      (
+        db.prepare(`PRAGMA table_info(candidate_reviews)`).all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    ).not.toContain("inference_id");
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name = 'candidate_reviews_g6b'`,
+        )
+        .get(),
+    ).toBeUndefined();
+  });
+
   it("rolls back every Candidate table when schema 19 migration fails", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -990,20 +1133,20 @@ describe("migrateSchema14To15 hardening", () => {
     database
       .prepare(
         `INSERT OR REPLACE INTO _meta (key, value)
-         VALUES ('schema_version', '20')`,
+         VALUES ('schema_version', '21')`,
       )
       .run();
     database.close();
 
     expect(() => openMigratedDatabase(dbPath)).toThrow(
-      /schema version 20 is incompatible/i,
+      /schema version 21 is incompatible/i,
     );
     const untouched = new Database(dbPath, { readonly: true });
     expect(
       untouched
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "20" });
+    ).toEqual({ value: "21" });
     untouched.close();
     rmSync(directory, { recursive: true, force: true });
   });

@@ -1037,19 +1037,35 @@ violations.
 
 The existing Claims companion layer remains. Schema changes follow the current
 one-step, version-guarded migration discipline and are split at the G1/G2
-boundary rather than bundled into one large version. Assuming implementation
-starts from the current schema version `16`, the sequence is:
+boundary rather than bundled into one large version. The sequence began at
+schema 16; schemas 17-19 are implemented and schema 19 is the current G6
+baseline:
 
 | Schema | Phase | Change                                                                                                                                                              |
 | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `17`   | G1a   | add `subject_identities`, `subject_aliases`, `claim_subjects`, and `evidence_subjects`; backfill Parameter Subjects and dual-write                                  |
 | `18`   | G1b   | rebuild Claim identity storage with nullable legacy Parameter linkage, versioned generic Claim contracts, Subject continuity, and authoritative role-based Subjects |
 | `19`   | G2    | add `claim_candidates`, `candidate_evidence`, `candidate_subjects`, `candidate_inferences`, `candidate_reviews`, and `candidate_policy_decisions`                   |
+| `20`   | G6b   | rebuild `candidate_reviews` with explicit `inference_id` and `based_on_recommendation_id` references, constraints, and lookup indexes                               |
+| `21`   | G6d   | add append-only `candidate_automation_observations` for report-only Policy evaluation; effective decisions continue to use `candidate_policy_decisions`             |
 
-If the baseline schema advances before implementation, the numbers shift but
-the order, transaction boundaries, and one-version-at-a-time migrations do not.
-Splitting is based on dependency and recovery boundaries, not on an arbitrary
-table-count limit.
+Schemas 17-19 are historical compatibility surfaces and no longer renumber. If
+another migration lands before G6b or G6d implementation, planned schemas 20 or
+21 shift forward, but their order, transaction boundaries, and
+one-version-at-a-time migrations do not. Splitting is based on dependency and
+recovery boundaries, not on an arbitrary table-count limit.
+
+Migration `19 -> 20` preflights all existing Review rows, rebuilds the table in
+one transaction, preserves IDs and timestamps byte for byte, and verifies row
+counts and foreign keys before commit. Existing effective Reviews receive null
+values for both new references. A historical AI Recommendation is backfilled
+from the referenced Candidate version's single `inference_id`; if that link is
+missing or ambiguous, preflight fails with an actionable repair error and
+changes nothing. Migration `20 -> 21` is additive and transactional. A schema-19
+database reaches 21 only through both guarded steps; unsupported downgrade
+remains rejected. TypeScript and native schema creation, migration, snapshot
+restoration, and parity tests must describe the same columns, constraints, and
+indexes before either version ships.
 
 ### 10.1 Identity and Versioning
 
@@ -1144,13 +1160,52 @@ and reproducible RuleResult or Assessment projections do not need to be stored
 in Git. The portable artifact stores the normalized effective result and enough
 provenance to audit it, not necessarily the full provider request or response.
 
+G6b introduces portable-state schema v2. Version 1 remains readable and migrates
+deterministically to v2; writers emit only v2 after the migration. An effective
+Candidate decision that was informed by an AI recommendation gains an optional
+`recommendationBasis` snapshot containing only durable, normalized fields:
+
+```ts
+interface PortableRecommendationBasisV1 {
+  contractVersion: "candidate-triage-recommendation@1";
+  recommendationKey: string;
+  candidateObservationFingerprint: string;
+  contextFingerprint: string;
+  inferenceFingerprint: string;
+  adapterId: string;
+  adapterContractVersion: string;
+  promptVersion: string;
+  providerId: string;
+  requestedModelId: string;
+  effectiveModelId: string;
+  outputFingerprint: string;
+  recommendation: "promote" | "reject" | "suppress" | "defer";
+  priority: "critical" | "high" | "medium" | "low";
+}
+```
+
+`recommendationKey` is the SHA-256 fingerprint of the canonical snapshot above
+without the key itself. It is stable across fresh indexes and never contains a
+SQLite row ID. Unaccepted recommendations remain local and do not create a
+top-level portable collection. Provider payloads, prompts, source excerpts,
+token-level reasoning, request IDs, and credentials are never exported.
+
+`inferenceFingerprint` is the SHA-256 fingerprint of canonical adapter ID,
+adapter contract, provider ID, requested model ID, prompt version, input and
+logical output fingerprints, normalized Evidence identity/material-fingerprint
+pairs, proposed Subject bindings, confidence, and normalized rationale. It
+excludes the local Inference ID, ordinal, timestamp, request ID, latency, token
+usage, paths, spans, and raw provider payload. The same effective inference
+therefore reproduces across fresh indexes without pretending that two distinct
+provider calls are the same historical event.
+
 When SQLite is built, portable decisions and effective semantic bindings are
 imported and validated against their referenced identities. Missing or ambiguous
 references are `inconclusive` or require migration; they are never silently
 reassigned.
 
-The portable v1 artifact is `.iw/claims/state.yaml`. It is human-reviewable YAML
-validated against a strict, versioned domain schema with these top-level maps:
+The portable artifact is `.iw/claims/state.yaml`. Version 1 is human-reviewable
+YAML validated against a strict domain schema with these top-level maps:
 
 ```text
 schemaVersion
@@ -1161,6 +1216,14 @@ assessmentReviews
 baselineAcceptances
 claimOrigins
 ```
+
+Portable v2 retains these top-level maps unchanged. It extends only effective
+`candidateDecisions` with the optional `recommendationBasis` snapshot. A v1
+file therefore has an unambiguous lossless migration to v2 with that field
+absent. Import validates all fingerprints and treats a missing local inference
+as auditable historical provenance, not as permission to call a provider. If
+the effective normalized Subject binding or Candidate basis cannot be
+reconstructed, the imported decision is `inconclusive` rather than reassigned.
 
 The contract is fixed as follows:
 
@@ -1227,10 +1290,12 @@ standard path:
 ```text
 iw claims discover [--semantic] [--provider P] [--model M] [--all]
 iw claims candidates list [--state S] [--subject-kind K] [--all]
-iw claims candidates recommend [--semantic] [--candidate ID] [--limit N]
+iw claims candidates recommend --semantic [--candidate ID] [--limit N] \
+  [--provider P] [--model M] [--refresh] [--format text|json]
 iw claims candidates triage [--subject-kind K] [--claim-type T]
 iw claims candidates review --candidate ID --actor NAME \
-  --decision promote|reject|suppress|defer
+  --decision promote|reject|suppress|defer \
+  [--based-on-recommendation RECOMMENDATION_ID]
 iw claims check [--scope S] [--since REV] [--claim-type T] [--refresh]
 iw claims list [--status S] [--subject-kind K] [--history]
 iw claims explain [--claim ID] [--scope S] [--history]
@@ -1255,6 +1320,20 @@ Behavior:
   prioritization, grouping, and duplicate-proposal workflow. It persists
   `actorKind: ai`, `effect: recommendation` Reviews but does not make an
   effective Candidate decision or change CI behavior.
+- `--refresh` bypasses a reusable current recommendation deliberately; provider
+  aliases or a later provider-side model revision never trigger an implicit
+  refresh. The newly observed effective model and provider metadata are stored
+  on the appended Inference.
+- an effective human or Policy Review may name
+  `--based-on-recommendation`. The referenced recommendation may belong to an
+  earlier lifecycle-only Candidate version, but its Candidate identity and
+  observation fingerprint must still match the current Candidate. The effective
+  decision may agree or disagree with the recommendation and retains its own
+  rationale.
+- `candidates list` supports filters for recommendation, priority, proposed
+  Claim family, duplicate group, stale/current recommendation, and missing
+  human Review. Stable ordering is priority, then Claim family, then Candidate
+  identity key; `--all` never hides ambiguous or low-priority Candidates.
 - `claims candidates review` decides whether to add a Candidate to the governed
   Claim inventory; `claims review` evaluates a ClaimAssessment instead.
 - `claims list` is an inventory and lifecycle view, not a replacement for
@@ -1915,6 +1994,12 @@ entry point for baseline and diagnostic Rules workflows.
 Status: implementation in progress. G6a preview substrate is implemented; G6b
 and G6c remain proposed beyond the bounded G2 reference adapter.
 
+Specification checkpoint (2026-10-04): G6b-G6d are divided below into
+implementation increments with explicit recommendation, grounding, migration,
+portability, batch, automation, and acceptance contracts. G6b.1 is the next
+implementation increment. G6d remains gated on measured G6b quality and may not
+skip its report-only phase.
+
 G6 starts only after the generalized lifecycle has been proven by one vertical
 slice and then broadened through the Symbol, Endpoint, and Architecture Claim
 families. This sequencing is deliberate:
@@ -2033,12 +2118,12 @@ model opinion about whether the author-written Rule is relevant.
 
 #### G6b: AI Relevance and Triage Recommendations
 
-Add a provider-neutral recommendation contract:
+Add a provider-neutral recommendation contract. The model returns only the
+bounded output; it never chooses the authoritative Candidate identity,
+fingerprints, provider metadata, or inference identity:
 
 ```ts
-interface CandidateTriageRecommendation {
-  candidateId: string;
-  candidateFingerprint: string;
+interface CandidateTriageRecommendationOutputV1 {
   recommendation: "promote" | "reject" | "suppress" | "defer";
   rationale: string;
   evidenceVersionIds: string[];
@@ -2046,25 +2131,89 @@ interface CandidateTriageRecommendation {
   priority: "critical" | "high" | "medium" | "low";
   duplicateOfCandidateId?: string;
   proposedClaimType?: string;
-  proposedSubjectBindings?: unknown[];
+  proposedSubjectBindings?: Array<{
+    kind: SubjectKind;
+    identityKey: string;
+    role: string;
+  }>;
+}
+
+interface CandidateTriageRecommendationV1 extends CandidateTriageRecommendationOutputV1 {
+  contractVersion: "candidate-triage-recommendation@1";
+  inferenceId: string;
+  candidateId: string;
+  candidateFingerprint: string;
+  candidateObservationFingerprint: string;
+  contextFingerprint: string;
 }
 ```
 
-The recommendation is persisted as a versioned `CandidateInference` and a
-`candidate_review` with `actorKind: "ai"` and `effect: "recommendation"`.
-Recommendation Reviews may reference current `discovered`, `correlated`, or
-`triaged` Candidates without changing their lifecycle state; effective Reviews
-still require explicit Triage. This requires a narrow CandidateStore contract
-extension because the current Review path accepts only `triaged` Candidates.
+The local `candidate-triage-recommendation@1` JSON Schema is closed
+(`additionalProperties: false`) and enforces the enums above, a rationale of
+1-2,000 characters, unique Evidence IDs with one to the configured
+`maxEvidencePerCandidate`, and unique Subject proposals. `duplicateOfCandidateId`
+must name another current Candidate. Every EvidenceVersion, Subject identity,
+role, and proposed Claim type must already exist in the supplied context or a
+registered Claim-family contract. Unknown or invented references reject the
+entire output as `schema_mismatch` or `ungrounded_output`; they are never
+partially retained. `probable` requires at least one grounded EvidenceVersion
+and all required Subject roles. `ambiguous` must recommend `defer`; its priority
+may still be used as a non-effective ranking hint.
 
-A recommendation is current only for the exact Candidate fingerprint and
-Inference contract that produced it. A materially changed Candidate makes the
-recommendation stale without deleting it. Model aliases do not trigger silent
-refreshes; a new model revision is observed only through an explicit refresh or
-contract change and appends a new Inference version. An effective human or
-Policy Review that acts on a recommendation records
-`basedOnRecommendationId`; it has its own actor and rationale and never mutates
-the recommendation.
+`ungrounded_output` is an adapter-level result, not a new
+`StructuredInferenceResult` transport failure. G6b Recommendations never apply
+their proposed Claim type or Subject bindings directly; they remain proposals
+until an effective human/Policy decision or the G6c correlation kernel validates
+and applies them.
+
+The adapter wraps the validated output with the authoritative Candidate ID,
+Candidate version fingerprint, Candidate observation fingerprint, context
+fingerprint, and persisted Inference ID. This envelope is persisted as a
+versioned `CandidateInference` and a `candidate_review` with `actorKind: "ai"`,
+`effect: "recommendation"`, and a non-null `inference_id`. Recommendation
+Reviews may reference current `discovered`, `correlated`, or `triaged`
+Candidates without changing their lifecycle state; effective Reviews still
+require explicit Triage. A recommendation cannot carry
+`promoted_claim_identity_id`.
+
+Schema 20 rebuilds `candidate_reviews` with two nullable foreign keys:
+
+```text
+inference_id                -> candidate_inferences.id
+based_on_recommendation_id  -> candidate_reviews.id
+```
+
+Database checks enforce that an AI Recommendation has `effect =
+recommendation`, a non-null `inference_id`, and no
+`based_on_recommendation_id`; an effective human or Policy Review has no direct
+`inference_id` and may reference exactly one AI Recommendation. The referenced
+Recommendation must have the same Candidate identity and observation
+fingerprint as the current effective Review basis. CandidateStore validates
+these cross-row conditions transactionally because SQLite `CHECK` constraints
+cannot express them. Review IDs include both references in their canonical
+fingerprint.
+
+Recommendation currency is based on semantic input, not lifecycle state. It is
+current when the Candidate identity and observation fingerprint, context
+fingerprint, adapter contract, prompt version, configured provider, and
+requested model still match. A `discovered -> correlated -> triaged` transition
+alone therefore does not invalidate a Recommendation; changed Candidate
+content, Evidence, Subjects, context contract, prompt, or adapter contract does.
+The Candidate version fingerprint remains audit provenance but is not the sole
+staleness key. Stale Recommendations remain append-only history and are
+excluded from default ranking and automation.
+
+The cache key continues to use the configured/requested model ID, because the
+effective provider model is unknown before a call. Provider aliases do not
+trigger silent refreshes. `--refresh`, a changed requested model, or a changed
+contract appends an Inference and records the effective model ID, model
+revision, request ID, finish reason, output mode, latency, and token usage in
+Structured Inference provenance.
+
+An effective human or Policy Review that acts on a Recommendation records
+`basedOnRecommendationId`; it has its own actor, decision, and rationale and
+never mutates the Recommendation. Its portable decision contains the stable
+`recommendationBasis` snapshot from section 10.4 rather than a SQLite row ID.
 
 The authoring workflow becomes:
 
@@ -2080,12 +2229,240 @@ iw claims candidates recommend --semantic
 the effective human or Policy decision. Ranking and grouping are non-authoritative
 views over persisted artifacts and never affect Claim assessment or CI exits.
 
+Implementation is split into independently shippable increments:
+
+##### G6b.1: Recommendation Contract and Persistence
+
+Implementation checkpoint (2026-10-04): implemented without a provider call.
+The closed `CandidateTriageRecommendationV1` schema and local grounding
+validator reject invented Evidence, Subjects, Claim types, duplicate Candidates,
+unknown fields, and ambiguous non-`defer` recommendations. Schema 20 rebuilds
+`candidate_reviews` transactionally, preserves historical IDs/timestamps, and
+backfills only uniquely resolvable historical AI Inferences. CandidateStore can
+attach a non-effective AI Recommendation to current `discovered`, `correlated`,
+or `triaged` Candidates without changing state; effective human/Policy Reviews
+may reference one matching Recommendation. G6a context now exposes both the
+Candidate version fingerprint and observation fingerprint, and recommendation
+eligibility uses current Candidate identity plus observation/context basis for
+staleness. Portable state v2 accepts v1 input, emits canonical v2, and supports
+the optional recommendation basis without exporting local row IDs or provider
+payloads.
+
+Follow-up hardening (2026-10-04): lifecycle-only Candidate transitions no longer
+change the semantic Context fingerprint. Recommendation currency now also
+checks adapter, adapter contract, prompt, provider, and requested model
+metadata. Only the dedicated `persistRecommendation(envelope)` path can create
+an AI Recommendation; it validates the closed Envelope against the current
+Candidate, Inference, and allowed lifecycle state, while effective Reviews
+require matching observation and Context fingerprints. Portable v1 rejects a
+`recommendationBasis`, and the portable Recommendation key uses an explicit
+shared canonical builder distinct from the full Envelope key.
+
+- implement the closed output schema, local grounding validator, and canonical
+  `CandidateTriageRecommendationV1` envelope,
+- extend the G6a context envelope with the Candidate observation fingerprint;
+  retain the existing Candidate version fingerprint for display and audit,
+- migrate schema 19 -> 20 by rebuilding `candidate_reviews`, preserving every
+  row and rejecting malformed historical references atomically,
+- extend CandidateStore so Recommendations can attach to current `discovered`,
+  `correlated`, or `triaged` Candidates without changing state,
+- add staleness queries based on observation and context fingerprints,
+- change the G6a `already-recommended` exclusion to resolve the current
+  Candidate identity plus unchanged observation/context basis rather than only
+  an exact historical Candidate row ID,
+- introduce portable-state v2 and byte-identical v1 -> v2 -> import -> export
+  fixtures.
+
+##### G6b.2: Single-Candidate Vertical Slice
+
+Implementation checkpoint (2026-10-04): implemented. `iw claims candidates
+recommend --semantic --candidate ID` now executes one bounded request through
+the existing provider allowlist and `StructuredInferenceService`, with explicit
+`--model` and `--refresh`. Current Recommendations reuse the full semantic
+cache key without a provider call; refresh appends Inference and Review history.
+Provider, schema, and grounding failures remain typed and create no persisted
+Inference or Recommendation. Inference plus Recommendation persistence is one
+SQLite transaction. `candidates list` and Candidate/Claim Explain expose the
+grounded Recommendation and current/stale status. Human Candidate Reviews can
+use `--based-on-recommendation`; the stable portable basis is exported, and a
+fresh SQLite projection can Explain it offline without provider access.
+
+Follow-up hardening (2026-10-06): Recommendation persistence now requires the
+Envelope Context fingerprint to equal the persisted Inference input fingerprint.
+`--based-on-recommendation` rebuilds the current Context and checks active
+Policies, adapter/contract/prompt, provider, and requested model before the
+effective Review transaction. List and Explain compare against that active
+configuration and mark historical contract drift stale. Their JSON and text
+views include Usage, Evidence references, proposed Claim family, and Subject
+bindings. The provider schema is generated from the configured Evidence limit
+instead of a fixed eight-item maximum.
+
+- enable `recommend --semantic --candidate ID` with the existing provider
+  allowlist, context preview, Structured Inference service, and explicit model,
+- execute no provider call when a current reusable Inference exists unless
+  `--refresh` is present,
+- persist one Inference and Recommendation atomically only after validation;
+  typed provider or validation failures create no Recommendation Review,
+- render raw status, grounded rationale, Evidence references, priority,
+  proposed family/Subjects, usage, and current/stale state in list and Explain,
+- allow a later human Review to agree or disagree through
+  `--based-on-recommendation` and prove offline Explain after fresh import.
+
+##### G6b.3: Bounded Batch, Ranking, and Evaluation
+
+- version `.iw/claims/inference.yaml` to v2 with an optional local USD price
+  table keyed by provider, requested model, price version/effective date, and
+  per-million input, cached-input, output, and reasoning-token rates; v1 remains
+  valid for preview but real execution with a positive cost cap requires a
+  matching price entry; v2 also adds positive
+  `maxOutputTokensPerCandidate` and `maxReasoningTokensPerCandidate` budgets,
+- use the G6a `maxCandidates`, Evidence, excerpt, token, estimated-cost, and
+  concurrency budgets without hidden overrides,
+- reserve estimated input plus the configured maximum output/reasoning tokens
+  at the matching price before scheduling each call; defer the Candidate rather
+  than knowingly crossing the total token or cost cap; a provider/model that
+  cannot enforce the reserved completion budget is ineligible for batch mode,
+- process each Candidate in its own transaction; one provider failure does not
+  roll back successful Recommendations for other Candidates,
+- preserve deterministic output ordering by priority, Claim family, and
+  Candidate identity key regardless of completion order,
+- return `0` when every selected Candidate is cached or successfully processed,
+  `1` when any selected Candidate fails after valid partial results are
+  persisted, `64` for usage/configuration errors, and `130` for user
+  cancellation,
+- stop scheduling new calls after cancellation or a hard total budget is
+  reached, await or cancel in-flight calls, and report processed, cached,
+  failed, cancelled, and budget-deferred counts,
+- report actual input/output/reasoning/cached token usage; monetary cost is
+  reported only when a versioned local price entry exists and is otherwise
+  explicitly `unknown`,
+- evaluate precision, recall, duplicate usefulness, priority calibration, and
+  first-screen noise on at least three external labeled repositories before
+  claiming quality improvement.
+
 #### G6c: Generalized Semantic Correlation
 
 Replace the hard-coded single semantic invocation with a versioned induction
 adapter registry keyed by Claim family, Candidate kind, and supported Subject
 roles. Every adapter uses the same normalized grounding contract and can assign
 at most `probable` confidence without a deterministic anchor.
+
+The runtime contract extends the definition in section 8.2 without exposing a
+provider-specific type:
+
+```ts
+interface SemanticCorrelationAdapterV1 {
+  definition: InductionAdapterDefinition & {
+    mode: "model";
+    supportedClaimTypes: string[];
+    supportedCandidateKinds: string[];
+    supportedSubjectRoles: Record<string, SubjectKind[]>;
+    priority: number;
+    promptVersion: string;
+  };
+  select(input: CorrelationSelectionContext): CorrelationWorkItem[];
+  buildContext(item: CorrelationWorkItem): SemanticCorrelationContextV1;
+  outputSchema: Record<string, unknown>;
+  ground(
+    item: CorrelationWorkItem,
+    output: unknown,
+  ): GroundedCorrelationProposalV1;
+}
+
+interface CorrelationSelectionContext {
+  candidates: CandidateDetails[];
+  enabledPolicyIds: string[];
+}
+
+interface CorrelationWorkItem {
+  key: string;
+  candidateIdentityKeys: string[];
+  candidateObservationFingerprints: string[];
+  evidenceVersionIds: string[];
+  allowedSubjectIdentityKeys: string[];
+  contextFingerprint: string;
+}
+
+interface SemanticCorrelationContextV1 {
+  contractVersion: "semantic-correlation-context@1";
+  workItem: CorrelationWorkItem;
+  candidates: Array<{
+    identityKey: string;
+    observationFingerprint: string;
+    proposedClaimType: string;
+    normalizedStatement: unknown;
+  }>;
+  evidence: Array<{
+    id: string;
+    role: string;
+    sourceKind: string;
+    normalizedValue: unknown;
+    sourceExcerpt?: string;
+  }>;
+  availableSubjects: Array<{
+    identityKey: string;
+    kind: SubjectKind;
+    allowedRoles: string[];
+  }>;
+  repositoryPolicies: string[];
+  security: {
+    repositoryContentIsUntrusted: true;
+    toolExecutionAllowed: false;
+    contentBoundary: "repository-data-only";
+    redactionCount: number;
+  };
+}
+
+interface GroundedCorrelationProposalV1 {
+  contractVersion: "grounded-correlation@1";
+  candidateIdentityKey: string;
+  candidateObservationFingerprint: string;
+  evidenceVersionIds: string[];
+  proposedClaimType: string;
+  subjectBindings: Array<{
+    subjectIdentityKey: string;
+    role: string;
+    confidence: "probable" | "ambiguous";
+  }>;
+  confidence: "probable" | "ambiguous";
+  rationale: string;
+}
+```
+
+`select` and `buildContext` are deterministic and fingerprinted. Model output
+may choose only Candidate, Evidence, Claim-family, and Subject values present in
+the work item. `ground` resolves those choices to existing durable identity
+keys, verifies the registered family roles, and rejects invented or missing
+references atomically. An ungrounded output is retained only as an ambiguous
+Inference failure artifact; it does not change Candidate Subjects or state.
+
+Applying a probable grounded proposal is one CandidateStore transaction. It
+appends a Candidate version, attaches the Inference, inserts the grounded
+`candidate_subjects` rows with `basis = inference:<adapter>@<contract>`, and
+transitions `discovered -> correlated` when all required roles are present. It
+does not materialize a Claim or make an effective Candidate Review. An
+ambiguous proposal leaves the Candidate `discovered`; a proposal for an already
+`correlated` or `triaged` Candidate may append provenance but cannot silently
+replace an effective Subject binding.
+
+Adapter execution and conflict resolution are deterministic:
+
+1. explicit repository bindings and enabled deterministic Policies win,
+2. deterministic `certain` correlations win over model proposals,
+3. identical probable model bindings from multiple adapters coalesce while all
+   Inference provenance is retained,
+4. conflicting probable bindings for the same required role produce an
+   explicit `ambiguous` correlation conflict and no effective binding,
+5. adapter priority controls scheduling only; it is never a first-writer-wins
+   authority rule. Ties are ordered by adapter ID.
+
+The registry rejects duplicate adapter IDs, unsupported Claim families, unknown
+Subject roles, and incompatible input/output schema versions at startup.
+Inference reuse and staleness follow the G6b cache contract. A changed registry
+order alone is not material; a changed adapter, prompt, context, Evidence, or
+grounded binding is. Provider failure leaves the Candidate unchanged and is
+visible in the authoring summary. `claims check` and `intent check` never invoke
+the registry.
 
 Expansion order follows measured coverage gaps rather than implementation
 convenience:
@@ -2102,6 +2479,39 @@ convenience:
 Known frameworks and explicit bindings continue to use deterministic adapters
 first. Model-backed correlation is a fallback for unresolved ambiguity, not a
 replacement for CARI Evidence or family Rules.
+
+Implementation is split as follows:
+
+##### G6c.1: Registry and Grounding Kernel
+
+- extract the existing bounded Symbol semantic path behind
+  `SemanticCorrelationAdapterV1` as the compatibility fixture,
+- add registry validation, deterministic scheduling, normalized grounding,
+  conflict resolution, cache reuse, and atomic Candidate application,
+- test invented IDs, missing required roles, duplicate adapters, conflicting
+  proposals, deterministic precedence, provider failures, and disabled
+  semantic coverage reporting.
+
+##### G6c.2: Framework-Independent Endpoint Correlation
+
+- target unresolved Endpoint Candidates with unknown middleware wrappers,
+  global Guards, project authentication helpers, and indirect route bindings,
+- require grounded route, handler, and protection Evidence plus registered
+  Endpoint Subject roles before assigning `probable`,
+- demonstrate one useful correlation that the deterministic NestJS and generic
+  endpoint adapters cannot establish, and one plausible but ambiguous case that
+  remains unbound.
+
+##### G6c.3: Cross-Artifact and Continuity Expansion
+
+- correlate code, configuration, documentation, ADR, and Architecture Rule
+  Candidates through shared durable Subjects and EvidenceVersion references,
+- add duplicate proposals and refactor continuity only where Git and structural
+  identity remain ambiguous,
+- add prose Claim extraction last and require a registered Claim-family Rule
+  Adapter before any resulting Candidate can be promoted,
+- measure each adapter separately; a high aggregate score may not hide a weak
+  Claim family or source-kind pair.
 
 #### G6d: Policy-Governed Automation
 
@@ -2126,6 +2536,119 @@ thresholds, a minimum reviewed sample, an acceptable false-promotion rate, and
 a report-only observation period. A recommendation cannot auto-promote a Claim
 whose initial and future Assessments would depend only on model judgment.
 
+The first automation contract is deliberately limited to promotion. Automatic
+rejection, suppression, Assessment Review, baseline acceptance, and Claim
+retirement are outside v1:
+
+```ts
+interface CandidateAutomationPolicyV1 {
+  contractVersion: "candidate-automation-policy@1";
+  policyId: string;
+  policyVersion: string;
+  enabled: boolean;
+  mode: "report-only" | "effective";
+  claimTypes: string[];
+  recommendationContractVersion: "candidate-triage-recommendation@1";
+  allowedAdapters: Array<{
+    adapterId: string;
+    contractVersion: string;
+    promptVersion: string;
+  }>;
+  allowedProviders: string[];
+  allowedRequestedModels: string[];
+  requiredConfidence: "probable";
+  requiredDecision: "promote";
+  anchors: {
+    requireAllClaimFamilySubjectRoles: true;
+    requireVersionedEvidence: true;
+    requireDeterministicRuleAdapter: true;
+  };
+  qualityGate: {
+    labeledDatasetFingerprint: string;
+    minimumReviewedSamples: number;
+    minimumPrecision: number;
+    maximumFalsePromotionRate: number;
+    minimumReportOnlyObservations: number;
+    minimumReportOnlyDays: number;
+  };
+  activationBasis?: {
+    reportOnlyPolicyVersion: string;
+    policyConfigurationFingerprint: string;
+    observationSetFingerprint: string;
+    observedFrom: string;
+    observedThrough: string;
+    reportOnlyObservations: number;
+    reviewedSamples: number;
+    precision: number;
+    falsePromotionRate: number;
+  };
+}
+```
+
+Rates are inclusive decimal values in `[0, 1]`; counts and days are positive
+integers. Precision is `accepted promote recommendations / all reviewed promote
+recommendations`. The false-promotion rate uses the same denominator; a false
+promotion is a report-only `promote` outcome whose later effective human
+decision is `reject` or `suppress`. Unresolved and `defer` decisions do not count
+as success or failure and remain visible as coverage. Metrics are computed per
+Policy version and Claim family from a content-addressed labeled dataset.
+Results from another family, contract, prompt, provider, requested model, or
+Policy configuration cannot satisfy the gate.
+
+Schema 21 adds `candidate_automation_observations`. Each append-only row stores
+the Candidate identity and observation fingerprint, Recommendation Review,
+stable recommendation key, Policy ID/version, Claim family, would-be decision,
+eligibility result and reasons, quality-dataset fingerprint, normalized metrics
+snapshot, and creation time. A unique fingerprint over Candidate basis,
+Recommendation, and Policy version makes repeated report-only runs idempotent.
+The table records no effective decision.
+
+Raw automation observations remain local operational history. The generated
+`activationBasis` summary is committed inside the portable Policy configuration
+and is sufficient to validate an effective Policy on a fresh checkout. Its
+observation-set fingerprint makes later audit against the full local or exported
+evaluation dataset possible without committing source excerpts or provider
+payloads.
+
+`report-only` evaluates the exact production eligibility predicate and records
+what would happen, but it never calls Candidate promotion, writes
+`candidate_policy_decisions`, changes Candidate state, or affects CI. Transition
+to `effective` is never automatic: a human must commit a new Policy version with
+`mode: effective` and an `activationBasis`. The basis is a canonical summary of
+the prior report-only Policy version and its observation set. Its
+`policyConfigurationFingerprint` covers every behavior field except Policy
+version, mode, and activation basis, so activation cannot change eligibility
+while reusing old measurements. Import validates the committed summary and
+thresholds without requiring local observation rows or a provider call.
+`activationBasis` is forbidden in report-only mode and required in effective
+mode. Lowering a threshold also requires a new Policy version and is visible in
+Explain.
+
+Before every effective action the runtime revalidates that:
+
+- the Recommendation is current, grounded, `probable`, and recommends
+  `promote`,
+- Candidate observation, context, inference, adapter, prompt, provider, model,
+  and Policy fingerprints match the approved basis,
+- all required Subject roles and EvidenceVersion references still exist,
+- the Claim family has a deterministic Rule Adapter capable of producing a
+  non-model Assessment after promotion,
+- no effective human decision conflicts with the action, and no equal or more
+  specific deterministic Policy has rejected or suppressed the Candidate.
+
+Effective auto-promotion materializes the Policy decision, effective Candidate
+Review with `basedOnRecommendationId`, promoted Claim, initial deterministic or
+`inconclusive` Assessment, portable decision, and audit provenance in one
+orchestrated transaction. A failure rolls back the complete action. Human
+effective decisions have highest precedence, then explicit deterministic
+repository Policies, then AI-backed automation. No automation decision silently
+overwrites another effective decision; a conflict is surfaced for Review.
+
+Disabling an automation Policy stops future actions but does not delete history
+or retire Claims already promoted under it. Retirement requires a separate
+explicit governance decision. Checks of existing promoted Claims remain fully
+deterministic and offline.
+
 Unaccepted recommendations remain local. Once a human or Policy makes a
 semantic binding effective, `.iw/claims/state.yaml` stores the normalized
 binding, durable identity keys, Candidate and Inference fingerprints, adapter
@@ -2133,6 +2656,37 @@ and contract versions, effective decision, and audit provenance. Provider
 payloads, full prompts, secrets, and source excerpts remain local. Export,
 import, stale-reference handling, and byte-identical round trips follow the
 portability contract in section 10.4.
+
+Implementation is split as follows:
+
+##### G6d.1: Report-Only Policy
+
+- implement strict Policy parsing, schema 20 -> 21 migration, eligibility
+  evaluation, idempotent observations, Explain output, and metrics calculation,
+- generate a canonical activation-basis proposal only after the prior
+  behavior-equivalent report-only Policy version has a passing labeled dataset
+  and completed observation gate; reject hand-written mismatches,
+- test threshold boundaries, stale Recommendations, changed models/contracts,
+  conflicting human decisions, missing anchors, and repeated observations.
+
+##### G6d.2: Explicit Activation and Atomic Promotion
+
+- require a committed Policy version change from `report-only` to `effective`,
+- revalidate the complete basis immediately before action and perform promotion
+  atomically through the existing family registry and Candidate lifecycle,
+- persist portable `recommendationBasis`, Policy provenance, and deterministic
+  Assessment dependencies; prove fresh-checkout import and offline Explain,
+- run the effective Policy in a bounded opt-in release for one Claim family
+  before allowing additional families.
+
+##### G6d.3: Policy Authoring Assistance
+
+- summarize repeated accepted human decisions and propose, but never write or
+  enable, a Candidate Policy,
+- show the exact historical sample, exclusions, thresholds, and projected
+  report-only coverage used by the proposal,
+- require human editing, commit, and the full G6d.1 observation gate before the
+  proposed Policy can become effective.
 
 Acceptance:
 
@@ -2145,11 +2699,18 @@ Acceptance:
   its own actor, rationale, `basedOnRecommendationId`, and portable provenance,
 - stale recommendations are retained as history but excluded from current
   ranking and automation,
+- lifecycle-only Candidate transitions do not stale an otherwise unchanged
+  Recommendation; changed observation or context fingerprints do,
+- effective Reviews reference Recommendations through schema-checked foreign
+  keys locally and stable portable `recommendationBasis` snapshots across fresh
+  indexes,
 - disabling semantic induction reduces authoring coverage explicitly but does
   not change checks of promoted Claims,
 - batch limits, cancellation, typed provider failures, privacy exclusions, and
   cost summaries are visible to the authoring user,
 - ranking does not hide ambiguous or low-priority Candidates from `--all`,
+- conflicting semantic Subject proposals remain ambiguous and deterministic
+  bindings retain precedence regardless of adapter completion order,
 - evaluation fixtures demonstrate useful precision and inbox-noise reduction
   before any AI-backed auto-promotion Policy can become effective,
 - effective semantic bindings survive export, fresh-index import, and offline
@@ -2159,6 +2720,8 @@ Acceptance:
 - AI-backed auto-promotion is unavailable without a deterministic family Rule
   Adapter, grounded Subject anchors, reviewed quality thresholds, and a
   completed report-only period,
+- report-only automation is observably idempotent and cannot alter effective
+  Candidate, Claim, Assessment, Review, portable-state, or CI results,
 - `iw claims check` and `iw intent check` never require a model call.
 
 ### Communication and Public Validation Track
@@ -2250,6 +2813,47 @@ A2  forbidden import introduced, failed/refuted and reopen
 A3  forbidden import removed, supported/passed and reopen
 A4  Rule scope excludes every current source file, inconclusive
 A5  Architecture Rule removed, retained as not_applicable and history preserved
+```
+
+### AI Candidate Curation
+
+```text
+AI0 preview builds bounded redacted context and performs no provider call
+AI1 valid grounded output persists one Inference and one non-effective Review
+AI2 unchanged basis is a cache hit; --refresh appends a new Inference
+AI3 lifecycle-only Triage keeps the Recommendation current
+AI4 changed observation or context makes it stale without deleting history
+AI5 invented Evidence, Subject, Candidate, or Claim-family references are rejected
+AI6 refusal, filtering, truncation, invalid JSON, and schema mismatch stay distinct
+AI7 human decision references the Recommendation but keeps its own rationale
+AI8 portable v2 reproduces the effective decision and offline Explain
+AI9 one batch item fails while valid sibling Recommendations remain committed
+AI10 cancellation stops new work and returns the documented partial summary
+```
+
+### Generalized Semantic Correlation
+
+```text
+SC0 registry rejects duplicate IDs and incompatible contracts
+SC1 deterministic certain binding wins over a conflicting model proposal
+SC2 identical probable proposals coalesce with both provenance chains
+SC3 conflicting probable proposals remain ambiguous and do not bind Subjects
+SC4 unknown Endpoint wrapper is grounded through existing Evidence and Subjects
+SC5 plausible but ungrounded Endpoint proposal remains discovered
+SC6 disabled semantic adapters report reduced coverage without changing checks
+SC7 changed adapter, prompt, Evidence, or context appends inference history
+```
+
+### Policy-Governed Automation
+
+```text
+PA0 report-only records an idempotent would-promote observation and changes no state
+PA1 missing quality data, report duration, sample, Rule Adapter, or anchor blocks activation
+PA2 stale Recommendation or conflicting human decision blocks effective action
+PA3 committed effective Policy atomically promotes one eligible Candidate
+PA4 promotion failure rolls back Policy decision, Claim, Assessment, and portable state
+PA5 disabling Policy stops future actions but preserves governed Claims and history
+PA6 fresh checkout imports the effective basis and explains it without provider access
 ```
 
 Every semantic adapter additionally verifies:
@@ -2375,6 +2979,26 @@ Generalization is robust when:
 35. the self-checking 90-second workflow validates the deterministic lifecycle,
     expected exit semantics, and open material-change Reopen from a fresh
     temporary repository without credentials or network access.
+36. a grounded G6b Recommendation is persisted as a versioned Inference and a
+    non-effective Review, while typed provider or validation failures never
+    become successful Recommendations,
+37. lifecycle-only Candidate transitions retain a Recommendation whose
+    observation and context basis is unchanged; material input changes make it
+    stale without deleting history,
+38. portable-state v2 preserves the stable Recommendation basis of an effective
+    decision without exporting local row IDs, prompts, payloads, excerpts, or
+    credentials,
+39. G6b batch execution obeys repository budgets, has deterministic rendering,
+    preserves valid partial results, and reports cache, failure, cancellation,
+    usage, and budget deferral explicitly,
+40. the G6c registry rejects invented identities, preserves deterministic
+    precedence, and leaves conflicting probable proposals ambiguous rather than
+    selecting by execution order,
+41. G6d report-only observations are idempotent and cannot change Candidate,
+    Claim, Assessment, Review, portable state, or CI behavior,
+42. AI-backed auto-promotion requires a separately committed effective Policy
+    version, passing family-specific quality gates, grounded anchors, and a
+    deterministic Rule Adapter, and its complete action is atomic.
 
 ## 18. Explicit Non-Goals
 
@@ -2397,19 +3021,26 @@ The first extension does not include:
   Scope semantics, Review Policies, exports, and integrations,
 - every framework and programming language in the first release.
 
-## 19. Open Decisions Before G1
+## 19. Resolved Decisions and Remaining G6 Gates
 
-Only a small number of architecture decisions must be fixed before
-implementation:
+The original pre-G1 architecture decisions are resolved: G3 uses the bounded
+public-symbol documentation contract, G4 uses NestJS as its first deterministic
+framework adapter, Assessment Reviews use the established decision and exit
+semantics, and Candidate promotion remains human- or explicit-Policy-governed.
+G6b-G6d add no new open authority path.
 
-1. Which Symbol contract defines G3: documentation presence only, or signature
-   and error-case conformance?
-2. Which concrete web framework adapter is the first Endpoint slice?
-3. Which Assessment Review Decision values are fixed and how do they affect CI?
-4. Which Candidate Policies may promote automatically and which may only
-   recommend?
+The remaining gates are empirical rather than architectural:
 
-Recommendation:
+1. label Candidate decisions on at least two additional external repositories
+   so G6b evaluation covers three external repositories in total,
+2. demonstrate measured first-screen noise reduction before presenting G6b as
+   a quality improvement,
+3. validate the G6c.2 Endpoint adapter against at least one repository whose
+   authentication structure is not handled by the deterministic NestJS path,
+4. complete the family-specific G6d report-only sample and duration thresholds
+   before committing any effective automation Policy.
+
+Frozen decisions:
 
 - G1 starts with only `parameter`, `symbol`, `module`, and `endpoint` as reserved
   kinds.
@@ -2417,8 +3048,9 @@ Recommendation:
   for generic Claims while retaining the nullable legacy Parameter link.
 - G1 uses durable pre-migration snapshots for failure recovery instead of down
   migrations; downgrade after G1b-only writes is unsupported.
-- G3 starts with a small, positive Symbol documentation contract.
-- G4 supports exactly one framework present in the target repository.
+- G3 uses the small, positive Symbol documentation contract.
+- G4 initially supports exactly one framework present in the target repository:
+  NestJS.
 - Reviews initially use `accepted` and `rejected`; additional values require
   defined semantics.
 - Candidate Triage starts manually. AI provides opt-in Discovery, Correlation,
@@ -2439,8 +3071,9 @@ Recommendation:
 - Third-party provider frameworks may be implementation details of `plugin-llm`;
   their types do not cross into `@intentweave/core` or Claims contracts.
 - SQLite remains the Runtime projection. Effective team decisions and normalized
-  semantic bindings use the strict `.iw/claims/state.yaml` v1 contract; Git is
-  the portable history and provider payloads remain local.
+  semantic bindings use the strict `.iw/claims/state.yaml` contract; v1 remains
+  readable and G6b introduces v2 for the stable Recommendation basis. Git is the
+  portable history and provider payloads remain local.
 - Promoted Claim evaluation never depends on model availability.
 
 ## 20. Core Statement
