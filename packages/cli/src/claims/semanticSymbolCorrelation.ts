@@ -15,6 +15,12 @@ import {
   type CandidateInferenceDetails,
 } from "@intentweave/index";
 import type Database from "@intentweave/sqlite-compat";
+import {
+  SEMANTIC_CORRELATION_CONTEXT_CONTRACT,
+  SemanticCorrelationRegistry,
+  type SemanticCorrelationAdapterV1,
+  type SemanticCorrelationContextV1,
+} from "./semanticCorrelationRegistry.js";
 
 export const SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID =
   "semantic-symbol-documentation-correlation";
@@ -74,6 +80,19 @@ interface CorrelationGroup {
   inputFingerprint: string;
   inferenceIdentityKey: string;
 }
+
+export const SEMANTIC_SYMBOL_CORRELATION_ADAPTER_DEFINITION = {
+  id: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+  contractVersion: SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
+  mode: "model" as const,
+  inputSchemaVersion: "1" as const,
+  outputSchemaVersion: "1" as const,
+  supportedClaimTypes: ["CLM-PUBLIC-SYMBOL-DOCUMENTED"],
+  supportedCandidateKinds: ["public-symbol-documentation-correlation"],
+  supportedSubjectRoles: { subject: ["symbol" as const] },
+  priority: 100,
+  promptVersion: SEMANTIC_SYMBOL_CORRELATION_PROMPT_VERSION,
+};
 
 export interface SemanticSymbolCorrelationResult {
   status: "evaluated" | "not_applicable" | "failed";
@@ -232,6 +251,114 @@ function validatedSelection(
   };
 }
 
+export function createSemanticSymbolCorrelationAdapter(
+  database: Database.Database,
+  limit = 20,
+): SemanticCorrelationAdapterV1 {
+  return {
+    definition: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_DEFINITION,
+    select: () =>
+      evidenceGroups(database, limit).map((group) => ({
+        key: group.inferenceIdentityKey,
+        candidateIdentityKeys: group.candidates.map(
+          (candidate) => candidate.identityKey,
+        ),
+        candidateObservationFingerprints: group.candidates.map(
+          (candidate) => candidate.observationFingerprint,
+        ),
+        evidenceVersionIds: [group.evidence.id],
+        allowedClaimTypes: ["CLM-PUBLIC-SYMBOL-DOCUMENTED"],
+        allowedSubjectBindings: group.candidates.flatMap((candidate) =>
+          candidate.subjects
+            .filter((subject) => subject.kind === "symbol")
+            .map((subject) => ({
+              identityKey: subject.identityKey,
+              kind: subject.kind,
+              roles: [subject.role],
+            })),
+        ),
+        requiredSubjectRoles: ["subject"],
+        contextFingerprint: group.inputFingerprint,
+        metadata: group,
+      })),
+    buildContext: (item): SemanticCorrelationContextV1 => {
+      const group = item.metadata as CorrelationGroup;
+      const input = group.input as {
+        evidence: { normalizedValue: unknown };
+        alternatives: Array<{
+          candidateIdentityKey: string;
+          statement: unknown;
+          symbol: unknown;
+        }>;
+      };
+      return {
+        contractVersion: SEMANTIC_CORRELATION_CONTEXT_CONTRACT,
+        workItem: item,
+        candidates: input.alternatives.map((alternative) => ({
+          identityKey: alternative.candidateIdentityKey,
+          observationFingerprint:
+            group.candidates.find(
+              (candidate) =>
+                candidate.identityKey === alternative.candidateIdentityKey,
+            )?.observationFingerprint ?? "",
+          proposedClaimType: "CLM-PUBLIC-SYMBOL-DOCUMENTED",
+          normalizedStatement: alternative.statement,
+        })),
+        evidence: [
+          {
+            id: group.evidence.id,
+            role: "documentation",
+            sourceKind: "documentation-reference",
+            normalizedValue: input.evidence.normalizedValue,
+          },
+        ],
+        availableSubjects: item.allowedSubjectBindings.map((subject) => ({
+          identityKey: subject.identityKey,
+          kind: subject.kind,
+          allowedRoles: subject.roles,
+        })),
+        repositoryPolicies: [],
+        security: {
+          repositoryContentIsUntrusted: true,
+          toolExecutionAllowed: false,
+          contentBoundary: "repository-data-only",
+          redactionCount: 0,
+        },
+      };
+    },
+    outputSchema: OUTPUT_SCHEMA,
+    ground: (item, output) => {
+      const group = item.metadata as CorrelationGroup;
+      const selection = validatedSelection(
+        group,
+        output as SemanticCorrelationOutput,
+      );
+      if (!selection.grounded || !selection.selected) {
+        throw new Error(
+          "Semantic Symbol correlation did not produce one grounded Candidate",
+        );
+      }
+      return {
+        contractVersion: "grounded-correlation@1",
+        candidateIdentityKey: selection.selected.identityKey,
+        candidateObservationFingerprint:
+          selection.selected.observationFingerprint,
+        evidenceVersionIds: [group.evidence.id],
+        proposedClaimType: selection.selected.proposedClaimType,
+        subjectBindings: selection.selected.subjects
+          .filter((subject) => subject.kind === "symbol")
+          .map((subject) => ({
+            subjectIdentityKey: subject.identityKey,
+            role: subject.role,
+            confidence: "probable" as const,
+          })),
+        confidence: "probable",
+        rationale: (output as SemanticCorrelationOutput).rationale,
+      };
+    },
+  };
+}
+
 export async function runSemanticSymbolCorrelation(input: {
   database: Database.Database;
   provider: LLMProvider;
@@ -239,7 +366,18 @@ export async function runSemanticSymbolCorrelation(input: {
   limit?: number;
 }): Promise<SemanticSymbolCorrelationResult> {
   const limit = input.limit ?? 20;
-  const groups = evidenceGroups(input.database, limit);
+  const adapter = createSemanticSymbolCorrelationAdapter(input.database, limit);
+  const registry = new SemanticCorrelationRegistry([adapter]);
+  const groups = registry
+    .select({
+      candidates: new CandidateStore(input.database).listCurrent(),
+      enabledPolicyIds: [],
+    })
+    .flatMap(({ items }) =>
+      items
+        .map((item) => item.metadata)
+        .filter((metadata): metadata is CorrelationGroup => Boolean(metadata)),
+    );
   const result: SemanticSymbolCorrelationResult = {
     status: groups.length === 0 ? "not_applicable" : "evaluated",
     groups: groups.length,

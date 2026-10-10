@@ -2507,6 +2507,14 @@ Implementation is split as follows:
 
 ##### G6c.1: Registry and Grounding Kernel
 
+Implementation checkpoint (2026-10-10): initial registry/grounding contract
+implemented. The bounded Symbol semantic correlation path now selects work
+through `SemanticCorrelationRegistry`; adapter definitions, deterministic
+priority/ID ordering, grounded Candidate/Evidence/Claim/Subject references, and
+required probable Subject roles are validated provider-neutrally. Existing
+Symbol correlation behavior remains compatible; atomic Subject application and
+multi-adapter conflict resolution remain the next G6c.1 increment.
+
 - extract the existing bounded Symbol semantic path behind
   `SemanticCorrelationAdapterV1` as the compatibility fixture,
 - add registry validation, deterministic scheduling, normalized grounding,
