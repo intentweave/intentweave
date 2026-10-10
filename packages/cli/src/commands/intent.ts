@@ -5,7 +5,7 @@
  * iw intent — Intent Engine namespace
  *
  * Canonical subcommands:
- *   iw intent check [--domain X] → iw index rules-check [--domain X]
+ *   iw intent check [--domain X]   unified existing Rules + promoted Claims
  *   iw intent extract             → iw index rules-extract
  *   iw intent scan                → iw index scan-diagrams
  *   iw intent living              → iw doc-health
@@ -19,6 +19,7 @@
  */
 
 import { Command } from "commander";
+import { intentCheckSubcommand } from "./intentCheck.js";
 
 export const intentCommand = new Command("intent")
   .description(
@@ -43,6 +44,7 @@ Domain-specific shortcuts:
   iw intent check --domain all           → all domains combined
 `,
   )
+  .addCommand(intentCheckSubcommand)
   .action(function () {
     // Invoked when no subcommand is given (e.g. bare `iw intent`)
     intentCommand.help();

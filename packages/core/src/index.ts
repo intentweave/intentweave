@@ -41,6 +41,9 @@ export * from "./schemas/index.js";
 // Interfaces
 export * from "./interfaces.js";
 
+// Provider-neutral structured inference
+export * from "./inference/index.js";
+
 // Token usage & cost tracking
 export * from "./tokenUsage.js";
 

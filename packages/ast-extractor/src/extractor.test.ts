@@ -88,6 +88,48 @@ describe("AstExtractor", () => {
       expect(getInstance?.isStatic).toBe(true);
     });
 
+    it("extracts structured decorators only from their attached class and method", () => {
+      const code = `
+        @Controller("admin")
+        export class AdminController {
+          @Post("users")
+          @UseGuards(AuthGuard, RolesGuard)
+          createUser(): void {}
+
+          @Get("health")
+          health(): void {}
+        }
+      `;
+
+      const result = extractor.extractFromString(
+        code,
+        "admin.controller.ts",
+        "typescript",
+      );
+      const controller = result.symbols.find(
+        (symbol) => symbol.name === "AdminController",
+      );
+      const createUser = result.symbols.find(
+        (symbol) => symbol.name === "createUser",
+      );
+      const health = result.symbols.find((symbol) => symbol.name === "health");
+
+      expect(controller?.decoratorDetails).toEqual([
+        {
+          name: "Controller",
+          expression: 'Controller("admin")',
+          arguments: ['"admin"'],
+        },
+      ]);
+      expect(createUser?.decorators).toEqual(["Post", "UseGuards"]);
+      expect(createUser?.decoratorDetails?.[1]).toEqual({
+        name: "UseGuards",
+        expression: "UseGuards(AuthGuard, RolesGuard)",
+        arguments: ["AuthGuard", "RolesGuard"],
+      });
+      expect(health?.decorators).toEqual(["Get"]);
+    });
+
     it("should extract interface declarations", () => {
       const code = `
         export interface User {

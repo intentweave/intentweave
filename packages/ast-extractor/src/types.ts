@@ -45,6 +45,18 @@ export interface SourceRange {
   endColumn: number;
 }
 
+/** Structured decorator call retained for framework-specific Evidence. */
+export interface ExtractedDecorator {
+  /** Bare decorator name, for example `Controller` or `UseGuards`. */
+  name: string;
+
+  /** Decorator expression without the leading `@`. */
+  expression: string;
+
+  /** Raw argument expressions in source order. */
+  arguments: string[];
+}
+
 /**
  * Extracted symbol from source code
  */
@@ -102,6 +114,9 @@ export interface ExtractedSymbol {
 
   /** Decorator names applied to this symbol (e.g. ["Controller", "Injectable"]) */
   decorators?: string[];
+
+  /** Structured decorator calls for framework-specific correlation. */
+  decoratorDetails?: ExtractedDecorator[];
 }
 
 /**

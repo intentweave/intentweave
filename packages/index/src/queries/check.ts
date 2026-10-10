@@ -15,6 +15,11 @@ import type Database from "@intentweave/sqlite-compat";
 import type { CheckParams, CheckResult, CheckFinding } from "../types.js";
 import { openIndex } from "./shared.js";
 
+/** Annotation sources with enough structure to block CI on stale docs. */
+const BLOCKING_ANNOTATION_SOURCES = new Set(["code-span"]);
+const MIN_BLOCKING_ANNOTATION_IDF = 0.5;
+const MIN_BLOCKING_ANNOTATION_CONFIDENCE = 0.7;
+
 /**
  * Check changed files for documentation drift.
  */
@@ -51,10 +56,12 @@ export function checkFromDb(
         `
         SELECT a.doc_path, a.line, a.text, a.confidence, a.symbol_id,
                f_doc.last_modified AS doc_modified,
-               f_code.last_modified AS code_modified
+           f_code.last_modified AS code_modified,
+               a.source AS annotation_source,
+               a.idf_score AS annotation_idf_score
         FROM annotations a
         JOIN symbols s ON s.id = a.symbol_id
-        LEFT JOIN files f_doc ON f_doc.path = a.doc_path
+        JOIN files f_doc ON f_doc.path = a.doc_path AND f_doc.is_doc = 1
         LEFT JOIN files f_code ON f_code.path = s.file_path
         WHERE s.file_path = ?
           AND a.confidence >= 0.5
@@ -69,6 +76,8 @@ export function checkFromDb(
       symbol_id: string;
       doc_modified: string | null;
       code_modified: string | null;
+      annotation_source: string;
+      annotation_idf_score: number | null;
     }>;
 
     for (const ann of staleAnnotations) {
@@ -76,11 +85,15 @@ export function checkFromDb(
 
       if (daysBehind !== null && daysBehind > 7) {
         const severity: CheckFinding["severity"] =
-          daysBehind > 90 && ann.confidence >= 0.8
-            ? "critical"
-            : daysBehind > 30
-              ? "warning"
-              : "info";
+          !BLOCKING_ANNOTATION_SOURCES.has(ann.annotation_source) ||
+          (ann.annotation_idf_score ?? 0) < MIN_BLOCKING_ANNOTATION_IDF ||
+          ann.confidence < MIN_BLOCKING_ANNOTATION_CONFIDENCE
+            ? "info"
+            : daysBehind > 90 && ann.confidence >= 0.8
+              ? "critical"
+              : daysBehind > 30
+                ? "warning"
+                : "info";
 
         findings.push({
           severity,

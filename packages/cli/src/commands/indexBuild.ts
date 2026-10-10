@@ -52,8 +52,15 @@ import type { KwxStageOutput, TcgPipelineOutput } from "@intentweave/core";
 // Index package — facade + queries
 import {
   buildFromPaths,
+  discardClaimsHistory,
+  discardDatabaseFiles,
   type CariStageProgress,
   annotate,
+  replaceDatabaseAtomically,
+  restoreClaimsHistory,
+  snapshotClaimsHistory,
+  temporaryDatabasePath,
+  migrateSchemaToCurrent,
 } from "@intentweave/index";
 import { detectChanges, applyChanges, hashFile } from "@intentweave/index";
 import {
@@ -510,6 +517,14 @@ const indexBuildSubcommand = new Command("build")
     "Annotation depth: full (default) or structured (headings/bold/code spans only)",
     "full",
   )
+  .option(
+    "--kwx-workers <count>",
+    "Experimental TypeScript KWX chunk workers (1=serial control, 2-8=worker threads)",
+  )
+  .option(
+    "--sink-metrics <path>",
+    "Write measurement-only SQLite writer timings as JSON and use the TypeScript backend",
+  )
   .option("--include <patterns...>", "Only include files matching these globs")
   .option(
     "--exclude <patterns...>",
@@ -544,6 +559,14 @@ const indexBuildSubcommand = new Command("build")
     const cwd = process.cwd();
     const session = opts.session ?? path.basename(cwd);
     const verbose = opts.verbose;
+    const kwxWorkerExperiment = opts.kwxWorkers !== undefined;
+    const kwxWorkers = Number(opts.kwxWorkers ?? 1);
+    const sinkMetricsPath = typeof opts.sinkMetrics === "string" ? opts.sinkMetrics : undefined;
+    if (!Number.isInteger(kwxWorkers) || kwxWorkers < 1 || kwxWorkers > 8) {
+      console.error("--kwx-workers must be an integer from 1 through 8.");
+      process.exitCode = 2;
+      return;
+    }
 
     // Load .iw/config.yaml early — needed for alias resolution after build
     const iwConfig = await loadIwConfig(path.join(cwd, ".iw"));
@@ -567,6 +590,10 @@ const indexBuildSubcommand = new Command("build")
         `  ▸ depth: ${opts.depth} | output: ${opts.output ?? ".iw/index.db"}\n`,
       ),
     );
+    if (kwxWorkerExperiment) {
+      const mode = kwxWorkers === 1 ? "serial control" : `${kwxWorkers} workers`;
+      console.log(chalk.gray(`  ▸ experimental KWX chunk workers: ${mode} (TypeScript backend)\n`));
+    }
     if (iwConfig?.indexAllFiles) {
       console.log(
         chalk.gray(
@@ -593,6 +620,8 @@ const indexBuildSubcommand = new Command("build")
       //   • --no-native flag was NOT passed
       //   • The binary is found on disk (dev build or CARI_BUILD_PATH override)
       const canUseNative =
+        !kwxWorkerExperiment &&
+        !sinkMetricsPath &&
         roots.length === 0 &&
         !opts.include &&
         !opts.exclude &&
@@ -605,31 +634,41 @@ const indexBuildSubcommand = new Command("build")
           console.log(chalk.gray(`  ▸ using native binary: ${nativeBinary}\n`));
         }
         const dbPath = resolveDbPath(opts.output);
+        const claimsHistory = snapshotClaimsHistory(dbPath);
+        const temporaryDbPath = temporaryDatabasePath(dbPath);
         const t0 = performance.now();
         try {
           await runCariBuild({
             binaryPath: nativeBinary,
             root: cwd,
-            output: dbPath,
+            output: temporaryDbPath,
             depth: opts.depth,
             paths,
             verbose,
           });
-          const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-          console.log(
-            `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
-          );
+          // Released native binaries may still emit schema 14. Upgrade the
+          // additive claims companion layer before any helper opens the DB.
+          {
+            const db = new Database(temporaryDbPath);
+            try {
+              migrateSchemaToCurrent(db);
+              restoreClaimsHistory(db, claimsHistory);
+              db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+            } finally {
+              db.close();
+            }
+          }
 
           // Rebuild FTS5 indexes (native binary writes content tables but doesn't sync FTS)
-          rebuildFtsIndexes(dbPath);
+          rebuildFtsIndexes(temporaryDbPath);
 
           // Apply path alias resolution: auto-detect from tsconfig + manual .iw/config.yaml
           {
             const autoAliases = await detectTsPathAliases(cwd);
             const mergedAliases = { ...autoAliases, ...iwConfig?.aliases };
-            resolveImportAliases(dbPath, mergedAliases, verbose);
+            resolveImportAliases(temporaryDbPath, mergedAliases, verbose);
           }
-          normalizeImportExtensions(dbPath, verbose);
+          normalizeImportExtensions(temporaryDbPath, verbose);
 
           // Auto-snapshot conformance if .iw/rules.yaml exists (14.5, fire-and-forget)
           try {
@@ -643,12 +682,23 @@ const indexBuildSubcommand = new Command("build")
               ) as import("@intentweave/index").RulesConfig;
               if (config?.rules?.length) {
                 const snapshotId = `build-${Date.now()}`;
-                snapshotConformance(dbPath, config, snapshotId, Date.now());
+                snapshotConformance(
+                  temporaryDbPath,
+                  config,
+                  snapshotId,
+                  Date.now(),
+                );
               }
             }
           } catch {
             // Snapshot failure must not fail the build
           }
+
+          replaceDatabaseAtomically(temporaryDbPath, dbPath);
+          const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+          console.log(
+            `\n  ${chalk.green("✓")} Index built → ${dbPath} ${chalk.gray(`(${elapsed}s, native)`)}`,
+          );
           return;
         } catch (nativeErr: unknown) {
           const nativeMsg =
@@ -659,6 +709,9 @@ const indexBuildSubcommand = new Command("build")
             ),
           );
           // Fall through to the TypeScript pipeline below
+        } finally {
+          discardDatabaseFiles(temporaryDbPath);
+          discardClaimsHistory(claimsHistory);
         }
       }
       // ── end R1-f ────────────────────────────────────────────────────────────
@@ -667,7 +720,11 @@ const indexBuildSubcommand = new Command("build")
           opts.native === false
             ? "--no-native flag"
             : !canUseNative
-              ? "multi-root / filters active"
+              ? sinkMetricsPath
+                ? "SQLite sink metrics requested"
+                : kwxWorkerExperiment
+                  ? "KWX worker experiment"
+                  : "multi-root / filters active"
               : "native binary not found";
         console.log(chalk.gray(`  ▸ using TypeScript pipeline (${reason})\n`));
       }
@@ -682,6 +739,8 @@ const indexBuildSubcommand = new Command("build")
         includeAllFiles: iwConfig?.indexAllFiles ?? false,
         session,
         outputPath: opts.output,
+        kwxWorkers,
+        measureSinkMetrics: Boolean(sinkMetricsPath),
         maxFileSize: parseInt(opts.maxFileSize, 10),
         log: verbose
           ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
@@ -694,6 +753,31 @@ const indexBuildSubcommand = new Command("build")
           console.log(chalk.gray(`       → ${p.detail}`));
         },
       });
+
+      if (sinkMetricsPath) {
+        if (!result.sinkMetrics) {
+          throw new Error("SQLite sink metrics were requested but were not returned by the TypeScript writer.");
+        }
+        const absoluteMetricsPath = path.resolve(cwd, sinkMetricsPath);
+        if (absoluteMetricsPath === path.resolve(result.dbPath)) {
+          throw new Error("--sink-metrics output must not overwrite the SQLite database.");
+        }
+        await fs.mkdir(path.dirname(absoluteMetricsPath), { recursive: true });
+        await fs.writeFile(absoluteMetricsPath, `${JSON.stringify({
+          schemaVersion: 1,
+          generatedAt: new Date().toISOString(),
+          dbPath: result.dbPath,
+          buildDurationMs: result.durationMs,
+          counts: result.counts,
+          sinkMetrics: result.sinkMetrics,
+          caveats: [
+            "transactionBodyMs includes statement calls; timing fields overlap and must not be summed",
+            "synchronous SQLite API wall time is not lock-wait attribution",
+            "the current writer has no producer queue, so queue wait is not measured",
+          ],
+        }, null, 2)}\n`, "utf8");
+        console.log(chalk.gray(`  ▸ SQLite sink metrics: ${absoluteMetricsPath}`));
+      }
 
       console.log(`\n  ${chalk.green("✓")} Index built → ${result.dbPath}`);
       console.log(
@@ -4437,7 +4521,9 @@ function renderAsciiConformanceDiagram(
   return lines.join("\n");
 }
 
-async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
+export async function loadRulesConfig(
+  configPath: string,
+): Promise<RulesConfig> {
   let raw: string;
   try {
     raw = await fs.readFile(configPath, "utf-8");
@@ -4475,7 +4561,7 @@ async function loadRulesConfig(configPath: string): Promise<RulesConfig> {
  * Load optional .iw/config.yaml workspace config.
  * Returns undefined (silently) if the file doesn't exist.
  */
-async function loadIwConfig(
+export async function loadIwConfig(
   configDir: string,
 ): Promise<import("@intentweave/index").IwConfig | undefined> {
   const configPath = path.join(configDir, "config.yaml");
@@ -4497,7 +4583,7 @@ const SEVERITY_COLOR: Record<string, (s: string) => string> = {
 
 // ── Intent check presets ───────────────────────────────────────────────────
 
-const INTENT_CHECK_PRESETS: Record<
+export const INTENT_CHECK_PRESETS: Record<
   string,
   {
     domain: string;

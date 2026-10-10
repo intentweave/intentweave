@@ -8,6 +8,8 @@
  * Consumed by agents, CI, and editors — no Neo4j required.
  */
 
+import type { SqliteMetrics } from "@intentweave/sqlite-compat";
+
 // =============================================================================
 // Annotation (doc span → code symbol)
 // =============================================================================
@@ -176,6 +178,9 @@ export interface IndexBuildOptions {
   /** Output path for the SQLite database */
   outputPath?: string;
 
+  /** Collect measurement-only synchronous SQLite writer metrics. */
+  measureSinkMetrics?: boolean;
+
   /** Logging callback */
   log?: (msg: string) => void;
 
@@ -214,6 +219,23 @@ export interface IndexBuildResult {
 
   /** Build duration in ms */
   durationMs: number;
+
+  /** Optional measurement-only SQLite writer metrics. */
+  sinkMetrics?: SinkWriterMetrics;
+}
+
+export interface SinkTableWriteMeasurement {
+  readonly table: string;
+  readonly rowCount: number;
+  readonly durationMs: number;
+  readonly rowsPerSecond: number | null;
+}
+
+export interface SinkWriterMetrics {
+  readonly writerDurationMs: number;
+  readonly tableWrites: readonly SinkTableWriteMeasurement[];
+  readonly sqlite: SqliteMetrics;
+  readonly timingNote: string;
 }
 
 // =============================================================================

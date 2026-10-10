@@ -1,0 +1,11 @@
+parameters:
+  cli.index-build.depth:
+    codeDefaults:
+      - file: packages/cli/src/commands/indexBuild.ts
+        option: "--depth <depth>"
+    documentation:
+      - file: docs/CLI-USAGE.md
+        assertions:
+          - id: default-depth-doc
+            target: default
+            pattern: '^iw index build\s+# (?<value>structured) depth \(default\)$'

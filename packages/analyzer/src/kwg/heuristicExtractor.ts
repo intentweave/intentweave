@@ -293,18 +293,77 @@ export class HeuristicKeywordExtractor {
       text.replace(/^#{1,6}\s+.+$/gm, ""), // remove heading lines
     );
 
-    for (const term of this.dictionary) {
-      if (term.length < this.minLength) continue;
-      if (seen.has(term)) continue;
+    const terms = [...this.dictionary].filter(
+      (term) => term.length >= this.minLength,
+    );
+    const simpleTermsByLower = new Map<string, string[]>();
+    const regexTerms: Array<{ term: string; pattern: RegExp }> = [];
+    const firstMatches = new Map<string, { text: string; offset: number }>();
 
-      // Build a regex for the term (word-boundary, case-insensitive)
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const termRe = new RegExp(`\\b${escaped}\\b`, "gi");
-
-      const match = termRe.exec(stripped);
-      if (match) {
-        addMatch(match[0], match.index, "dictionary");
+    for (const term of terms) {
+      if (/^[A-Za-z0-9_]+$/.test(term)) {
+        const key = term.toLowerCase();
+        const variants = simpleTermsByLower.get(key) ?? [];
+        variants.push(term);
+        simpleTermsByLower.set(key, variants);
+        continue;
       }
+
+      // Preserve regex word-boundary behavior for phrases and punctuation terms.
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      regexTerms.push({ term, pattern: new RegExp(`\\b${escaped}\\b`, "gi") });
+    }
+
+    for (const { term, pattern } of regexTerms) {
+      const match = pattern.exec(stripped);
+      if (match)
+        firstMatches.set(term, { text: match[0], offset: match.index });
+    }
+
+    // A JS word boundary uses ASCII letters, digits, and underscore. Scanning
+    // those tokens once is equivalent to the simple-term regexes above.
+    let index = 0;
+    while (index < stripped.length) {
+      const firstCharCode = stripped.charCodeAt(index);
+      if (
+        !(
+          (firstCharCode >= 48 && firstCharCode <= 57) ||
+          (firstCharCode >= 65 && firstCharCode <= 90) ||
+          (firstCharCode >= 97 && firstCharCode <= 122) ||
+          firstCharCode === 95
+        )
+      ) {
+        index += 1;
+        continue;
+      }
+
+      const start = index;
+      while (index < stripped.length) {
+        const charCode = stripped.charCodeAt(index);
+        if (
+          !(
+            (charCode >= 48 && charCode <= 57) ||
+            (charCode >= 65 && charCode <= 90) ||
+            (charCode >= 97 && charCode <= 122) ||
+            charCode === 95
+          )
+        )
+          break;
+        index += 1;
+      }
+      const matchText = stripped.slice(start, index);
+      const variants = simpleTermsByLower.get(matchText.toLowerCase());
+      for (const term of variants ?? []) {
+        if (!firstMatches.has(term))
+          firstMatches.set(term, { text: matchText, offset: start });
+      }
+    }
+
+    // Keep the legacy observable ordering and the shared seen/addMatch rules.
+    for (const term of terms) {
+      if (seen.has(term)) continue;
+      const match = firstMatches.get(term);
+      if (match) addMatch(match.text, match.offset, "dictionary");
     }
   }
 }

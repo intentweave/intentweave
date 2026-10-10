@@ -34,6 +34,10 @@
       "types": "./dist/interfaces.d.ts",
       "import": "./dist/interfaces.js"
     },
+    "./inference": {
+      "types": "./dist/inference/index.d.ts",
+      "import": "./dist/inference/index.js"
+    },
     "./schemas": {
       "types": "./dist/schemas/index.d.ts",
       "import": "./dist/schemas/index.js"
@@ -67,6 +71,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "ajv": "^8.18.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
