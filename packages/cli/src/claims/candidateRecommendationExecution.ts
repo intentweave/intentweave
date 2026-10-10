@@ -43,6 +43,8 @@ export interface CandidateRecommendationExecutionInput {
   provider: LLMProvider;
   requestedModelId: string;
   refresh: boolean;
+  maxCompletionTokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface CandidateRecommendationExecutionSuccess {
@@ -178,6 +180,8 @@ export async function executeCandidateRecommendation(
     ],
     model: input.requestedModelId,
     temperature: 0,
+    maxTokens: input.maxCompletionTokens,
+    signal: input.signal,
   });
   if (!result.ok) {
     return {

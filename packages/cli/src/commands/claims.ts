@@ -97,6 +97,13 @@ import {
   loadCandidateInferenceConfig,
 } from "../claims/candidateRecommendationContext.js";
 import { executeCandidateRecommendation } from "../claims/candidateRecommendationExecution.js";
+import { executeCandidateRecommendationBatch } from "../claims/candidateRecommendationBatch.js";
+import {
+  evaluateCandidateRecommendations,
+  loadCandidateRecommendationEvaluationDataset,
+  selectCandidateRecommendationEvaluationDataset,
+  type CandidateRecommendationPrediction,
+} from "../claims/candidateRecommendationEvaluation.js";
 import {
   persistPortableClaimOrigins,
   projectClaimOrigins,
@@ -1144,6 +1151,7 @@ export async function runClaimsCandidatesTriage(options: {
 export async function runClaimsCandidatesRecommend(options: {
   semantic?: boolean;
   preview?: boolean;
+  batch?: boolean;
   provider?: string;
   candidate?: string;
   limit?: string;
@@ -1158,9 +1166,14 @@ export async function runClaimsCandidatesRecommend(options: {
         "Candidate recommendations require the explicit --semantic opt-in",
       );
     }
-    if (!options.preview && !options.candidate) {
+    if (options.batch && options.candidate) {
       throw new ClaimsBindingError(
-        "Single-Candidate recommendation execution requires --candidate; use --preview to inspect bounded context",
+        "Recommendation execution accepts either --batch or --candidate, not both",
+      );
+    }
+    if (!options.preview && !options.candidate && !options.batch) {
+      throw new ClaimsBindingError(
+        "Recommendation execution requires --candidate or explicit --batch; use --preview to inspect bounded context",
       );
     }
     if (!["text", "json"].includes(options.format)) {
@@ -1214,6 +1227,53 @@ export async function runClaimsCandidatesRecommend(options: {
           console.log(lines.join("\n"));
         }
         process.exitCode = 0;
+        return;
+      }
+
+      if (options.batch) {
+        const provider = await resolveSemanticClaimsProvider(
+          providerName,
+          options.model,
+        );
+        const requestedModelId =
+          options.model ?? provider.getModelName?.() ?? "provider-default";
+        const controller = new AbortController();
+        const cancel = () => controller.abort();
+        process.once("SIGINT", cancel);
+        try {
+          const result = await executeCandidateRecommendationBatch({
+            database,
+            workspaceRoot,
+            config,
+            enabledPolicyIds,
+            provider,
+            requestedModelId,
+            refresh: options.refresh === true,
+            ...(limit ? { limit } : {}),
+            signal: controller.signal,
+          });
+          if (options.format === "json") {
+            console.log(JSON.stringify(result, null, 2));
+          } else {
+            console.log(
+              [
+                "Candidate recommendation batch",
+                `  Model: ${result.providerId}/${result.requestedModelId}`,
+                `  Results: ${result.summary.created} created, ${result.summary.cached} cached, ${result.summary.failed} failed, ${result.summary.cancelled} cancelled, ${result.summary.budgetDeferred} budget-deferred, ${result.summary.ineligible} ineligible`,
+                `  Usage: ${result.summary.actualUsage.inputTokens} input, ${result.summary.actualUsage.outputTokens} output, ${result.summary.actualUsage.reasoningTokens} reasoning, ${result.summary.actualUsage.cachedInputTokens} cached-input tokens`,
+                `  Cost: ${result.summary.actualCostUsd === null ? "unknown" : `$${result.summary.actualCostUsd.toFixed(8)}`}${result.summary.costUnknown ? " (partly unknown)" : ""}`,
+              ].join("\n"),
+            );
+          }
+          process.exitCode =
+            result.summary.cancelled > 0
+              ? 130
+              : result.summary.failed > 0
+                ? 1
+                : 0;
+        } finally {
+          process.off("SIGINT", cancel);
+        }
         return;
       }
 
@@ -1293,6 +1353,102 @@ export async function runClaimsCandidatesRecommend(options: {
         );
         process.exitCode = 0;
       }
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode =
+      error instanceof ClaimsBindingError ||
+      error instanceof CandidateInferenceConfigError ||
+      error instanceof ClaimsPortableStateFileError
+        ? 64
+        : 1;
+  }
+}
+
+export async function runClaimsCandidatesEvaluate(options: {
+  labels: string;
+  repository?: string;
+  provider?: string;
+  model?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    if (!["text", "json"].includes(options.format)) {
+      throw new ClaimsBindingError("Evaluation format must be text or json");
+    }
+    const workspaceRoot = process.cwd();
+    const dataset = selectCandidateRecommendationEvaluationDataset(
+      loadCandidateRecommendationEvaluationDataset(
+        path.resolve(workspaceRoot, options.labels),
+      ),
+      options.repository,
+    );
+    const config = loadCandidateInferenceConfig(workspaceRoot);
+    const portableState = loadPortableClaimsState(workspaceRoot);
+    const activeProvider = options.provider ?? "openai";
+    const activeModel = recommendationModel(options.model);
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const store = new CandidateStore(database);
+      const predictions: CandidateRecommendationPrediction[] = [];
+      for (const candidate of store.listCurrent()) {
+        const context = buildCandidateRecommendationContext({
+          database,
+          workspaceRoot,
+          candidate,
+          config,
+          enabledPolicyIds: enabledRecommendationPolicyIds(portableState),
+        });
+        const currentRecommendationIds = new Set(
+          store.recommendationStatus({
+            identityKey: candidate.identityKey,
+            observationFingerprint: candidate.observationFingerprint,
+            contextFingerprint: context.contextFingerprint,
+            adapterId: CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+            adapterContractVersion:
+              CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+            promptVersion: CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
+            providerId: activeProvider,
+            requestedModelId: activeModel,
+          }).currentRecommendationIds,
+        );
+        const recommendation = store
+          .recommendations(candidate.identityKey)
+          .filter(
+            (item) => item.envelope && currentRecommendationIds.has(item.id),
+          )
+          .at(-1)?.envelope;
+        if (!recommendation) continue;
+        const duplicateOfIdentityKey = recommendation.duplicateOfCandidateId
+          ? store.details(recommendation.duplicateOfCandidateId)?.identityKey
+          : undefined;
+        predictions.push({
+          candidateIdentityKey: candidate.identityKey,
+          recommendation: recommendation.recommendation,
+          priority: recommendation.priority,
+          ...(duplicateOfIdentityKey ? { duplicateOfIdentityKey } : {}),
+        });
+      }
+      const report = evaluateCandidateRecommendations(dataset, predictions);
+      if (options.format === "json") {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.log(
+          [
+            "Candidate recommendation evaluation",
+            `  Repositories: ${report.repositories}`,
+            `  Labels/predictions: ${report.labeledCandidates}/${report.measuredPredictions}`,
+            `  Precision: ${report.precision ?? "n/a"}`,
+            `  Recall: ${report.recall ?? "n/a"}`,
+            `  Duplicate usefulness: ${report.duplicateUsefulness ?? "n/a"}`,
+            `  Priority calibration: ${report.priorityCalibration ?? "n/a"}`,
+            `  First-screen noise: ${report.firstScreenNoise ?? "n/a"}`,
+          ].join("\n"),
+        );
+      }
+      process.exitCode = 0;
     } finally {
       database.close();
     }
@@ -4214,7 +4370,7 @@ const claimsCandidatesCommand = new Command("candidates")
   )
   .addCommand(
     new Command("recommend")
-      .description("Preview bounded context for AI-assisted Candidate curation")
+      .description("Preview or execute bounded AI-assisted Candidate curation")
       .option("--semantic", "Explicitly opt in to semantic processing")
       .option(
         "--preview",
@@ -4226,6 +4382,10 @@ const claimsCandidatesCommand = new Command("candidates")
         "openai",
       )
       .option("--candidate <ref>", "Execute or preview one current Candidate")
+      .option(
+        "--batch",
+        "Explicitly execute the bounded Candidate batch from config v2",
+      )
       .option("--limit <n>", "Lower the configured Candidate limit")
       .option(
         "--model <model>",
@@ -4237,6 +4397,23 @@ const claimsCandidatesCommand = new Command("candidates")
       )
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsCandidatesRecommend),
+  )
+  .addCommand(
+    new Command("evaluate")
+      .description("Evaluate persisted Recommendations against labeled YAML")
+      .requiredOption("--labels <file>", "Versioned Candidate label dataset")
+      .option(
+        "--repository <id>",
+        "Select one repository from a multi-repository dataset",
+      )
+      .option(
+        "--provider <provider>",
+        "Active Recommendation provider",
+        "openai",
+      )
+      .option("--model <model>", "Active Recommendation requested model")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(runClaimsCandidatesEvaluate),
   )
   .addCommand(
     new Command("review")

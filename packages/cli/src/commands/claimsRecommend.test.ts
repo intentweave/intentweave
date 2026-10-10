@@ -161,6 +161,98 @@ budgets:
     });
   });
 
+  it("runs an explicit batch and reuses cached work on the next run", async () => {
+    const root = workspace();
+    process.chdir(root);
+    writeFileSync(
+      path.join(root, ".iw", "claims", "inference.yaml"),
+      `schemaVersion: "2"
+providers:
+  allow: ["openai"]
+sensitivePaths: ["secrets/**"]
+budgets:
+  maxCandidates: 5
+  maxEvidencePerCandidate: 4
+  maxExcerptChars: 500
+  maxTokensPerCandidate: 2000
+  maxTotalTokens: 5000
+  maxEstimatedCostUsd: 1
+  maxConcurrency: 1
+  maxOutputTokensPerCandidate: 100
+  maxReasoningTokensPerCandidate: 50
+prices:
+  - providerId: openai
+    requestedModelId: gpt-4o
+    version: fixture-v1
+    effectiveDate: 2026-10-10
+    inputPerMillionUsd: 1
+    cachedInputPerMillionUsd: 0.1
+    outputPerMillionUsd: 2
+    reasoningPerMillionUsd: 3
+`,
+    );
+    vi.stubEnv("OPENAI_API_KEY", "fixture-key");
+    const database = new Database(path.join(root, ".iw", "index.db"));
+    const candidate = new CandidateStore(database).listCurrent()[0]!;
+    const details = new CandidateStore(database).details(candidate.id)!;
+    const evidenceVersionId = details.evidence[0]!.evidenceVersionId!;
+    database.close();
+    const output = {
+      recommendation: "promote",
+      rationale: "The batch fixture is grounded.",
+      evidenceVersionIds: [evidenceVersionId],
+      confidence: "probable",
+      priority: "high",
+      proposedClaimType: details.proposedClaimType,
+      proposedSubjectBindings: details.subjects.map((subject) => ({
+        kind: subject.kind,
+        identityKey: subject.identityKey,
+        role: subject.role,
+      })),
+    };
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "chatcmpl-batch",
+            model: "gpt-4o",
+            choices: [
+              {
+                message: { content: JSON.stringify(output) },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 90, completion_tokens: 20 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const command = {
+      semantic: true,
+      batch: true,
+      provider: "openai",
+      model: "gpt-4o",
+      format: "json",
+    };
+    await runClaimsCandidatesRecommend(command);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+      summary: { created: 1, cached: 0, failed: 0 },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    log.mockClear();
+    await runClaimsCandidatesRecommend(command);
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+      summary: { created: 0, cached: 1, failed: 0 },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses recommendation execution before G6b", async () => {
     const root = workspace();
     process.chdir(root);

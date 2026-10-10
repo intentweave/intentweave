@@ -45,6 +45,7 @@ export interface StructuredInferenceMeta {
     reasoningTokens?: number;
     cachedInputTokens?: number;
   };
+  usageReported: boolean;
   latencyMs: number;
   rawOutputFingerprint?: string;
 }
@@ -133,6 +134,9 @@ function responseMeta(
         ? {}
         : { cachedInputTokens: response.tokensUsed.cachedPrompt }),
     },
+    usageReported: response
+      ? (response.usageReported ?? response.finishReason !== "error")
+      : false,
     latencyMs: response?.latencyMs ?? fallback?.latencyMs ?? 0,
     ...(rawOutputFingerprint ? { rawOutputFingerprint } : {}),
   };

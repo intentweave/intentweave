@@ -2310,6 +2310,29 @@ instead of a fixed eight-item maximum.
 
 ##### G6b.3: Bounded Batch, Ranking, and Evaluation
 
+Implementation checkpoint (2026-10-10): initial bounded batch slice implemented.
+Inference config v2 now validates output/reasoning budgets and versioned manual
+prices with an explicit optional provider-quote fallback; v1 remains readable
+for preview. `--batch` is explicit, reuses the G6b.2 cache and context path,
+reserves per-Candidate and total token/cost budgets, runs bounded concurrent
+workers, preserves valid partial results, handles SIGINT cancellation, and
+reports deterministic per-Candidate statuses plus actual usage/cost. A zero
+cost cap is cache-only. The CLI batch and offline recommendation evaluation
+fixtures are green. External labeled-repository evaluation, richer price
+provider coverage, and final G6b.3 quality claims remain open gates.
+
+Follow-up hardening (2026-10-10): Provider responses without authoritative
+usage no longer become zero-cost results; batch summaries propagate unknown
+usage/cost explicitly. Ineligible Candidates are reported separately from
+budget deferrals. Offline evaluation requires explicit repository selection for
+multi-repository label files and evaluates only Recommendations current under
+the active Context, provider, and model configuration.
+
+Cache-budget hardening (2026-10-10): batch planning now identifies current
+cache hits before applying uncached Candidate and aggregate token limits. Cache
+hits remain visible as `cached` with zero reservation; `--refresh` deliberately
+restores the normal uncached reservation path.
+
 - version `.iw/claims/inference.yaml` to v2 with an optional local USD price
   table keyed by provider, requested model, price version/effective date, and
   per-million input, cached-input, output, and reasoning-token rates; v1 remains

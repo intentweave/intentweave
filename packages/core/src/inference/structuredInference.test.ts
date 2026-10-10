@@ -92,7 +92,7 @@ describe("StructuredInferenceService", () => {
 
     const result = await new StructuredInferenceService(provider).infer<{
       candidate: string;
-    }>(request());
+    }>({ ...request(), maxTokens: 321 });
 
     expect(result).toMatchObject({
       ok: true,
@@ -118,6 +118,7 @@ describe("StructuredInferenceService", () => {
       expect.objectContaining({
         responseSchemaName: "claim_candidate",
         responseSchema: RESPONSE_SCHEMA,
+        maxTokens: 321,
       }),
     );
     expect(result.meta.rawOutputFingerprint).toMatch(/^[a-f0-9]{64}$/);

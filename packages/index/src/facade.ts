@@ -262,6 +262,9 @@ export interface CariConfig {
    */
   maxFileSize?: number;
 
+  /** Experimental KWX chunk worker count (1 keeps the serial implementation). */
+  kwxWorkers?: number;
+
   /** Logging callback */
   log?: (msg: string) => void;
 
@@ -652,9 +655,14 @@ export async function buildFromPaths(
     session = path.basename(workspaceRoot),
     outputPath,
     maxFileSize = 262144,
+    kwxWorkers = 1,
     log = () => {},
     onProgress,
   } = config;
+
+  if (!Number.isInteger(kwxWorkers) || kwxWorkers < 1 || kwxWorkers > 8) {
+    throw new Error("kwxWorkers must be an integer from 1 through 8.");
+  }
 
   // ── Resolve roots ────────────────────────────────────────────
   // When `roots` is provided it drives both AX (code roots) and file
@@ -816,6 +824,12 @@ export async function buildFromPaths(
     now: () => new Date(),
     timestamp: () => new Date().toISOString(),
   } as unknown;
+  const kwxWorkerPool = kwxWorkers > 1
+    ? analyzer.createKwxChunkWorkerPool(kwxWorkers)
+    : undefined;
+  if (kwxWorkers > 1) {
+    log(`KWX worker experiment: ${kwxWorkers} workers across chunk tasks`);
+  }
 
   for (const filePath of docFiles) {
     const relPath = path.relative(primaryCodeRoot, filePath);
@@ -837,11 +851,16 @@ export async function buildFromPaths(
       );
       const kwxOutput = await analyzer.runKwxStage(
         { inOutput },
-        { depth, dictionary: symbolDictionary },
+        {
+          depth,
+          dictionary: symbolDictionary,
+          ...(kwxWorkerPool ? { workerPool: kwxWorkerPool } : {}),
+        },
       );
       kwxOutputs.push(kwxOutput);
     } catch (error) {
       const base = error instanceof Error ? error.message : String(error);
+      await kwxWorkerPool?.close();
       throw new Error(`KWX failed for ${relPath}: ${base}`);
     }
   }
@@ -894,7 +913,11 @@ export async function buildFromPaths(
       const kwxOutput = await analyzer.runKwxStage(
         { inOutput },
         // Always use full depth for comments — they're structured text
-        { depth: "full", dictionary: symbolDictionary },
+        {
+          depth: "full",
+          dictionary: symbolDictionary,
+          ...(kwxWorkerPool ? { workerPool: kwxWorkerPool } : {}),
+        },
       );
       kwxOutputs.push(kwxOutput);
       srcCommentCount++;
@@ -902,6 +925,7 @@ export async function buildFromPaths(
       // Skip files that can't be read or parsed
     }
   }
+  await kwxWorkerPool?.close();
   if (srcCommentCount > 0) {
     log(
       `KWX-comments: processed comments from ${srcCommentCount} source files`,

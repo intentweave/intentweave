@@ -54,6 +54,20 @@ export interface LLMProvider {
 
   /** Resolve capabilities for a per-request model (required by v2). */
   capabilitiesFor?(model?: string): LLMProviderCapabilities;
+
+  /** Optional versioned provider quote; repository-local prices may override it. */
+  priceQuoteFor?(model?: string): LLMPriceQuote | undefined;
+}
+
+export interface LLMPriceQuote {
+  providerId: string;
+  requestedModelId: string;
+  version: string;
+  effectiveDate: string;
+  inputPerMillionUsd: number;
+  cachedInputPerMillionUsd: number;
+  outputPerMillionUsd: number;
+  reasoningPerMillionUsd: number;
 }
 
 /** Claims-grade transport contract that preserves terminal provider outcomes. */
@@ -129,6 +143,9 @@ export interface LLMResponse {
     cachedPrompt?: number;
   };
 
+  /** True when the provider returned authoritative token usage for this response. */
+  usageReported?: boolean;
+
   /** Latency in milliseconds */
   latencyMs: number;
 
@@ -196,6 +213,9 @@ export interface LLMProviderCapabilities {
 
   /** Ordered structured-output modes supported for this effective model. */
   structuredOutputModes?: readonly LLMStructuredOutputMode[];
+
+  /** The provider enforces LLMRequest.maxTokens for every completion. */
+  enforcesCompletionTokenLimit?: boolean;
 }
 
 // =============================================================================

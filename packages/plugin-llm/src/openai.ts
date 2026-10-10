@@ -181,6 +181,7 @@ export class OpenAILLMProvider implements LLMProviderV2 {
       supportsStreaming: false,
       supportsToolCalls: false,
       supportsEmbeddings: true,
+      enforcesCompletionTokenLimit: true,
       structuredOutputModes: modelCaps.supportsJsonSchema
         ? ["strict", "text"]
         : ["text"],
@@ -304,6 +305,7 @@ export class OpenAILLMProvider implements LLMProviderV2 {
       return {
         content,
         parsed,
+        usageReported: data.usage !== undefined,
         tokensUsed: {
           prompt: data.usage?.prompt_tokens ?? 0,
           completion: data.usage?.completion_tokens ?? 0,

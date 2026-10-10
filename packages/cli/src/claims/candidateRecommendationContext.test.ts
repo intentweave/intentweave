@@ -23,6 +23,7 @@ import {
   buildCandidateRecommendationPreview,
   CandidateInferenceConfigError,
   parseCandidateInferenceConfig,
+  resolveCandidateModelPrice,
   type CandidateInferenceConfig,
 } from "./candidateRecommendationContext.js";
 
@@ -147,6 +148,85 @@ describe("G6a Candidate recommendation context", () => {
         budgets: { maxExcerptChars: 10 },
       }),
     ).toThrow("budgets.maxExcerptChars must be at least 64");
+  });
+
+  it("parses config v2 and prefers repository prices over provider quotes", () => {
+    const parsed = parseCandidateInferenceConfig({
+      schemaVersion: "2",
+      providers: { allow: ["openai"] },
+      budgets: {
+        maxOutputTokensPerCandidate: 300,
+        maxReasoningTokensPerCandidate: 200,
+      },
+      prices: [
+        {
+          providerId: "openai",
+          requestedModelId: "gpt-test",
+          version: "repo-v1",
+          effectiveDate: "2026-10-10",
+          inputPerMillionUsd: 1,
+          cachedInputPerMillionUsd: 0.1,
+          outputPerMillionUsd: 2,
+          reasoningPerMillionUsd: 3,
+        },
+      ],
+    });
+
+    expect(parsed.budgets).toMatchObject({
+      maxOutputTokensPerCandidate: 300,
+      maxReasoningTokensPerCandidate: 200,
+    });
+    expect(
+      resolveCandidateModelPrice(parsed, "openai", "gpt-test", {
+        providerId: "openai",
+        requestedModelId: "gpt-test",
+        version: "provider-v1",
+        effectiveDate: "2026-10-10",
+        inputPerMillionUsd: 9,
+        cachedInputPerMillionUsd: 9,
+        outputPerMillionUsd: 9,
+        reasoningPerMillionUsd: 9,
+      }),
+    ).toMatchObject({ source: "repository", version: "repo-v1" });
+    const providerFallback = parseCandidateInferenceConfig({
+      schemaVersion: "2",
+      providers: { allow: ["openai"] },
+      budgets: {
+        maxOutputTokensPerCandidate: 300,
+        maxReasoningTokensPerCandidate: 200,
+      },
+      pricing: { allowProviderQuotes: true },
+    });
+    expect(
+      resolveCandidateModelPrice(providerFallback, "openai", "gpt-test", {
+        providerId: "openai",
+        requestedModelId: "gpt-test",
+        version: "provider-v1",
+        effectiveDate: "2026-10-10",
+        inputPerMillionUsd: 9,
+        cachedInputPerMillionUsd: 9,
+        outputPerMillionUsd: 9,
+        reasoningPerMillionUsd: 9,
+      }),
+    ).toMatchObject({ source: "provider", version: "provider-v1" });
+    expect(
+      resolveCandidateModelPrice(parsed, "openai", "unpriced-model", {
+        providerId: "openai",
+        requestedModelId: "unpriced-model",
+        version: "provider-v1",
+        effectiveDate: "2026-10-10",
+        inputPerMillionUsd: 9,
+        cachedInputPerMillionUsd: 9,
+        outputPerMillionUsd: 9,
+        reasoningPerMillionUsd: 9,
+      }),
+    ).toBeUndefined();
+    expect(() =>
+      parseCandidateInferenceConfig({
+        schemaVersion: "2",
+        providers: { allow: ["openai"] },
+      }),
+    ).toThrow("requires budgets.maxOutputTokensPerCandidate");
   });
 
   it("builds a bounded exact preview and excludes or redacts unsafe context", () => {

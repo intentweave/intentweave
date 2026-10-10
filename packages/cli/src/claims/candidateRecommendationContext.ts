@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import type Database from "@intentweave/sqlite-compat";
-import { sanitizeExcerpt } from "@intentweave/core";
+import { sanitizeExcerpt, type LLMPriceQuote } from "@intentweave/core";
 import {
   CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
   CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
@@ -32,13 +32,25 @@ export interface CandidateInferenceBudgets {
   maxTotalTokens: number;
   maxEstimatedCostUsd: number;
   maxConcurrency: number;
+  maxOutputTokensPerCandidate: number;
+  maxReasoningTokensPerCandidate: number;
+}
+
+export interface CandidateModelPrice extends LLMPriceQuote {
+  source: "repository" | "provider";
+}
+
+export interface CandidatePricingConfig {
+  allowProviderQuotes: boolean;
 }
 
 export interface CandidateInferenceConfig {
-  schemaVersion: "1";
+  schemaVersion: "1" | "2";
   providers: { allow: string[] };
   sensitivePaths: string[];
   budgets: CandidateInferenceBudgets;
+  prices: CandidateModelPrice[];
+  pricing: CandidatePricingConfig;
 }
 
 export type CandidateEligibilityReason =
@@ -158,6 +170,8 @@ const DEFAULT_BUDGETS: CandidateInferenceBudgets = {
   maxTotalTokens: 10_000,
   maxEstimatedCostUsd: 1,
   maxConcurrency: 2,
+  maxOutputTokensPerCandidate: 1_000,
+  maxReasoningTokensPerCandidate: 1_000,
 };
 const DEFAULT_SENSITIVE_PATHS = [
   "**/.env*",
@@ -250,6 +264,122 @@ function positiveNumber(
   return parsed;
 }
 
+function nonNegativeNumber(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new CandidateInferenceConfigError(
+      `${label} must be a non-negative number`,
+    );
+  }
+  return value;
+}
+
+function nonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new CandidateInferenceConfigError(`${label} must not be empty`);
+  }
+  return value;
+}
+
+function booleanValue(
+  value: unknown,
+  label: string,
+  fallback: boolean,
+): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") {
+    throw new CandidateInferenceConfigError(`${label} must be a boolean`);
+  }
+  return value;
+}
+
+function parsePrices(value: unknown): CandidateModelPrice[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new CandidateInferenceConfigError("prices must be an array");
+  }
+  const seen = new Set<string>();
+  return value.map((item, index) => {
+    const label = `prices[${index}]`;
+    const price = record(item, label);
+    onlyKeys(price, label, [
+      "providerId",
+      "requestedModelId",
+      "version",
+      "effectiveDate",
+      "inputPerMillionUsd",
+      "cachedInputPerMillionUsd",
+      "outputPerMillionUsd",
+      "reasoningPerMillionUsd",
+    ]);
+    const providerId = nonEmptyString(price.providerId, `${label}.providerId`);
+    const requestedModelId = nonEmptyString(
+      price.requestedModelId,
+      `${label}.requestedModelId`,
+    );
+    const key = `${providerId}\0${requestedModelId}`;
+    if (seen.has(key)) {
+      throw new CandidateInferenceConfigError(
+        `${label} duplicates price for ${providerId}/${requestedModelId}`,
+      );
+    }
+    seen.add(key);
+    const effectiveDate = nonEmptyString(
+      price.effectiveDate,
+      `${label}.effectiveDate`,
+    );
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+      throw new CandidateInferenceConfigError(
+        `${label}.effectiveDate must use YYYY-MM-DD`,
+      );
+    }
+    return {
+      providerId,
+      requestedModelId,
+      version: nonEmptyString(price.version, `${label}.version`),
+      effectiveDate,
+      inputPerMillionUsd: nonNegativeNumber(
+        price.inputPerMillionUsd,
+        `${label}.inputPerMillionUsd`,
+      ),
+      cachedInputPerMillionUsd: nonNegativeNumber(
+        price.cachedInputPerMillionUsd,
+        `${label}.cachedInputPerMillionUsd`,
+      ),
+      outputPerMillionUsd: nonNegativeNumber(
+        price.outputPerMillionUsd,
+        `${label}.outputPerMillionUsd`,
+      ),
+      reasoningPerMillionUsd: nonNegativeNumber(
+        price.reasoningPerMillionUsd,
+        `${label}.reasoningPerMillionUsd`,
+      ),
+      source: "repository" as const,
+    };
+  });
+}
+
+export function resolveCandidateModelPrice(
+  config: CandidateInferenceConfig,
+  providerId: string,
+  requestedModelId: string,
+  providerQuote?: LLMPriceQuote,
+): CandidateModelPrice | undefined {
+  const local = config.prices.find(
+    (price) =>
+      price.providerId === providerId &&
+      price.requestedModelId === requestedModelId,
+  );
+  if (local) return local;
+  if (
+    providerQuote?.providerId === providerId &&
+    providerQuote.requestedModelId === requestedModelId &&
+    config.pricing.allowProviderQuotes
+  ) {
+    return { ...providerQuote, source: "provider" };
+  }
+  return undefined;
+}
+
 function stringArray(value: unknown, label: string): string[] {
   if (
     !Array.isArray(value) ||
@@ -271,10 +401,18 @@ export function parseCandidateInferenceConfig(
     "providers",
     "sensitivePaths",
     "budgets",
+    "prices",
+    "pricing",
   ]);
-  if (config.schemaVersion !== "1") {
+  if (config.schemaVersion !== "1" && config.schemaVersion !== "2") {
     throw new CandidateInferenceConfigError(
-      "Claims inference config schemaVersion must be 1",
+      "Claims inference config schemaVersion must be 1 or 2",
+    );
+  }
+  const schemaVersion = config.schemaVersion;
+  if (schemaVersion === "1" && config.prices !== undefined) {
+    throw new CandidateInferenceConfigError(
+      "prices requires Claims inference config schemaVersion 2",
     );
   }
   const providers = record(config.providers, "providers");
@@ -287,8 +425,19 @@ export function parseCandidateInferenceConfig(
   }
   const budgets = config.budgets ? record(config.budgets, "budgets") : {};
   onlyKeys(budgets, "budgets", Object.keys(DEFAULT_BUDGETS));
+  const pricing = config.pricing ? record(config.pricing, "pricing") : {};
+  onlyKeys(pricing, "pricing", ["allowProviderQuotes"]);
+  if (
+    schemaVersion === "2" &&
+    (budgets.maxOutputTokensPerCandidate === undefined ||
+      budgets.maxReasoningTokensPerCandidate === undefined)
+  ) {
+    throw new CandidateInferenceConfigError(
+      "schemaVersion 2 requires budgets.maxOutputTokensPerCandidate and budgets.maxReasoningTokensPerCandidate",
+    );
+  }
   return {
-    schemaVersion: "1",
+    schemaVersion,
     providers: { allow },
     sensitivePaths: [
       ...new Set([
@@ -327,16 +476,38 @@ export function parseCandidateInferenceConfig(
         DEFAULT_BUDGETS.maxTotalTokens,
         256,
       ),
-      maxEstimatedCostUsd: positiveNumber(
-        budgets.maxEstimatedCostUsd,
-        "budgets.maxEstimatedCostUsd",
-        DEFAULT_BUDGETS.maxEstimatedCostUsd,
-      ),
+      maxEstimatedCostUsd:
+        budgets.maxEstimatedCostUsd === undefined
+          ? DEFAULT_BUDGETS.maxEstimatedCostUsd
+          : nonNegativeNumber(
+              budgets.maxEstimatedCostUsd,
+              "budgets.maxEstimatedCostUsd",
+            ),
       maxConcurrency: positiveInteger(
         budgets.maxConcurrency,
         "budgets.maxConcurrency",
         DEFAULT_BUDGETS.maxConcurrency,
       ),
+      maxOutputTokensPerCandidate: positiveInteger(
+        budgets.maxOutputTokensPerCandidate,
+        "budgets.maxOutputTokensPerCandidate",
+        DEFAULT_BUDGETS.maxOutputTokensPerCandidate,
+      ),
+      maxReasoningTokensPerCandidate: positiveInteger(
+        budgets.maxReasoningTokensPerCandidate,
+        "budgets.maxReasoningTokensPerCandidate",
+        DEFAULT_BUDGETS.maxReasoningTokensPerCandidate,
+      ),
+    },
+    prices: schemaVersion === "2" ? parsePrices(config.prices) : [],
+    pricing: {
+      allowProviderQuotes:
+        schemaVersion === "2" &&
+        booleanValue(
+          pricing.allowProviderQuotes,
+          "pricing.allowProviderQuotes",
+          false,
+        ),
     },
   };
 }
@@ -721,6 +892,7 @@ export function buildCandidateRecommendationPreview(input: {
   provider: string;
   requestedModelId?: string;
   refresh?: boolean;
+  includeCachedForBatch?: boolean;
   config: CandidateInferenceConfig;
   enabledPolicyIds?: readonly string[];
   candidateId?: string;
@@ -760,9 +932,10 @@ export function buildCandidateRecommendationPreview(input: {
   const contexts: CandidateRecommendationContext[] = [];
   let estimatedInputTokens = 0;
   let deferredByBudget = 0;
+  let uncachedCandidates = 0;
   const candidateStore = new CandidateStore(input.database);
   for (const candidate of initiallyEligible) {
-    if (contexts.length >= maxCandidates) {
+    if (!input.includeCachedForBatch && contexts.length >= maxCandidates) {
       deferredByBudget += 1;
       continue;
     }
@@ -787,10 +960,14 @@ export function buildCandidateRecommendationPreview(input: {
       providerId: input.provider,
       requestedModelId: input.requestedModelId ?? "provider-default",
     });
-    if (
-      recommendationStatus.currentRecommendationIds.length > 0 &&
-      !input.refresh
-    ) {
+    const cached =
+      !input.refresh &&
+      recommendationStatus.currentRecommendationIds.length > 0;
+    if (cached && input.includeCachedForBatch) {
+      contexts.push(context);
+      continue;
+    }
+    if (cached) {
       decision.eligible = false;
       decision.reasons = [
         ...new Set<CandidateEligibilityReason>([
@@ -798,6 +975,10 @@ export function buildCandidateRecommendationPreview(input: {
           "already-recommended",
         ]),
       ].sort();
+      continue;
+    }
+    if (input.includeCachedForBatch && uncachedCandidates >= maxCandidates) {
+      deferredByBudget += 1;
       continue;
     }
     if (
@@ -809,6 +990,7 @@ export function buildCandidateRecommendationPreview(input: {
       continue;
     }
     contexts.push(context);
+    uncachedCandidates += 1;
     estimatedInputTokens += context.estimatedTokens;
   }
   const duplicateGroups = new Map<string, number>();

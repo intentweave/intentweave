@@ -1,7 +1,7 @@
 # IntentWeave Claims semantic-authoring configuration example.
 # Copy to .iw/claims/inference.yaml and review every provider and path before use.
 
-schemaVersion: "1"
+schemaVersion: "2"
 
 providers:
   allow:
@@ -18,5 +18,14 @@ budgets:
   maxExcerptChars: 1200
   maxTokensPerCandidate: 2000
   maxTotalTokens: 10000
-  maxEstimatedCostUsd: 1
+  # Zero keeps this example cache-only until a reviewed price table is added.
+  maxEstimatedCostUsd: 0
   maxConcurrency: 2
+  maxOutputTokensPerCandidate: 1000
+  maxReasoningTokensPerCandidate: 1000
+
+# Add a reviewed entry before enabling paid batch execution. Manual prices
+# override optional provider-local quotes for the same provider/model pair.
+pricing:
+  allowProviderQuotes: false
+prices: []

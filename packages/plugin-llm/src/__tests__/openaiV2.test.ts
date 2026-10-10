@@ -51,6 +51,7 @@ describe("OpenAILLMProvider v2 contract", () => {
 
     const result = await provider.complete({
       messages: [{ role: "user", content: "classify" }],
+      maxTokens: 321,
       responseSchemaName: "claim_candidate",
       responseSchema: {
         type: "object",
@@ -77,6 +78,8 @@ describe("OpenAILLMProvider v2 contract", () => {
     ) as Record<string, any>;
     expect(body.response_format.json_schema.name).toBe("claim_candidate");
     expect(body.response_format.json_schema.strict).toBe(true);
+    expect(body.max_tokens).toBe(321);
+    expect(provider.capabilities.enforcesCompletionTokenLimit).toBe(true);
   });
 
   it.each([
