@@ -17,6 +17,8 @@ import {
 import type Database from "@intentweave/sqlite-compat";
 import {
   SEMANTIC_CORRELATION_CONTEXT_CONTRACT,
+  applyGroundedCorrelation,
+  groundCorrelationProposal,
   SemanticCorrelationRegistry,
   type SemanticCorrelationAdapterV1,
   type SemanticCorrelationContextV1,
@@ -333,13 +335,8 @@ export function createSemanticSymbolCorrelationAdapter(
         group,
         output as SemanticCorrelationOutput,
       );
-      if (!selection.grounded || !selection.selected) {
-        throw new Error(
-          "Semantic Symbol correlation did not produce one grounded Candidate",
-        );
-      }
-      return {
-        contractVersion: "grounded-correlation@1",
+      if (!selection.grounded || !selection.selected) return undefined;
+      return groundCorrelationProposal(item, {
         candidateIdentityKey: selection.selected.identityKey,
         candidateObservationFingerprint:
           selection.selected.observationFingerprint,
@@ -350,11 +347,10 @@ export function createSemanticSymbolCorrelationAdapter(
           .map((subject) => ({
             subjectIdentityKey: subject.identityKey,
             role: subject.role,
-            confidence: "probable" as const,
           })),
         confidence: "probable",
         rationale: (output as SemanticCorrelationOutput).rationale,
-      };
+      });
     },
   };
 }
@@ -368,16 +364,15 @@ export async function runSemanticSymbolCorrelation(input: {
   const limit = input.limit ?? 20;
   const adapter = createSemanticSymbolCorrelationAdapter(input.database, limit);
   const registry = new SemanticCorrelationRegistry([adapter]);
-  const groups = registry
+  const correlationItems = registry
     .select({
       candidates: new CandidateStore(input.database).listCurrent(),
       enabledPolicyIds: [],
     })
-    .flatMap(({ items }) =>
-      items
-        .map((item) => item.metadata)
-        .filter((metadata): metadata is CorrelationGroup => Boolean(metadata)),
-    );
+    .flatMap(({ items }) => items);
+  const groups = correlationItems
+    .map((item) => item.metadata)
+    .filter((metadata): metadata is CorrelationGroup => Boolean(metadata));
   const result: SemanticSymbolCorrelationResult = {
     status: groups.length === 0 ? "not_applicable" : "evaluated",
     groups: groups.length,
@@ -397,6 +392,9 @@ export async function runSemanticSymbolCorrelation(input: {
   let providerAvailable: boolean | undefined;
 
   for (const group of groups) {
+    const workItem = correlationItems.find(
+      (item) => item.key === group.inferenceIdentityKey,
+    );
     const cacheKey = {
       identityKey: group.inferenceIdentityKey,
       adapterId: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
@@ -478,22 +476,38 @@ export async function runSemanticSymbolCorrelation(input: {
     const selection = structured.ok
       ? validatedSelection(group, structured.value)
       : undefined;
+    const grounded =
+      structured.ok && workItem
+        ? adapter.ground(workItem, structured.value)
+        : undefined;
     const selected =
-      selection && selection.grounded ? selection.selected : undefined;
+      grounded && selection?.grounded ? selection.selected : undefined;
     for (const candidate of group.candidates) {
       const current = candidates.current(candidate.identityKey)!;
-      const attached = candidates.attachInference(current.id, {
-        inferenceId: inference.id,
-        confidence:
-          selected?.identityKey === candidate.identityKey
-            ? "probable"
-            : "ambiguous",
-        basis: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
-        provenance: {
-          evidenceVersionId: group.evidence.id,
-          selectedCandidateIdentityKey: selected?.identityKey ?? null,
-        },
-      });
+      const attached =
+        grounded && selected?.identityKey === candidate.identityKey
+          ? applyGroundedCorrelation({
+              database: input.database,
+              candidate: candidates.details(current.id)!,
+              inferenceId: inference.id,
+              adapterId: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+              adapterContractVersion:
+                SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
+              proposal: grounded,
+              provenance: {
+                evidenceVersionId: group.evidence.id,
+                selectedCandidateIdentityKey: selected.identityKey,
+              },
+            })
+          : candidates.attachInference(current.id, {
+              inferenceId: inference.id,
+              confidence: "ambiguous",
+              basis: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+              provenance: {
+                evidenceVersionId: group.evidence.id,
+                selectedCandidateIdentityKey: selected?.identityKey ?? null,
+              },
+            });
       if (selected?.identityKey === candidate.identityKey) {
         result.correlatedCandidateIds.push(attached.id);
       }

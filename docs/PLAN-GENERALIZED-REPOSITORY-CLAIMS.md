@@ -2515,6 +2515,12 @@ required probable Subject roles are validated provider-neutrally. Existing
 Symbol correlation behavior remains compatible; atomic Subject application and
 multi-adapter conflict resolution remain the next G6c.1 increment.
 
+Follow-up implementation (2026-10-10): identical grounded probable proposals
+now coalesce, conflicting proposals remain explicitly ambiguous, and a probable
+grounded proposal can be applied atomically to the current Candidate through
+the existing Inference/Candidate version path. Promotion and CI behavior remain
+unchanged.
+
 - extract the existing bounded Symbol semantic path behind
   `SemanticCorrelationAdapterV1` as the compatibility fixture,
 - add registry validation, deterministic scheduling, normalized grounding,

@@ -15,7 +15,10 @@ import {
   fingerprint,
   initSchema,
 } from "@intentweave/index";
-import { runSemanticSymbolCorrelation } from "./semanticSymbolCorrelation.js";
+import {
+  createSemanticSymbolCorrelationAdapter,
+  runSemanticSymbolCorrelation,
+} from "./semanticSymbolCorrelation.js";
 
 const CAPABILITIES: LLMProviderCapabilities = {
   maxInputTokens: 32_000,
@@ -234,6 +237,28 @@ describe("semantic Symbol documentation correlation", () => {
     );
   });
 
+  it("routes Symbol grounding through the generic role allowlist", () => {
+    const adapter = createSemanticSymbolCorrelationAdapter(database);
+    const item = adapter.select({
+      candidates: new CandidateStore(database).listCurrent(),
+      enabledPolicyIds: [],
+    })[0]!;
+    const selectedCandidateIdentityKey = item.candidateIdentityKeys[0]!;
+    const output = {
+      selectedCandidateIdentityKey,
+      evidenceVersionIds: item.evidenceVersionIds,
+      rationale: "The Symbol evidence is specific enough.",
+    };
+
+    expect(adapter.ground(item, output)).toMatchObject({
+      candidateIdentityKey: selectedCandidateIdentityKey,
+      confidence: "probable",
+    });
+    expect(() =>
+      adapter.ground({ ...item, requiredSubjectRoles: ["handler"] }, output),
+    ).toThrow(/missing required Subject role handler/);
+  });
+
   it("persists ungrounded model output as ambiguous without correlating", async () => {
     const provider = new FixtureProvider(() => ({
       selectedCandidateIdentityKey: "fabricated-candidate",
@@ -262,5 +287,54 @@ describe("semantic Symbol documentation correlation", () => {
             candidate.confidence === "ambiguous",
         ),
     ).toBe(true);
+  });
+
+  it("reports unavailable providers without mutating Candidates", async () => {
+    const provider = new FixtureProvider(() => ({
+      selectedCandidateIdentityKey: identityA,
+      evidenceVersionIds: [evidenceVersionId],
+      rationale: "Should not be called",
+    }));
+    vi.spyOn(provider, "isAvailable").mockResolvedValue(false);
+
+    const result = await runSemanticSymbolCorrelation({ database, provider });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      groups: 1,
+      providerCalls: 0,
+      cacheHits: 0,
+      failures: [{ kind: "provider", retryable: false }],
+    });
+    expect(provider.complete).not.toHaveBeenCalled();
+    expect(
+      database
+        .prepare(`SELECT COUNT(*) AS count FROM candidate_inferences`)
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("reports disabled semantic coverage as not applicable", async () => {
+    const emptyDatabase = new Database(":memory:");
+    initSchema(emptyDatabase);
+    const provider = new FixtureProvider(() => ({
+      selectedCandidateIdentityKey: null,
+      evidenceVersionIds: ["unused"],
+      rationale: "No group exists",
+    }));
+
+    const result = await runSemanticSymbolCorrelation({
+      database: emptyDatabase,
+      provider,
+    });
+
+    expect(result).toMatchObject({
+      status: "not_applicable",
+      groups: 0,
+      providerCalls: 0,
+      cacheHits: 0,
+      failures: [],
+    });
+    emptyDatabase.close();
   });
 });

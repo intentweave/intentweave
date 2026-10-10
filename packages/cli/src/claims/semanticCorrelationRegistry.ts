@@ -1,7 +1,13 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import type { CandidateDetails, SubjectKind } from "@intentweave/index";
+import type Database from "@intentweave/sqlite-compat";
+import {
+  CandidateStore,
+  type CandidateDetails,
+  type PersistedCandidate,
+  type SubjectKind,
+} from "@intentweave/index";
 import { canonicalJson } from "@intentweave/index";
 
 export const SEMANTIC_CORRELATION_CONTEXT_CONTRACT =
@@ -102,7 +108,7 @@ export interface SemanticCorrelationAdapterV1 {
   ground(
     item: CorrelationWorkItem,
     output: unknown,
-  ): GroundedCorrelationProposalV1;
+  ): GroundedCorrelationProposalV1 | undefined;
 }
 
 export class SemanticCorrelationRegistryError extends Error {
@@ -110,6 +116,22 @@ export class SemanticCorrelationRegistryError extends Error {
     super(message);
     this.name = "SemanticCorrelationRegistryError";
   }
+}
+
+export interface ApplyGroundedCorrelationInput {
+  database: Database.Database;
+  candidate: CandidateDetails;
+  inferenceId: string;
+  adapterId: string;
+  adapterContractVersion: string;
+  proposal: GroundedCorrelationProposalV1;
+  provenance: unknown;
+}
+
+export interface GroundedCorrelationResolution {
+  status: "applied" | "ambiguous";
+  proposal?: GroundedCorrelationProposalV1;
+  conflictReason?: string;
 }
 
 function requireText(value: string, label: string): void {
@@ -245,6 +267,11 @@ export function groundCorrelationProposal(
     value.evidenceVersionIds,
     "evidenceVersionIds",
   );
+  if (evidenceVersionIds.length === 0) {
+    throw new SemanticCorrelationRegistryError(
+      "evidenceVersionIds must contain at least one EvidenceVersion",
+    );
+  }
   if (evidenceVersionIds.some((id) => !item.evidenceVersionIds.includes(id))) {
     throw new SemanticCorrelationRegistryError(
       "evidenceVersionIds contains an ungrounded EvidenceVersion",
@@ -320,6 +347,139 @@ export function groundCorrelationProposal(
     confidence,
     rationale: textValue(value.rationale, "rationale"),
   };
+}
+
+export function resolveGroundedCorrelationProposals(
+  proposals: readonly GroundedCorrelationProposalV1[],
+): GroundedCorrelationResolution {
+  if (proposals.length === 0) {
+    return { status: "ambiguous", conflictReason: "no grounded proposals" };
+  }
+  const canonical = canonicalJson({
+    candidateIdentityKey: proposals[0]!.candidateIdentityKey,
+    candidateObservationFingerprint:
+      proposals[0]!.candidateObservationFingerprint,
+    evidenceVersionIds: [...proposals[0]!.evidenceVersionIds].sort(),
+    proposedClaimType: proposals[0]!.proposedClaimType,
+    subjectBindings: [...proposals[0]!.subjectBindings].sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
+    ),
+    confidence: proposals[0]!.confidence,
+  });
+  const conflicts = proposals.some(
+    (proposal) =>
+      canonicalJson({
+        candidateIdentityKey: proposal.candidateIdentityKey,
+        candidateObservationFingerprint:
+          proposal.candidateObservationFingerprint,
+        evidenceVersionIds: [...proposal.evidenceVersionIds].sort(),
+        proposedClaimType: proposal.proposedClaimType,
+        subjectBindings: [...proposal.subjectBindings].sort((left, right) =>
+          canonicalJson(left).localeCompare(canonicalJson(right)),
+        ),
+        confidence: proposal.confidence,
+      }) !== canonical,
+  );
+  if (conflicts) {
+    return {
+      status: "ambiguous",
+      conflictReason: "grounded proposals disagree for the same Candidate",
+    };
+  }
+  const proposal = [...proposals].sort((left, right) =>
+    canonicalJson(left).localeCompare(canonicalJson(right)),
+  )[0]!;
+  return { status: "applied", proposal };
+}
+
+export function applyGroundedCorrelation(
+  input: ApplyGroundedCorrelationInput,
+): PersistedCandidate {
+  if (input.proposal.contractVersion !== GROUNDED_CORRELATION_CONTRACT) {
+    throw new SemanticCorrelationRegistryError(
+      `Unsupported grounded correlation contract ${input.proposal.contractVersion}`,
+    );
+  }
+  if (input.proposal.confidence !== "probable") {
+    throw new SemanticCorrelationRegistryError(
+      "Only probable grounded correlations can be applied",
+    );
+  }
+  if (input.proposal.candidateIdentityKey !== input.candidate.identityKey) {
+    throw new SemanticCorrelationRegistryError(
+      "Grounded correlation Candidate identity does not match the target Candidate",
+    );
+  }
+  if (
+    input.proposal.candidateObservationFingerprint !==
+    input.candidate.observationFingerprint
+  ) {
+    throw new SemanticCorrelationRegistryError(
+      "Grounded correlation observation does not match the target Candidate",
+    );
+  }
+  if (input.proposal.proposedClaimType !== input.candidate.proposedClaimType) {
+    throw new SemanticCorrelationRegistryError(
+      "Grounded correlation Claim type does not match the target Candidate",
+    );
+  }
+  if (input.proposal.evidenceVersionIds.length === 0) {
+    throw new SemanticCorrelationRegistryError(
+      "Grounded correlation must reference at least one EvidenceVersion",
+    );
+  }
+  const candidateEvidenceVersionIds = new Set(
+    input.candidate.evidence.flatMap((evidence) =>
+      evidence.evidenceVersionId ? [evidence.evidenceVersionId] : [],
+    ),
+  );
+  if (
+    input.proposal.evidenceVersionIds.some(
+      (evidenceVersionId) =>
+        !candidateEvidenceVersionIds.has(evidenceVersionId),
+    )
+  ) {
+    throw new SemanticCorrelationRegistryError(
+      "Grounded correlation EvidenceVersion does not belong to the target Candidate",
+    );
+  }
+  const candidateSubjects = new Set(
+    input.candidate.subjects.map((subject) =>
+      canonicalJson([subject.identityKey, subject.role]),
+    ),
+  );
+  if (
+    input.proposal.subjectBindings.some(
+      (binding) =>
+        !candidateSubjects.has(
+          canonicalJson([binding.subjectIdentityKey, binding.role]),
+        ),
+    )
+  ) {
+    throw new SemanticCorrelationRegistryError(
+      "Grounded correlation Subject binding does not belong to the target Candidate",
+    );
+  }
+  const store = new CandidateStore(input.database);
+  const current = store.current(input.candidate.identityKey);
+  if (!current || current.id !== input.candidate.id) {
+    throw new SemanticCorrelationRegistryError(
+      "Grounded correlation target Candidate is not current",
+    );
+  }
+  return store.attachInference(current.id, {
+    inferenceId: input.inferenceId,
+    confidence: "probable",
+    basis: `inference:${input.adapterId}@${input.adapterContractVersion}`,
+    provenance: {
+      ...((input.provenance &&
+      typeof input.provenance === "object" &&
+      !Array.isArray(input.provenance)
+        ? input.provenance
+        : { input: input.provenance }) as Record<string, unknown>),
+      groundedCorrelation: input.proposal,
+    },
+  });
 }
 
 export class SemanticCorrelationRegistry {
