@@ -2554,6 +2554,22 @@ repository evaluation remain follow-up work.
 
 ##### G6c.3: Cross-Artifact and Continuity Expansion
 
+Implementation checkpoint (2026-10-10): the cross-artifact slice now has a
+deterministic cohort resolver (`cari-cross-artifact-cohort@1`) and an initial
+semantic adapter (`semantic-cross-artifact-correlation@1`). The resolver groups
+current Candidates through shared durable Subject identities or persisted
+Subject Continuity components, requires every Candidate Evidence entry to
+resolve to an existing EvidenceVersion, and classifies supported code,
+configuration, documentation, ADR, Endpoint, and Architecture Rule artifact
+families in stable order. The semantic adapter runs through the shared
+Registry/Grounding/Inference path, requires selected-Candidate Evidence plus a
+peer EvidenceVersion from another artifact family, and stores peer Evidence in
+Inference provenance while applying only Candidate-owned Evidence to the
+Candidate version. `claims discover --semantic` now runs Symbol, Endpoint, and
+Cross-Artifact adapters; ambiguous proposals remain unbound. Broader discovery
+of new artifact families and duplicate/refactor proposal semantics remain
+follow-up work.
+
 - correlate code, configuration, documentation, ADR, and Architecture Rule
   Candidates through shared durable Subjects and EvidenceVersion references,
 - add duplicate proposals and refactor continuity only where Git and structural

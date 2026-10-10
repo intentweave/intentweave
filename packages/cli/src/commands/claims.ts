@@ -75,6 +75,16 @@ import {
   SEMANTIC_ENDPOINT_CORRELATION_CONTRACT_VERSION,
 } from "../claims/semanticEndpointCorrelation.js";
 import {
+  runSemanticCrossArtifactCorrelation,
+  SEMANTIC_CROSS_ARTIFACT_CORRELATION_ADAPTER_ID,
+  SEMANTIC_CROSS_ARTIFACT_CORRELATION_CONTRACT_VERSION,
+} from "../claims/semanticCrossArtifactCorrelation.js";
+import {
+  CROSS_ARTIFACT_CORRELATION_ADAPTER_ID,
+  CROSS_ARTIFACT_CORRELATION_CONTRACT_VERSION,
+  discoverCrossArtifactCohorts,
+} from "../claims/crossArtifactCorrelation.js";
+import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
   extractDiscoveredCodeEvidence,
@@ -559,6 +569,12 @@ export async function runClaimsDiscover(options: {
             model: options.model,
             limit: semanticLimit,
           }),
+          await runSemanticCrossArtifactCorrelation({
+            database,
+            provider: semanticProvider,
+            model: options.model,
+            limit: semanticLimit,
+          }),
         ];
         semanticDiscovery = {
           status: semanticRuns.some((run) => run.status === "failed")
@@ -587,6 +603,7 @@ export async function runClaimsDiscover(options: {
           failures: semanticRuns.flatMap((run) => run.failures),
         };
       }
+      const crossArtifactCohorts = discoverCrossArtifactCohorts(database);
       const explicitBindingKeys = new Set(
         boundObservations.map(
           (observation) =>
@@ -645,6 +662,11 @@ export async function runClaimsDiscover(options: {
             contractVersion: ARCHITECTURE_DEPENDENCY_CONTRACT_VERSION,
             mode: "deterministic",
           },
+          {
+            id: CROSS_ARTIFACT_CORRELATION_ADAPTER_ID,
+            contractVersion: CROSS_ARTIFACT_CORRELATION_CONTRACT_VERSION,
+            mode: "deterministic",
+          },
           ...(options.semantic
             ? [
                 {
@@ -658,10 +680,17 @@ export async function runClaimsDiscover(options: {
                     SEMANTIC_ENDPOINT_CORRELATION_CONTRACT_VERSION,
                   mode: "model",
                 },
+                {
+                  id: SEMANTIC_CROSS_ARTIFACT_CORRELATION_ADAPTER_ID,
+                  contractVersion:
+                    SEMANTIC_CROSS_ARTIFACT_CORRELATION_CONTRACT_VERSION,
+                  mode: "model",
+                },
               ]
             : []),
         ],
         semanticDiscovery: semanticDiscovery ?? "not_run",
+        crossArtifactCohorts,
         discoveredCount: candidates.length,
         surfacedCount: candidates.filter((candidate) => candidate.surfaced)
           .length,
@@ -676,6 +705,9 @@ export async function runClaimsDiscover(options: {
         console.log(
           `Discovered ${output.discoveredCount} Candidate${output.discoveredCount === 1 ? "" : "s"} ` +
             `(${output.surfacedCount} surfaced, ${output.hiddenCount} visible with --all).`,
+        );
+        console.log(
+          `Cross-artifact cohorts: ${output.crossArtifactCohorts.length}.`,
         );
         if (!semanticDiscovery) {
           console.log("Semantic discovery was not run.");
