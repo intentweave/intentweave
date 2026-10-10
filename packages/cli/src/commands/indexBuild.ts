@@ -510,6 +510,10 @@ const indexBuildSubcommand = new Command("build")
     "Annotation depth: full (default) or structured (headings/bold/code spans only)",
     "full",
   )
+  .option(
+    "--kwx-workers <count>",
+    "Experimental TypeScript KWX chunk workers (1=serial control, 2-8=worker threads)",
+  )
   .option("--include <patterns...>", "Only include files matching these globs")
   .option(
     "--exclude <patterns...>",
@@ -544,6 +548,13 @@ const indexBuildSubcommand = new Command("build")
     const cwd = process.cwd();
     const session = opts.session ?? path.basename(cwd);
     const verbose = opts.verbose;
+    const kwxWorkerExperiment = opts.kwxWorkers !== undefined;
+    const kwxWorkers = Number(opts.kwxWorkers ?? 1);
+    if (!Number.isInteger(kwxWorkers) || kwxWorkers < 1 || kwxWorkers > 8) {
+      console.error("--kwx-workers must be an integer from 1 through 8.");
+      process.exitCode = 2;
+      return;
+    }
 
     // Load .iw/config.yaml early — needed for alias resolution after build
     const iwConfig = await loadIwConfig(path.join(cwd, ".iw"));
@@ -567,6 +578,10 @@ const indexBuildSubcommand = new Command("build")
         `  ▸ depth: ${opts.depth} | output: ${opts.output ?? ".iw/index.db"}\n`,
       ),
     );
+    if (kwxWorkerExperiment) {
+      const mode = kwxWorkers === 1 ? "serial control" : `${kwxWorkers} workers`;
+      console.log(chalk.gray(`  ▸ experimental KWX chunk workers: ${mode} (TypeScript backend)\n`));
+    }
     if (iwConfig?.indexAllFiles) {
       console.log(
         chalk.gray(
@@ -593,6 +608,7 @@ const indexBuildSubcommand = new Command("build")
       //   • --no-native flag was NOT passed
       //   • The binary is found on disk (dev build or CARI_BUILD_PATH override)
       const canUseNative =
+        !kwxWorkerExperiment &&
         roots.length === 0 &&
         !opts.include &&
         !opts.exclude &&
@@ -667,7 +683,9 @@ const indexBuildSubcommand = new Command("build")
           opts.native === false
             ? "--no-native flag"
             : !canUseNative
-              ? "multi-root / filters active"
+              ? kwxWorkerExperiment
+                ? "KWX worker experiment"
+                : "multi-root / filters active"
               : "native binary not found";
         console.log(chalk.gray(`  ▸ using TypeScript pipeline (${reason})\n`));
       }
@@ -682,6 +700,7 @@ const indexBuildSubcommand = new Command("build")
         includeAllFiles: iwConfig?.indexAllFiles ?? false,
         session,
         outputPath: opts.output,
+        kwxWorkers,
         maxFileSize: parseInt(opts.maxFileSize, 10),
         log: verbose
           ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
