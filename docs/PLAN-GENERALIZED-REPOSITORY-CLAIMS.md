@@ -2566,16 +2566,25 @@ Registry/Grounding/Inference path, requires selected-Candidate Evidence plus a
 peer EvidenceVersion from another artifact family, and stores peer Evidence in
 Inference provenance while applying only Candidate-owned Evidence to the
 Candidate version. `claims discover --semantic` now runs Symbol, Endpoint, and
-Cross-Artifact adapters; ambiguous proposals remain unbound. Broader discovery
-of new artifact families and duplicate/refactor proposal semantics remain
-follow-up work.
+Cross-Artifact adapters plus the semantic public Symbol Continuity adapter;
+ambiguous proposals remain unbound. The public Symbol continuity path persists
+multiple structurally grounded historical predecessors as deterministic
+`subject-continuity-candidate` Evidence and Candidate provenance, ordered by
+predecessor Candidate identity. A probable semantic selection atomically
+creates the alias and Subject Continuity edge and supersedes the observed
+Candidate; ambiguous or ungrounded selections cannot mutate identity. The
+semantic discovery report exposes per-adapter metrics so aggregate success
+cannot hide a weak adapter. Prose extraction remains governed by the existing
+registered-family gate: no new prose Candidate can be promoted without a
+registered family Rule/Promotion Adapter, and G6c.3 does not enable an
+unverifiable family by default.
 
 - correlate code, configuration, documentation, ADR, and Architecture Rule
   Candidates through shared durable Subjects and EvidenceVersion references,
 - add duplicate proposals and refactor continuity only where Git and structural
   identity remain ambiguous,
-- add prose Claim extraction last and require a registered Claim-family Rule
-  Adapter before any resulting Candidate can be promoted,
+- keep prose Claim extraction behind the registered Claim-family Rule Adapter
+  gate before any resulting Candidate can be promoted,
 - measure each adapter separately; a high aggregate score may not hide a weak
   Claim family or source-kind pair.
 

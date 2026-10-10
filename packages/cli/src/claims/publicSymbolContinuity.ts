@@ -47,9 +47,18 @@ export interface PublicSymbolSubjectBinding {
     confidence: CandidateConfidence;
     provenance: Record<string, unknown>;
   };
+  ambiguousPredecessors?: PublicSymbolContinuityAlternative[];
 }
 
-interface HistoricalSymbol {
+export interface PublicSymbolContinuityAlternative {
+  candidateIdentityKey: string;
+  subjectIdentityKey: string;
+  subjectDisplayName: string;
+  filePath: string;
+  normalizedValue: unknown;
+}
+
+export interface HistoricalSymbol {
   candidate_identity_key: string;
   subject_identity_key: string;
   subject_display_name: string;
@@ -215,6 +224,25 @@ function isUniquePredecessor(
   return sameName || sameSignature || sameSignatureShape || sameStructure;
 }
 
+export function ambiguousPublicSymbolPredecessors(
+  historical: readonly HistoricalSymbol[],
+  symbol: PublicSymbolObservation,
+): PublicSymbolContinuityAlternative[] {
+  const matches = historical
+    .filter((candidate) => isUniquePredecessor(candidate, symbol))
+    .sort((left, right) =>
+      left.candidate_identity_key.localeCompare(right.candidate_identity_key),
+    );
+  if (matches.length < 2) return [];
+  return matches.map((match) => ({
+    candidateIdentityKey: match.candidate_identity_key,
+    subjectIdentityKey: match.subject_identity_key,
+    subjectDisplayName: match.subject_display_name,
+    filePath: match.file_path,
+    normalizedValue: objectValue(match.normalized_value),
+  }));
+}
+
 export function correlatePublicSymbolSubject(
   database: Database.Database,
   adapterId: string,
@@ -249,14 +277,28 @@ export function correlatePublicSymbolSubject(
       : []),
     ...(rename ? [rename.fromPath] : []),
   ];
-  const matches = historicalSymbols(database, adapterId, context.baseRevision, [
-    ...new Set(predecessorPaths),
-  ]).filter((historical) => isUniquePredecessor(historical, symbol));
+  const historical = historicalSymbols(
+    database,
+    adapterId,
+    context.baseRevision,
+    [...new Set(predecessorPaths)],
+  );
+  const matches = historical.filter((candidate) =>
+    isUniquePredecessor(candidate, symbol),
+  );
   if (matches.length !== 1) {
     return {
       candidateIdentityKey: `public-symbol-doc:${symbol.id}`,
       canonicalSubject: observedSubject,
       observedSubject,
+      ...(matches.length > 1
+        ? {
+            ambiguousPredecessors: ambiguousPublicSymbolPredecessors(
+              historical,
+              symbol,
+            ),
+          }
+        : {}),
     };
   }
 

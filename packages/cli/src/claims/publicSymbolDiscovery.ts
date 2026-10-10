@@ -371,6 +371,50 @@ export function persistPublicSymbolCandidates(
             provenance: binding.continuity.provenance,
           })
         : undefined;
+      const continuityAlternatives = binding.ambiguousPredecessors ?? [];
+      const continuityEvidence = continuityAlternatives.length
+        ? claims.persistGenericEvidence({
+            subjects: [
+              binding.observedSubject,
+              ...continuityAlternatives.map((alternative) => ({
+                kind: "symbol" as const,
+                identityKey: alternative.subjectIdentityKey,
+                displayName: alternative.subjectDisplayName,
+                role: "predecessor",
+                basis: "ambiguous-public-symbol-continuity",
+                confidence: "ambiguous" as const,
+              })),
+            ],
+            sourceKind: "subject-continuity-candidate",
+            identityKey: `${candidateIdentityKey}:continuity`,
+            fingerprint: fingerprint({
+              observedSubject: binding.observedSubject.identityKey,
+              alternatives: continuityAlternatives,
+            }),
+            materialFingerprint: fingerprint({
+              alternatives: continuityAlternatives.map((alternative) => ({
+                candidateIdentityKey: alternative.candidateIdentityKey,
+                subjectIdentityKey: alternative.subjectIdentityKey,
+              })),
+            }),
+            normalizedValue: {
+              observedSubjectIdentityKey: binding.observedSubject.identityKey,
+              alternatives: continuityAlternatives,
+            },
+            semanticLocation: `${subjectIdentityKey}.continuity`,
+            provenance: {
+              adapterId: PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+              contractVersion: PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
+              repositoryRevision,
+              assignment: "ambiguous",
+            },
+            filePath: symbol.file_path,
+            symbolId: symbol.id,
+            spanStartLine: symbol.line,
+            spanEndLine: symbol.end_line ?? symbol.line,
+            repositoryRevision,
+          })
+        : undefined;
       const candidate = candidates.persist({
         identityKey: candidateIdentityKey,
         candidateKind: "public-symbol-documentation",
@@ -392,6 +436,8 @@ export function persistPublicSymbolCandidates(
           continuityId: continuity?.id ?? null,
           continuityBasis: binding.continuity?.basis ?? null,
           continuityConfidence: binding.continuity?.confidence ?? null,
+          continuityEvidenceVersionId: continuityEvidence?.id ?? null,
+          continuityAlternatives,
         },
         evidence: [
           {
@@ -408,6 +454,19 @@ export function persistPublicSymbolCandidates(
             role: "documentation",
             provenance: { normalizedValue: documentation },
           },
+          ...(continuityEvidence
+            ? [
+                {
+                  evidenceKey: `${candidateIdentityKey}:continuity`,
+                  evidenceVersionId: continuityEvidence.id,
+                  sourceKind: "subject-continuity-candidate",
+                  role: "continuity",
+                  provenance: {
+                    normalizedValue: continuityAlternatives,
+                  },
+                },
+              ]
+            : []),
         ],
         subjects: [binding.canonicalSubject],
       });
@@ -415,7 +474,11 @@ export function persistPublicSymbolCandidates(
         ...candidate,
         proposedClaimType: "CLM-PUBLIC-SYMBOL-DOCUMENTED" as const,
         confidence: binding.canonicalSubject.confidence,
-        sourceKinds: ["code-documentation", "code-symbol"],
+        sourceKinds: [
+          "code-documentation",
+          "code-symbol",
+          ...(continuityEvidence ? ["subject-continuity-candidate"] : []),
+        ],
         surfaced: true,
       };
     });

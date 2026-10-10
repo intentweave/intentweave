@@ -98,6 +98,11 @@ export interface GroundedCorrelationProposalV1 {
   }>;
   confidence: "probable" | "ambiguous";
   rationale: string;
+  continuity?: {
+    candidateIdentityKey: string;
+    subjectIdentityKey: string;
+    confidence: "probable" | "ambiguous";
+  };
 }
 
 export interface SemanticCorrelationAdapterV1 {
@@ -336,6 +341,47 @@ export function groundCorrelationProposal(
         );
       }
     }
+  }
+  const rawContinuity = value.continuity;
+  const continuity =
+    rawContinuity === undefined
+      ? undefined
+      : objectValue(rawContinuity, "continuity");
+  if (rawContinuity !== undefined && !continuity) {
+    throw new SemanticCorrelationRegistryError("continuity must be an object");
+  }
+  if (continuity) {
+    const continuityCandidateIdentityKey = textValue(
+      continuity.candidateIdentityKey,
+      "continuity.candidateIdentityKey",
+    );
+    const continuitySubjectIdentityKey = textValue(
+      continuity.subjectIdentityKey,
+      "continuity.subjectIdentityKey",
+    );
+    if (
+      continuity.confidence !== "probable" &&
+      continuity.confidence !== "ambiguous"
+    ) {
+      throw new SemanticCorrelationRegistryError(
+        "continuity.confidence must be probable or ambiguous",
+      );
+    }
+    return {
+      contractVersion: GROUNDED_CORRELATION_CONTRACT,
+      candidateIdentityKey,
+      candidateObservationFingerprint,
+      evidenceVersionIds,
+      proposedClaimType,
+      subjectBindings: bindings,
+      confidence,
+      rationale: textValue(value.rationale, "rationale"),
+      continuity: {
+        candidateIdentityKey: continuityCandidateIdentityKey,
+        subjectIdentityKey: continuitySubjectIdentityKey,
+        confidence: continuity.confidence,
+      },
+    };
   }
   return {
     contractVersion: GROUNDED_CORRELATION_CONTRACT,

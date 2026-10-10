@@ -70,6 +70,11 @@ import {
   SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
 } from "../claims/semanticSymbolCorrelation.js";
 import {
+  runSemanticPublicSymbolContinuity,
+  SEMANTIC_PUBLIC_SYMBOL_CONTINUITY_ADAPTER_ID,
+  SEMANTIC_PUBLIC_SYMBOL_CONTINUITY_CONTRACT_VERSION,
+} from "../claims/semanticPublicSymbolContinuity.js";
+import {
   runSemanticEndpointCorrelation,
   SEMANTIC_ENDPOINT_CORRELATION_ADAPTER_ID,
   SEMANTIC_ENDPOINT_CORRELATION_CONTRACT_VERSION,
@@ -563,6 +568,12 @@ export async function runClaimsDiscover(options: {
             model: options.model,
             limit: semanticLimit,
           }),
+          await runSemanticPublicSymbolContinuity({
+            database,
+            provider: semanticProvider,
+            model: options.model,
+            limit: semanticLimit,
+          }),
           await runSemanticEndpointCorrelation({
             database,
             provider: semanticProvider,
@@ -575,6 +586,24 @@ export async function runClaimsDiscover(options: {
             model: options.model,
             limit: semanticLimit,
           }),
+        ];
+        const semanticAdapters = [
+          {
+            id: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
+            result: semanticRuns[0]!,
+          },
+          {
+            id: SEMANTIC_PUBLIC_SYMBOL_CONTINUITY_ADAPTER_ID,
+            result: semanticRuns[1]!,
+          },
+          {
+            id: SEMANTIC_ENDPOINT_CORRELATION_ADAPTER_ID,
+            result: semanticRuns[2]!,
+          },
+          {
+            id: SEMANTIC_CROSS_ARTIFACT_CORRELATION_ADAPTER_ID,
+            result: semanticRuns[3]!,
+          },
         ];
         semanticDiscovery = {
           status: semanticRuns.some((run) => run.status === "failed")
@@ -601,6 +630,10 @@ export async function runClaimsDiscover(options: {
             )
             .sort(),
           failures: semanticRuns.flatMap((run) => run.failures),
+          adapters: semanticAdapters.map(({ id, result }) => ({
+            id,
+            ...result,
+          })),
         };
       }
       const crossArtifactCohorts = discoverCrossArtifactCohorts(database);
@@ -672,6 +705,12 @@ export async function runClaimsDiscover(options: {
                 {
                   id: SEMANTIC_SYMBOL_CORRELATION_ADAPTER_ID,
                   contractVersion: SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
+                  mode: "model",
+                },
+                {
+                  id: SEMANTIC_PUBLIC_SYMBOL_CONTINUITY_ADAPTER_ID,
+                  contractVersion:
+                    SEMANTIC_PUBLIC_SYMBOL_CONTINUITY_CONTRACT_VERSION,
                   mode: "model",
                 },
                 {
