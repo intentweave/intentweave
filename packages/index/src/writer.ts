@@ -68,7 +68,9 @@ export function buildIndex(
   const writerStart = performance.now();
   const dbPath =
     opts.outputPath ?? path.join(opts.workspaceRoot, ".iw", "index.db");
-  const sqliteMetrics = opts.measureSinkMetrics ? createSqliteMetrics() : undefined;
+  const sqliteMetrics = opts.measureSinkMetrics
+    ? createSqliteMetrics()
+    : undefined;
   const tableWrites: SinkTableWriteMeasurement[] = [];
   const measureTableWrite = (table: string, write: () => number): number => {
     if (!sqliteMetrics) return write();
@@ -79,7 +81,7 @@ export function buildIndex(
       table,
       rowCount,
       durationMs,
-      rowsPerSecond: durationMs > 0 ? rowCount * 1000 / durationMs : null,
+      rowsPerSecond: durationMs > 0 ? (rowCount * 1000) / durationMs : null,
     });
     return rowCount;
   };
@@ -108,20 +110,40 @@ export function buildIndex(
       const knownPaths = collectKnownPaths(ax, tcg);
 
       counts = {
-      symbols: measureTableWrite("symbols", () => writeSymbols(db, ax)),
-      annotations: measureTableWrite("annotations", () => writeAnnotations(db, annotations)),
-      coOccurrences: measureTableWrite("co_occurrences", () => writeCoOccurrences(db, cox)),
-      coChanges: measureTableWrite("co_changes", () => writeCoChanges(db, tcg)),
-      files: measureTableWrite("files", () => writeFiles(db, ax, tcg, opts.docGroupOverride, knownPaths)),
-      imports: measureTableWrite("imports", () => writeImports(db, ax, knownPaths)),
-      todos: measureTableWrite("todos", () => writeTodos(db, ax)),
-      rationale: measureTableWrite("rationale", () => writeRationale(db, ax)),
-      calls: measureTableWrite("symbol_calls", () => writeCalls(db, ax)),
-      propertyAccesses: measureTableWrite("property_accesses", () => writePropertyAccesses(db, ax)),
-      typeAssertions: measureTableWrite("type_assertions", () => writeTypeAssertions(db, ax)),
-      testDescriptions: measureTableWrite("test_descriptions", () => writeTestDescriptions(db, ax)),
-      variableAssignments: measureTableWrite("variable_assignments", () => writeVariableAssignments(db, ax)),
-      defUseChains: measureTableWrite("def_use_chains", () => writeDefUseChains(db, ax)),
+        symbols: measureTableWrite("symbols", () => writeSymbols(db, ax)),
+        annotations: measureTableWrite("annotations", () =>
+          writeAnnotations(db, annotations),
+        ),
+        coOccurrences: measureTableWrite("co_occurrences", () =>
+          writeCoOccurrences(db, cox),
+        ),
+        coChanges: measureTableWrite("co_changes", () =>
+          writeCoChanges(db, tcg),
+        ),
+        files: measureTableWrite("files", () =>
+          writeFiles(db, ax, tcg, opts.docGroupOverride, knownPaths),
+        ),
+        imports: measureTableWrite("imports", () =>
+          writeImports(db, ax, knownPaths),
+        ),
+        todos: measureTableWrite("todos", () => writeTodos(db, ax)),
+        rationale: measureTableWrite("rationale", () => writeRationale(db, ax)),
+        calls: measureTableWrite("symbol_calls", () => writeCalls(db, ax)),
+        propertyAccesses: measureTableWrite("property_accesses", () =>
+          writePropertyAccesses(db, ax),
+        ),
+        typeAssertions: measureTableWrite("type_assertions", () =>
+          writeTypeAssertions(db, ax),
+        ),
+        testDescriptions: measureTableWrite("test_descriptions", () =>
+          writeTestDescriptions(db, ax),
+        ),
+        variableAssignments: measureTableWrite("variable_assignments", () =>
+          writeVariableAssignments(db, ax),
+        ),
+        defUseChains: measureTableWrite("def_use_chains", () =>
+          writeDefUseChains(db, ax),
+        ),
       };
 
       // Populate FTS indexes
@@ -157,14 +179,17 @@ export function buildIndex(
       dbPath,
       counts,
       durationMs,
-      ...(sqliteMetrics ? {
-        sinkMetrics: {
-          writerDurationMs: performance.now() - writerStart,
-          tableWrites,
-          sqlite: sqliteMetrics,
-          timingNote: "transactionBodyMs includes statement calls; timing fields overlap and must not be summed",
-        },
-      } : {}),
+      ...(sqliteMetrics
+        ? {
+            sinkMetrics: {
+              writerDurationMs: performance.now() - writerStart,
+              tableWrites,
+              sqlite: sqliteMetrics,
+              timingNote:
+                "transactionBodyMs includes statement calls; timing fields overlap and must not be summed",
+            },
+          }
+        : {}),
     };
   } catch (error) {
     discardDatabaseFiles(temporaryDbPath);

@@ -91,4 +91,16 @@ describe("Candidate Recommendation evaluation", () => {
         .repositories,
     ).toEqual([{ id: "two", labels: [] }]);
   });
+
+  it("rejects duplicate repository IDs", () => {
+    expect(() =>
+      parseCandidateRecommendationEvaluationDataset({
+        schemaVersion: "1",
+        repositories: [
+          { id: "same", labels: [] },
+          { id: "same", labels: [] },
+        ],
+      }),
+    ).toThrow("duplicates same");
+  });
 });

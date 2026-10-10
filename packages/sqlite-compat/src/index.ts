@@ -168,13 +168,23 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
         ? (params[0] as unknown[])
         : params;
     if (!this.metrics) {
-      const result = this._stmt.run(...(args as Parameters<StatementSync["run"]>));
-      return { changes: Number(result.changes), lastInsertRowid: result.lastInsertRowid };
+      const result = this._stmt.run(
+        ...(args as Parameters<StatementSync["run"]>),
+      );
+      return {
+        changes: Number(result.changes),
+        lastInsertRowid: result.lastInsertRowid,
+      };
     }
     const start = performance.now();
     try {
-      const result = this._stmt.run(...(args as Parameters<StatementSync["run"]>));
-      return { changes: Number(result.changes), lastInsertRowid: result.lastInsertRowid };
+      const result = this._stmt.run(
+        ...(args as Parameters<StatementSync["run"]>),
+      );
+      return {
+        changes: Number(result.changes),
+        lastInsertRowid: result.lastInsertRowid,
+      };
     } finally {
       this.metrics.statementRunCount += 1;
       this.metrics.statementRunMs += performance.now() - start;
@@ -191,7 +201,10 @@ class Database {
   private transactionDepth = 0;
   private readonly metrics?: SqliteMetrics;
 
-  constructor(path: string, options?: { readonly?: boolean; metrics?: SqliteMetrics }) {
+  constructor(
+    path: string,
+    options?: { readonly?: boolean; metrics?: SqliteMetrics },
+  ) {
     this._db = new DatabaseSync(path, { readOnly: options?.readonly ?? false });
     this.metrics = options?.metrics;
   }
@@ -199,7 +212,10 @@ class Database {
   prepare<BindParameters = unknown, Result = unknown>(
     sql: string,
   ): StatementCompat<BindParameters, Result> {
-    return new StatementCompat<BindParameters, Result>(this._db.prepare(sql), this.metrics);
+    return new StatementCompat<BindParameters, Result>(
+      this._db.prepare(sql),
+      this.metrics,
+    );
   }
 
   exec(sql: string): this {

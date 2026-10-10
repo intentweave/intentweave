@@ -99,6 +99,7 @@ import {
 import { executeCandidateRecommendation } from "../claims/candidateRecommendationExecution.js";
 import { executeCandidateRecommendationBatch } from "../claims/candidateRecommendationBatch.js";
 import {
+  CandidateRecommendationEvaluationError,
   evaluateCandidateRecommendations,
   loadCandidateRecommendationEvaluationDataset,
   selectCandidateRecommendationEvaluationDataset,
@@ -1088,7 +1089,8 @@ export async function runClaimsCandidatesList(options: {
     process.exitCode =
       error instanceof ClaimsBindingError ||
       error instanceof CandidateInferenceConfigError ||
-      error instanceof ClaimsPortableStateFileError
+      error instanceof ClaimsPortableStateFileError ||
+      error instanceof CandidateRecommendationEvaluationError
         ? 64
         : 1;
   }

@@ -43,23 +43,36 @@ export interface CandidateRecommendationEvaluationReport {
   firstScreenNoise: number | null;
 }
 
+export class CandidateRecommendationEvaluationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CandidateRecommendationEvaluationError";
+  }
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be an object`);
+    throw new CandidateRecommendationEvaluationError(
+      `${label} must be an object`,
+    );
   }
   return value as Record<string, unknown>;
 }
 
 function string(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${label} must be a non-empty string`);
+    throw new CandidateRecommendationEvaluationError(
+      `${label} must be a non-empty string`,
+    );
   }
   return value;
 }
 
 function priority(value: unknown, label: string): EvaluationPriority {
   if (!["critical", "high", "medium", "low"].includes(String(value))) {
-    throw new Error(`${label} must be critical, high, medium, or low`);
+    throw new CandidateRecommendationEvaluationError(
+      `${label} must be critical, high, medium, or low`,
+    );
   }
   return value as EvaluationPriority;
 }
@@ -69,18 +82,33 @@ export function parseCandidateRecommendationEvaluationDataset(
 ): CandidateRecommendationEvaluationDataset {
   const root = record(value, "Evaluation dataset");
   if (root.schemaVersion !== "1") {
-    throw new Error("Evaluation dataset schemaVersion must be 1");
+    throw new CandidateRecommendationEvaluationError(
+      "Evaluation dataset schemaVersion must be 1",
+    );
   }
   if (!Array.isArray(root.repositories) || root.repositories.length === 0) {
-    throw new Error("Evaluation dataset repositories must not be empty");
+    throw new CandidateRecommendationEvaluationError(
+      "Evaluation dataset repositories must not be empty",
+    );
   }
+  const repositoryIds = new Set<string>();
   const repositories = root.repositories.map((item, repositoryIndex) => {
     const repository = record(item, `repositories[${repositoryIndex}]`);
     if (!Array.isArray(repository.labels)) {
-      throw new Error(
+      throw new CandidateRecommendationEvaluationError(
         `repositories[${repositoryIndex}].labels must be an array`,
       );
     }
+    const repositoryId = string(
+      repository.id,
+      `repositories[${repositoryIndex}].id`,
+    );
+    if (repositoryIds.has(repositoryId)) {
+      throw new CandidateRecommendationEvaluationError(
+        `repositories[${repositoryIndex}] duplicates ${repositoryId}`,
+      );
+    }
+    repositoryIds.add(repositoryId);
     const seen = new Set<string>();
     const labels = repository.labels.map((labelItem, labelIndex) => {
       const labelPath = `repositories[${repositoryIndex}].labels[${labelIndex}]`;
@@ -90,11 +118,15 @@ export function parseCandidateRecommendationEvaluationDataset(
         `${labelPath}.candidateIdentityKey`,
       );
       if (seen.has(candidateIdentityKey)) {
-        throw new Error(`${labelPath} duplicates ${candidateIdentityKey}`);
+        throw new CandidateRecommendationEvaluationError(
+          `${labelPath} duplicates ${candidateIdentityKey}`,
+        );
       }
       seen.add(candidateIdentityKey);
       if (typeof label.relevant !== "boolean") {
-        throw new Error(`${labelPath}.relevant must be boolean`);
+        throw new CandidateRecommendationEvaluationError(
+          `${labelPath}.relevant must be boolean`,
+        );
       }
       return {
         candidateIdentityKey,
@@ -118,7 +150,7 @@ export function parseCandidateRecommendationEvaluationDataset(
       };
     });
     return {
-      id: string(repository.id, `repositories[${repositoryIndex}].id`),
+      id: repositoryId,
       labels,
     };
   });
@@ -141,7 +173,7 @@ export function selectCandidateRecommendationEvaluationDataset(
   repositoryId?: string,
 ): CandidateRecommendationEvaluationDataset {
   if (!repositoryId && dataset.repositories.length > 1) {
-    throw new Error(
+    throw new CandidateRecommendationEvaluationError(
       "Evaluation dataset contains multiple repositories; select one with --repository",
     );
   }
@@ -149,7 +181,9 @@ export function selectCandidateRecommendationEvaluationDataset(
     ? dataset.repositories.find((item) => item.id === repositoryId)
     : dataset.repositories[0];
   if (!repository) {
-    throw new Error(`Evaluation repository ${repositoryId} does not exist`);
+    throw new CandidateRecommendationEvaluationError(
+      `Evaluation repository ${repositoryId} does not exist`,
+    );
   }
   return { schemaVersion: "1", repositories: [repository] };
 }

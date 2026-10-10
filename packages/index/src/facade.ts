@@ -828,9 +828,8 @@ export async function buildFromPaths(
     now: () => new Date(),
     timestamp: () => new Date().toISOString(),
   } as unknown;
-  const kwxWorkerPool = kwxWorkers > 1
-    ? analyzer.createKwxChunkWorkerPool(kwxWorkers)
-    : undefined;
+  const kwxWorkerPool =
+    kwxWorkers > 1 ? analyzer.createKwxChunkWorkerPool(kwxWorkers) : undefined;
   if (kwxWorkers > 1) {
     log(`KWX worker experiment: ${kwxWorkers} workers across chunk tasks`);
   }
