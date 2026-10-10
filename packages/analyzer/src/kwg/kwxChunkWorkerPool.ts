@@ -129,6 +129,10 @@ export class KwxChunkWorkerPool {
     await Promise.all(this.workers.map((worker) => worker.terminate()));
   }
 
+  assertHealthy(): void {
+    this.assertUsable();
+  }
+
   private async configure(options: KwxChunkProcessorOptions): Promise<void> {
     if (this.currentOptions
       && this.currentOptions.minLength === options.minLength

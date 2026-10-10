@@ -58,6 +58,46 @@ export interface RunResult {
   lastInsertRowid: number | bigint;
 }
 
+export interface SqliteMetrics {
+  statementRunCount: number;
+  statementRunMs: number;
+  statementReadCount: number;
+  statementReadMs: number;
+  execCallCount: number;
+  execCallMs: number;
+  transactionCount: number;
+  transactionBodyMs: number;
+  beginCount: number;
+  beginMs: number;
+  commitCount: number;
+  commitMs: number;
+  rollbackCount: number;
+  rollbackMs: number;
+  closeCount: number;
+  closeMs: number;
+}
+
+export function createSqliteMetrics(): SqliteMetrics {
+  return {
+    statementRunCount: 0,
+    statementRunMs: 0,
+    statementReadCount: 0,
+    statementReadMs: 0,
+    execCallCount: 0,
+    execCallMs: 0,
+    transactionCount: 0,
+    transactionBodyMs: 0,
+    beginCount: 0,
+    beginMs: 0,
+    commitCount: 0,
+    commitMs: 0,
+    rollbackCount: 0,
+    rollbackMs: 0,
+    closeCount: 0,
+    closeMs: 0,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // StatementCompat — wraps StatementSync with the better-sqlite3 Statement API
 //
@@ -67,7 +107,10 @@ export interface RunResult {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export class StatementCompat<_BindParameters = unknown, Result = unknown> {
-  constructor(private readonly _stmt: StatementSync) {}
+  constructor(
+    private readonly _stmt: StatementSync,
+    private readonly metrics?: SqliteMetrics,
+  ) {}
 
   // Returns Result[] so that code using prepare<_, Result>() gets typed results.
   // When Result = unknown (the default), this is unknown[] which still allows
@@ -82,9 +125,20 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
       params.length === 1 && Array.isArray(params[0])
         ? (params[0] as unknown[])
         : params;
-    return this._stmt.all(
-      ...(args as Parameters<StatementSync["all"]>),
-    ) as unknown as Result[];
+    if (!this.metrics) {
+      return this._stmt.all(
+        ...(args as Parameters<StatementSync["all"]>),
+      ) as unknown as Result[];
+    }
+    const start = performance.now();
+    try {
+      return this._stmt.all(
+        ...(args as Parameters<StatementSync["all"]>),
+      ) as unknown as Result[];
+    } finally {
+      this.metrics.statementReadCount += 1;
+      this.metrics.statementReadMs += performance.now() - start;
+    }
   }
 
   get(...params: unknown[]): Result | undefined {
@@ -92,9 +146,20 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
       params.length === 1 && Array.isArray(params[0])
         ? (params[0] as unknown[])
         : params;
-    return this._stmt.get(
-      ...(args as Parameters<StatementSync["get"]>),
-    ) as unknown as Result | undefined;
+    if (!this.metrics) {
+      return this._stmt.get(
+        ...(args as Parameters<StatementSync["get"]>),
+      ) as unknown as Result | undefined;
+    }
+    const start = performance.now();
+    try {
+      return this._stmt.get(
+        ...(args as Parameters<StatementSync["get"]>),
+      ) as unknown as Result | undefined;
+    } finally {
+      this.metrics.statementReadCount += 1;
+      this.metrics.statementReadMs += performance.now() - start;
+    }
   }
 
   run(...params: unknown[]): RunResult {
@@ -102,8 +167,18 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
       params.length === 1 && Array.isArray(params[0])
         ? (params[0] as unknown[])
         : params;
-    const r = this._stmt.run(...(args as Parameters<StatementSync["run"]>));
-    return { changes: Number(r.changes), lastInsertRowid: r.lastInsertRowid };
+    if (!this.metrics) {
+      const result = this._stmt.run(...(args as Parameters<StatementSync["run"]>));
+      return { changes: Number(result.changes), lastInsertRowid: result.lastInsertRowid };
+    }
+    const start = performance.now();
+    try {
+      const result = this._stmt.run(...(args as Parameters<StatementSync["run"]>));
+      return { changes: Number(result.changes), lastInsertRowid: result.lastInsertRowid };
+    } finally {
+      this.metrics.statementRunCount += 1;
+      this.metrics.statementRunMs += performance.now() - start;
+    }
   }
 }
 
@@ -113,19 +188,31 @@ export class StatementCompat<_BindParameters = unknown, Result = unknown> {
 
 class Database {
   private readonly _db: DatabaseSync;
+  private readonly metrics?: SqliteMetrics;
 
-  constructor(path: string, options?: { readonly?: boolean }) {
+  constructor(path: string, options?: { readonly?: boolean; metrics?: SqliteMetrics }) {
     this._db = new DatabaseSync(path, { readOnly: options?.readonly ?? false });
+    this.metrics = options?.metrics;
   }
 
   prepare<BindParameters = unknown, Result = unknown>(
     sql: string,
   ): StatementCompat<BindParameters, Result> {
-    return new StatementCompat<BindParameters, Result>(this._db.prepare(sql));
+    return new StatementCompat<BindParameters, Result>(this._db.prepare(sql), this.metrics);
   }
 
   exec(sql: string): this {
-    this._db.exec(sql);
+    if (!this.metrics) {
+      this._db.exec(sql);
+      return this;
+    }
+    const start = performance.now();
+    try {
+      this._db.exec(sql);
+    } finally {
+      this.metrics.execCallCount += 1;
+      this.metrics.execCallMs += performance.now() - start;
+    }
     return this;
   }
 
@@ -135,7 +222,14 @@ class Database {
    * setting-only pragmas.
    */
   pragma(source: string): unknown[] {
-    return this._db.prepare(`PRAGMA ${source}`).all();
+    if (!this.metrics) return this._db.prepare(`PRAGMA ${source}`).all();
+    const start = performance.now();
+    try {
+      return this._db.prepare(`PRAGMA ${source}`).all();
+    } finally {
+      this.metrics.statementReadCount += 1;
+      this.metrics.statementReadMs += performance.now() - start;
+    }
   }
 
   /**
@@ -144,20 +238,65 @@ class Database {
    */
   transaction<F extends (...args: unknown[]) => unknown>(fn: F): F {
     return ((...args: unknown[]) => {
+      const beginStart = this.metrics ? performance.now() : 0;
       this._db.exec("BEGIN");
+      if (this.metrics) {
+        this.metrics.beginCount += 1;
+        this.metrics.beginMs += performance.now() - beginStart;
+        this.metrics.transactionCount += 1;
+      }
+      const bodyStart = this.metrics ? performance.now() : 0;
+      let result: ReturnType<F>;
       try {
-        const result = fn(...args);
+        result = fn(...args) as ReturnType<F>;
+      } catch (error) {
+        if (this.metrics) this.metrics.transactionBodyMs += performance.now() - bodyStart;
+        const rollbackStart = this.metrics ? performance.now() : 0;
+        try {
+          this._db.exec("ROLLBACK");
+        } finally {
+          if (this.metrics) {
+            this.metrics.rollbackCount += 1;
+            this.metrics.rollbackMs += performance.now() - rollbackStart;
+          }
+        }
+        throw error;
+      }
+      if (this.metrics) this.metrics.transactionBodyMs += performance.now() - bodyStart;
+      const commitStart = this.metrics ? performance.now() : 0;
+      if (this.metrics) this.metrics.commitCount += 1;
+      try {
         this._db.exec("COMMIT");
+        if (this.metrics) this.metrics.commitMs += performance.now() - commitStart;
         return result;
-      } catch (err) {
-        this._db.exec("ROLLBACK");
-        throw err;
+      } catch (error) {
+        if (this.metrics) this.metrics.commitMs += performance.now() - commitStart;
+        const rollbackStart = this.metrics ? performance.now() : 0;
+        try {
+          this._db.exec("ROLLBACK");
+        } finally {
+          if (this.metrics) {
+            this.metrics.rollbackCount += 1;
+            this.metrics.rollbackMs += performance.now() - rollbackStart;
+          }
+        }
+        throw error;
       }
     }) as F;
   }
 
   close(): void {
-    this._db.close();
+    if (!this.metrics) {
+      this._db.close();
+      return;
+    }
+    const start = performance.now();
+    try {
+      this._db.close();
+    } finally {
+      this.metrics.closeCount += 1;
+      this.metrics.closeMs += performance.now() - start;
+    }
   }
 }
 

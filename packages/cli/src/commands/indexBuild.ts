@@ -514,6 +514,10 @@ const indexBuildSubcommand = new Command("build")
     "--kwx-workers <count>",
     "Experimental TypeScript KWX chunk workers (1=serial control, 2-8=worker threads)",
   )
+  .option(
+    "--sink-metrics <path>",
+    "Write measurement-only SQLite writer timings as JSON and use the TypeScript backend",
+  )
   .option("--include <patterns...>", "Only include files matching these globs")
   .option(
     "--exclude <patterns...>",
@@ -550,6 +554,7 @@ const indexBuildSubcommand = new Command("build")
     const verbose = opts.verbose;
     const kwxWorkerExperiment = opts.kwxWorkers !== undefined;
     const kwxWorkers = Number(opts.kwxWorkers ?? 1);
+    const sinkMetricsPath = typeof opts.sinkMetrics === "string" ? opts.sinkMetrics : undefined;
     if (!Number.isInteger(kwxWorkers) || kwxWorkers < 1 || kwxWorkers > 8) {
       console.error("--kwx-workers must be an integer from 1 through 8.");
       process.exitCode = 2;
@@ -609,6 +614,7 @@ const indexBuildSubcommand = new Command("build")
       //   • The binary is found on disk (dev build or CARI_BUILD_PATH override)
       const canUseNative =
         !kwxWorkerExperiment &&
+        !sinkMetricsPath &&
         roots.length === 0 &&
         !opts.include &&
         !opts.exclude &&
@@ -683,9 +689,11 @@ const indexBuildSubcommand = new Command("build")
           opts.native === false
             ? "--no-native flag"
             : !canUseNative
-              ? kwxWorkerExperiment
-                ? "KWX worker experiment"
-                : "multi-root / filters active"
+              ? sinkMetricsPath
+                ? "SQLite sink metrics requested"
+                : kwxWorkerExperiment
+                  ? "KWX worker experiment"
+                  : "multi-root / filters active"
               : "native binary not found";
         console.log(chalk.gray(`  ▸ using TypeScript pipeline (${reason})\n`));
       }
@@ -701,6 +709,7 @@ const indexBuildSubcommand = new Command("build")
         session,
         outputPath: opts.output,
         kwxWorkers,
+        measureSinkMetrics: Boolean(sinkMetricsPath),
         maxFileSize: parseInt(opts.maxFileSize, 10),
         log: verbose
           ? (msg: string) => console.log(chalk.gray(`  ${msg}`))
@@ -713,6 +722,31 @@ const indexBuildSubcommand = new Command("build")
           console.log(chalk.gray(`       → ${p.detail}`));
         },
       });
+
+      if (sinkMetricsPath) {
+        if (!result.sinkMetrics) {
+          throw new Error("SQLite sink metrics were requested but were not returned by the TypeScript writer.");
+        }
+        const absoluteMetricsPath = path.resolve(cwd, sinkMetricsPath);
+        if (absoluteMetricsPath === path.resolve(result.dbPath)) {
+          throw new Error("--sink-metrics output must not overwrite the SQLite database.");
+        }
+        await fs.mkdir(path.dirname(absoluteMetricsPath), { recursive: true });
+        await fs.writeFile(absoluteMetricsPath, `${JSON.stringify({
+          schemaVersion: 1,
+          generatedAt: new Date().toISOString(),
+          dbPath: result.dbPath,
+          buildDurationMs: result.durationMs,
+          counts: result.counts,
+          sinkMetrics: result.sinkMetrics,
+          caveats: [
+            "transactionBodyMs includes statement calls; timing fields overlap and must not be summed",
+            "synchronous SQLite API wall time is not lock-wait attribution",
+            "the current writer has no producer queue, so queue wait is not measured",
+          ],
+        }, null, 2)}\n`, "utf8");
+        console.log(chalk.gray(`  ▸ SQLite sink metrics: ${absoluteMetricsPath}`));
+      }
 
       console.log(`\n  ${chalk.green("✓")} Index built → ${result.dbPath}`);
       console.log(
