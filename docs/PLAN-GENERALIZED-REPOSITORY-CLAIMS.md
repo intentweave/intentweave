@@ -2531,6 +2531,19 @@ unchanged.
 
 ##### G6c.2: Framework-Independent Endpoint Correlation
 
+Implementation checkpoint (2026-10-10): an initial provider-neutral semantic
+Endpoint adapter is implemented. It consumes unresolved
+`endpoint-authentication` Candidates without depending on NestJS and requires
+grounded Route, handler, and protection/Guard Evidence plus registered
+Endpoint, handler, and protection Subject roles before a model proposal can
+become `probable`. `claims discover --semantic` now runs Symbol and Endpoint
+correlation through the same provider lifecycle. A valid but uncertain
+route-to-protection binding remains `ambiguous` and leaves the Candidate
+unbound; invented or incomplete Evidence is rejected by the grounding kernel.
+The current slice adds the adapter contract and fixture coverage, while
+structural discovery of additional framework-specific Candidates and external
+repository evaluation remain follow-up work.
+
 - target unresolved Endpoint Candidates with unknown middleware wrappers,
   global Guards, project authentication helpers, and indirect route bindings,
 - require grounded route, handler, and protection Evidence plus registered

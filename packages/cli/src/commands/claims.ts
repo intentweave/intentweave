@@ -70,6 +70,11 @@ import {
   SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
 } from "../claims/semanticSymbolCorrelation.js";
 import {
+  runSemanticEndpointCorrelation,
+  SEMANTIC_ENDPOINT_CORRELATION_ADAPTER_ID,
+  SEMANTIC_ENDPOINT_CORRELATION_CONTRACT_VERSION,
+} from "../claims/semanticEndpointCorrelation.js";
+import {
   ClaimsBindingError,
   extractBoundCodeEvidence,
   extractDiscoveredCodeEvidence,
@@ -537,15 +542,50 @@ export async function runClaimsDiscover(options: {
             "Semantic correlation limit must be a positive integer",
           );
         }
-        semanticDiscovery = await runSemanticSymbolCorrelation({
-          database,
-          provider: await resolveSemanticClaimsProvider(
-            options.provider ?? "openai",
-            options.model,
+        const semanticProvider = await resolveSemanticClaimsProvider(
+          options.provider ?? "openai",
+          options.model,
+        );
+        const semanticRuns = [
+          await runSemanticSymbolCorrelation({
+            database,
+            provider: semanticProvider,
+            model: options.model,
+            limit: semanticLimit,
+          }),
+          await runSemanticEndpointCorrelation({
+            database,
+            provider: semanticProvider,
+            model: options.model,
+            limit: semanticLimit,
+          }),
+        ];
+        semanticDiscovery = {
+          status: semanticRuns.some((run) => run.status === "failed")
+            ? "failed"
+            : semanticRuns.some((run) => run.status === "evaluated")
+              ? "evaluated"
+              : "not_applicable",
+          groups: semanticRuns.reduce((total, run) => total + run.groups, 0),
+          providerCalls: semanticRuns.reduce(
+            (total, run) => total + run.providerCalls,
+            0,
           ),
-          model: options.model,
-          limit: semanticLimit,
-        });
+          cacheHits: semanticRuns.reduce(
+            (total, run) => total + run.cacheHits,
+            0,
+          ),
+          inferenceIds: semanticRuns.flatMap((run) => run.inferenceIds).sort(),
+          correlatedCandidateIds: semanticRuns
+            .flatMap((run) => run.correlatedCandidateIds)
+            .sort(),
+          ambiguousCandidateIds: semanticRuns
+            .flatMap((run) =>
+              "ambiguousCandidateIds" in run ? run.ambiguousCandidateIds : [],
+            )
+            .sort(),
+          failures: semanticRuns.flatMap((run) => run.failures),
+        };
       }
       const explicitBindingKeys = new Set(
         boundObservations.map(
@@ -612,6 +652,12 @@ export async function runClaimsDiscover(options: {
                   contractVersion: SEMANTIC_SYMBOL_CORRELATION_CONTRACT_VERSION,
                   mode: "model",
                 },
+                {
+                  id: SEMANTIC_ENDPOINT_CORRELATION_ADAPTER_ID,
+                  contractVersion:
+                    SEMANTIC_ENDPOINT_CORRELATION_CONTRACT_VERSION,
+                  mode: "model",
+                },
               ]
             : []),
         ],
@@ -635,14 +681,15 @@ export async function runClaimsDiscover(options: {
           console.log("Semantic discovery was not run.");
         } else if (semanticDiscovery.status === "not_applicable") {
           console.log(
-            "Semantic discovery found no ambiguous Symbol documentation groups.",
+            "Semantic discovery found no applicable ambiguous correlation groups.",
           );
         } else {
           console.log(
             `Semantic discovery evaluated ${semanticDiscovery.groups} group${semanticDiscovery.groups === 1 ? "" : "s"}: ` +
               `${semanticDiscovery.providerCalls} provider call${semanticDiscovery.providerCalls === 1 ? "" : "s"}, ` +
               `${semanticDiscovery.cacheHits} cache hit${semanticDiscovery.cacheHits === 1 ? "" : "s"}, ` +
-              `${semanticDiscovery.correlatedCandidateIds.length} probable correlation${semanticDiscovery.correlatedCandidateIds.length === 1 ? "" : "s"}.`,
+              `${semanticDiscovery.correlatedCandidateIds.length} probable correlation${semanticDiscovery.correlatedCandidateIds.length === 1 ? "" : "s"}` +
+              `${semanticDiscovery.ambiguousCandidateIds?.length ? `, ${semanticDiscovery.ambiguousCandidateIds.length} ambiguous` : ""}.`,
           );
           for (const failure of semanticDiscovery.failures) {
             console.log(
