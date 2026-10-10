@@ -255,15 +255,18 @@ export interface CariConfig {
   /** Output path for the SQLite database (default: .iw/index.db) */
   outputPath?: string;
 
+  /** Experimental KWX chunk worker count (1 keeps the serial implementation). */
+  kwxWorkers?: number;
+
+  /** Collect measurement-only synchronous SQLite writer metrics. */
+  measureSinkMetrics?: boolean;
+
   /**
    * Maximum file size in bytes for AX extraction.
    * Files larger than this will be skipped and recorded with indexed=false.
    * Default: 65536 (64 KiB)
    */
   maxFileSize?: number;
-
-  /** Experimental KWX chunk worker count (1 keeps the serial implementation). */
-  kwxWorkers?: number;
 
   /** Logging callback */
   log?: (msg: string) => void;
@@ -656,6 +659,7 @@ export async function buildFromPaths(
     outputPath,
     maxFileSize = 262144,
     kwxWorkers = 1,
+    measureSinkMetrics = false,
     log = () => {},
     onProgress,
   } = config;
@@ -922,6 +926,7 @@ export async function buildFromPaths(
       kwxOutputs.push(kwxOutput);
       srcCommentCount++;
     } catch {
+      kwxWorkerPool?.assertHealthy();
       // Skip files that can't be read or parsed
     }
   }
@@ -1020,6 +1025,7 @@ export async function buildFromPaths(
     depth,
     outputPath,
     log,
+    measureSinkMetrics,
     docGroupOverride:
       fileGroupOverride.size > 0 ? fileGroupOverride : undefined,
   };

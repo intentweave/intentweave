@@ -8,9 +8,10 @@
  * into the SQLite index. Batch inserts (500/tx) for performance.
  */
 
-import Database from "@intentweave/sqlite-compat";
+import Database, { createSqliteMetrics } from "@intentweave/sqlite-compat";
 import * as path from "path";
 import * as fs from "fs";
+import { performance } from "node:perf_hooks";
 
 import {
   discardClaimsHistory,
@@ -31,6 +32,7 @@ import type {
   IndexFile,
   IndexSymbol,
   ExternalEntity,
+  SinkTableWriteMeasurement,
 } from "./types.js";
 import type { AxOutput, AxSymbol, AxFileResult } from "@intentweave/analyzer";
 import type {
@@ -63,8 +65,24 @@ export function buildIndex(
   opts: IndexBuildOptions,
 ): IndexBuildResult {
   const start = Date.now();
+  const writerStart = performance.now();
   const dbPath =
     opts.outputPath ?? path.join(opts.workspaceRoot, ".iw", "index.db");
+  const sqliteMetrics = opts.measureSinkMetrics ? createSqliteMetrics() : undefined;
+  const tableWrites: SinkTableWriteMeasurement[] = [];
+  const measureTableWrite = (table: string, write: () => number): number => {
+    if (!sqliteMetrics) return write();
+    const tableStart = performance.now();
+    const rowCount = write();
+    const durationMs = performance.now() - tableStart;
+    tableWrites.push({
+      table,
+      rowCount,
+      durationMs,
+      rowsPerSecond: durationMs > 0 ? rowCount * 1000 / durationMs : null,
+    });
+    return rowCount;
+  };
 
   // Ensure directory exists
   const dir = path.dirname(dbPath);
@@ -75,30 +93,35 @@ export function buildIndex(
   const claimsHistory = snapshotClaimsHistory(dbPath);
   const temporaryDbPath = temporaryDatabasePath(dbPath);
   let result: IndexBuildResult | undefined;
+  let counts!: IndexBuildResult["counts"];
+  let durationMs = 0;
 
   try {
-    const db = new Database(temporaryDbPath);
+    const db = new Database(
+      temporaryDbPath,
+      sqliteMetrics ? { metrics: sqliteMetrics } : undefined,
+    );
     try {
       initSchema(db);
       restoreClaimsHistory(db, claimsHistory);
 
       const knownPaths = collectKnownPaths(ax, tcg);
 
-      const counts = {
-        symbols: writeSymbols(db, ax),
-        annotations: writeAnnotations(db, annotations),
-        coOccurrences: writeCoOccurrences(db, cox),
-        coChanges: writeCoChanges(db, tcg),
-        files: writeFiles(db, ax, tcg, opts.docGroupOverride, knownPaths),
-        imports: writeImports(db, ax, knownPaths),
-        todos: writeTodos(db, ax),
-        rationale: writeRationale(db, ax),
-        calls: writeCalls(db, ax),
-        propertyAccesses: writePropertyAccesses(db, ax),
-        typeAssertions: writeTypeAssertions(db, ax),
-        testDescriptions: writeTestDescriptions(db, ax),
-        variableAssignments: writeVariableAssignments(db, ax),
-        defUseChains: writeDefUseChains(db, ax),
+      counts = {
+      symbols: measureTableWrite("symbols", () => writeSymbols(db, ax)),
+      annotations: measureTableWrite("annotations", () => writeAnnotations(db, annotations)),
+      coOccurrences: measureTableWrite("co_occurrences", () => writeCoOccurrences(db, cox)),
+      coChanges: measureTableWrite("co_changes", () => writeCoChanges(db, tcg)),
+      files: measureTableWrite("files", () => writeFiles(db, ax, tcg, opts.docGroupOverride, knownPaths)),
+      imports: measureTableWrite("imports", () => writeImports(db, ax, knownPaths)),
+      todos: measureTableWrite("todos", () => writeTodos(db, ax)),
+      rationale: measureTableWrite("rationale", () => writeRationale(db, ax)),
+      calls: measureTableWrite("symbol_calls", () => writeCalls(db, ax)),
+      propertyAccesses: measureTableWrite("property_accesses", () => writePropertyAccesses(db, ax)),
+      typeAssertions: measureTableWrite("type_assertions", () => writeTypeAssertions(db, ax)),
+      testDescriptions: measureTableWrite("test_descriptions", () => writeTestDescriptions(db, ax)),
+      variableAssignments: measureTableWrite("variable_assignments", () => writeVariableAssignments(db, ax)),
+      defUseChains: measureTableWrite("def_use_chains", () => writeDefUseChains(db, ax)),
       };
 
       // Populate FTS indexes
@@ -114,7 +137,7 @@ export function buildIndex(
       meta.run("workspace_root", opts.workspaceRoot);
       db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 
-      const durationMs = Date.now() - start;
+      durationMs = Date.now() - start;
       result = { dbPath, counts, durationMs };
     } finally {
       db.close();
@@ -130,7 +153,19 @@ export function buildIndex(
         `type_assertions=${result.counts.typeAssertions} test_descriptions=${result.counts.testDescriptions} ` +
         `variable_assignments=${result.counts.variableAssignments} def_use_chains=${result.counts.defUseChains}`,
     );
-    return result;
+    return {
+      dbPath,
+      counts,
+      durationMs,
+      ...(sqliteMetrics ? {
+        sinkMetrics: {
+          writerDurationMs: performance.now() - writerStart,
+          tableWrites,
+          sqlite: sqliteMetrics,
+          timingNote: "transactionBodyMs includes statement calls; timing fields overlap and must not be summed",
+        },
+      } : {}),
+    };
   } catch (error) {
     discardDatabaseFiles(temporaryDbPath);
     throw error;
