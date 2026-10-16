@@ -1,8 +1,8 @@
 # Generalized Repository Claims
 
-> **Version:** 1.8
-> **Status:** Follow-on concept / implementation plan with delivery checkpoints
-> **Date:** 2026-09-14
+> **Version:** 1.9
+> **Status:** Implementation in progress. Phases G0–G5.2 and the Unified Intent Gate are implemented; G6a–G6c are implemented as bounded slices with external quality gates open; G6d (AI-backed automation) is not started. See the status table in §15.
+> **Date:** 2026-10-16
 > **Starting point:** IntentWeave Vertical Slice V5.1.x and the implemented parameter-centered Claims slice
 
 ## 1. Purpose
@@ -1443,6 +1443,39 @@ input and output contracts.
 
 ## 15. Delivery Plan
 
+### Status Overview
+
+Status as of 2026-10-16, from a code review of the `feat/generalized-repository-claims`
+branch. Verified means the code exists and the cited test or demo passed on that
+date. Implemented means the code exists, but its acceptance tests were not
+re-run in this review.
+
+| Phase                                                    | Status                         | Evidence                                                                                                      | Open items                                                                                                                              |
+| -------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| G0 Freeze existing slice                                 | Partial                        | `.iw/claims/state.yaml` portable state exists                                                                 | Golden-vector file, external first-run measurements on three repositories, design article and design-partner feedback not found in repo |
+| G1 Subject foundation                                    | Implemented                    | `subjects`, `subject_identities`, `subject_aliases`, `subject_continuity`, `claim_subjects` tables; schema 20 | Migration replay tests not individually re-run                                                                                          |
+| G2 Candidates and semantic discovery                     | Implemented                    | `candidate_*` tables, `LLMProviderV2`, `StructuredInferenceService`, `discover` / `triage` / `review` CLI     | —                                                                                                                                       |
+| G3 Symbol contract slice                                 | Implemented                    | Public Symbol discovery and continuity modules; S0–S5 fixture                                                 | Plan cites a versioned contract ID (`…@2`); not found literally in code                                                                 |
+| G4 Endpoint slice (NestJS)                               | Implemented                    | `nestEndpointDiscovery.ts`; E0–E6 fixture                                                                     | Plan cites a versioned contract ID (`…@1`); not found literally in code                                                                 |
+| G4 follow-up: framework-independent Endpoint correlation | Not started                    | Semantic Endpoint adapter only                                                                                | No deterministic structural heuristic                                                                                                   |
+| G5 Architecture slice                                    | Implemented                    | `architectureDependencyDiscovery.ts`; A0–A5 fixture                                                           | Plan cites a versioned contract ID (`…@1`); not found literally in code                                                                 |
+| G5.1 Candidate state semantics and explicit Rule Policy  | Implemented                    | `candidate_policy_decisions`; `explicit-architecture-rule` references                                         | —                                                                                                                                       |
+| G5.2 Origin-neutral justification kernel                 | Implemented                    | `claimOrigins` in portable state; Twin-Origin fixture                                                         | —                                                                                                                                       |
+| Unified Intent Gate                                      | Implemented                    | `not_evaluated` gate status; Claims partition in `intent check`                                               | —                                                                                                                                       |
+| G6a Eligibility, context, noise baseline                 | Implemented; quality gate open | Eligibility and context modules; `--preview`                                                                  | Labeled precision and recall on external repositories                                                                                   |
+| G6b.1 Recommendation contract and persistence            | Implemented                    | `persistRecommendation`; schema 20                                                                            | —                                                                                                                                       |
+| G6b.2 Single-Candidate slice                             | Implemented                    | `--candidate`, `--based-on-recommendation`                                                                    | —                                                                                                                                       |
+| G6b.3 Bounded batch and evaluation                       | Implemented; quality gate open | `candidateRecommendationBatch.ts`; `--batch`                                                                  | Quality claims need labeled evaluation on at least three external repositories                                                          |
+| G6c.1 Registry and grounding kernel                      | Implemented                    | `SemanticCorrelationRegistry`                                                                                 | —                                                                                                                                       |
+| G6c.2 Framework-independent Endpoint correlation         | Partial                        | `semanticEndpointCorrelation.ts`                                                                              | No demonstrated correlation that deterministic adapters miss; no validation on a non-NestJS repository                                  |
+| G6c.3 Cross-artifact and continuity expansion            | Implemented                    | Cross-artifact cohort resolver; semantic cross-artifact and public Symbol continuity adapters                 | —                                                                                                                                       |
+| G6d Policy-governed automation                           | Not started                    | No automation policy, report-only observations, or schema 21                                                  | Gated on G6b quality evidence                                                                                                           |
+| Communication track                                      | Not verified                   | —                                                                                                             | Publication checkpoints depend on the evidence above                                                                                    |
+
+Verification on 2026-10-16: the claims-related test subset passed (50 files, 639
+tests), and `scripts/claims-90-second-demo.sh` completed with exit 0. The full
+regression suite and the labeled G6 evaluation were not run for this status.
+
 ### Phase G0: Freeze the Existing Slice
 
 Goal: establish a robust baseline before generalization.
@@ -1991,8 +2024,9 @@ entry point for baseline and diagnostic Rules workflows.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
-Status: implementation in progress. G6a preview substrate is implemented; G6b
-and G6c remain proposed beyond the bounded G2 reference adapter.
+Status: G6a, G6b.1–G6b.3, and G6c.1–G6c.3 have implementation checkpoints
+(2026-09-14 to 2026-10-10). Their external quality gates (labeled repository
+evaluation, non-NestJS Endpoint validation) remain open. G6d is not started.
 
 Specification checkpoint (2026-10-04): G6b-G6d are divided below into
 implementation increments with explicit recommendation, grounding, migration,
