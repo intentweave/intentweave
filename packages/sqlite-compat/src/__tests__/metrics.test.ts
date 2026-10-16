@@ -14,16 +14,22 @@ afterEach(() => {
 
 describe("SQLite optional measurements", () => {
   it("records synchronous statement, exec, transaction-body, and commit timings", () => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), "sqlite-compat-metrics-"));
+    const temporaryDirectory = mkdtempSync(
+      join(tmpdir(), "sqlite-compat-metrics-"),
+    );
     temporaryDirectories.push(temporaryDirectory);
     const metrics = createSqliteMetrics();
-    const database = new Database(join(temporaryDirectory, "metrics.db"), { metrics });
+    const database = new Database(join(temporaryDirectory, "metrics.db"), {
+      metrics,
+    });
     try {
       database.exec("CREATE TABLE sample (value TEXT NOT NULL)");
       const insert = database.prepare("INSERT INTO sample (value) VALUES (?)");
       database.transaction(() => insert.run("kept"))();
 
-      expect(database.prepare("SELECT value FROM sample").all()).toEqual([{ value: "kept" }]);
+      expect(database.prepare("SELECT value FROM sample").all()).toEqual([
+        { value: "kept" },
+      ]);
       expect(metrics.statementRunCount).toBe(1);
       expect(metrics.execCallCount).toBeGreaterThanOrEqual(1);
       expect(metrics.transactionCount).toBe(1);

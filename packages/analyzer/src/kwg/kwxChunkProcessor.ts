@@ -1,4 +1,9 @@
-import type { KeywordMatch, MentionRecord, SemanticChunk, SignalQualifier } from "@intentweave/core";
+import type {
+  KeywordMatch,
+  MentionRecord,
+  SemanticChunk,
+  SignalQualifier,
+} from "@intentweave/core";
 import type { HeuristicKeywordExtractorOptions } from "./heuristicExtractor.js";
 import type { RegexQualifierDetector } from "./regexQualifier.js";
 
@@ -9,24 +14,37 @@ export interface KwxChunkProcessorOptions {
 }
 
 const sourceExtension = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
-const [extractorModule, qualifierModule] = await Promise.all([
-  import(new URL(`./heuristicExtractor${sourceExtension}`, import.meta.url).href),
+const [extractorModule, qualifierModule] = (await Promise.all([
+  import(
+    new URL(`./heuristicExtractor${sourceExtension}`, import.meta.url).href
+  ),
   import(new URL(`./regexQualifier${sourceExtension}`, import.meta.url).href),
-]) as [typeof import("./heuristicExtractor.js"), typeof import("./regexQualifier.js")];
+])) as [
+  typeof import("./heuristicExtractor.js"),
+  typeof import("./regexQualifier.js"),
+];
 
 export class KwxChunkProcessor {
-  private readonly extractor: InstanceType<typeof extractorModule.HeuristicKeywordExtractor>;
-  private readonly qualifierDetector: InstanceType<typeof qualifierModule.RegexQualifierDetector>;
+  private readonly extractor: InstanceType<
+    typeof extractorModule.HeuristicKeywordExtractor
+  >;
+  private readonly qualifierDetector: InstanceType<
+    typeof qualifierModule.RegexQualifierDetector
+  >;
 
   constructor(options?: KwxChunkProcessorOptions) {
-    this.extractor = new extractorModule.HeuristicKeywordExtractor(options as HeuristicKeywordExtractorOptions | undefined);
+    this.extractor = new extractorModule.HeuristicKeywordExtractor(
+      options as HeuristicKeywordExtractorOptions | undefined,
+    );
     this.qualifierDetector = new qualifierModule.RegexQualifierDetector();
   }
 
   process(filePath: string, chunk: SemanticChunk): MentionRecord[] {
     const heading = getHeadingContext(chunk);
     const keywordMatches = this.extractor.extract(chunk.content, heading);
-    return keywordMatches.map((keyword) => toMention(filePath, chunk, heading, keyword, this.qualifierDetector));
+    return keywordMatches.map((keyword) =>
+      toMention(filePath, chunk, heading, keyword, this.qualifierDetector),
+    );
   }
 }
 
@@ -38,7 +56,10 @@ function toMention(
   qualifierDetector: RegexQualifierDetector,
 ): MentionRecord {
   const sentence = extractSentence(chunk.content, keyword.offset);
-  const qualifiers: SignalQualifier[] = qualifierDetector.detect(keyword, sentence);
+  const qualifiers: SignalQualifier[] = qualifierDetector.detect(
+    keyword,
+    sentence,
+  );
   return {
     entityName: keyword.name,
     text: sentence,

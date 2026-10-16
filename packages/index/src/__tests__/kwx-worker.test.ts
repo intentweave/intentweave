@@ -19,23 +19,29 @@ describe("KWX worker experiment through buildFromPaths", () => {
     temporaryDirectories.push(workspaceRoot);
     mkdirSync(join(workspaceRoot, "docs"), { recursive: true });
     mkdirSync(join(workspaceRoot, "src"), { recursive: true });
-    writeFileSync(join(workspaceRoot, "docs", "guide.md"), [
-      "# CacheStore",
-      "",
-      "CacheStore uses Redis and QueueWorker.",
-      "",
-      "## QueueWorker",
-      "",
-      "QueueWorker sends messages to Redis.",
-    ].join("\n"));
-    writeFileSync(join(workspaceRoot, "src", "cache.ts"), [
-      "export class CacheStore {",
-      "  get(key: string): string { return key; }",
-      "}",
-      "export class QueueWorker {",
-      "  send(value: string): string { return value; }",
-      "}",
-    ].join("\n"));
+    writeFileSync(
+      join(workspaceRoot, "docs", "guide.md"),
+      [
+        "# CacheStore",
+        "",
+        "CacheStore uses Redis and QueueWorker.",
+        "",
+        "## QueueWorker",
+        "",
+        "QueueWorker sends messages to Redis.",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(workspaceRoot, "src", "cache.ts"),
+      [
+        "export class CacheStore {",
+        "  get(key: string): string { return key; }",
+        "}",
+        "export class QueueWorker {",
+        "  send(value: string): string { return value; }",
+        "}",
+      ].join("\n"),
+    );
 
     const serialPath = join(workspaceRoot, "serial.db");
     const workerPath = join(workspaceRoot, "worker.db");
@@ -57,19 +63,30 @@ describe("KWX worker experiment through buildFromPaths", () => {
     });
 
     expect(workers.counts).toEqual(serial.counts);
-    expect(workerLogs).toContain("KWX worker experiment: 2 workers across chunk tasks");
-    const readRows = (databasePath: string, table: "annotations" | "co_occurrences"): string[] => {
+    expect(workerLogs).toContain(
+      "KWX worker experiment: 2 workers across chunk tasks",
+    );
+    const readRows = (
+      databasePath: string,
+      table: "annotations" | "co_occurrences",
+    ): string[] => {
       const database = new Database(databasePath, { readonly: true });
       try {
-        return database.prepare(`SELECT * FROM ${table}`).all()
+        return database
+          .prepare(`SELECT * FROM ${table}`)
+          .all()
           .map((row) => JSON.stringify(Object.values(row)))
           .sort();
       } finally {
         database.close();
       }
     };
-    expect(readRows(workerPath, "annotations")).toEqual(readRows(serialPath, "annotations"));
-    expect(readRows(workerPath, "co_occurrences")).toEqual(readRows(serialPath, "co_occurrences"));
+    expect(readRows(workerPath, "annotations")).toEqual(
+      readRows(serialPath, "annotations"),
+    );
+    expect(readRows(workerPath, "co_occurrences")).toEqual(
+      readRows(serialPath, "co_occurrences"),
+    );
   });
 
   it("collects optional SQLite writer metrics without changing index rows", async () => {
@@ -77,8 +94,14 @@ describe("KWX worker experiment through buildFromPaths", () => {
     temporaryDirectories.push(workspaceRoot);
     mkdirSync(join(workspaceRoot, "docs"), { recursive: true });
     mkdirSync(join(workspaceRoot, "src"), { recursive: true });
-    writeFileSync(join(workspaceRoot, "docs", "metrics.md"), "# CacheStore\n\nCacheStore uses Redis.");
-    writeFileSync(join(workspaceRoot, "src", "cache.ts"), "export class CacheStore { get(key: string): string { return key; } }");
+    writeFileSync(
+      join(workspaceRoot, "docs", "metrics.md"),
+      "# CacheStore\n\nCacheStore uses Redis.",
+    );
+    writeFileSync(
+      join(workspaceRoot, "src", "cache.ts"),
+      "export class CacheStore { get(key: string): string { return key; } }",
+    );
 
     const serialPath = join(workspaceRoot, "serial.db");
     const measuredPath = join(workspaceRoot, "measured.db");
@@ -103,15 +126,23 @@ describe("KWX worker experiment through buildFromPaths", () => {
     expect(measured.sinkMetrics?.sqlite.transactionCount).toBeGreaterThan(0);
     expect(measured.sinkMetrics?.sqlite.commitCount).toBeGreaterThan(0);
     expect(measured.sinkMetrics?.sqlite.closeCount).toBe(1);
-    expect(measured.sinkMetrics?.tableWrites.find((table) => table.table === "annotations")?.rowCount)
-      .toBe(measured.counts.annotations);
-    expect(measured.sinkMetrics?.tableWrites.every((table) => table.rowsPerSecond === null || table.rowsPerSecond >= 0))
-      .toBe(true);
+    expect(
+      measured.sinkMetrics?.tableWrites.find(
+        (table) => table.table === "annotations",
+      )?.rowCount,
+    ).toBe(measured.counts.annotations);
+    expect(
+      measured.sinkMetrics?.tableWrites.every(
+        (table) => table.rowsPerSecond === null || table.rowsPerSecond >= 0,
+      ),
+    ).toBe(true);
 
     const readRows = (databasePath: string): string[] => {
       const database = new Database(databasePath, { readonly: true });
       try {
-        return database.prepare("SELECT * FROM annotations").all()
+        return database
+          .prepare("SELECT * FROM annotations")
+          .all()
           .map((row) => JSON.stringify(Object.values(row)))
           .sort();
       } finally {

@@ -66,8 +66,13 @@ export class KwxChunkWorkerPool {
     }
 
     const isTypeScriptSource = import.meta.url.endsWith(".ts");
-    const workerUrl = new URL(isTypeScriptSource ? "./kwxChunkWorker.ts" : "./kwxChunkWorker.js", import.meta.url);
-    const tsxLoaderPath = isTypeScriptSource ? createRequire(import.meta.url).resolve("tsx") : undefined;
+    const workerUrl = new URL(
+      isTypeScriptSource ? "./kwxChunkWorker.ts" : "./kwxChunkWorker.js",
+      import.meta.url,
+    );
+    const tsxLoaderPath = isTypeScriptSource
+      ? createRequire(import.meta.url).resolve("tsx")
+      : undefined;
     const workerOptions = tsxLoaderPath
       ? {
           execArgv: [
@@ -80,16 +85,23 @@ export class KwxChunkWorkerPool {
       : {
           execArgv: getWorkerExecArgv(process.execArgv),
         };
-    this.workers = Array.from({ length: workerCount }, () => new Worker(workerUrl, {
-      ...workerOptions,
-    }));
+    this.workers = Array.from(
+      { length: workerCount },
+      () =>
+        new Worker(workerUrl, {
+          ...workerOptions,
+        }),
+    );
     this.busy = Array.from({ length: workerCount }, () => false);
 
     this.workers.forEach((worker, index) => {
-      worker.on("message", (message: ConfigureResult | ChunkResult) => this.handleMessage(index, message));
+      worker.on("message", (message: ConfigureResult | ChunkResult) =>
+        this.handleMessage(index, message),
+      );
       worker.on("error", (error: Error) => this.fail(error));
       worker.on("exit", (code: number) => {
-        if (!this.closed && code !== 0) this.fail(new Error(`KWX worker ${index} exited with code ${code}.`));
+        if (!this.closed && code !== 0)
+          this.fail(new Error(`KWX worker ${index} exited with code ${code}.`));
       });
     });
   }
@@ -100,17 +112,28 @@ export class KwxChunkWorkerPool {
     options: KwxChunkProcessorOptions,
   ): Promise<MentionRecord[][]> {
     this.assertUsable();
-    if (this.processing) throw new Error("KWX worker pool only supports one active stage call at a time.");
+    if (this.processing)
+      throw new Error(
+        "KWX worker pool only supports one active stage call at a time.",
+      );
     this.processing = true;
     try {
       await this.configure(options);
-      const promises = chunks.map((chunk) => new Promise<MentionRecord[]>((resolve, reject) => {
-        const taskId = this.nextTaskId++;
-        const command: ChunkCommand = { type: "chunk", taskId, filePath, chunk };
-        const task = { command, resolve, reject };
-        this.pending.set(taskId, task);
-        this.queue.push(task);
-      }));
+      const promises = chunks.map(
+        (chunk) =>
+          new Promise<MentionRecord[]>((resolve, reject) => {
+            const taskId = this.nextTaskId++;
+            const command: ChunkCommand = {
+              type: "chunk",
+              taskId,
+              filePath,
+              chunk,
+            };
+            const task = { command, resolve, reject };
+            this.pending.set(taskId, task);
+            this.queue.push(task);
+          }),
+      );
       this.dispatch();
       return await Promise.all(promises);
     } finally {
@@ -121,7 +144,9 @@ export class KwxChunkWorkerPool {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    const error = new Error("KWX worker pool was closed before pending work completed.");
+    const error = new Error(
+      "KWX worker pool was closed before pending work completed.",
+    );
     for (const task of this.pending.values()) task.reject(error);
     this.pending.clear();
     this.queue.length = 0;
@@ -134,26 +159,43 @@ export class KwxChunkWorkerPool {
   }
 
   private async configure(options: KwxChunkProcessorOptions): Promise<void> {
-    if (this.currentOptions
-      && this.currentOptions.minLength === options.minLength
-      && this.currentOptions.depth === options.depth
-      && this.currentOptions.dictionary === options.dictionary) return;
+    if (
+      this.currentOptions &&
+      this.currentOptions.minLength === options.minLength &&
+      this.currentOptions.depth === options.depth &&
+      this.currentOptions.dictionary === options.dictionary
+    )
+      return;
 
     const generation = this.nextGeneration++;
     const settings: WorkerSettings = {
-      ...(options.minLength !== undefined ? { minLength: options.minLength } : {}),
+      ...(options.minLength !== undefined
+        ? { minLength: options.minLength }
+        : {}),
       ...(options.depth ? { depth: options.depth } : {}),
       dictionary: options.dictionary ? [...options.dictionary] : [],
     };
     await new Promise<void>((resolve, reject) => {
-      this.configurationWaiter = { generation, remaining: this.workers.length, resolve, reject };
-      const command: ConfigureCommand = { type: "configure", generation, settings };
+      this.configurationWaiter = {
+        generation,
+        remaining: this.workers.length,
+        resolve,
+        reject,
+      };
+      const command: ConfigureCommand = {
+        type: "configure",
+        generation,
+        settings,
+      };
       for (const worker of this.workers) worker.postMessage(command);
     });
     this.currentOptions = options;
   }
 
-  private handleMessage(workerIndex: number, message: ConfigureResult | ChunkResult): void {
+  private handleMessage(
+    workerIndex: number,
+    message: ConfigureResult | ChunkResult,
+  ): void {
     if (message.type === "configured") {
       const waiter = this.configurationWaiter;
       if (!waiter || waiter.generation !== message.generation) return;
@@ -207,7 +249,9 @@ export class KwxChunkWorkerPool {
   }
 }
 
-export function createKwxChunkWorkerPool(workerCount: number): KwxChunkWorkerPool {
+export function createKwxChunkWorkerPool(
+  workerCount: number,
+): KwxChunkWorkerPool {
   return new KwxChunkWorkerPool(workerCount);
 }
 
@@ -219,7 +263,11 @@ function getWorkerExecArgv(arguments_: readonly string[]): string[] {
     if (!argument) continue;
     const separator = argument.indexOf("=");
     const flag = separator === -1 ? argument : argument.slice(0, separator);
-    if (argument.startsWith("--import=") || argument.startsWith("--require=") || argument.startsWith("--conditions=")) {
+    if (
+      argument.startsWith("--import=") ||
+      argument.startsWith("--require=") ||
+      argument.startsWith("--conditions=")
+    ) {
       workerArguments.push(argument);
     } else if (allowedWithValue.has(flag) && arguments_[index + 1]) {
       workerArguments.push(argument, arguments_[index + 1]!);
