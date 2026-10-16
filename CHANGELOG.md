@@ -6,11 +6,11 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
-- **Generalized repository Claims lifecycle** — schema versions 17-19 add
+- **Generalized repository Claims lifecycle** — schema versions 17-20 add
   durable Subjects, Subject continuity, append-only Claim Candidates,
-  Candidate Evidence, Reviews, versioned Policy decisions, and semantic
-  Inference artifacts while preserving the Parameter Claims V1 identities and
-  history.
+  Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference
+  artifacts, and Claim Origin provenance (reconstructed or declared) while
+  preserving the Parameter Claims V1 identities and history.
 - **Candidate curation CLI** — `iw claims discover`, `claims candidates list`,
   `claims candidates triage`, and `claims candidates review` separate possible
   repository statements from active governed Claims. Effective human and Policy
@@ -26,10 +26,27 @@ All notable changes to IntentWeave are documented in this file.
   content filtering, truncation, typed transport failures, effective-model and
   request provenance, and detailed usage metadata. Local JSON Schema validation
   remains mandatory for model-backed Claims adapters.
-- **Grounded semantic Symbol correlation** — `iw claims discover --semantic`
-  can resolve a documentation reference that ambiguously matches multiple
-  public Symbols. Results are Evidence-grounded, append-only, cached, limited to
-  `probable` confidence, explainable, and never promote a Candidate or run in CI.
+- **Grounded semantic correlation** — `iw claims discover --semantic` runs
+  Symbol, Endpoint, and cross-artifact correlation adapters through one
+  registry. Adapters resolve ambiguous references to existing Evidence and
+  Subject identities, are limited to `probable` confidence, cache results
+  append-only, and never promote a Candidate or run in `claims check` or CI.
+  Public Symbol continuity proposals are grounded the same way.
+- **Candidate recommendations (opt-in)** — `iw claims candidates recommend
+--semantic` produces grounded triage recommendations for individual
+  Candidates (`--candidate`) or bounded batches (`--batch`). Recommendations are
+  persisted as non-effective Reviews, and a human or Policy decision can cite
+  one with `--based-on-recommendation`. Batches enforce token and cost budgets,
+  record usage explicitly, and return separate cached, failed, cancelled, and
+  budget-deferred counts.
+- **Context preview and provider allowlist** — `--preview` shows the exact
+  Candidate context that would leave the local process, with no model or network
+  call. Providers are opt-in through `.iw/claims/inference.yaml`, and configured
+  sensitive paths and secret patterns are redacted before request construction.
+- **Portable Claims state v2** — `.iw/claims/state.yaml` carries effective
+  Candidate decisions, Subject bindings, Assessment Reviews, Claim Origins, and
+  stable recommendation bases, so a fresh checkout reproduces Explain output
+  without a provider.
 
 ### Changed
 
