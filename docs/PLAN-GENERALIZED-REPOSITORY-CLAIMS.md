@@ -1450,27 +1450,28 @@ branch. Verified means the code exists and the cited test or demo passed on that
 date. Implemented means the code exists, but its acceptance tests were not
 re-run in this review.
 
-| Phase                                                    | Status                         | Evidence                                                                                                                                                          | Open items                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| -------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G0 Freeze existing slice                                 | Partial                        | `.iw/claims/state.yaml` portable state exists; golden vectors pinned in `claimsCompatibilityV1.test.ts`                                                           | External first-run measurements on three repositories, design article, and design-partner feedback not found in repo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| G1 Subject foundation                                    | Implemented                    | `subjects`, `subject_identities`, `subject_aliases`, `subject_continuity`, `claim_subjects` tables; schema 20                                                     | Migration replay tests not individually re-run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| G2 Candidates and semantic discovery                     | Implemented                    | `candidate_*` tables, `LLMProviderV2`, `StructuredInferenceService`, `discover` / `triage` / `review` CLI                                                         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G3 Symbol contract slice                                 | Implemented                    | Public Symbol discovery and continuity modules; S0–S5 fixture                                                                                                     | None; contract version is a separate field (`public-symbol-documentation-v2`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| G4 Endpoint slice (NestJS)                               | Implemented                    | `nestEndpointDiscovery.ts`; E0–E6 fixture                                                                                                                         | None; contract version is a separate field (`endpoint-authentication-nestjs-v1`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| G4 follow-up: framework-independent Endpoint correlation | Implemented; Fastify only      | `fastifyEndpointDiscovery.ts`: literal routes, verified guards, and route prefixes from `register` edges and autoload (commits `f3f9c7f`, plus the prefix commit) | Other frameworks have no structural heuristic; prefix resolution covers literal `register`/autoload patterns only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G5 Architecture slice                                    | Implemented                    | `architectureDependencyDiscovery.ts`; A0–A5 fixture                                                                                                               | None; contract version is a separate field (`dependency-conformance-import-pattern-v1`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| G5.1 Candidate state semantics and explicit Rule Policy  | Implemented                    | `candidate_policy_decisions`; `explicit-architecture-rule` references                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G5.2 Origin-neutral justification kernel                 | Implemented                    | `claimOrigins` in portable state; Twin-Origin fixture                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Unified Intent Gate                                      | Implemented                    | `not_evaluated` gate status; Claims partition in `intent check`                                                                                                   | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G6a Eligibility, context, noise baseline                 | Implemented; quality gate open | Eligibility and context modules; `--preview`                                                                                                                      | Labeled precision and recall on external repositories                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| G6b.1 Recommendation contract and persistence            | Implemented                    | `persistRecommendation`; schema 20                                                                                                                                | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G6b.2 Single-Candidate slice                             | Implemented                    | `--candidate`, `--based-on-recommendation`                                                                                                                        | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G6b.3 Bounded batch and evaluation                       | Implemented; quality gate open | `candidateRecommendationBatch.ts`; `--batch`                                                                                                                      | Quality claims need labeled evaluation on at least three external repositories                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| G6c.1 Registry and grounding kernel                      | Implemented                    | `SemanticCorrelationRegistry`                                                                                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G6c.2 Framework-independent Endpoint correlation         | Partial                        | `semanticEndpointCorrelation.ts`; live validation on a Fastify fixture with `ambiguous` routes (2026-10-17)                                                       | For an ambiguous guard with two verifier definitions, `gpt-5-mini` and `gpt-5.1` now both answer `ambiguous` once the guard is flagged; before the flag, both answered `probable`, and the Rule keeps such candidates inconclusive after promotion. Scope hooks now use declaration order (a hook applies only to routes registered after it in its file), so the probable case resolves deterministically. A four-case labeled set (`packages/cli/evaluation/fastify-semantic-endpoint.labels.json`, run with `packages/cli/evaluation/run-fastify-semantic.mjs`) matches 4 of 4 for both models, but only one case reaches a model at all; the set does not yet measure the model's ability to find positives no correlation yet that deterministic adapters miss on a real repo; the real Fastify repo has no ambiguous routes |
-| G6c.3 Cross-artifact and continuity expansion            | Implemented                    | Cross-artifact cohort resolver; semantic cross-artifact and public Symbol continuity adapters                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G6d Policy-governed automation                           | Not started                    | No automation policy, report-only observations, or schema 22                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Communication track                                      | Not verified                   | —                                                                                                                                                                 | Publication checkpoints depend on the evidence above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Phase                                                    | Status                               | Evidence                                                                                                                                                          | Open items                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G0 Freeze existing slice                                 | Partial                              | `.iw/claims/state.yaml` portable state exists; golden vectors pinned in `claimsCompatibilityV1.test.ts`                                                           | External first-run measurements on three repositories, design article, and design-partner feedback not found in repo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| G1 Subject foundation                                    | Implemented                          | `subjects`, `subject_identities`, `subject_aliases`, `subject_continuity`, `claim_subjects` tables; schema 20                                                     | Migration replay tests not individually re-run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| G2 Candidates and semantic discovery                     | Implemented                          | `candidate_*` tables, `LLMProviderV2`, `StructuredInferenceService`, `discover` / `triage` / `review` CLI                                                         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G3 Symbol contract slice                                 | Implemented                          | Public Symbol discovery and continuity modules; S0–S5 fixture                                                                                                     | None; contract version is a separate field (`public-symbol-documentation-v2`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| G4 Endpoint slice (NestJS)                               | Implemented                          | `nestEndpointDiscovery.ts`; E0–E6 fixture                                                                                                                         | None; contract version is a separate field (`endpoint-authentication-nestjs-v1`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| G4 follow-up: framework-independent Endpoint correlation | Implemented; Fastify only            | `fastifyEndpointDiscovery.ts`: literal routes, verified guards, and route prefixes from `register` edges and autoload (commits `f3f9c7f`, plus the prefix commit) | Other frameworks have no structural heuristic; prefix resolution covers literal `register`/autoload patterns only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G5 Architecture slice                                    | Implemented                          | `architectureDependencyDiscovery.ts`; A0–A5 fixture                                                                                                               | None; contract version is a separate field (`dependency-conformance-import-pattern-v1`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| G5.1 Candidate state semantics and explicit Rule Policy  | Implemented                          | `candidate_policy_decisions`; `explicit-architecture-rule` references                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G5.2 Origin-neutral justification kernel                 | Implemented                          | `claimOrigins` in portable state; Twin-Origin fixture                                                                                                             | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Unified Intent Gate                                      | Implemented                          | `not_evaluated` gate status; Claims partition in `intent check`                                                                                                   | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G6a Eligibility, context, noise baseline                 | Implemented; quality gate open       | Eligibility and context modules; `--preview`                                                                                                                      | Labeled precision and recall on external repositories                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| G6b.1 Recommendation contract and persistence            | Implemented                          | `persistRecommendation`; schema 20                                                                                                                                | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G6b.2 Single-Candidate slice                             | Implemented                          | `--candidate`, `--based-on-recommendation`                                                                                                                        | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G6b.3 Bounded batch and evaluation                       | Implemented; quality gate open       | `candidateRecommendationBatch.ts`; `--batch`                                                                                                                      | Quality claims need labeled evaluation on at least three external repositories                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| G6c.1 Registry and grounding kernel                      | Implemented                          | `SemanticCorrelationRegistry`                                                                                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G6c.2 Framework-independent Endpoint correlation         | Partial                              | `semanticEndpointCorrelation.ts`; live validation on a Fastify fixture with `ambiguous` routes (2026-10-17)                                                       | For an ambiguous guard with two verifier definitions, `gpt-5-mini` and `gpt-5.1` now both answer `ambiguous` once the guard is flagged; before the flag, both answered `probable`, and the Rule keeps such candidates inconclusive after promotion. Scope hooks now use declaration order (a hook applies only to routes registered after it in its file), so the probable case resolves deterministically. A four-case labeled set (`packages/cli/evaluation/fastify-semantic-endpoint.labels.json`, run with `packages/cli/evaluation/run-fastify-semantic.mjs`) matches 4 of 4 for both models, but only one case reaches a model at all; the set does not yet measure the model's ability to find positives no correlation yet that deterministic adapters miss on a real repo; the real Fastify repo has no ambiguous routes |
+| G6c.3 Cross-artifact and continuity expansion            | Implemented                          | Cross-artifact cohort resolver; semantic cross-artifact and public Symbol continuity adapters                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| G6d Policy-governed automation                           | Not started                          | No automation policy, report-only observations, or schema 22                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Communication track                                      | Not verified                         | —                                                                                                                                                                 | Publication checkpoints depend on the evidence above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| G5.3 Generalized observation and change layer            | Proposed (revised, not yet accepted) | No implementation; design revised after review                                                                                                                    | O0 persistence contract acceptance; then O1–O4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Verification on 2026-10-16: the full CI sequence passed build (exit 0), typecheck
 (exit 0), tests (1,227 passed, 4 skipped, 97 files), and lint (exit 0).
@@ -2028,222 +2029,239 @@ entry point for baseline and diagnostic Rules workflows.
 
 ### Phase G5.3: Generalized Observation and Change Layer (Proposed)
 
-Status: proposed, approved in direction, details to be reviewed. It precedes
-Phase G6 and is a prerequisite for further Claim-family discovery.
+Status: proposed, revised after review. Direction approved. This phase is not
+implementation-ready until Phase O0 is accepted. It is a prerequisite for any
+new Claim family, and it does not change the implemented G6a–G6c slices. Those
+remain as built and are migrated in O3.
 
-Motivation. Today each Claim family couples discovery to interpretation: a
-recognized framework pattern directly emits a Candidate such as "endpoint is
-authenticated". Every new framework then needs a new pattern, and a route that
-no pattern recognizes never becomes a Candidate at all. "Fail closed" protects
-only discovered Claims. This phase separates what is observed from what is
-claimed, so that:
+Motivation. Each Claim family today couples discovery to interpretation: a
+recognized framework pattern emits a Candidate such as "endpoint is
+authenticated". A route that no pattern recognizes is never observed at all, so
+"fail closed" protects only what was discovered. This phase separates what is
+observed from what is claimed:
 
-- a coarse, high-recall inventory of observed objects exists independently of
-  any Claim family;
-- changes to observed objects are detected generically, using the identity,
-  continuity, materiality, and reopen machinery already in place;
-- Claim families consume observations as producers or Rule inputs rather than
-  owning discovery.
+- an inventory of observed objects that is complete for each supported kind and
+  scan scope, independent of any Claim family;
+- comparable, versioned snapshots from which generic changes are derived;
+- Claim families that consume observations instead of owning discovery.
 
-Non-goals. This phase does not derive all relevant Claims from arbitrary code,
-adds no framework-specific patterns, and changes neither the Candidate
-lifecycle nor the Assessment semantics. An observation is never a Claim.
+Non-goals. This phase does not derive all relevant Claims from arbitrary source
+code, does not add framework-specific recognizers, and does not change the
+Candidate lifecycle or the Assessment semantics. An observation is never a Claim.
 
 Chain.
 
 ```text
-Repository
--> observed objects with stable identity          (inventory tier)
--> versioned observations and relations            (tracked tier)
--> generic changes between versions                (change records)
--> Candidates over observations                    (discovery; may use semantic induction)
--> Claims bound to observed Subjects               (human or Policy promotion)
--> Assessments and Reviews                         (unchanged)
+Repository revision
+-> observation run per adapter, scope, and contract   (complete or partial)
+-> observed identities and versions                    (inventory: current payload for every object)
+-> tracked history for Subjects and implementation view
+-> ChangeSet between two runs                          (deterministic, reproducible)
+-> Candidates over observations                        (discovery; may use semantic induction)
+-> Claims bound to observed Subjects                   (human or Policy promotion)
+-> Assessments and Reviews                             (unchanged)
 ```
 
-Object kinds. The first version recognizes these kinds and no others: `file`,
-`module`, `symbol`, `dependency` (a declared package), `configuration` (a
-declared key or value in a tracked file), `documentation-statement`,
-`architecture-rule`, `route` (a registration with method and a literal or
-unresolved path), and `definition-relation` (a binding from a use site to a
-definition, for example a guard reference to its decorator). A kind is added
-only together with the Claim family that needs it and an identity rule.
+Language and kind registry. Core code knows the generic record types and the
+lifecycle, not specific kinds. Kinds are registered by observation adapters, not
+by Claim families. An adapter declares, for each kind it produces:
 
-Identity and equality. Identity is kind plus a defining locator plus continuity
-evidence. Equality is never by name alone.
+- the kind name and a version;
+- the identity rule, as a function of anchor and continuity evidence;
+- the normalized payload schema;
+- its capability status for each scan scope (`observed`, `not_observed` with a
+  reason, or `unsupported`).
 
-- A `symbol` or decorator definition is identified by file and export or
-  defining span. Two definitions with the same name are two objects.
-- A `route` is identified by method and resolved path where the path is
-  statically known. Otherwise it is identified by method, registration file,
-  and literal path, and marked `pathKnown: false`. Two registrations with the
-  same method and path form a collision: both are kept, and the collision is
-  itself an observation.
-- A `file` or `module` is identified by its repository path. A move is a change
-  of location, not a new object, when content continuity is established (Git
-  rename or a unique merge-base predecessor).
-- A `dependency` is identified by package name and declaring file.
+Claim families declare which kinds they need. A Claim family cannot add a kind
+to the core. A kind is available to every Claim family once an adapter produces
+it.
 
-Tracked scope. Only the following objects enter the tracked tier, that is, they
-carry normalized properties, relations, and per-version materiality:
+Generic call-site kind. To keep recall independent of framework recognition, the
+TypeScript and JavaScript adapter produces a generic `call-site` kind for every
+call expression with at least one literal string argument, with callee text,
+argument literals, and location. A route is then a more specific interpretation
+that an adapter may add on top of call sites. An unrecognized route therefore
+appears as a call-site observation, but it is not classified as a route, and
+it cannot produce a Claim result without a recognizer. The coverage contract
+states exactly this. It is not a claim that every route is recognized.
 
-- the Subjects of Candidates and Claims (the required scope);
-- symbols inside a configured implementation view, a named set of files or
-  symbols selected for implementation-level tracking. The implementation view is
-  optional and off by default.
+Object identity. Identity is split into three parts.
 
-Everything else stays in the inventory tier only. Inventory records existence,
-kind, identity, location, and container, is versioned by its own fingerprint,
-and has no materiality contract. Its purpose is recall: whether an object is
-present at all must not depend on any Claim family. Tracking only Subjects and
-configured views bounds change volume, which DoD item 19 requires.
+- `observed_identity`: a long-lived key, created when an object is first
+  observed. Its value is opaque and never derived from a name or path. Equality
+  between two observations is decided only by identity, and two definitions with
+  the same name are two identities.
+- `observed_version`: one observation of an identity in one run. It holds the
+  current locator (repository path, container, span), the normalized payload,
+  and the fingerprint. Locators may change between versions.
+- `continuity_link`: an explicit link from a prior identity to a successor
+  identity, with a basis (`git_rename`, `unique_merge_base`, `structural_match`,
+  `reviewed`), the deciding adapter or Review, and the contract version. A move
+  or rename is a continuity link, not a new identity. An object without a
+  decided link is `continuity-unclear`, and no identity is asserted for it.
 
-Observations. An observation version stores normalized properties, typed
-relations to other observed objects, the Evidence it was derived from,
-provenance (adapter, contract version, repository revision), and a content
-fingerprint. Observation versions are append-only. An unchanged fingerprint
-appends nothing.
+Scan runs and completeness. Removal and comparison require complete scans.
 
-Changes. A change record is generated between consecutive versions of the same
-identity. Change kinds:
+- An `observation_run` records repository revision, adapter identifier and
+  contract version, kind set, scope (paths, implementation view, Subject set),
+  status (`complete` or `partial` with a reason), and counts.
+- A run is `complete` for a kind and scope only if the adapter enumerated every
+  object of that kind in that scope. A partial run may record objects but never
+  records their absence.
+- `removed` is decided only against a complete run for the same kind and scope.
+  Against a partial run it is `not_comparable`.
 
-- `added` and `removed`;
-- `moved`: same identity, different location, with continuity evidence;
-- `renamed`: same identity, changed name, with continuity evidence;
-- `property-changed`: a normalized property changed; materiality decides
-  whether it matters to a dependent Claim;
+ChangeSets. A ChangeSet is derived from two runs, a base run and a head run,
+which must share kind, scope, and adapter contract. It is keyed by the base run
+fingerprint, the head run fingerprint, and the contract versions. It is a pure
+function of those inputs. It is therefore reproducible regardless of execution
+order, and recomputing it yields the same result. The existing `claims check
+--since` anchor (merge-base) selects the base run, so `--since` becomes a
+ChangeSet between two runs, not a comparison with whatever ran last.
+
+Change kinds:
+
+- `added` and `removed` (complete runs only);
+- `moved` and `renamed`: same identity by a decided continuity link;
+- `property-changed`: a normalized payload property changed; materiality per
+  Claim family decides whether it matters;
 - `relation-changed`: a relation was added, removed, or retargeted;
-- `continuity-unclear`: the object may or may not be the same as a prior one.
-  No identity is asserted until continuity is decided (see below).
+- `continuity-unclear`: an object without a decided link is present in the
+  head run but not in the base run, or vice versa, and could be the same object.
+- `not_comparable`: runs differ in scope, kind set, contract, or completeness.
 
-A change record names its basis: the versions compared and any continuity
-evidence used. It never asserts materiality on its own.
+A change record names its base and head runs and its continuity basis. It never
+asserts materiality on its own.
 
-Materiality stays per family. A change is material only under the materiality
-contract of a Claim family that depends on the changed property. The generic
-layer reports the change; the family decides.
+Tracked tier. Current payloads are stored for every inventoried object, so that
+discovery can read properties of any object. Version history with relations and
+per-version materiality is kept for:
 
-Continuity checker. Continuity decisions are made by a configurable checker,
-not hard-coded:
+- the Subjects of Candidates and Claims (required);
+- objects in the implementation view (optional, off by default), derived from
+  Claim Subjects and their direct dependencies, and extendable by explicit globs
+  and symbol filters in `.iw/claims/observations.yaml`.
 
-- Deterministic continuity first: Git rename detection, a unique merge-base
-  predecessor, or an identical structural match. These decide `moved` and
-  `renamed` without a Review.
-- Anything the deterministic checks cannot decide stays `continuity-unclear`.
-  It is reviewable, and it does not assert identity.
-- The checker has a configurable mode per scope:
-  - `report`: changes and unclear continuity are listed, nothing blocks;
-  - `gate`: CI fails when unresolved continuity exists for a configured scope,
-    for example for Claim Subjects only.
-- The gate mode is opt-in per project and is evaluated without any model call.
-  Semantic continuity proposals (G6c) may appear as Candidates, but they never
-  resolve continuity on their own.
+The effective implementation view is written to the portable state.
 
-Configuration lives in `.iw/claims/observations.yaml`. It holds the
-implementation view, the continuity mode, and the gated scopes. It is versioned
-and is part of the portable state contract.
+Continuity checker. Continuity decisions come from a configurable checker:
 
-Relation to Claims. A Claim references observed Subjects, and its Rule Results
-depend on observation versions through the existing Evidence and Dependency
-mechanisms. When a change record touches a dependency of an Assessment, the
-existing Reverse Impact and Review carry-forward or reopen logic applies. No new
+- deterministic continuity first: Git rename, a unique merge-base predecessor,
+  or an identical structural match, each recorded as its basis;
+- undecidable cases remain `continuity-unclear` and are reviewable;
+- modes per scope: `report` (listed, nothing blocks) and `gate` (CI fails on
+  unresolved continuity for a configured scope);
+- the gate runs without any model call. Semantic continuity proposals (G6c) may
+  appear as Candidates and never resolve continuity alone.
+
+Decision (see below): projects start in `report` mode, and Claim Subjects are
+gated only after an explicit, reviewable change.
+
+Relation to Claims. A Claim references observed Subjects. Its Rule Results
+depend on observed versions through the existing Evidence and Dependency
+mechanisms. A ChangeSet that touches a dependency of an Assessment follows the
+existing Reverse Impact and Review carry-forward or reopen logic. No new
 Claim-state machine is introduced.
 
-Relation to discovery and semantics. Candidate discovery reads observations.
-Deterministic family discoverers remain where a pattern is frequent and
-unambiguous. Semantic induction (G6c) is a Candidate producer over observations
-and is never authoritative. Rare framework variants become G6c evaluation
-cases, not new deterministic branches. The existing NestJS and Fastify
-discoverers become observation producers (route, decorator definition, guard
-reference, route-to-guard relation), and their auth Candidates become rules over
-those observations. That migration is a separate step after this layer exists.
+Relation to discovery and semantics. Candidate discovery reads current payloads
+and tracked history. Deterministic family discoverers stay where a pattern is
+frequent and unambiguous. Semantic induction (G6c) produces Candidates over
+observations and is never authoritative. The NestJS and Fastify discoverers
+become observation producers in O3. Their auth Candidates then become Rules over
+those observations, and their Assessment outcomes must not change except for
+intended, listed changes.
 
 Language scope and extension. The first version covers TypeScript and
-JavaScript only. The design must allow other languages without changing the
-core. Each language is provided through a language observation adapter with a
-fixed contract:
+JavaScript. Other languages are optional extensions that implement the adapter
+contract, installed like `plugin-python` and `plugin-swift`. The core has no
+language dependency. O1 extends the existing `LanguageAdapter` and
+`LanguageRegistry` in `packages/analyzer/src/stages/languageRegistry.ts` and
+introduces no second registry.
 
-- identity: the adapter declares the object kinds it produces and their
-  identity rules;
-- extraction: it produces inventory and tracked observations and relations from
-  source, with provenance and a contract version;
-- capabilities: it declares which kinds and relations it supports, so the core
-  reports unsupported kinds as `not_observed` rather than absent.
+Persistence contract. Schema migration 21 adds these tables. Existing identity,
+continuity, and evidence tables are reused only where their meaning matches.
 
-The repository already has a `LanguageAdapter` interface and `LanguageRegistry`
-in `packages/analyzer/src/stages/languageRegistry.ts`. O1 should extend that
-mechanism rather than introduce a second one. Additional languages are
-optional extensions, installed like the existing `plugin-python` and
-`plugin-swift` packages. The core never depends on a specific language.
+- `observation_runs`: id, repository revision, adapter id, contract version,
+  kind set, scope descriptor, status, status reason, counts, fingerprint.
+- `observed_identities`: id, kind, creation run id, opaque key, created at.
+- `observed_versions`: id, identity id, run id, locator (path, container,
+  span), normalized payload JSON, payload fingerprint, provenance JSON.
+- `observed_relations`: id, version id, relation kind, target identity id,
+  target version id (nullable), basis, fingerprint.
+- `observed_continuity_links`: id, from identity id, to identity id, basis,
+  deciding source (adapter or Review id), contract version, created at.
+- `observed_changesets`: id, base run id, head run id, contract fingerprint,
+  changeset fingerprint, status.
+- `observed_change_items`: id, changeset id, change kind, identity id,
+  base version id, head version id, basis JSON, materiality result per family.
 
-Storage. The observation layer reuses existing identity and evidence tables
-where their meaning fits (`subject_identities`, `subject_continuity`,
-`subject_aliases`, `evidence_identities`, `evidence_versions`). It adds
-observation tables only where no existing table can carry version and relation
-semantics. Those tables are created by schema migration 21. Phase G6d's
-migration, previously planned as 20 to 21, becomes 21 to 22 and is renumbered
-accordingly.
+Every table has its fingerprint and contract version, following the existing
+Subject and Evidence conventions. TypeScript and native schema creation must
+match, as in G1.
 
 Phases.
 
-- O1: Identity rules and inventory for TypeScript and JavaScript, implemented
-  as a language observation adapter on the existing `LanguageRegistry`. Inventory
-  recall is measured against a hand-checked reference list for the Phase G6
-  evaluation repositories.
-- O2: Tracked-tier observations for Subjects and the optional implementation
-  view, generic change records, the continuity checker with its `report` and
-  `gate` modes, and schema migration 21. Fixtures cover each change kind,
-  same-name definitions, renames, moves, and removals.
+- O0: Persistence contract, migration 21 design, and the Definition of Done
+  items below, reviewed and accepted before any code. No behavior changes.
+- O1: Language and kind registry on the existing `LanguageRegistry`. TypeScript
+  and JavaScript adapter producing `file`, `module`, `symbol`, `dependency`,
+  `call-site`, and the coverage status. Complete scan runs. Inventory recall is
+  measured against a hand-checked reference list for the Phase G6 evaluation
+  repositories.
+- O2: Identities, versions, continuity links, ChangeSets, and the continuity
+  checker with `report` and `gate` modes. Migration 21 implemented. Fixtures
+  cover each change kind, same-name definitions, renames, moves, removals of
+  complete and partial runs, and a second language adapter as a test double.
 - O3: Migration of the NestJS and Fastify discoverers to observation producers.
-  Assessment outcomes stay unchanged on the E0–E6 and Fastify fixtures, except
-  for intended changes that are listed and documented before the migration.
-- O4: Evaluation: inventory recall, change-detection precision on seeded
-  changes, change volume per commit on the reference repositories, and continuity
-  checker decisions against labels. Semantic Candidate precision and recall are
-  measured separately under G6c.
-- O5 (later, optional): Additional language adapters as extensions, each
-  proving the contract on its own reference repositories.
+  E0–E6, A0–A5, Fastify, and C0–C10 stay green. Intended outcome changes are
+  listed in the change record before the migration starts.
+- O4: Evaluation: inventory recall per framework, change-detection precision on
+  seeded changes, change volume per commit on tracked objects, and continuity
+  checker decisions against labels. Semantic Candidate measures remain under G6c.
+- O5 (later, optional): additional language adapters, each proving the contract
+  on its own reference repositories.
 
 Acceptance.
 
-- Inventory recall is reported per framework on the reference repositories,
-  against a versioned hand-checked reference list.
-- Each change kind has at least one fixture. Same-name definitions never collapse
-  into one object.
-- Change volume per commit is bounded by the tracked tier on the reference
-  repositories, and the bound is reported.
+- Each supported kind reports its coverage status per scope. Unsupported or
+  not-observed kinds are never reported as absent.
+- The `removed` change kind appears only for complete runs. Partial comparisons
+  report `not_comparable`.
+- A ChangeSet is identical for the same base and head runs regardless of
+  execution order, and it is recomputable.
+- Same-name definitions never collapse into one identity. Moves and renames keep
+  identity only through a decided continuity link.
+- Unrecognized route-like call sites appear as call-site observations and never
+  produce a `passed` result.
+- Change volume is bounded by the tracked tier, and the bound is reported.
 - The continuity gate fails CI only for configured scopes with unresolved
-  continuity, and never on a model call.
-- No Assessment changes outcome without a documented change record. The existing
-  C0–C10, P-001, E0–E6, A0–A5, and Fastify regressions stay green.
-- `claims check` and `intent check` continue to make no model call.
-- A route that no deterministic discoverer recognizes still appears in the
-  inventory and never yields `passed`.
-- A second language can be added through the adapter contract without changes to
-  the core. This is demonstrated with a test adapter in O2.
+  continuity, with no model call.
+- No Assessment changes outcome without a documented change record. C0–C10,
+  P-001, E0–E6, A0–A5, and Fastify regressions stay green.
+- `claims check` and `intent check` make no model call.
+- A second language adapter can be added through the contract, demonstrated by
+  a test double in O2.
 
-Public claim boundary. IntentWeave tracks the observed objects that are Subjects
-of Candidates and Claims, plus configured implementation views, and reports
-changes to them. It does not claim to infer every relevant Claim from source
-code. Claims enter through Candidate discovery and explicit promotion.
+Public claim boundary. IntentWeave gives a complete, reproducible inventory for
+each supported kind and scope, tracks the Subjects of Candidates and Claims and
+the configured implementation view, and reports changes between complete runs.
+It does not infer every relevant Claim from source code. Claims enter through
+Candidate discovery and explicit promotion.
 
 Decisions.
 
-- Implementation view (decided: derived from Claims, extended explicitly). The
-  implementation view is derived by default: the symbols referenced by Claim
-  Subjects, plus their direct dependencies. A project may extend it with an
-  explicit glob list in `.iw/claims/observations.yaml`, with optional symbol
-  filters such as exported symbols or name patterns. The effective view, that is,
-  the derived set plus the explicit additions, is written to the portable state.
-  Changes to the view are therefore visible and reviewable. A glob never adds
-  objects silently.
-- Continuity gate default (decided: report first, then gate on Claim Subjects).
-  The continuity checker has a `report` mode and a `gate` mode per scope. A
-  project starts in `report` mode, and the config records a report period, that
-  is, an explicit start date or number of CI runs. After that period, the gate
-  for Claim Subjects is enabled by an explicit configuration change, which is
-  itself reviewable. Projects that never change the setting stay in `report`
-  mode. An upgrade never fails CI on its own. Other scopes remain opt-in.
+- Implementation view (decided): derived from Claim Subjects and their direct
+  dependencies, extended by explicit globs and symbol filters, and written to the
+  portable state.
+- Continuity gate (decided): `report` mode first, with an explicit report period
+  in the config; then a reviewable configuration change enables the gate for
+  Claim Subjects. Other scopes stay opt-in. An upgrade never fails CI on its own.
+
+Open questions.
+
+- The format of the opaque identity key, and whether it is a content hash of the
+  creation run, a UUID, or a derived value.
+- The retention policy for run and version history in the inventory tier.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
@@ -3331,6 +3349,20 @@ Generalization is robust when:
 42. AI-backed auto-promotion requires a separately committed effective Policy
     version, passing family-specific quality gates, grounded anchors, and a
     deterministic Rule Adapter, and its complete action is atomic.
+43. Phase G5.3 persistence contract is accepted in O0 before implementation,
+    and migration 21 creates the observation tables with matching TypeScript
+    and native schemas.
+44. Each supported observation kind reports coverage per scope, and unsupported
+    or not-observed kinds are never reported as absent.
+45. `removed` changes appear only for complete observation runs, and partial
+    comparisons report `not_comparable`.
+46. A ChangeSet is a pure function of its base and head runs and their contract
+    versions, so it is identical regardless of execution order.
+47. Same-name definitions never share an identity, and moves or renames keep
+    identity only through a decided continuity link.
+48. Unrecognized route-like call sites remain visible as call-site observations
+    and never yield `passed` results, and the continuity gate fails CI only for
+    configured scopes with unresolved continuity.
 
 ## 18. Explicit Non-Goals
 
