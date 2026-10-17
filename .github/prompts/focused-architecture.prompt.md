@@ -155,7 +155,7 @@ flowchart LR
   FX -->|"rawTriples[]"| KX["⭐ kx.ts"]
   KX -->|"canonTriples[]"| GX["gx.ts"]
   GX -->|"mergedGraph"| PX["px.ts"]
-  PX -->|"neo4j mutations"| DB[("Neo4j")]
+  PX -->|"graph mutations"| DB[("Graph store")]
 
   style KX fill:#f9a825,stroke:#f57f17,stroke-width:3px
 ```
@@ -181,18 +181,18 @@ C4Context
     Container(cli, "CLI", "TypeScript", "iw index / iw intent commands")
     Container(analyzer, "Analyzer", "TypeScript", "Pipeline orchestration & stages")
     Container(index, "CARI Index", "SQLite", "Code-aware retrieval")
-    ContainerDb(neo4j, "Neo4j", "Graph DB", "Knowledge graph persistence")
+    ContainerDb(graphstore, "Graph store", "SQLite", "Knowledge graph persistence (plugin-kg-lite)")
   }
 
   Rel(dev, cli, "invokes")
   Rel(cli, analyzer, "runs pipeline")
   Rel(analyzer, index, "reads symbols")
-  Rel(analyzer, neo4j, "persists triples")
+  Rel(analyzer, graphstore, "persists triples")
 ```
 ````
 
 **Derivation**: Map `layerLabel` groupings to C4 containers. Use package prefixes from file paths
-to identify system boundaries. Show external systems (Neo4j, LLM providers) as external entities.
+to identify system boundaries. Show external systems (graph store, LLM providers) as external entities.
 
 ## Guidelines
 

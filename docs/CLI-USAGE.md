@@ -3,7 +3,7 @@
 IntentWeave is a **semantic knowledge extraction platform** with two complementary products:
 
 - **CARI Evidence Engine** — lightweight SQLite index built from AST, keywords, and git history.
-  $0 cost, no LLM, no Neo4j. Powers ranked retrieval, architecture enforcement, and CI drift detection.
+  $0 cost, no LLM. Powers ranked retrieval, architecture enforcement, and CI drift detection.
 - **Intent Engine** — rule checking across three domains (structural / behavioral / documentary)
   backed by CARI. Express architectural intent in `rules.yaml`; enforce it in CI.
 
@@ -50,7 +50,6 @@ iw --help
 | ------------------ | ------- | ----------------------------------------------------------------- |
 | **Node.js**        | ≥ 22.15 | `node -v` — requires Node.js built-in SQLite                      |
 | **Git**            | any     | For co-change analysis (TCG stage)                                |
-| **Neo4j**          | 5.x     | _Optional_ — only for MCP `kg_*` tools / `iw doc-health --neo4j`  |
 | **OpenAI API key** | —       | _Optional_ — only for `--provider openai` and `iw intent extract` |
 
 CARINative uses no native C++ compilation. `npm install` works everywhere Node.js does.
@@ -214,7 +213,7 @@ iw index rule-coverage                          # packages with zero behavioral 
 
 A second layer on top of the 30+ built-in queries: run your own read-only graph
 queries directly against the CARI SQLite projection using CypherLite (a
-zero-dependency Cypher-subset → SQL transpiler). No Neo4j, no LLM.
+zero-dependency Cypher-subset → SQL transpiler). No LLM.
 
 ```bash
 # See the full node/relationship schema + built-in query templates
@@ -238,8 +237,8 @@ types: `IMPORTS`, `DEFINES`, `CALLS`, `ANNOTATED_BY`, `HAS_TODO`, `HAS_RATIONALE
 `SUMMARIZED_BY`, `CO_OCCURS`, `CO_CHANGES`. Run `iw index schema` for the full property
 reference and the current list of built-in templates (`callers-of`, `callees-of`,
 `docs-for-callees`, `co-changed-with`, `undocumented-hubs`, `symbol-docs`, `import-chain`).
-This queries the local CARI SQLite projection only — no Neo4j, no LLM. For the
-separate LLM-powered Knowledge Graph (Neo4j), use the `kg_query` MCP tool instead.
+This queries the local CARI SQLite projection only — no LLM. For a graph stored by a
+persistence plugin (`plugin-kg-lite`), use the `kg_query` MCP tool instead.
 
 | Option                | Default        | Description                                                |
 | --------------------- | -------------- | ---------------------------------------------------------- |
@@ -593,14 +592,10 @@ See the [Semantic Rules guide](https://intentweave.org/docs/cari/semantic-rules/
 
 ## Environment Variables
 
-| Variable         | Default                 | Description                                |
-| ---------------- | ----------------------- | ------------------------------------------ |
-| `NEO4J_URI`      | `bolt://localhost:7687` | Neo4j bolt URI (optional, for KG commands) |
-| `NEO4J_USERNAME` | `neo4j`                 | Neo4j username                             |
-| `NEO4J_PASSWORD` | _(required for KG)_     | Neo4j password                             |
-| `NEO4J_DATABASE` | `neo4j`                 | Neo4j database name                        |
-| `OPENAI_API_KEY` | _(optional)_            | Required for `--provider openai`           |
-| `IW_SESSION`     | `default`               | Default session ID                         |
+| Variable         | Default      | Description                      |
+| ---------------- | ------------ | -------------------------------- |
+| `OPENAI_API_KEY` | _(optional)_ | Required for `--provider openai` |
+| `IW_SESSION`     | `default`    | Default session ID               |
 
 ---
 
@@ -725,30 +720,22 @@ Uses tree-sitter AST parsing for precise code symbol extraction:
 
 ---
 
-## Optional: Knowledge Graph (Neo4j, via MCP tools)
+## Optional: Knowledge Graph (SQLite, via MCP tools)
 
-Deep semantic extraction, NL queries over the knowledge graph, and impact analysis require
-Neo4j and an LLM API key. These are optional and complementary to the CARI Evidence Engine.
-There is no longer a dedicated `iw run` / `iw query` / `iw persist` CLI — this functionality
-is exposed exclusively through MCP tools (for GitHub Copilot / other MCP clients) plus one
-CLI flag on `doc-health`:
+The `kg_*` MCP tools read a graph stored by a persistence plugin. `plugin-kg-lite` is
+the bundled option: SQLite, zero configuration, graph stored in `.iw/kg.db`.
 
 ```bash
-export NEO4J_URI=neo4j://localhost:7687
-export NEO4J_PASSWORD=intentweave
-export OPENAI_API_KEY=sk-...
+iw plugin add kg-lite
 
-# Start the MCP server (stdio transport) — exposes kg_query, kg_context, kg_entities,
-# kg_impact, kg_doc_health, kg_schema (6 KG tools) alongside the 52 CARI tools
-iw mcp --neo4j-uri neo4j://localhost:7687
-
-# The only KG-aware CLI entry point: full Neo4j-backed doc health (vs. the CARI-only default)
-iw doc-health --neo4j -s my-project
+# Start the MCP server (stdio transport). It exposes kg_query, kg_context,
+# kg_entities, kg_doc_health, and kg_schema alongside the CARI tools.
+iw mcp --session my-project
 ```
 
 Once the MCP server is running, ask your AI agent things like "What are the main components?"
-(`kg_query`), "Build context about authentication" (`kg_context`), or "What's the impact of
-changing src/auth.ts?" (`kg_impact`) — see the MCP Tools reference in the project README.
+(`kg_query`) or "Build context about authentication" (`kg_context`). See the MCP Tools
+reference in the project README.
 
 ---
 
@@ -765,15 +752,6 @@ index so the LLM sees real file paths.
 If cross-package rules show false positives for path aliases (e.g. `@app/`, `@site/`), check
 that your `tsconfig.json` has `compilerOptions.paths` defined — CARI auto-detects these.
 For non-tsconfig aliases (Docusaurus, Webpack), add them to `.iw/config.yaml` under `aliases:`.
-
-### "Neo4j password required"
-
-This only affects the optional KG features (`iw doc-health --neo4j`, `iw mcp` KG tools).
-For CARI-only usage no Neo4j is needed.
-
-```bash
-export NEO4J_PASSWORD=intentweave
-```
 
 ### MCP tools not visible in Copilot
 

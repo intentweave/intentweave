@@ -19,8 +19,7 @@ These are the supported integration surfaces:
 
 ## Graph tools that need a plugin
 
-The `kg_*` MCP tools (`kg_query`, `kg_context`, `kg_entities`, `kg_schema`) read
-through a `persistence` plugin capability. No plugin ships in this repository, so
-these tools return "No persistence plugin available" until one is installed. The
-SQLite knowledge-graph tables were removed in schema 22, and nothing in the
-repository writes a knowledge graph.
+The `kg_*` MCP tools (`kg_query`, `kg_context`, `kg_entities`, `kg_doc_health`, `kg_schema`)
+read a graph through the `persistence` plugin capability. `@intentweave/plugin-kg-lite`
+provides it with SQLite and needs no configuration. Without a persistence plugin the tools
+return "No persistence plugin available".

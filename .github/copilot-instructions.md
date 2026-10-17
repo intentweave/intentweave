@@ -5,11 +5,11 @@
 IntentWeave is a **semantic knowledge extraction platform** that provides two complementary systems:
 
 1. **CARI (Code-Aware Retrieval Index)** — Lightweight SQLite index built from AST, keywords, and
-   git history. No LLM, no Neo4j, $0 cost. Powers ranked retrieval, connection discovery, and
+   git history. No LLM, $0 cost. Powers ranked retrieval, connection discovery, and
    CI drift detection.
 
-2. **Knowledge Graph (KG)** — LLM-powered entity/relationship extraction from documents. Persists
-   to Neo4j for semantic queries, impact analysis, and documentation health checks.
+2. **Knowledge graph (optional)** — graph storage behind the `kg_*` MCP tools. `plugin-kg-lite`
+   provides it in SQLite. IntentWeave no longer fills the graph with LLM extraction.
 
 ### Monorepo Structure
 
@@ -38,8 +38,8 @@ intentweave/
 > `@intentweave/server-open`) and the `ui/` frontend have been removed from the
 > monorepo. Supported integration surfaces are the CLI, MCP tools, and the
 > `@intentweave/index` programmatic API. The `@intentweave/plugin-kg` /
-> `plugin-kg-lite` packages (Neo4j / SQLite persistence, installed via
-> `iw plugin add kg`) live outside this monorepo.
+> `plugin-kg-lite` package (SQLite persistence, installed via `iw plugin add kg-lite`)
+> lives outside this monorepo.
 
 ## Build & Test
 
@@ -412,7 +412,6 @@ iw claims candidates evaluate --labels <file>     # score recommendations agains
 ```bash
 iw doc-health                                               # Living Documentation (documentary domain, CARI default)
 iw intent living                                            # Living Documentation (alias)
-iw doc-health --neo4j -s my-project                         # Living Documentation (full KG mode, requires Neo4j)
 iw verify --score                                           # Living Documentation Score (12.3): composite 0-100/A-F
 iw intent score                                             # Living Documentation Score (alias)
 iw verify --score -f json                                   # JSON output for CI integration
@@ -436,18 +435,17 @@ All CARI query functions are also available as CLI subcommands
 (e.g., `iw index clones`, `iw index todos`) and via the `@intentweave/index`
 programmatic API.
 
-### KG Tools (require Neo4j)
+### KG Tools (require a graph plugin, `plugin-kg-lite`)
 
-| Tool            | Purpose                         | Key Parameters                  |
-| --------------- | ------------------------------- | ------------------------------- |
-| `kg_query`      | NL or Cypher query              | `question`, `cypher?`, `limit?` |
-| `kg_context`    | Build RAG context               | `topic?`, `entity?`, `hops?`    |
-| `kg_entities`   | List/search entities            | `type?`, `search?`, `limit?`    |
-| `kg_impact`     | Semantic impact analysis        | `files`, `hops?`                |
-| `kg_doc_health` | Documentation freshness (Neo4j) | `files?`                        |
-| `kg_schema`     | Graph schema                    | _(none)_                        |
+| Tool            | Purpose                 | Key Parameters                  |
+| --------------- | ----------------------- | ------------------------------- |
+| `kg_query`      | NL or Cypher query      | `question`, `cypher?`, `limit?` |
+| `kg_context`    | Build RAG context       | `topic?`, `entity?`, `hops?`    |
+| `kg_entities`   | List/search entities    | `type?`, `search?`, `limit?`    |
+| `kg_doc_health` | Documentation freshness | `files?`                        |
+| `kg_schema`     | Graph schema            | _(none)_                        |
 
-### CARI Tools (local SQLite, no Neo4j; most need no LLM)
+### CARI Tools (local SQLite; most need no LLM)
 
 | Tool                          | Purpose                                                    | Key Parameters                                                       |
 | ----------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- |

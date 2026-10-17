@@ -338,11 +338,11 @@ from `cli/src/commands/*.ts` inward via the call graph. Feasible as a new query
 | Naming inconsistencies       | `iw index terminology`       | ✅ shipped | No         |
 | Orphaned doc sections        | `iw index orphaned-sections` | ✅ shipped | No         |
 | Cross-group entity conflicts | `iw index cross-group-drift` | ✅ shipped | No         |
-| Semantic contradictions      | `iw doc-health --neo4j`      | ✅ shipped | Yes (KG)   |
+| Semantic contradictions      | —                            | removed    | —          |
 
 **Gap:** detecting that doc A says "X is true" and doc B says "X is false" without
-Neo4j. Requires selective enrichment (`iw index enrich`) + LLM comparison of extracted
-triples. Medium effort, high value. Could be `iw living contradictions --budget 10`.
+a graph database. It would require LLM extraction of triples, which was removed, so this
+needs a new design. Medium effort, high value. Could be `iw living contradictions --budget 10`.
 
 ---
 

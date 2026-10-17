@@ -57,8 +57,8 @@ All notable changes to IntentWeave are documented in this file.
 - **Knowledge-graph tables removed (schema 22)** — the `kg_entities`,
   `kg_relationships`, `kg_raw_triples`, and `enrichment_meta` tables are dropped
   by migration 22. Nothing in IntentWeave wrote them. The migration keeps a durable
-  `.schema-21.backup` before it runs. The `kg_*` MCP tools still need an external
-  persistence plugin.
+  `.schema-21.backup` before it runs. The `kg_*` MCP tools read through the
+  `plugin-kg-lite` persistence plugin.
 - **Breaking: `iw verify` is the living documentation score only.** Spec-to-code
   grounding (`iw verify [files...]`) and `--consistency` are removed, since they read
   the knowledge-graph tables. `--score` remains, and the score JSON no longer contains
@@ -73,6 +73,14 @@ All notable changes to IntentWeave are documented in this file.
   `.iw/architecture.yaml`, or `--from-scan`.
 - **`docs/API.md` rewritten** to describe the surfaces that ship today (CLI, MCP,
   programmatic API) and the `kg_*` plugin requirement.
+- **Neo4j support removed.** The Neo4j persistence writers (`persistKwg`, `persistTcg`,
+  `persistDrift`, `scgPersist`), the cross-layer linker, the triage analyzer, and the
+  knowledge-graph drift detectors are deleted. Nothing called them. `iw drift --neo4j`
+  and `iw doc-health --neo4j` / `--neo4j-uri` are removed, along with their graph-mode options (`--session`, `--only`, `--doc-code`,
+  `--deps`, `--temporal`, `--min-mentions`, `--include-internal`, `--ax-cache`),
+  `iw mcp --neo4j-uri`, and the `kg_impact` tool. The `persist-neo4j` export is removed. The
+  `@intentweave/core` Neo4j error classes are removed. `plugin-kg-lite` (SQLite) is
+  unchanged.
 
 ### Fixed
 

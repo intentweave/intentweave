@@ -103,7 +103,7 @@ iw index layers-infer                  # auto-infer architectural layers
 iw index layers-check                  # validate imports vs. inferred layers
 iw index export --html                 # interactive architecture report
 
-# Graph queries — ad-hoc CypherLite queries over the CARI graph projection, no Neo4j
+# Graph queries — ad-hoc CypherLite queries over the CARI graph projection
 iw index schema                        # node labels, relationship types, query templates
 iw index cypher "MATCH (a:SYMBOL)-[:CALLS]->(b:SYMBOL) RETURN a.name, b.name LIMIT 10"
 iw index cypher @:callers-of --param calleeName=validateToken
@@ -239,21 +239,19 @@ Two depth modes:
 - `--depth structured` (default) — headings, bold text, code spans only. Fast and precise.
 - `--depth full` — adds body text scanning with IDF noise filtering. +72% more annotations.
 
-### Knowledge Graph — Neo4j Query (via MCP, plugin required)
+### Knowledge Graph (MCP, plugin-kg-lite)
 
-The `kg_*` MCP tools read through a `persistence` plugin. No such plugin ships in
-this repository, so these steps apply only once a plugin and a populated graph exist
-(see [`docs/API.md`](docs/API.md)):
+The `kg_*` MCP tools read a graph through a `persistence` plugin. `plugin-kg-lite`
+provides it with SQLite and needs no configuration. It keeps its graph in
+`.iw/kg.db`, separate from the CARI index.
 
 ```bash
-# Set credentials, then start the MCP server
-export NEO4J_PASSWORD=intentweave
-export OPENAI_API_KEY=sk-...
+iw plugin add kg-lite
 iw mcp --session my-project
 ```
 
-Once a plugin is installed, use `kg_query`, `kg_context`, `kg_entities`, `kg_impact`,
-`kg_doc_health`, and `kg_schema` from GitHub Copilot to query the graph.
+Use `kg_query`, `kg_context`, `kg_entities`, `kg_doc_health`, and `kg_schema` from
+GitHub Copilot to query the graph.
 
 ### From source (development)
 
@@ -300,7 +298,7 @@ features. Here's what's already shipped and what's next:
 | **Graph Topology**        | community detection (3 modes), hub analysis, surprising connections, rationale extraction                                                                                                                                                                                             |
 | **Visualisation**         | Insights Book (`iw index export --book`, 15+ chapters), interactive architecture report (layers/communities/dependencies), focused SVG reports, per-ADR Cytoscape.js flow diagrams                                                                                                    |
 | **Languages**             | TypeScript/JavaScript (built-in), Python, Swift (plugins)                                                                                                                                                                                                                             |
-| **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, dual KG backend (SQLite + Neo4j)                                                                                                                                                               |
+| **Plugin System**         | registry + discovery, capability providers (LLM, persistence, language), CLI commands, KG backend (SQLite, plugin-kg-lite)                                                                                                                                                            |
 | **Intent Verification**   | living documentation score — 4 dimensions (`iw intent score`), spec-to-code grounding, architecture diagram validation (`iw index arch-check`), full three-domain intent check (`iw intent check`), internal/deprecated enforcement                                                   |
 | **Integration**           | CariIndex facade, entity bridge, **58 MCP tools**                                                                                                                                                                                                                                     |
 | **CI & Automation**       | watch mode (`iw index watch`), doc-health GitHub Action (`intentweave/doc-health-action@v1`), git hooks (`iw hook install/uninstall/status`)                                                                                                                                          |
@@ -320,15 +318,14 @@ features. Here's what's already shipped and what's next:
 ## CLI
 
 ```bash
-# Documentation health check (CARI default — no Neo4j needed)
+# Documentation health check (CARI default)
 iw intent living
-iw doc-health --neo4j -s my-project   # full KG mode (requires Neo4j)
 
-# Living Documentation Score (no Neo4j needed)
+# Living Documentation Score
 iw intent score                       # composite 0-100/A-F: freshness + arch conformance
 iw intent score -f json               # JSON output for CI integration
 
-# --- CARI (no LLM, no Neo4j) ---
+# --- CARI (no LLM) ---
 
 # Build the lightweight index
 iw index build
@@ -419,11 +416,10 @@ IntentWeave exposes MCP tools for use in VS Code Copilot:
 | `kg_query`      | Natural language or Cypher query | `question`, `cypher?`, `limit?` |
 | `kg_context`    | Build RAG context from graph     | `topic?`, `entity?`, `hops?`    |
 | `kg_entities`   | List/search entities             | `type?`, `search?`, `limit?`    |
-| `kg_impact`     | Semantic impact analysis         | `files`, `hops?`                |
 | `kg_doc_health` | Documentation freshness          | `files?`                        |
 | `kg_schema`     | Graph schema description         | _(none)_                        |
 
-**CARI tools** (no Neo4j needed; most also need no LLM — a few, like `cari_layers_name`,
+**CARI tools** (most need no LLM — a few, like `cari_layers_name`,
 optionally call one for naming):
 
 | Tool                          | Purpose                                                      | Key Parameters                         |
@@ -512,7 +508,7 @@ VS Code auto-discovers via `.vscode/mcp.json`:
 │                        Layer 2: Semantic Enrichment                 │
 │  Budget-controlled LLM extraction on CARI-selected targets          │
 │  Decision tracking · diagram validation · contradiction detection   │
-│  plugin-llm (OpenAI) · plugin-kg-lite (SQLite) · plugin-kg (Neo4j) │
+│  plugin-llm (OpenAI) · plugin-kg-lite (SQLite)                      │
 ├─────────────────────────────────────────────────────────────────────┤
 │                        Layer 1: CARI Index (always $0)              │
 │  AST · keywords · git history · annotations · co-occurrences        │
@@ -537,7 +533,6 @@ packages/
 plugins/                                        # install only what you need
   plugin-llm/          → LLM provider (OpenAI) — enables --explain, --provider
   plugin-kg-lite/      → SQLite KG persistence via CypherLite (zero config)
-  plugin-kg/           → Neo4j KG persistence (production graph database)
   plugin-swift/        → Swift language support via tree-sitter
   plugin-python/       → Python language support via tree-sitter
 ```
@@ -550,7 +545,7 @@ what you need:
 ```bash
 iw plugin list                         # see installed plugins
 iw plugin add llm                      # adds LLM capability (--explain, --provider)
-iw plugin add kg                       # adds Neo4j persistence backend
+iw plugin add kg-lite                  # adds SQLite knowledge-graph persistence
 iw plugin add swift                    # adds Swift language support
 ```
 
@@ -578,7 +573,6 @@ Schema-free knowledge extraction:
 - **Batch failure detection** — 3 consecutive failures = abort
 - **Network resilience** — two-phase retry, batch cooldown
 - **Token/cost estimation** — before committing to LLM calls
-- **Delta persistence** — only write changes to Neo4j
 - **Profile packs** — domain-specific extraction rules
 
 ---
@@ -587,20 +581,16 @@ Schema-free knowledge extraction:
 
 ### Environment Variables
 
-| Variable            | Default                 | Description                           |
-| ------------------- | ----------------------- | ------------------------------------- |
-| `NEO4J_URI`         | `bolt://localhost:7687` | Neo4j bolt URI                        |
-| `NEO4J_USERNAME`    | `neo4j`                 | Neo4j username                        |
-| `NEO4J_PASSWORD`    | _(required)_            | Neo4j password                        |
-| `NEO4J_DATABASE`    | `neo4j`                 | Neo4j database name                   |
-| `IW_SESSION`        | `default`               | Default session ID                    |
-| `IW_WORKSPACE_ROOT` | _(optional)_            | Workspace root (enables run/persist)  |
-| `OPENAI_API_KEY`    | _(optional)_            | OpenAI key (enables NL query + topic) |
-| `IW_LLM_MODEL`      | `gpt-4o-mini`           | LLM model for NL queries              |
-| `PORT`              | `3000`                  | Server port                           |
-| `HOST`              | `0.0.0.0`               | Server host                           |
-| `LOG_LEVEL`         | `info`                  | Log level                             |
-| `CORS_ORIGIN`       | `*`                     | CORS origin(s), comma-separated       |
+| Variable            | Default       | Description                           |
+| ------------------- | ------------- | ------------------------------------- |
+| `IW_SESSION`        | `default`     | Default session ID                    |
+| `IW_WORKSPACE_ROOT` | _(optional)_  | Workspace root (enables run/persist)  |
+| `OPENAI_API_KEY`    | _(optional)_  | OpenAI key (enables NL query + topic) |
+| `IW_LLM_MODEL`      | `gpt-4o-mini` | LLM model for NL queries              |
+| `PORT`              | `3000`        | Server port                           |
+| `HOST`              | `0.0.0.0`     | Server host                           |
+| `LOG_LEVEL`         | `info`        | Log level                             |
+| `CORS_ORIGIN`       | `*`           | CORS origin(s), comma-separated       |
 
 ---
 
@@ -637,8 +627,8 @@ pnpm --filter @intentweave/cli publish --access public
 - **1375+ tests**, all passing
 - **TypeScript 5.6**, ESM, strict mode
 - **Plugin architecture** — registry + auto-discovery, 3 capability types (LLM, persistence, language)
-- **Dual KG backend** — SQLite via CypherLite (zero config) or Neo4j (production)
-- **Fastify 5**, Neo4j 5, SQLite (`node:sqlite` — zero native compilation), Turbo, pnpm workspaces
+- **KG backend** — SQLite via CypherLite (zero config)
+- **Fastify 5**, SQLite (`node:sqlite` — zero native compilation), Turbo, pnpm workspaces
 - **30+ CARI query modes** + interactive HTML architecture report with multi-view community modes
 - **58 MCP tools** for GitHub Copilot integration
 
