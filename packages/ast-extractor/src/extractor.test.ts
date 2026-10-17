@@ -16,6 +16,34 @@ import {
 describe("AstExtractor", () => {
   const extractor = createExtractor(process.cwd());
 
+  describe("member call structure", () => {
+    it("records receiver identifier and raw argument texts", () => {
+      const code = `
+        fastify.get("/users", { preHandler: [fastify.checkToken] }, handler);
+        helper.run(1, "two");
+        plain();
+      `;
+      const result = extractor.extractFromString(
+        code,
+        "routes.ts",
+        "typescript",
+      );
+      const get = result.calls?.find((call) => call.calleeName === "get");
+      expect(get?.receiverName).toBe("fastify");
+      expect(get?.argumentTexts).toEqual([
+        '"/users"',
+        "{ preHandler: [fastify.checkToken] }",
+        "handler",
+      ]);
+      const run = result.calls?.find((call) => call.calleeName === "run");
+      expect(run?.argumentTexts).toEqual(["1", '"two"']);
+      const plainCall = result.calls?.find(
+        (call) => call.calleeName === "plain",
+      );
+      expect(plainCall?.receiverName).toBeUndefined();
+    });
+  });
+
   describe("extractFromString", () => {
     it("should extract function declarations", () => {
       const code = `

@@ -180,6 +180,13 @@ export interface ExtractedCall {
   calleeId: string | null;
   /** true when this is a method call (receiver.method()) */
   isMethod: boolean;
+  /**
+   * Identifier receiver for `receiver.method(...)` calls, for framework-specific
+   * correlation. Null or absent for other callee shapes.
+   */
+  receiverName?: string | null;
+  /** Raw argument expressions in source order, for member calls only. */
+  argumentTexts?: string[];
 }
 
 /**

@@ -231,12 +231,16 @@ export class AstExtractor {
       0,
     );
 
+    const calls: ExtractedCall[] = [];
+    this.extractUsages(tree.rootNode, filePath, calls, []);
+
     return {
       filePath,
       language,
       symbols,
       imports,
       exports,
+      calls,
       extractedAt: Date.now(),
       errors: tree.rootNode.hasError ? ["Parse errors detected"] : undefined,
     };
@@ -1764,6 +1768,8 @@ export class AstExtractor {
       const prop = calleeNode.childForFieldName("property");
       if (!prop) return;
       const chain = this.buildMemberChain(calleeNode);
+      const receiver = calleeNode.childForFieldName("object");
+      const argumentsNode = node.childForFieldName("arguments");
       calls.push({
         callerFile: filePath,
         callerName,
@@ -1771,6 +1777,10 @@ export class AstExtractor {
         calleeName: prop.text,
         calleeId: chain.includes("?") ? null : chain,
         isMethod: true,
+        receiverName: receiver?.type === "identifier" ? receiver.text : null,
+        argumentTexts: argumentsNode
+          ? argumentsNode.namedChildren.map((argument) => argument.text)
+          : [],
       });
     }
   }
