@@ -2253,6 +2253,15 @@ Phases.
 - O3: NestJS and Fastify discoverers become observation producers. Their
   Assessment outcomes stay unchanged on E0–E6, A0–A5, the Fastify fixtures, and
   C0–C10, except for intended changes listed before the migration starts.
+  Status (2026-10-17, option B): dual write implemented. Each Fastify and NestJS
+  discovery run records an observation run. Fastify route registrations are
+  `call-site` observations (`endpoint-route:` identities), and NestJS handlers are
+  `symbol` observations (`endpoint-handler:` identities). Coverage is complete over
+  the scanned files, and `unsupported` when the framework is not declared. Candidate
+  persistence does not read the run, so outcomes are unchanged: the full suite
+  (1285 tests) is green, and the producer tests check the run against the Candidates.
+  Still open: switching Candidate persistence to read from the observations, and
+  the O3 intended-change list, which is empty because no outcome has changed yet.
 - O4: Evaluation: inventory recall per framework, change-detection precision on
   seeded changes, membership and removal correctness on partial and complete
   runs, change volume per commit on Subjects, and continuity decisions against

@@ -35,6 +35,11 @@ import {
   type EndpointObservation,
 } from "./endpointCandidatePersistence.js";
 import { languageFor, literalString } from "./sourceHelpers.js";
+import {
+  endpointPayload,
+  fastifyRouteIdentityKey,
+  recordEndpointObservationRun,
+} from "./endpointObservationProducer.js";
 
 export const FASTIFY_ENDPOINT_DISCOVERY_ADAPTER_ID =
   "cari-fastify-endpoint-authentication";
@@ -569,8 +574,6 @@ export function persistFastifyEndpointCandidates(
   repositoryRevision: string,
   readSource: (filePath: string) => string | undefined,
 ): EndpointCandidateResult[] {
-  if (!dependencyDeclared(readSource("package.json"))) return [];
-
   const files = database
     .prepare(
       `SELECT path FROM files
@@ -587,15 +590,47 @@ export function persistFastifyEndpointCandidates(
     if (source !== undefined) sources.set(filePath, source);
   }
 
+  const scopeFiles = [...sources.keys()].filter(
+    (file) => !TEST_FILE_PATTERN.test(file),
+  );
+  if (!dependencyDeclared(readSource("package.json"))) {
+    recordEndpointObservationRun(database, {
+      adapterId: FASTIFY_ENDPOINT_DISCOVERY_ADAPTER_ID,
+      contractVersion: FASTIFY_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
+      kind: "call-site",
+      repositoryRevision,
+      scopeFiles,
+      description: "Fastify route registrations",
+      records: [],
+      unsupportedReason: "fastify is not a declared dependency",
+    });
+    return [];
+  }
+
   const observations = discoverFastifyObservations(sources);
-  const discovered = [...mergeDuplicateObservations(observations).values()].map(
-    (observation) =>
-      persistObservation(
-        database,
-        repositoryRevision,
-        observation,
-        FASTIFY_ENDPOINT_PROFILE,
-      ),
+  const merged = [...mergeDuplicateObservations(observations).values()];
+  recordEndpointObservationRun(database, {
+    adapterId: FASTIFY_ENDPOINT_DISCOVERY_ADAPTER_ID,
+    contractVersion: FASTIFY_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
+    kind: "call-site",
+    repositoryRevision,
+    scopeFiles,
+    description: "Fastify route registrations",
+    records: merged.map((observation) => ({
+      identityKey: fastifyRouteIdentityKey(observation),
+      filePath: observation.filePath,
+      line: observation.line,
+      endLine: observation.endLine,
+      payload: endpointPayload("fastify", observation),
+    })),
+  });
+  const discovered = merged.map((observation) =>
+    persistObservation(
+      database,
+      repositoryRevision,
+      observation,
+      FASTIFY_ENDPOINT_PROFILE,
+    ),
   );
   const activeIdentityKeys = new Set(
     discovered.map((candidate) => candidate.identityKey),

@@ -17,6 +17,11 @@ import {
   type EndpointCandidateResult,
 } from "./endpointCandidatePersistence.js";
 import { languageFor, literalString } from "./sourceHelpers.js";
+import {
+  endpointPayload,
+  nestHandlerIdentityKey,
+  recordEndpointObservationRun,
+} from "./endpointObservationProducer.js";
 
 export const NEST_ENDPOINT_DISCOVERY_ADAPTER_ID =
   "cari-nestjs-endpoint-authentication";
@@ -265,6 +270,21 @@ export function persistNestEndpointCandidates(
     );
     if (!uniqueObservations.has(key)) uniqueObservations.set(key, observation);
   }
+  recordEndpointObservationRun(database, {
+    adapterId: NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
+    contractVersion: NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
+    kind: "symbol",
+    repositoryRevision,
+    scopeFiles: [...new Set(rows.map((row) => row.file_path))],
+    description: "NestJS route handlers",
+    records: [...uniqueObservations.values()].map((observation) => ({
+      identityKey: nestHandlerIdentityKey(observation),
+      filePath: observation.filePath,
+      line: observation.line,
+      endLine: observation.endLine,
+      payload: endpointPayload("nest", observation),
+    })),
+  });
   const discovered = [...uniqueObservations.values()].map((observation) =>
     persistObservation(
       database,
