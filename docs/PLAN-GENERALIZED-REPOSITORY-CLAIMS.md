@@ -1061,7 +1061,7 @@ counts and foreign keys before commit. Existing effective Reviews receive null
 values for both new references. A historical AI Recommendation is backfilled
 from the referenced Candidate version's single `inference_id`; if that link is
 missing or ambiguous, preflight fails with an actionable repair error and
-changes nothing. Migration `20 -> 21` is additive and transactional. A schema-19
+changes nothing. Migration `20 -> 21` is additive and transactional. Its number is to be reconciled with the Phase G5.3 observation migration (21) and the Phase G6d migration (22); the Phase G6b.1 entry records the implemented 19 -> 20 step. A schema-19
 database reaches 21 only through both guarded steps; unsupported downgrade
 remains rejected. TypeScript and native schema creation, migration, snapshot
 restoration, and parity tests must describe the same columns, constraints, and
@@ -1469,7 +1469,7 @@ re-run in this review.
 | G6c.1 Registry and grounding kernel                      | Implemented                    | `SemanticCorrelationRegistry`                                                                                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | G6c.2 Framework-independent Endpoint correlation         | Partial                        | `semanticEndpointCorrelation.ts`; live validation on a Fastify fixture with `ambiguous` routes (2026-10-17)                                                       | For an ambiguous guard with two verifier definitions, `gpt-5-mini` and `gpt-5.1` now both answer `ambiguous` once the guard is flagged; before the flag, both answered `probable`, and the Rule keeps such candidates inconclusive after promotion. Scope hooks now use declaration order (a hook applies only to routes registered after it in its file), so the probable case resolves deterministically. A four-case labeled set (`packages/cli/evaluation/fastify-semantic-endpoint.labels.json`, run with `packages/cli/evaluation/run-fastify-semantic.mjs`) matches 4 of 4 for both models, but only one case reaches a model at all; the set does not yet measure the model's ability to find positives no correlation yet that deterministic adapters miss on a real repo; the real Fastify repo has no ambiguous routes |
 | G6c.3 Cross-artifact and continuity expansion            | Implemented                    | Cross-artifact cohort resolver; semantic cross-artifact and public Symbol continuity adapters                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G6d Policy-governed automation                           | Not started                    | No automation policy, report-only observations, or schema 21                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| G6d Policy-governed automation                           | Not started                    | No automation policy, report-only observations, or schema 22                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Communication track                                      | Not verified                   | —                                                                                                                                                                 | Publication checkpoints depend on the evidence above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 Verification on 2026-10-16: the full CI sequence passed build (exit 0), typecheck
@@ -2025,6 +2025,214 @@ Claims together with the governing Claim identity. Unpromoted Architecture
 Rules remain visible as raw Rules violations. `--rules-only` deliberately keeps
 the unpartitioned Rules view, while `iw index rules-check` remains the expert
 entry point for baseline and diagnostic Rules workflows.
+
+### Phase G5.3: Generalized Observation and Change Layer (Proposed)
+
+Status: proposed, approved in direction, details to be reviewed. It precedes
+Phase G6 and is a prerequisite for further Claim-family discovery.
+
+Motivation. Today each Claim family couples discovery to interpretation: a
+recognized framework pattern directly emits a Candidate such as "endpoint is
+authenticated". Every new framework then needs a new pattern, and a route that
+no pattern recognizes never becomes a Candidate at all. "Fail closed" protects
+only discovered Claims. This phase separates what is observed from what is
+claimed, so that:
+
+- a coarse, high-recall inventory of observed objects exists independently of
+  any Claim family;
+- changes to observed objects are detected generically, using the identity,
+  continuity, materiality, and reopen machinery already in place;
+- Claim families consume observations as producers or Rule inputs rather than
+  owning discovery.
+
+Non-goals. This phase does not derive all relevant Claims from arbitrary code,
+adds no framework-specific patterns, and changes neither the Candidate
+lifecycle nor the Assessment semantics. An observation is never a Claim.
+
+Chain.
+
+```text
+Repository
+-> observed objects with stable identity          (inventory tier)
+-> versioned observations and relations            (tracked tier)
+-> generic changes between versions                (change records)
+-> Candidates over observations                    (discovery; may use semantic induction)
+-> Claims bound to observed Subjects               (human or Policy promotion)
+-> Assessments and Reviews                         (unchanged)
+```
+
+Object kinds. The first version recognizes these kinds and no others: `file`,
+`module`, `symbol`, `dependency` (a declared package), `configuration` (a
+declared key or value in a tracked file), `documentation-statement`,
+`architecture-rule`, `route` (a registration with method and a literal or
+unresolved path), and `definition-relation` (a binding from a use site to a
+definition, for example a guard reference to its decorator). A kind is added
+only together with the Claim family that needs it and an identity rule.
+
+Identity and equality. Identity is kind plus a defining locator plus continuity
+evidence. Equality is never by name alone.
+
+- A `symbol` or decorator definition is identified by file and export or
+  defining span. Two definitions with the same name are two objects.
+- A `route` is identified by method and resolved path where the path is
+  statically known. Otherwise it is identified by method, registration file,
+  and literal path, and marked `pathKnown: false`. Two registrations with the
+  same method and path form a collision: both are kept, and the collision is
+  itself an observation.
+- A `file` or `module` is identified by its repository path. A move is a change
+  of location, not a new object, when content continuity is established (Git
+  rename or a unique merge-base predecessor).
+- A `dependency` is identified by package name and declaring file.
+
+Tracked scope. Only the following objects enter the tracked tier, that is, they
+carry normalized properties, relations, and per-version materiality:
+
+- the Subjects of Candidates and Claims (the required scope);
+- symbols inside a configured implementation view, a named set of files or
+  symbols selected for implementation-level tracking. The implementation view is
+  optional and off by default.
+
+Everything else stays in the inventory tier only. Inventory records existence,
+kind, identity, location, and container, is versioned by its own fingerprint,
+and has no materiality contract. Its purpose is recall: whether an object is
+present at all must not depend on any Claim family. Tracking only Subjects and
+configured views bounds change volume, which DoD item 19 requires.
+
+Observations. An observation version stores normalized properties, typed
+relations to other observed objects, the Evidence it was derived from,
+provenance (adapter, contract version, repository revision), and a content
+fingerprint. Observation versions are append-only. An unchanged fingerprint
+appends nothing.
+
+Changes. A change record is generated between consecutive versions of the same
+identity. Change kinds:
+
+- `added` and `removed`;
+- `moved`: same identity, different location, with continuity evidence;
+- `renamed`: same identity, changed name, with continuity evidence;
+- `property-changed`: a normalized property changed; materiality decides
+  whether it matters to a dependent Claim;
+- `relation-changed`: a relation was added, removed, or retargeted;
+- `continuity-unclear`: the object may or may not be the same as a prior one.
+  No identity is asserted until continuity is decided (see below).
+
+A change record names its basis: the versions compared and any continuity
+evidence used. It never asserts materiality on its own.
+
+Materiality stays per family. A change is material only under the materiality
+contract of a Claim family that depends on the changed property. The generic
+layer reports the change; the family decides.
+
+Continuity checker. Continuity decisions are made by a configurable checker,
+not hard-coded:
+
+- Deterministic continuity first: Git rename detection, a unique merge-base
+  predecessor, or an identical structural match. These decide `moved` and
+  `renamed` without a Review.
+- Anything the deterministic checks cannot decide stays `continuity-unclear`.
+  It is reviewable, and it does not assert identity.
+- The checker has a configurable mode per scope:
+  - `report`: changes and unclear continuity are listed, nothing blocks;
+  - `gate`: CI fails when unresolved continuity exists for a configured scope,
+    for example for Claim Subjects only.
+- The gate mode is opt-in per project and is evaluated without any model call.
+  Semantic continuity proposals (G6c) may appear as Candidates, but they never
+  resolve continuity on their own.
+
+Configuration lives in `.iw/claims/observations.yaml`. It holds the
+implementation view, the continuity mode, and the gated scopes. It is versioned
+and is part of the portable state contract.
+
+Relation to Claims. A Claim references observed Subjects, and its Rule Results
+depend on observation versions through the existing Evidence and Dependency
+mechanisms. When a change record touches a dependency of an Assessment, the
+existing Reverse Impact and Review carry-forward or reopen logic applies. No new
+Claim-state machine is introduced.
+
+Relation to discovery and semantics. Candidate discovery reads observations.
+Deterministic family discoverers remain where a pattern is frequent and
+unambiguous. Semantic induction (G6c) is a Candidate producer over observations
+and is never authoritative. Rare framework variants become G6c evaluation
+cases, not new deterministic branches. The existing NestJS and Fastify
+discoverers become observation producers (route, decorator definition, guard
+reference, route-to-guard relation), and their auth Candidates become rules over
+those observations. That migration is a separate step after this layer exists.
+
+Language scope and extension. The first version covers TypeScript and
+JavaScript only. The design must allow other languages without changing the
+core. Each language is provided through a language observation adapter with a
+fixed contract:
+
+- identity: the adapter declares the object kinds it produces and their
+  identity rules;
+- extraction: it produces inventory and tracked observations and relations from
+  source, with provenance and a contract version;
+- capabilities: it declares which kinds and relations it supports, so the core
+  reports unsupported kinds as `not_observed` rather than absent.
+
+The repository already has a `LanguageAdapter` interface and `LanguageRegistry`
+in `packages/analyzer/src/stages/languageRegistry.ts`. O1 should extend that
+mechanism rather than introduce a second one. Additional languages are
+optional extensions, installed like the existing `plugin-python` and
+`plugin-swift` packages. The core never depends on a specific language.
+
+Storage. The observation layer reuses existing identity and evidence tables
+where their meaning fits (`subject_identities`, `subject_continuity`,
+`subject_aliases`, `evidence_identities`, `evidence_versions`). It adds
+observation tables only where no existing table can carry version and relation
+semantics. Those tables are created by schema migration 21. Phase G6d's
+migration, previously planned as 20 to 21, becomes 21 to 22 and is renumbered
+accordingly.
+
+Phases.
+
+- O1: Identity rules and inventory for TypeScript and JavaScript, implemented
+  as a language observation adapter on the existing `LanguageRegistry`. Inventory
+  recall is measured against a hand-checked reference list for the Phase G6
+  evaluation repositories.
+- O2: Tracked-tier observations for Subjects and the optional implementation
+  view, generic change records, the continuity checker with its `report` and
+  `gate` modes, and schema migration 21. Fixtures cover each change kind,
+  same-name definitions, renames, moves, and removals.
+- O3: Migration of the NestJS and Fastify discoverers to observation producers.
+  Assessment outcomes stay unchanged on the E0–E6 and Fastify fixtures, except
+  for intended changes that are listed and documented before the migration.
+- O4: Evaluation: inventory recall, change-detection precision on seeded
+  changes, change volume per commit on the reference repositories, and continuity
+  checker decisions against labels. Semantic Candidate precision and recall are
+  measured separately under G6c.
+- O5 (later, optional): Additional language adapters as extensions, each
+  proving the contract on its own reference repositories.
+
+Acceptance.
+
+- Inventory recall is reported per framework on the reference repositories,
+  against a versioned hand-checked reference list.
+- Each change kind has at least one fixture. Same-name definitions never collapse
+  into one object.
+- Change volume per commit is bounded by the tracked tier on the reference
+  repositories, and the bound is reported.
+- The continuity gate fails CI only for configured scopes with unresolved
+  continuity, and never on a model call.
+- No Assessment changes outcome without a documented change record. The existing
+  C0–C10, P-001, E0–E6, A0–A5, and Fastify regressions stay green.
+- `claims check` and `intent check` continue to make no model call.
+- A route that no deterministic discoverer recognizes still appears in the
+  inventory and never yields `passed`.
+- A second language can be added through the adapter contract without changes to
+  the core. This is demonstrated with a test adapter in O2.
+
+Public claim boundary. IntentWeave tracks the observed objects that are Subjects
+of Candidates and Claims, plus configured implementation views, and reports
+changes to them. It does not claim to infer every relevant Claim from source
+code. Claims enter through Candidate discovery and explicit promotion.
+
+Open questions.
+
+- The exact contents of the implementation view format (files, symbols, or
+  globs).
+- Whether the continuity gate's default scopes should be empty (opt-in) or Claim
+  Subjects (recommended as the first default once the gate is proven).
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
@@ -2774,7 +2982,7 @@ Implementation is split as follows:
 
 ##### G6d.1: Report-Only Policy
 
-- implement strict Policy parsing, schema 20 -> 21 migration, eligibility
+- implement strict Policy parsing, schema 21 -> 22 migration (after the Phase G5.3 observation migration), eligibility
   evaluation, idempotent observations, Explain output, and metrics calculation,
 - generate a canonical activation-basis proposal only after the prior
   behavior-equivalent report-only Policy version has a passing labeled dataset
