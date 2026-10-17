@@ -1041,13 +1041,14 @@ boundary rather than bundled into one large version. The sequence began at
 schema 16; schemas 17-19 are implemented and schema 19 is the current G6
 baseline:
 
-| Schema | Phase | Change                                                                                                                                                              |
-| ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `17`   | G1a   | add `subject_identities`, `subject_aliases`, `claim_subjects`, and `evidence_subjects`; backfill Parameter Subjects and dual-write                                  |
-| `18`   | G1b   | rebuild Claim identity storage with nullable legacy Parameter linkage, versioned generic Claim contracts, Subject continuity, and authoritative role-based Subjects |
-| `19`   | G2    | add `claim_candidates`, `candidate_evidence`, `candidate_subjects`, `candidate_inferences`, `candidate_reviews`, and `candidate_policy_decisions`                   |
-| `20`   | G6b   | rebuild `candidate_reviews` with explicit `inference_id` and `based_on_recommendation_id` references, constraints, and lookup indexes                               |
-| `21`   | G6d   | add append-only `candidate_automation_observations` for report-only Policy evaluation; effective decisions continue to use `candidate_policy_decisions`             |
+| Schema | Phase | Change                                                                                                                                                                          |
+| ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `17`   | G1a   | add `subject_identities`, `subject_aliases`, `claim_subjects`, and `evidence_subjects`; backfill Parameter Subjects and dual-write                                              |
+| `18`   | G1b   | rebuild Claim identity storage with nullable legacy Parameter linkage, versioned generic Claim contracts, Subject continuity, and authoritative role-based Subjects             |
+| `19`   | G2    | add `claim_candidates`, `candidate_evidence`, `candidate_subjects`, `candidate_inferences`, `candidate_reviews`, and `candidate_policy_decisions`                               |
+| `20`   | G6b   | rebuild `candidate_reviews` with explicit `inference_id` and `based_on_recommendation_id` references, constraints, and lookup indexes                                           |
+| `21`   | G5.3  | add the observation layer tables (runs, coverage, membership, identities, versions, relations, Subject bridge, evidence projection, ChangeSets, change impacts); see Phase G5.3 |
+| `22`   | G6d   | add append-only `candidate_automation_observations` for report-only Policy evaluation; effective decisions continue to use `candidate_policy_decisions`                         |
 
 Schemas 17-19 are historical compatibility surfaces and no longer renumber. If
 another migration lands before G6b or G6d implementation, planned schemas 20 or
@@ -1061,7 +1062,7 @@ counts and foreign keys before commit. Existing effective Reviews receive null
 values for both new references. A historical AI Recommendation is backfilled
 from the referenced Candidate version's single `inference_id`; if that link is
 missing or ambiguous, preflight fails with an actionable repair error and
-changes nothing. Migration `20 -> 21` is additive and transactional. Its number is to be reconciled with the Phase G5.3 observation migration (21) and the Phase G6d migration (22); the Phase G6b.1 entry records the implemented 19 -> 20 step. A schema-19
+changes nothing. Migration `20 -> 21` is additive and transactional. The G5.3 observation migration is 21 and the G6d migration is 22, as in the schema table. A schema-19
 database reaches 21 only through both guarded steps; unsupported downgrade
 remains rejected. TypeScript and native schema creation, migration, snapshot
 restoration, and parity tests must describe the same columns, constraints, and
@@ -2027,241 +2028,207 @@ Rules remain visible as raw Rules violations. `--rules-only` deliberately keeps
 the unpartitioned Rules view, while `iw index rules-check` remains the expert
 entry point for baseline and diagnostic Rules workflows.
 
-### Phase G5.3: Generalized Observation and Change Layer (Proposed)
+### Phase G5.3: Generalized Observation and Change Layer (Proposed, revision 2)
 
-Status: proposed, revised after review. Direction approved. This phase is not
-implementation-ready until Phase O0 is accepted. It is a prerequisite for any
-new Claim family, and it does not change the implemented G6a–G6c slices. Those
-remain as built and are migrated in O3.
+Status: proposed, revision 2 after a second review. Four decisions (D1–D4) must
+be accepted before any O0 work starts. This phase is a prerequisite for new
+Claim families. It does not change the implemented G6a–G6c slices, which are
+migrated in O3.
 
-Motivation. Each Claim family today couples discovery to interpretation: a
-recognized framework pattern emits a Candidate such as "endpoint is
-authenticated". A route that no pattern recognizes is never observed at all, so
-"fail closed" protects only what was discovered. This phase separates what is
-observed from what is claimed:
+Motivation. Each Claim family today couples discovery to interpretation. A route
+that no pattern recognizes is never observed, so "fail closed" protects only what
+was discovered. This phase separates observation from claim:
 
-- an inventory of observed objects that is complete for each supported kind and
-  scan scope, independent of any Claim family;
-- comparable, versioned snapshots from which generic changes are derived;
-- Claim families that consume observations instead of owning discovery.
+- an inventory of observed objects, complete per supported kind and scope and
+  independent of Claim families;
+- complete, comparable snapshots from which generic changes are derived;
+- Claim families that consume observations, through the existing Evidence and
+  Subject mechanisms, instead of owning discovery.
 
-Non-goals. This phase does not derive all relevant Claims from arbitrary source
-code, does not add framework-specific recognizers, and does not change the
-Candidate lifecycle or the Assessment semantics. An observation is never a Claim.
+Non-goals. This phase does not derive all relevant Claims from source code, add
+framework-specific recognizers, or change the Candidate lifecycle, the
+Assessment semantics, or the materiality contracts of Claim families.
 
 Chain.
 
 ```text
-Repository revision
--> observation run per adapter, scope, and contract   (complete or partial)
--> observed identities and versions                    (inventory: current payload for every object)
--> tracked history for Subjects and implementation view
--> ChangeSet between two runs                          (deterministic, reproducible)
--> Candidates over observations                        (discovery; may use semantic induction)
--> Claims bound to observed Subjects                   (human or Policy promotion)
--> Assessments and Reviews                             (unchanged)
+observation run per (adapter, contract, scope)     complete or partial, per kind
+-> observed identities and versions                 current payload for every inventoried object
+-> run membership                                   which identities a run saw
+-> ChangeSet between two runs                       pure function of base and head
+-> Subject bridge and Evidence projection           only for Subjects and implementation view
+-> Candidates and Claims                            unchanged lifecycle
+-> Assessments, Reverse Impact, Reviews             existing mechanisms
 ```
 
-Language and kind registry. Core code knows the generic record types and the
-lifecycle, not specific kinds. Kinds are registered by observation adapters, not
-by Claim families. An adapter declares, for each kind it produces:
+Decision D1: identity and continuity model.
 
-- the kind name and a version;
-- the identity rule, as a function of anchor and continuity evidence;
-- the normalized payload schema;
-- its capability status for each scan scope (`observed`, `not_observed` with a
-  reason, or `unsupported`).
+Two identity levels exist, and only one of them is portable.
 
-Claim families declare which kinds they need. A Claim family cannot add a kind
-to the core. A kind is available to every Claim family once an adapter produces
-it.
+- Portable identity. Objects that enter a Claim, a Candidate, or the
+  implementation view use the existing `subject_identities`. A move or rename is
+  recorded with the existing `subject_continuity` and `subject_aliases` mechanism,
+  as for symbols in G3. The Claim identity and the portable state are unchanged by
+  a move. Subject identities are therefore never derived from a locator.
+- Inventory identity. Inventory-only objects get a store-local `observed_identity`
+  whose key is a hash of kind, adapter contract, and the normalized locator at
+  the run that first created it in this store. It is not exported to the portable
+  state. Its continuity is recomputed per run from Git history. It may change
+  across fresh stores, and that is acceptable because no Claim depends on it.
+- An inventory object that becomes a Claim Subject is promoted through an explicit
+  bridge (below). The bridge, not the inventory key, becomes portable.
 
-Generic call-site kind. To keep recall independent of framework recognition, the
-TypeScript and JavaScript adapter produces a generic `call-site` kind for every
-call expression with at least one literal string argument, with callee text,
-argument literals, and location. A route is then a more specific interpretation
-that an adapter may add on top of call sites. An unrecognized route therefore
-appears as a call-site observation, but it is not classified as a route, and
-it cannot produce a Claim result without a recognizer. The coverage contract
-states exactly this. It is not a claim that every route is recognized.
+This resolves the contradiction between "a move is a link" and "a move keeps
+identity". For Subjects, a move creates a continuity link to the same canonical
+identity through the existing mechanism. For inventory objects, identity is local
+and continuity is recomputed, so no portable identity changes.
 
-Object identity. Identity is split into three parts.
+Decision D2: run membership and coverage.
 
-- `observed_identity`: a long-lived key, created when an object is first
-  observed. Its value is opaque and never derived from a name or path. Equality
-  between two observations is decided only by identity, and two definitions with
-  the same name are two identities.
-- `observed_version`: one observation of an identity in one run. It holds the
-  current locator (repository path, container, span), the normalized payload,
-  and the fingerprint. Locators may change between versions.
-- `continuity_link`: an explicit link from a prior identity to a successor
-  identity, with a basis (`git_rename`, `unique_merge_base`, `structural_match`,
-  `reviewed`), the deciding adapter or Review, and the contract version. A move
-  or rename is a continuity link, not a new identity. An object without a
-  decided link is `continuity-unclear`, and no identity is asserted for it.
+- A run is `(adapter id, contract version, scope fingerprint)`. Each run has one
+  coverage row per kind it covers.
+- `observation_run_coverage`: run id, kind, status (`complete` or `partial`),
+  reason, object count. Completeness is a property of a kind within a run, never of
+  the run as a whole.
+- `observation_run_items`: run id, observed identity id, observed version id,
+  presence status. One row per identity present in the run. Versions are stored
+  only when the payload changes, so membership stores presence without duplicating
+  history.
+- `removed` for an identity in a kind is decided only when the base and head runs
+  have complete coverage for that kind and scope, and the identity is present in
+  the base run and absent in the head run. Partial coverage yields
+  `not_comparable`.
 
-Scan runs and completeness. Removal and comparison require complete scans.
+Decision D3: projection between observation, Subject, and Evidence.
 
-- An `observation_run` records repository revision, adapter identifier and
-  contract version, kind set, scope (paths, implementation view, Subject set),
-  status (`complete` or `partial` with a reason), and counts.
-- A run is `complete` for a kind and scope only if the adapter enumerated every
-  object of that kind in that scope. A partial run may record objects but never
-  records their absence.
-- `removed` is decided only against a complete run for the same kind and scope.
-  Against a partial run it is `not_comparable`.
+- `subject_observations`: subject identity id, observed identity id, role,
+  basis, contract version. This is the Subject bridge. An observed identity may
+  be bridged to a Subject only through an explicit, versioned rule or a Review.
+- `observed_evidence_projection`: observed version id, evidence identity id,
+  evidence version id, projection contract version. A projection creates ordinary
+  `evidence_versions`. Rule Results and Assessments then depend on them through
+  `rule_result_evidence` and `claim_assessment_dependencies` as today, so Reverse
+  Impact, Review carry-forward, and reopen work without a second path.
+- `observed_continuity_links` hold raw inventory continuity only. A Subject-level
+  continuity decision is written to `subject_continuity` through the existing
+  mechanism. The two are never merged.
 
-ChangeSets. A ChangeSet is derived from two runs, a base run and a head run,
-which must share kind, scope, and adapter contract. It is keyed by the base run
-fingerprint, the head run fingerprint, and the contract versions. It is a pure
-function of those inputs. It is therefore reproducible regardless of execution
-order, and recomputing it yields the same result. The existing `claims check
---since` anchor (merge-base) selects the base run, so `--since` becomes a
-ChangeSet between two runs, not a comparison with whatever ran last.
+Decision D4: change and materiality are separate.
 
-Change kinds:
+- `observed_changesets` and `observed_change_items` record generic changes only:
+  change kind, identity, base version, head version, base and head runs, and the
+  continuity basis. They contain no materiality.
+- `change_impacts`: change item id, claim identity id, materiality contract
+  version, result (`material`, `immaterial`, `not_applicable`), decided at. A
+  change impact is derived by the Claim family's materiality contract, is
+  versioned, and can be recomputed. A change never asserts materiality on its own.
 
-- `added` and `removed` (complete runs only);
-- `moved` and `renamed`: same identity by a decided continuity link;
-- `property-changed`: a normalized payload property changed; materiality per
-  Claim family decides whether it matters;
-- `relation-changed`: a relation was added, removed, or retargeted;
-- `continuity-unclear`: an object without a decided link is present in the
-  head run but not in the base run, or vice versa, and could be the same object.
-- `not_comparable`: runs differ in scope, kind set, contract, or completeness.
+Continuity checker. Unchanged in principle: deterministic continuity first (Git
+rename, unique merge-base predecessor, identical structural match); undecidable
+cases stay `continuity-unclear`; `report` and `gate` modes per scope; no model
+call. For Subjects, decisions go to `subject_continuity`. For inventory objects,
+they go to `observed_continuity_links`.
 
-A change record names its base and head runs and its continuity basis. It never
-asserts materiality on its own.
+ChangeSets. A ChangeSet is a pure function of its base run, head run, and
+contract versions. It is keyed by their fingerprints and is recomputable. It is
+computed for the same kind and scope in both runs, and `--since` selects the base
+run through the existing merge-base anchor.
 
-Tracked tier. Current payloads are stored for every inventoried object, so that
-discovery can read properties of any object. Version history with relations and
-per-version materiality is kept for:
+Language and kind registry. Unchanged: adapters register kinds and declare
+capability per scope (`observed`, `not_observed` with reason, `unsupported`).
+Claim families declare the kinds they need. The core has no language or
+framework dependency. O1 extends `LanguageAdapter` and `LanguageRegistry` in
+`packages/analyzer/src/stages/languageRegistry.ts`.
 
-- the Subjects of Candidates and Claims (required);
-- objects in the implementation view (optional, off by default), derived from
-  Claim Subjects and their direct dependencies, and extendable by explicit globs
-  and symbol filters in `.iw/claims/observations.yaml`.
+Generic call-site kind. The TypeScript and JavaScript adapter produces
+`call-site` for every call with at least one literal string argument. A route is
+an interpretation on top of a call site. An unrecognized route is visible as a
+call site and never yields `passed` without a recognizer.
 
-The effective implementation view is written to the portable state.
+Schema migration 21 (draft tables). Reuse of existing identity, continuity,
+and evidence tables is preferred. New tables:
 
-Continuity checker. Continuity decisions come from a configurable checker:
+- `observation_runs`, `observation_run_coverage`, `observation_run_items`;
+- `observed_identities`, `observed_versions`, `observed_relations`;
+- `observed_continuity_links`;
+- `subject_observations`, `observed_evidence_projection`;
+- `observed_changesets`, `observed_change_items`, `change_impacts`.
 
-- deterministic continuity first: Git rename, a unique merge-base predecessor,
-  or an identical structural match, each recorded as its basis;
-- undecidable cases remain `continuity-unclear` and are reviewable;
-- modes per scope: `report` (listed, nothing blocks) and `gate` (CI fails on
-  unresolved continuity for a configured scope);
-- the gate runs without any model call. Semantic continuity proposals (G6c) may
-  appear as Candidates and never resolve continuity alone.
-
-Decision (see below): projects start in `report` mode, and Claim Subjects are
-gated only after an explicit, reviewable change.
-
-Relation to Claims. A Claim references observed Subjects. Its Rule Results
-depend on observed versions through the existing Evidence and Dependency
-mechanisms. A ChangeSet that touches a dependency of an Assessment follows the
-existing Reverse Impact and Review carry-forward or reopen logic. No new
-Claim-state machine is introduced.
-
-Relation to discovery and semantics. Candidate discovery reads current payloads
-and tracked history. Deterministic family discoverers stay where a pattern is
-frequent and unambiguous. Semantic induction (G6c) produces Candidates over
-observations and is never authoritative. The NestJS and Fastify discoverers
-become observation producers in O3. Their auth Candidates then become Rules over
-those observations, and their Assessment outcomes must not change except for
-intended, listed changes.
-
-Language scope and extension. The first version covers TypeScript and
-JavaScript. Other languages are optional extensions that implement the adapter
-contract, installed like `plugin-python` and `plugin-swift`. The core has no
-language dependency. O1 extends the existing `LanguageAdapter` and
-`LanguageRegistry` in `packages/analyzer/src/stages/languageRegistry.ts` and
-introduces no second registry.
-
-Persistence contract. Schema migration 21 adds these tables. Existing identity,
-continuity, and evidence tables are reused only where their meaning matches.
-
-- `observation_runs`: id, repository revision, adapter id, contract version,
-  kind set, scope descriptor, status, status reason, counts, fingerprint.
-- `observed_identities`: id, kind, creation run id, opaque key, created at.
-- `observed_versions`: id, identity id, run id, locator (path, container,
-  span), normalized payload JSON, payload fingerprint, provenance JSON.
-- `observed_relations`: id, version id, relation kind, target identity id,
-  target version id (nullable), basis, fingerprint.
-- `observed_continuity_links`: id, from identity id, to identity id, basis,
-  deciding source (adapter or Review id), contract version, created at.
-- `observed_changesets`: id, base run id, head run id, contract fingerprint,
-  changeset fingerprint, status.
-- `observed_change_items`: id, changeset id, change kind, identity id,
-  base version id, head version id, basis JSON, materiality result per family.
-
-Every table has its fingerprint and contract version, following the existing
-Subject and Evidence conventions. TypeScript and native schema creation must
-match, as in G1.
+Each table carries a fingerprint and contract version, and TypeScript and native
+schema creation must match, as in G1. Column-level definitions are written and
+reviewed in O0, before implementation.
 
 Phases.
 
-- O0: Persistence contract, migration 21 design, and the Definition of Done
-  items below, reviewed and accepted before any code. No behavior changes.
-- O1: Language and kind registry on the existing `LanguageRegistry`. TypeScript
-  and JavaScript adapter producing `file`, `module`, `symbol`, `dependency`,
-  `call-site`, and the coverage status. Complete scan runs. Inventory recall is
-  measured against a hand-checked reference list for the Phase G6 evaluation
-  repositories.
-- O2: Identities, versions, continuity links, ChangeSets, and the continuity
-  checker with `report` and `gate` modes. Migration 21 implemented. Fixtures
-  cover each change kind, same-name definitions, renames, moves, removals of
-  complete and partial runs, and a second language adapter as a test double.
-- O3: Migration of the NestJS and Fastify discoverers to observation producers.
-  E0–E6, A0–A5, Fastify, and C0–C10 stay green. Intended outcome changes are
-  listed in the change record before the migration starts.
+- O0 (decision gate): accept D1–D4, write the column-level migration 21 draft, and
+  review it against the existing tables it bridges. No code and no behavior change.
+- O1: Language and kind registry; TypeScript and JavaScript adapter producing
+  `file`, `module`, `symbol`, `dependency`, `call-site`, and coverage. Complete
+  runs with coverage rows. Inventory recall measured against a hand-checked
+  reference list for the Phase G6 evaluation repositories.
+- O2: Inventory identities, versions, run membership, ChangeSets, Subject bridge,
+  evidence projection, change impacts, and the continuity checker. Fixtures cover
+  each change kind, same-name definitions, moves and renames through Subject
+  continuity, removals of complete and partial coverage, and a second language
+  adapter as a test double.
+- O3: NestJS and Fastify discoverers become observation producers. Their
+  Assessment outcomes stay unchanged on E0–E6, A0–A5, the Fastify fixtures, and
+  C0–C10, except for intended changes listed before the migration starts.
 - O4: Evaluation: inventory recall per framework, change-detection precision on
-  seeded changes, change volume per commit on tracked objects, and continuity
-  checker decisions against labels. Semantic Candidate measures remain under G6c.
-- O5 (later, optional): additional language adapters, each proving the contract
-  on its own reference repositories.
+  seeded changes, membership and removal correctness on partial and complete
+  runs, change volume per commit on Subjects, and continuity decisions against
+  labels. Semantic Candidate measures remain under G6c.
+- O5 (optional, later): additional language adapters as extensions, each proving
+  the contract on its own reference repositories.
 
 Acceptance.
 
-- Each supported kind reports its coverage status per scope. Unsupported or
-  not-observed kinds are never reported as absent.
-- The `removed` change kind appears only for complete runs. Partial comparisons
-  report `not_comparable`.
-- A ChangeSet is identical for the same base and head runs regardless of
-  execution order, and it is recomputable.
-- Same-name definitions never collapse into one identity. Moves and renames keep
-  identity only through a decided continuity link.
-- Unrecognized route-like call sites appear as call-site observations and never
-  produce a `passed` result.
-- Change volume is bounded by the tracked tier, and the bound is reported.
+- Each supported kind reports coverage per scope. Unsupported and not-observed
+  kinds are never reported as absent.
+- `removed` appears only for complete coverage. Partial comparisons report
+  `not_comparable`.
+- A ChangeSet is identical for the same base and head runs, regardless of
+  execution order.
+- Same-name definitions never share an identity. A move of a Subject keeps its
+  canonical identity through `subject_continuity`, and portable state does not
+  change.
+- Materiality appears only in `change_impacts` and is derived by the family
+  contract. No change item carries materiality.
+- An observed version reaches an Assessment only through a projection to evidence
+  versions. Reverse Impact on the existing fixtures produces the same outcomes.
+- Unrecognized call sites are visible as call-site observations and never produce
+  `passed`.
+- Change volume is bounded by the Subject and implementation-view tier, and the
+  bound is reported.
 - The continuity gate fails CI only for configured scopes with unresolved
   continuity, with no model call.
 - No Assessment changes outcome without a documented change record. C0–C10,
   P-001, E0–E6, A0–A5, and Fastify regressions stay green.
 - `claims check` and `intent check` make no model call.
-- A second language adapter can be added through the contract, demonstrated by
-  a test double in O2.
+- A second language adapter can be added through the contract, demonstrated by a
+  test double in O2.
 
-Public claim boundary. IntentWeave gives a complete, reproducible inventory for
-each supported kind and scope, tracks the Subjects of Candidates and Claims and
-the configured implementation view, and reports changes between complete runs.
-It does not infer every relevant Claim from source code. Claims enter through
+Public claim boundary. IntentWeave gives a complete, reproducible inventory per
+supported kind and scope, tracks the Subjects of Candidates and Claims and the
+configured implementation view, and reports changes between complete runs. It
+does not infer every relevant Claim from source code. Claims enter through
 Candidate discovery and explicit promotion.
 
 Decisions.
 
-- Implementation view (decided): derived from Claim Subjects and their direct
-  dependencies, extended by explicit globs and symbol filters, and written to the
-  portable state.
-- Continuity gate (decided): `report` mode first, with an explicit report period
-  in the config; then a reviewable configuration change enables the gate for
-  Claim Subjects. Other scopes stay opt-in. An upgrade never fails CI on its own.
+- Implementation view: derived from Claim Subjects and their direct dependencies,
+  extended by explicit globs and symbol filters, and written to the portable
+  state.
+- Continuity gate: `report` mode first, with an explicit report period in the
+  config. A reviewable configuration change then enables the gate for Claim
+  Subjects. Other scopes stay opt-in. An upgrade never fails CI on its own.
+- D1–D4 as above: pending acceptance at O0.
 
 Open questions.
 
-- The format of the opaque identity key, and whether it is a content hash of the
-  creation run, a UUID, or a derived value.
-- The retention policy for run and version history in the inventory tier.
+- Retention policy for run membership and inventory history.
+- Whether the `subject_observations` bridge is created automatically for
+  implementation-view objects or only on Candidate or Claim promotion.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
@@ -3011,7 +2978,7 @@ Implementation is split as follows:
 
 ##### G6d.1: Report-Only Policy
 
-- implement strict Policy parsing, schema 21 -> 22 migration (after the Phase G5.3 observation migration), eligibility
+- implement strict Policy parsing, schema 22 migration (after the Phase G5.3 observation migration), eligibility
   evaluation, idempotent observations, Explain output, and metrics calculation,
 - generate a canonical activation-basis proposal only after the prior
   behavior-equivalent report-only Policy version has a passing labeled dataset
