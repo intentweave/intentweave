@@ -124,8 +124,40 @@ describe("discoverFastifyObservations", () => {
     expect(item).toMatchObject({
       guards: ["checkToken"],
       guardSource: "scope-hook",
-      ambiguous: true,
+      ambiguous: false,
     });
+  });
+
+  it("does not apply a scope hook declared after the route", () => {
+    const after = `
+      export default async function scoped(fastify) {
+        fastify.get("/items", async () => ({}));
+        fastify.addHook("onRequest", fastify.checkToken);
+      }
+    `;
+    const [item] = observationsFor({
+      "plugins/auth.ts": AUTH_PLUGIN,
+      "modules/items.routes.ts": after,
+    });
+    expect(item).toMatchObject({
+      guards: [],
+      guardSource: "none",
+      ambiguous: false,
+    });
+  });
+
+  it("marks a route ambiguous when an earlier hook cannot be parsed", () => {
+    const inline = `
+      export default async function scoped(fastify) {
+        fastify.addHook("onRequest", async (request) => { request.log.info("x"); });
+        fastify.get("/items", async () => ({}));
+      }
+    `;
+    const [item] = observationsFor({
+      "plugins/auth.ts": AUTH_PLUGIN,
+      "modules/items.routes.ts": inline,
+    });
+    expect(item).toMatchObject({ guards: [], ambiguous: true });
   });
 
   it("flags a guard whose verifier definitions cannot be told apart", () => {

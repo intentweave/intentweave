@@ -156,7 +156,13 @@ function routeHookExpressions(optionsText: string): string[] {
   return expressions;
 }
 
-function scopeHookExpressions(calls: readonly ExtractedCall[]): string[] {
+/** A scope-level guard hook and the line where it is declared. */
+interface ScopeHook {
+  expression: string;
+  line: number;
+}
+
+function scopeHooks(calls: readonly ExtractedCall[]): ScopeHook[] {
   return calls
     .filter(
       (call) =>
@@ -164,8 +170,11 @@ function scopeHookExpressions(calls: readonly ExtractedCall[]): string[] {
         call.calleeName === "addHook" &&
         GUARD_HOOKS.has(literalString(call.argumentTexts?.[0]) ?? ""),
     )
-    .map((call) => call.argumentTexts?.[1] ?? "")
-    .filter(Boolean);
+    .map((call) => ({
+      expression: call.argumentTexts?.[1] ?? "",
+      line: call.callerLine,
+    }))
+    .filter((hook) => hook.expression !== "");
 }
 
 function routeRegistrations(
@@ -277,8 +286,7 @@ export function discoverFastifyObservations(
   const files = new Set(sources.keys());
   const decorations = new Map<string, Decoration[]>();
   const routes: RouteRegistration[] = [];
-  const scopeGuardsByFile = new Map<string, GuardRef[]>();
-  const scopeUnparsedByFile = new Map<string, string[]>();
+  const scopeHooksByFile = new Map<string, ScopeHook[]>();
   const parsed: ParsedFile[] = [];
   const registerCalls: RegisterCall[] = [];
   const autoloads: AutoloadRoot[] = [];
@@ -322,15 +330,7 @@ export function discoverFastifyObservations(
 
     routes.push(...routeRegistrations(file, calls));
 
-    const scopeGuards: GuardRef[] = [];
-    const scopeUnparsed: string[] = [];
-    for (const expression of scopeHookExpressions(calls)) {
-      const guard = parseGuard(expression);
-      if (guard) scopeGuards.push(guard);
-      else scopeUnparsed.push(expression);
-    }
-    scopeGuardsByFile.set(file, scopeGuards);
-    scopeUnparsedByFile.set(file, scopeUnparsed);
+    scopeHooksByFile.set(file, scopeHooks(calls));
   }
 
   // Resolve each `register(identifier)` through the importing file's imports.
@@ -435,19 +435,28 @@ export function discoverFastifyObservations(
       if (result.verified) guards.push(guard.display);
       else unverified.push(guard.display);
     }
-    const scopeGuards = scopeGuardsByFile.get(route.file) ?? [];
-    for (const guard of scopeGuards) {
+    // Fastify applies an addHook guard to routes registered after it in the same
+    // scope. Only hooks declared earlier in this file apply. Encapsulation is
+    // approximated by the file: a hook in another plugin is not seen.
+    const applicable = (scopeHooksByFile.get(route.file) ?? []).filter(
+      (hook) => hook.line < route.line,
+    );
+    const scopeGuards: GuardRef[] = [];
+    for (const hook of applicable) {
+      const guard = parseGuard(hook.expression);
+      if (!guard) {
+        unverified.push(hook.expression);
+        // An unparsed hook may guard the route, so the route is not decidable.
+        ambiguous = true;
+        continue;
+      }
+      scopeGuards.push(guard);
       const result = resolve(guard);
       ambiguous ||= result.ambiguous;
       guardAmbiguous ||= result.ambiguous;
       if (result.verified) guards.push(guard.display);
       else unverified.push(guard.display);
     }
-    const scopeUnparsed = scopeUnparsedByFile.get(route.file) ?? [];
-    unverified.push(...scopeUnparsed);
-    // Scope hooks apply to every route in their encapsulation context. Routes in
-    // the same file are treated as in scope, which is an approximation.
-    if (scopeGuards.length > 0 || scopeUnparsed.length > 0) ambiguous = true;
 
     const guardSource: EndpointObservation["guardSource"] =
       route.routeGuards.length > 0
