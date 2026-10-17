@@ -4,15 +4,13 @@
 /**
  * CARI Query: Living Documentation Score (12.3)
  *
- * Composite score combining four dimensions:
- *   1. Spec coverage (12.1)       — % of KG entities grounded in code
- *   2. Constraint consistency (12.2) — % of constraints without contradictions
- *   3. Documentation freshness    — % of doc files not stale (from report)
- *   4. Architecture conformance   — % of layer import edges without violations
+ * Composite score combining two dimensions:
+ *   1. Documentation freshness    — % of doc files not stale (from report)
+ *   2. Architecture conformance   — % of layer import edges without violations
  *
- * Dimensions where the underlying data is unavailable (e.g. no KG entities
- * because enrichment hasn't run) are skipped; the final score is the average
- * of the available dimensions.
+ * A dimension whose data is unavailable (for example, no layer config) is skipped;
+ * the final score is the average of the available dimensions. The knowledge-graph
+ * dimensions (spec coverage, constraint consistency) were removed with the KG tables.
  */
 
 import * as fs from "node:fs";
@@ -25,8 +23,6 @@ import type {
   LayerConfig,
 } from "../types.js";
 import { openIndex, buildImportGraph } from "./shared.js";
-import { verifyFromDb } from "./verify.js";
-import { consistencyFromDb } from "./consistency.js";
 import { layersInferFromDb } from "./layersInfer.js";
 import { layersCheckFromDb } from "./layersCheck.js";
 
@@ -57,7 +53,6 @@ export function livingScoreFromDb(
   db: Database.Database,
   params?: LivingScoreParams,
 ): LivingScoreResult {
-  const minConfidence = params?.minConfidence ?? 0.5;
   const allowSkipLayer = params?.allowSkipLayer ?? false;
   const t0 = Date.now();
   const dim = (label: string) =>
@@ -65,30 +60,17 @@ export function livingScoreFromDb(
       `    [living] ${label} (${((Date.now() - t0) / 1000).toFixed(1)}s)\n`,
     );
 
-  // ── Dimension 1: Spec coverage (12.1) ─────────────────────────────────────
-  dim("spec coverage…");
-  const specCoverage = computeSpecCoverage(db, minConfidence);
-
-  // ── Dimension 2: Constraint consistency (12.2) ────────────────────────────
-  dim("constraint consistency…");
-  const constraintConsistency = computeConstraintConsistency(db, minConfidence);
-
-  // ── Dimension 3: Documentation freshness ──────────────────────────────────
+  // ── Dimension 1: Documentation freshness ──────────────────────────────────
   dim("doc freshness…");
   const docFreshness = computeDocFreshness(db);
 
-  // ── Dimension 4: Architecture conformance ─────────────────────────────────
+  // ── Dimension 2: Architecture conformance ─────────────────────────────────
   dim("arch conformance…");
   const archConformance = computeArchConformance(db, allowSkipLayer);
   dim("done");
 
   // ── Composite score ────────────────────────────────────────────────────────
-  const available = [
-    specCoverage,
-    constraintConsistency,
-    docFreshness,
-    archConformance,
-  ].filter((d) => d.available);
+  const available = [docFreshness, archConformance].filter((d) => d.available);
 
   const score =
     available.length === 0
@@ -102,8 +84,6 @@ export function livingScoreFromDb(
   return {
     score,
     grade,
-    specCoverage,
-    constraintConsistency,
     docFreshness,
     archConformance,
   };
@@ -112,93 +92,6 @@ export function livingScoreFromDb(
 // =============================================================================
 // Dimension helpers
 // =============================================================================
-
-function computeSpecCoverage(
-  db: Database.Database,
-  minConfidence: number,
-): LivingScoreDimension {
-  // Check if kg_entities table exists
-  const tableExists = db
-    .prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='kg_entities'`,
-    )
-    .get();
-
-  if (!tableExists) {
-    return unavailable(
-      "Spec Coverage",
-      "No KG entities — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
-    );
-  }
-
-  const result = verifyFromDb(db, { minConfidence, checkTests: false });
-
-  if (result.summary.total === 0) {
-    return unavailable(
-      "Spec Coverage",
-      "No KG entities — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
-    );
-  }
-
-  const { total, grounded, ungrounded, partial } = result.summary;
-  const score = result.summary.coveragePercent;
-  return {
-    label: "Spec Coverage",
-    score,
-    numerator: grounded,
-    denominator: total,
-    detail: `${grounded}/${total} entities grounded (${ungrounded} ungrounded, ${partial} partial)`,
-    available: true,
-  };
-}
-
-function computeConstraintConsistency(
-  db: Database.Database,
-  minConfidence: number,
-): LivingScoreDimension {
-  // Check if kg_relationships table exists
-  const tableExists = db
-    .prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='kg_relationships'`,
-    )
-    .get();
-
-  if (!tableExists) {
-    return unavailable(
-      "Constraint Consistency",
-      "No KG relationships — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
-    );
-  }
-
-  const total = (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM kg_relationships WHERE confidence >= ?`,
-      )
-      .get(minConfidence) as { n: number }
-  ).n;
-
-  if (total === 0) {
-    return unavailable(
-      "Constraint Consistency",
-      "No KG relationships — requires a populated Neo4j knowledge graph (see docs/kg/try-it)",
-    );
-  }
-
-  const result = consistencyFromDb(db, { minConfidence });
-  const consistent =
-    result.summary.totalRelationships - result.summary.totalConflicts;
-  const score = result.summary.consistencyPercent;
-
-  return {
-    label: "Constraint Consistency",
-    score,
-    numerator: consistent,
-    denominator: result.summary.totalRelationships,
-    detail: `${result.summary.errors} errors, ${result.summary.warnings} warnings across ${result.summary.totalRelationships} relationships`,
-    available: true,
-  };
-}
 
 function computeDocFreshness(db: Database.Database): LivingScoreDimension {
   // Count total doc files

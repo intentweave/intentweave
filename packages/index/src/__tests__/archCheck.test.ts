@@ -16,7 +16,6 @@ import * as os from "os";
 import { initSchema } from "../schema.js";
 import { archCheckFromDb } from "../queries/archCheck.js";
 import { parseArchitectureYaml } from "../queries/archCheck.js";
-import { inferArchConfigFromKgDb } from "../queries/archCheck.js";
 import type { ArchConfig } from "../types.js";
 
 // =============================================================================
@@ -90,26 +89,6 @@ function seedFixtures(d: Database.Database) {
       ('docs/ARCH.md', 10, 'AX Stage', 'sym.server.router', 0.9, 'exact'),
       ('docs/ARCH.md', 11, 'Annotator', 'sym.annotator', 0.9, 'exact'),
       ('docs/ARCH.md', 12, 'Writer', 'sym.writer', 0.9, 'exact')
-  `);
-
-  // ── Enriched KG triples from docs/ARCH.md ──
-  d.exec(`
-    INSERT INTO kg_entities (id, canon_id, name, type, aliases, confidence, artifact_id, source_file, created_at)
-    VALUES
-      (101, 'ax_stage', 'AX Stage', 'component', '[]', 0.9, 'docs.ARCH', 'docs/ARCH.md', datetime('now')),
-      (102, 'annotator', 'Annotator', 'component', '[]', 0.9, 'docs.ARCH', 'docs/ARCH.md', datetime('now')),
-      (103, 'writer', 'Writer', 'component', '[]', 0.9, 'docs.ARCH', 'docs/ARCH.md', datetime('now')),
-      (104, 'misc', 'Misc', 'component', '[]', 0.2, 'docs.ARCH', 'docs/ARCH.md', datetime('now'))
-  `);
-
-  d.exec(`
-    INSERT INTO kg_relationships (from_id, to_id, predicate, confidence, raw_predicate, artifact_id, source_file)
-    VALUES
-      (101, 102, 'PRECEDES', 0.9, 'flows to', 'docs.ARCH', 'docs/ARCH.md'),
-      (102, 103, 'CALLS', 0.9, 'calls', 'docs.ARCH', 'docs/ARCH.md'),
-      (103, 101, 'FOLLOWS', 0.9, 'follows', 'docs.ARCH', 'docs/ARCH.md'),
-      (101, 104, 'RELATED_TO', 0.9, 'related', 'docs.ARCH', 'docs/ARCH.md'),
-      (104, 103, 'CALLS', 0.2, 'calls', 'docs.ARCH', 'docs/ARCH.md')
   `);
 }
 
@@ -307,55 +286,6 @@ describe("archCheck — Architecture Diagram Validation", () => {
     expect(confirmed.map((f) => f.to).sort()).toEqual(["core", "db"]);
   });
 });
-
-describe("inferArchConfigFromKgDb", () => {
-  it("builds components and flows from KG relationship triples", () => {
-    const cfg = inferArchConfigFromKgDb(db, {
-      minConfidence: 0.5,
-      requireDiagramHints: false,
-    });
-
-    expect(cfg.components.length).toBeGreaterThanOrEqual(3);
-    expect(cfg.flows).toBeDefined();
-    expect(cfg.flows!.length).toBeGreaterThanOrEqual(2);
-
-    const hasAxToAnnotator = cfg.flows!.some(
-      (f) => f.from === "AX Stage" && f.to === "Annotator",
-    );
-    const hasAnnotatorToWriter = cfg.flows!.some(
-      (f) => f.from === "Annotator" && f.to === "Writer",
-    );
-    expect(hasAxToAnnotator).toBe(true);
-    expect(hasAnnotatorToWriter).toBe(true);
-  });
-
-  it("ignores non-flow predicates and low-confidence triples", () => {
-    const cfg = inferArchConfigFromKgDb(db, {
-      minConfidence: 0.5,
-      requireDiagramHints: false,
-    });
-
-    const hasMiscFlow = cfg.flows!.some(
-      (f) => f.from === "AX Stage" && f.to === "Misc",
-    );
-    expect(hasMiscFlow).toBe(false);
-  });
-
-  it("maps components to files via annotation-symbol links", () => {
-    const cfg = inferArchConfigFromKgDb(db, {
-      minConfidence: 0.5,
-      requireDiagramHints: false,
-    });
-
-    const annotator = cfg.components.find((c) => c.name === "Annotator");
-    expect(annotator).toBeDefined();
-    expect(annotator!.files.some((f) => f.includes("annotator.ts"))).toBe(true);
-  });
-});
-
-// =============================================================================
-// YAML Parser Tests
-// =============================================================================
 
 describe("parseArchitectureYaml", () => {
   it("parses a complete architecture config", () => {

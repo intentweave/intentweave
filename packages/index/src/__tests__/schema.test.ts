@@ -91,7 +91,7 @@ describe("initSchema", () => {
       .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
       .get() as any;
 
-    expect(row?.value).toBe("21");
+    expect(row?.value).toBe("22");
   });
 
   it("migrates a schema-14 index with the claims companion tables", () => {
@@ -186,7 +186,7 @@ describe("initSchema", () => {
 
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "21" });
+    ).toEqual({ value: "22" });
     expect(
       db
         .prepare(
@@ -256,7 +256,7 @@ describe("initSchema", () => {
   it("rejects unknown newer schema versions instead of downgrading", () => {
     db.exec(`
       CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      INSERT INTO _meta (key, value) VALUES ('schema_version', '22');
+      INSERT INTO _meta (key, value) VALUES ('schema_version', '23');
       CREATE TABLE future_only (id TEXT PRIMARY KEY);
     `);
     const schemaBefore = db
@@ -267,10 +267,10 @@ describe("initSchema", () => {
       )
       .all();
 
-    expect(() => initSchema(db)).toThrow(/schema version 22 is incompatible/i);
+    expect(() => initSchema(db)).toThrow(/schema version 23 is incompatible/i);
     expect(
       db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
-    ).toEqual({ value: "22" });
+    ).toEqual({ value: "23" });
     expect(
       db
         .prepare(

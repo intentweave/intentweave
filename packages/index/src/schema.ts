@@ -263,54 +263,6 @@ CREATE TABLE IF NOT EXISTS external_entities (
 CREATE INDEX IF NOT EXISTS idx_external_entities_name ON external_entities(name);
 CREATE INDEX IF NOT EXISTS idx_external_entities_type ON external_entities(type);
 
--- KG tables (Selective Semantic Enrichment — 11.8)
-
-CREATE TABLE IF NOT EXISTS kg_entities (
-  id          INTEGER PRIMARY KEY,
-  canon_id    TEXT NOT NULL,
-  name        TEXT NOT NULL,
-  type        TEXT NOT NULL,
-  aliases     TEXT,
-  confidence  REAL DEFAULT 1.0,
-  artifact_id TEXT,
-  source_file TEXT,
-  created_at  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS kg_relationships (
-  id          INTEGER PRIMARY KEY,
-  from_id     INTEGER NOT NULL REFERENCES kg_entities(id),
-  to_id       INTEGER NOT NULL REFERENCES kg_entities(id),
-  predicate   TEXT NOT NULL,
-  confidence  REAL DEFAULT 1.0,
-  raw_predicate TEXT,
-  artifact_id TEXT,
-  source_file TEXT
-);
-
-CREATE TABLE IF NOT EXISTS kg_raw_triples (
-  id               INTEGER PRIMARY KEY,
-  subject          TEXT,
-  predicate        TEXT,
-  object           TEXT,
-  subject_kind     TEXT,
-  object_kind      TEXT,
-  confidence       REAL,
-  source_file      TEXT,
-  artifact_id      TEXT,
-  subject_canon_id TEXT,
-  object_canon_id  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS enrichment_meta (
-  file_path    TEXT PRIMARY KEY,
-  content_hash TEXT NOT NULL,
-  enriched_at  TEXT NOT NULL,
-  entity_count INTEGER NOT NULL DEFAULT 0,
-  triple_count INTEGER NOT NULL DEFAULT 0,
-  impact_score REAL
-);
-
 -- Semantic Capsule Layer (14.0)
 -- Stores LLM-derived, evidence-grounded interpretations of symbols, call edges,
 -- call paths, and component subgraphs.  Conceptually separate from raw CARI
@@ -351,14 +303,6 @@ CREATE INDEX IF NOT EXISTS idx_capsules_target ON semantic_capsules(target_id);
 CREATE INDEX IF NOT EXISTS idx_capsules_kind   ON semantic_capsules(capsule_kind);
 CREATE INDEX IF NOT EXISTS idx_capsules_status ON semantic_capsules(status);
 
-CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(type);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_canon_id ON kg_entities(canon_id);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_source ON kg_entities(source_file);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_from ON kg_relationships(from_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_to ON kg_relationships(to_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_predicate ON kg_relationships(predicate);
-CREATE INDEX IF NOT EXISTS idx_kg_raw_source ON kg_raw_triples(source_file);
 
 -- Metadata table for schema version tracking
 
@@ -448,7 +392,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "21";
+export const CURRENT_SCHEMA_VERSION = "22";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -743,6 +687,17 @@ export function openMigratedDatabase(
     if (readSchemaVersion(database) === "19") {
       // G6b rebuilds candidate_reviews atomically and preserves all history.
       migrateG6b(database);
+    }
+    if (readSchemaVersion(database) === "21") {
+      // Destructive: the knowledge-graph tables are dropped, so keep a backup.
+      const backupPath = createDurableMigrationBackup(database, dbPath, "21");
+      try {
+        migrateSchema21To22(database);
+      } catch (error) {
+        closeOnce();
+        restoreMigrationBackup(backupPath, dbPath);
+        throw error;
+      }
     }
     migrateSchemaToCurrent(database);
     return database;
@@ -1545,6 +1500,35 @@ export function migrateSchema20To21(db: Database.Database): void {
   migrate();
 }
 
+/**
+ * Remove the Neo4j-era knowledge-graph tables. Nothing in IntentWeave writes them
+ * any longer, and their readers are removed with them. The step is destructive, so
+ * openMigratedDatabase keeps a durable backup of the version-21 index first.
+ */
+export function migrateSchema21To22(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_kg_rels_predicate;
+      DROP INDEX IF EXISTS idx_kg_rels_to;
+      DROP INDEX IF EXISTS idx_kg_rels_from;
+      DROP INDEX IF EXISTS idx_kg_raw_source;
+      DROP INDEX IF EXISTS idx_kg_entities_source;
+      DROP INDEX IF EXISTS idx_kg_entities_canon_id;
+      DROP INDEX IF EXISTS idx_kg_entities_type;
+      DROP INDEX IF EXISTS idx_kg_entities_name;
+      DROP TABLE IF EXISTS kg_relationships;
+      DROP TABLE IF EXISTS kg_raw_triples;
+      DROP TABLE IF EXISTS kg_entities;
+      DROP TABLE IF EXISTS enrichment_meta;
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '22')`,
+    ).run();
+  });
+  migrate();
+}
+
 export function migrateSchema19To20(db: Database.Database): void {
   const columns = db
     .prepare(`PRAGMA table_info(candidate_reviews)`)
@@ -1723,8 +1707,8 @@ export function migrateSchema19To20(db: Database.Database): void {
 
 /**
  * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
- * Supported transitions end at 21 from every supported earlier version, including
- * 20 -> 21.
+ * Supported transitions end at 22 from every supported earlier version, including
+ * 20 -> 21 and 21 -> 22.
  * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
  */
 export function migrateSchemaToCurrent(db: Database.Database): void {
@@ -1737,6 +1721,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema18To19(db);
     migrateSchema19To20(db);
     migrateSchema20To21(db);
+    migrateSchema21To22(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1746,6 +1731,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema18To19(db);
     migrateSchema19To20(db);
     migrateSchema20To21(db);
+    migrateSchema21To22(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1754,6 +1740,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema18To19(db);
     migrateSchema19To20(db);
     migrateSchema20To21(db);
+    migrateSchema21To22(db);
     return;
   }
   if (schemaVersion === "17") {
@@ -1761,21 +1748,29 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema18To19(db);
     migrateSchema19To20(db);
     migrateSchema20To21(db);
+    migrateSchema21To22(db);
     return;
   }
   if (schemaVersion === "18") {
     migrateSchema18To19(db);
     migrateSchema19To20(db);
     migrateSchema20To21(db);
+    migrateSchema21To22(db);
     return;
   }
   if (schemaVersion === "19") {
     migrateSchema19To20(db);
     migrateSchema20To21(db);
+    migrateSchema21To22(db);
     return;
   }
   if (schemaVersion === "20") {
     migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    return;
+  }
+  if (schemaVersion === "21") {
+    migrateSchema21To22(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1799,6 +1794,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "18" &&
     schemaVersion !== "19" &&
     schemaVersion !== "20" &&
+    schemaVersion !== "21" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

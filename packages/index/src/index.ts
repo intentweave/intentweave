@@ -219,10 +219,6 @@ export { computeIdf } from "./idf.js";
 export { logSessionEvent } from "./sessionLog.js";
 export type { SessionLogEntry, LogSessionEventInput } from "./sessionLog.js";
 
-// KG writer (Selective Semantic Enrichment — 11.8)
-export { writeKgResults, bridgeKgEntities } from "./kgWriter.js";
-export type { KgWriteInput, KgWriteResult } from "./kgWriter.js";
-
 // Phase 4: Incremental updates
 export { detectChanges, applyChanges, hashFile } from "./incremental.js";
 export type {
@@ -339,22 +335,16 @@ export {
   formatCariImpact,
   archReport,
   archReportFromDb,
-  enrichmentScore,
-  enrichmentScoreFromDb,
-  verify,
-  verifyFromDb,
-  consistency,
-  consistencyFromDb,
   archCheck,
   archCheckFromDb,
   parseArchitectureYaml,
-  inferArchConfigFromKg,
-  inferArchConfigFromKgDb,
   enrichArchConfigWithFiles,
   diagramEntityCheck,
   diagramEntityCheckFromDb,
   resolveComponent,
   resolveComponentFromDb,
+  enrichmentScore,
+  enrichmentScoreFromDb,
   livingScore,
   livingScoreFromDb,
   documentaryCheckFromDb,
@@ -402,7 +392,6 @@ export type {
   ReportOptions,
   ArchReportOptions,
   DeadFeatureOptions,
-  EnrichmentScoreOptions,
   RulesCheckOptions,
   DeprecatedCallersOptions,
   InternalViolationsOptions,
@@ -413,6 +402,7 @@ export type {
   CallEdge as CallEdgeQuery,
   RuleCoverageOptions as RuleCoverageQueryOptions,
   PackageCoverage as PackageCoverageQuery,
+  EnrichmentScoreOptions,
 } from "./queries/index.js";
 
 export type { NamingViolationsOptions } from "./queries/namingViolations.js";
@@ -509,22 +499,10 @@ export type {
   CariImpactResult,
   CariImpactFile,
   CariImpactDoc,
-  // Enrichment types (11.8)
+  // Enrichment candidate ranking (CARI signals)
   EnrichmentWeights,
   EnrichmentCandidate,
   EnrichmentScoreResult,
-  EnrichOptions,
-  EnrichResult,
-  // Verification types (12.1)
-  GroundingStatus,
-  VerifyEntityResult,
-  VerifyParams,
-  VerifyResult,
-  // Consistency types (12.2)
-  ConflictSeverity,
-  ConstraintConflict,
-  ConsistencyParams,
-  ConsistencyResult,
   // Architecture check types (5.8)
   ArchComponent,
   ArchFlow,

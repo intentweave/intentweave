@@ -53,17 +53,11 @@ const TYPESCRIPT_OWNED_TABLES = new Set([
 ]);
 
 /**
- * Known pre-existing divergences. These knowledge-graph tables have the same names
- * in both schemas but different columns. They are outside the claims and CARI scope
- * of decision A. Each entry must be fixed or deliberately accepted. The test fails on
- * any divergence not listed here.
+ * Known pre-existing divergences. Empty: the knowledge-graph tables that diverged
+ * were removed from both schemas (migration 22). The test fails on any divergence
+ * that is not listed here.
  */
-const KNOWN_DIVERGENCES = new Set([
-  "kg_entities",
-  "kg_relationships",
-  "kg_raw_triples",
-  "enrichment_meta",
-]);
+const KNOWN_DIVERGENCES = new Set<string>();
 
 const CONSTRAINT_WORDS = new Set([
   "primary",

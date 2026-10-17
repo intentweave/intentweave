@@ -243,47 +243,6 @@ CREATE TABLE IF NOT EXISTS external_entities (
 
 CREATE INDEX IF NOT EXISTS idx_ext_entities_name ON external_entities(name);
 
-CREATE TABLE IF NOT EXISTS kg_entities (
-  id        TEXT PRIMARY KEY,
-  name      TEXT NOT NULL,
-  type      TEXT NOT NULL,
-  source_file TEXT,
-  canon_id  TEXT,
-  metadata  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS kg_relationships (
-  id         TEXT PRIMARY KEY,
-  from_id    TEXT NOT NULL REFERENCES kg_entities(id),
-  to_id      TEXT NOT NULL REFERENCES kg_entities(id),
-  predicate  TEXT NOT NULL,
-  confidence REAL NOT NULL DEFAULT 1.0,
-  source_file TEXT,
-  metadata   TEXT
-);
-
-CREATE TABLE IF NOT EXISTS kg_raw_triples (
-  id          TEXT PRIMARY KEY,
-  source_file TEXT NOT NULL,
-  subject     TEXT NOT NULL,
-  predicate   TEXT NOT NULL,
-  object      TEXT NOT NULL,
-  confidence  REAL NOT NULL DEFAULT 1.0,
-  metadata    TEXT
-);
-
-CREATE TABLE IF NOT EXISTS enrichment_meta (
-  id              TEXT PRIMARY KEY,
-  target_id       TEXT NOT NULL,
-  enrichment_kind TEXT NOT NULL,
-  source_revision TEXT NOT NULL,
-  model           TEXT NOT NULL,
-  prompt_version  TEXT NOT NULL,
-  created_at      TEXT NOT NULL,
-  updated_at      TEXT NOT NULL,
-  status          TEXT NOT NULL DEFAULT 'fresh'
-);
-
 CREATE TABLE IF NOT EXISTS semantic_capsules (
   id              TEXT PRIMARY KEY,
   target_id       TEXT NOT NULL,
@@ -302,15 +261,6 @@ CREATE TABLE IF NOT EXISTS semantic_capsules (
 CREATE INDEX IF NOT EXISTS idx_capsules_target ON semantic_capsules(target_id);
 CREATE INDEX IF NOT EXISTS idx_capsules_kind   ON semantic_capsules(capsule_kind);
 CREATE INDEX IF NOT EXISTS idx_capsules_status ON semantic_capsules(status);
-
-CREATE INDEX IF NOT EXISTS idx_kg_entities_name     ON kg_entities(name);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_type     ON kg_entities(type);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_canon_id ON kg_entities(canon_id);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_source   ON kg_entities(source_file);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_from         ON kg_relationships(from_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_to           ON kg_relationships(to_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_predicate    ON kg_relationships(predicate);
-CREATE INDEX IF NOT EXISTS idx_kg_raw_source        ON kg_raw_triples(source_file);
 
 CREATE TABLE IF NOT EXISTS _meta (
   key   TEXT PRIMARY KEY,

@@ -521,7 +521,7 @@ describe("migrateSchema14To15 hardening", () => {
       migrated
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "21" });
+    ).toEqual({ value: "22" });
     migrated.close();
 
     const backupPath = schemaMigrationBackupPath(dbPath, "16");
@@ -827,7 +827,7 @@ describe("migrateSchema14To15 hardening", () => {
       migrated
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "21" });
+    ).toEqual({ value: "22" });
     migrated.close();
 
     const backupPath = schemaMigrationBackupPath(dbPath, "17");
@@ -1133,20 +1133,20 @@ describe("migrateSchema14To15 hardening", () => {
     database
       .prepare(
         `INSERT OR REPLACE INTO _meta (key, value)
-         VALUES ('schema_version', '22')`,
+         VALUES ('schema_version', '23')`,
       )
       .run();
     database.close();
 
     expect(() => openMigratedDatabase(dbPath)).toThrow(
-      /schema version 22 is incompatible/i,
+      /schema version 23 is incompatible/i,
     );
     const untouched = new Database(dbPath, { readonly: true });
     expect(
       untouched
         .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
         .get(),
-    ).toEqual({ value: "22" });
+    ).toEqual({ value: "23" });
     untouched.close();
     rmSync(directory, { recursive: true, force: true });
   });
