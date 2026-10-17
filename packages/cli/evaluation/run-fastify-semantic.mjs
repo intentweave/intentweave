@@ -74,11 +74,19 @@ function observe(dir) {
   try {
     const candidate = database
       .prepare(
-        `SELECT confidence FROM claim_candidates
+        `SELECT id, confidence FROM claim_candidates
          WHERE identity_key LIKE 'endpoint-auth:fastify:GET:/api/orders/orders%'
          ORDER BY version_ordinal DESC LIMIT 1`,
       )
       .get();
+    const guards = candidate
+      ? database
+          .prepare(
+            `SELECT COUNT(*) AS n FROM candidate_subjects
+             WHERE candidate_id = ? AND subject_role = 'guard'`,
+          )
+          .get(candidate.id).n
+      : 0;
     const inference = database
       .prepare(
         `SELECT provenance_json FROM candidate_inferences
@@ -93,6 +101,8 @@ function observe(dir) {
     return {
       raw,
       stored: candidate?.confidence ?? "missing",
+      // A certain candidate with a guard subject is a deterministic binding.
+      deterministic: candidate?.confidence === "certain" && guards > 0,
     };
   } finally {
     database.close();
@@ -123,15 +133,20 @@ for (const item of dataset.cases) {
     const ungrounded = /ungrounded_output/.test(semantic.stdout);
     // Only `probable` counts as a proposed binding. not-asked and ungrounded
     // answers propose none.
-    const proposedBinding = observed.raw === "probable";
+    const source = observed.deterministic
+      ? "deterministic"
+      : observed.raw === "probable"
+        ? "semantic"
+        : "none";
     results.push({
       id: item.id,
       model,
       label: item.label,
       raw: observed.raw,
       stored: observed.stored,
+      source,
       ungrounded,
-      match: proposedBinding === (item.label === "probable"),
+      match: (source !== "none") === (item.label === "probable"),
       dir,
     });
   }
@@ -140,14 +155,14 @@ for (const item of dataset.cases) {
 const table = results
   .map(
     (row) =>
-      `${row.id}\t${row.model}\tlabel=${row.label}\traw=${row.raw}\tstored=${row.stored}\tungrounded=${row.ungrounded}\t${row.match ? "match" : "MISMATCH"}`,
+      `${row.id}\t${row.model}\tlabel=${row.label}\traw=${row.raw}\tstored=${row.stored}\tsource=${row.source}\tungrounded=${row.ungrounded}\t${row.match ? "match" : "MISMATCH"}`,
   )
   .join("\n");
 console.log(table);
 
 for (const model of models) {
   const rows = results.filter((row) => row.model === model);
-  const predictedProbable = rows.filter((row) => row.raw === "probable");
+  const predictedProbable = rows.filter((row) => row.source !== "none");
   const truePositive = predictedProbable.filter(
     (row) => row.label === "probable",
   ).length;
