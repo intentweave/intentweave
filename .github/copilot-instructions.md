@@ -356,6 +356,55 @@ See `docs/LIBRARY-API.md` for full documentation.
 5. **Annotate** — Match mentions → symbols, apply IDF penalties
 6. **Write** — Persist to SQLite
 
+## Claims (Repository Claim Lifecycle)
+
+Claims are evidence-backed statements about a repository, such as a parameter's
+value, a public Symbol's documentation, an Endpoint's authentication, or an
+Architecture import rule. Discovery produces Candidates; a human or an explicit
+Policy promotes them to Claims; `claims check` assesses promoted Claims against
+the current index.
+
+### CLI Commands
+
+```bash
+iw claims discover                                # persist Candidates; activates nothing
+iw claims discover --semantic                     # opt in to grounded semantic correlation
+iw claims candidates list                         # Candidate inbox
+iw claims candidates triage                       # move correlated Candidates into the inbox
+iw claims candidates review --decision ...        # record a human Candidate decision
+iw claims check                                   # assess promoted Claims (no model call)
+iw claims check --since <ref>                     # assess against a merge-base anchor
+iw claims review                                  # record a human decision on an Assessment
+iw claims explain                                 # current Claims, dependencies, and reopens
+iw claims candidates recommend --semantic --preview   # show exact outbound context; no call
+iw claims candidates recommend --semantic --candidate <ref>
+iw claims candidates recommend --semantic --batch     # bounded batch from config v2
+iw claims candidates evaluate --labels <file>     # score recommendations against labels
+```
+
+### Rules
+
+- `claims check` and `iw intent check` never call a model. Promoted Claims are
+  evaluated deterministically from frozen Evidence.
+- Semantic output (`--semantic`) is opt-in, grounded to existing Candidate,
+  Subject, and Evidence identities, limited to `probable` confidence, and never
+  promotes a Candidate on its own.
+- Remote providers are opt-in through `.iw/claims/inference.yaml`. Sensitive
+  paths and secret patterns are redacted before any request is built.
+- Effective decisions are portable in `.iw/claims/state.yaml`. SQLite is the
+  local projection and is rebuilt from that file in a fresh checkout.
+
+### Key Files
+
+| File                                         | Purpose                                              |
+| -------------------------------------------- | ---------------------------------------------------- |
+| `packages/cli/src/commands/claims.ts`        | `iw claims` command tree                             |
+| `packages/cli/src/claims/`                   | Discovery, correlation, governance, recommendations  |
+| `packages/index/src/claims/engine.ts`        | Claim evaluation runtime                             |
+| `packages/index/src/claims/candidates.ts`    | Candidate store and lifecycle                        |
+| `packages/index/src/claims/portableState.ts` | `.iw/claims/state.yaml` import and export            |
+| `packages/core/src/interfaces.ts`            | `LLMProvider` and `LLMProviderV2` transport contract |
+
 ## Knowledge Graph (KG)
 
 ### CLI Commands
