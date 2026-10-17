@@ -15,7 +15,7 @@
  * discoverer scanned, and `unsupported` when its framework is not in use.
  */
 
-import { ObservationStore } from "@intentweave/index";
+import { ObservationStore, fingerprint } from "@intentweave/index";
 import type Database from "@intentweave/sqlite-compat";
 import type { EndpointObservation } from "./endpointCandidatePersistence.js";
 
@@ -100,18 +100,48 @@ export function endpointPayload(
   framework: string,
   observation: EndpointObservation,
 ): Record<string, unknown> {
-  return {
-    framework,
-    method: observation.method,
-    routePath: observation.routePath,
-    routeKnown: observation.routeKnown,
-    controllerName: observation.controllerName,
-    handlerName: observation.handlerName,
-    guards: observation.guards,
-    guardSource: observation.guardSource,
-    publicExemption: observation.publicExemption,
-    ambiguous: observation.ambiguous,
-  };
+  // Canonical JSON rejects undefined, so optional fields are dropped, not set.
+  return JSON.parse(JSON.stringify({ framework, ...observation })) as Record<
+    string,
+    unknown
+  >;
+}
+
+/**
+ * Read the endpoint observations of one run, in the order the run recorded them. The
+ * Candidate path is derived from these, not from a fresh discovery pass.
+ */
+export function readEndpointObservations(
+  database: Database.Database,
+  runId: string,
+): EndpointObservation[] {
+  return new ObservationStore(database)
+    .runItemPayloads(runId)
+    .map((payload) => {
+      const { framework: _framework, ...observation } = payload as Record<
+        string,
+        unknown
+      >;
+      return observation as unknown as EndpointObservation;
+    });
+}
+
+/**
+ * The run label for one discovery outcome. Runs are keyed by revision, and the revision
+ * is HEAD, which does not change with working-tree edits. The content fingerprint keeps
+ * an edited workspace from reusing a stale run.
+ */
+export function contentRevisionLabel(
+  repositoryRevision: string,
+  records: readonly EndpointProducerRecordInput[],
+): string {
+  const content = [...records]
+    .sort((a, b) => a.identityKey.localeCompare(b.identityKey))
+    .map((record) => ({
+      identityKey: record.identityKey,
+      payload: record.payload,
+    }));
+  return `${repositoryRevision}+${fingerprint({ content })}`;
 }
 
 /** Fastify identity: one route registration site, unique within the repository. */
@@ -121,9 +151,9 @@ export function fastifyRouteIdentityKey(
   return `endpoint-route:fastify:${observation.filePath}#${observation.line}:${observation.method}:${observation.routePath}`;
 }
 
-/** NestJS identity: one handler method in one file. */
+/** NestJS identity: one route on one handler method in one file. */
 export function nestHandlerIdentityKey(
   observation: EndpointObservation,
 ): string {
-  return `endpoint-handler:nest:${observation.filePath}#${observation.controllerName}.${observation.handlerName}`;
+  return `endpoint-handler:nest:${observation.filePath}#${observation.controllerName}.${observation.handlerName}:${observation.method}:${observation.routePath}`;
 }

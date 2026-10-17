@@ -2260,8 +2260,15 @@ Phases.
   the scanned files, and `unsupported` when the framework is not declared. Candidate
   persistence does not read the run, so outcomes are unchanged: the full suite
   (1285 tests) is green, and the producer tests check the run against the Candidates.
-  Still open: switching Candidate persistence to read from the observations, and
-  the O3 intended-change list, which is empty because no outcome has changed yet.
+  Switch implemented (2026-10-17): Candidate persistence now builds its inputs from
+  the recorded run (`ObservationStore.runItemPayloads`), not from a fresh discovery
+  pass. Three details came out of it. The payload carries the whole endpoint
+  observation, as plain JSON. NestJS identities are per route, because one handler can
+  serve several routes. The run label includes a content fingerprint, because runs are
+  keyed by HEAD and a working-tree edit under the same HEAD would otherwise reuse a
+  stale run. The O3 intended-change list stays empty: E0–E6, the Fastify fixtures,
+  and C0–C10 pass unchanged (suite: 1287 tests green). Still open: the observation
+  store keeps every run, which is the retention question for O4.
 - O4: Evaluation: inventory recall per framework, change-detection precision on
   seeded changes, membership and removal correctness on partial and complete
   runs, change volume per commit on Subjects, and continuity decisions against

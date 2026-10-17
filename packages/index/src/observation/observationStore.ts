@@ -714,6 +714,23 @@ export class ObservationStore {
   }
 
   /**
+   * The payloads a run recorded, each at the version the run saw, in record order.
+   * Producers read back what they recorded; claims checks never call this.
+   */
+  runItemPayloads(runId: string): unknown[] {
+    const rows = this.db
+      .prepare(
+        `SELECT v.payload_json AS payload
+         FROM observation_run_items item
+         JOIN observed_versions v ON v.id = item.effective_version_id
+         WHERE item.run_id = ?
+         ORDER BY item.rowid`,
+      )
+      .all(runId) as Array<{ payload: string }>;
+    return rows.map((row) => JSON.parse(row.payload) as unknown);
+  }
+
+  /**
    * Whether an observed identity was ever bridged to a Claim Subject. A retired bridge
    * still records that the identity was a Subject in its run, so it counts for the gate.
    */

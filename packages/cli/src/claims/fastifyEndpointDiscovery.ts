@@ -36,8 +36,10 @@ import {
 } from "./endpointCandidatePersistence.js";
 import { languageFor, literalString } from "./sourceHelpers.js";
 import {
+  contentRevisionLabel,
   endpointPayload,
   fastifyRouteIdentityKey,
+  readEndpointObservations,
   recordEndpointObservationRun,
 } from "./endpointObservationProducer.js";
 
@@ -609,28 +611,31 @@ export function persistFastifyEndpointCandidates(
 
   const observations = discoverFastifyObservations(sources);
   const merged = [...mergeDuplicateObservations(observations).values()];
-  recordEndpointObservationRun(database, {
+  const records = merged.map((observation) => ({
+    identityKey: fastifyRouteIdentityKey(observation),
+    filePath: observation.filePath,
+    line: observation.line,
+    endLine: observation.endLine,
+    payload: endpointPayload("fastify", observation),
+  }));
+  // The Candidates come from the recorded run, so the run must match this workspace.
+  const runId = recordEndpointObservationRun(database, {
     adapterId: FASTIFY_ENDPOINT_DISCOVERY_ADAPTER_ID,
     contractVersion: FASTIFY_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
     kind: "call-site",
-    repositoryRevision,
+    repositoryRevision: contentRevisionLabel(repositoryRevision, records),
     scopeFiles,
     description: "Fastify route registrations",
-    records: merged.map((observation) => ({
-      identityKey: fastifyRouteIdentityKey(observation),
-      filePath: observation.filePath,
-      line: observation.line,
-      endLine: observation.endLine,
-      payload: endpointPayload("fastify", observation),
-    })),
+    records,
   });
-  const discovered = merged.map((observation) =>
-    persistObservation(
-      database,
-      repositoryRevision,
-      observation,
-      FASTIFY_ENDPOINT_PROFILE,
-    ),
+  const discovered = readEndpointObservations(database, runId).map(
+    (observation) =>
+      persistObservation(
+        database,
+        repositoryRevision,
+        observation,
+        FASTIFY_ENDPOINT_PROFILE,
+      ),
   );
   const activeIdentityKeys = new Set(
     discovered.map((candidate) => candidate.identityKey),

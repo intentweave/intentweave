@@ -13,7 +13,13 @@ import path from "node:path";
 import { initSchema } from "@intentweave/index";
 import Database from "@intentweave/sqlite-compat";
 import { afterEach, describe, expect, it } from "vitest";
-import { persistFastifyEndpointCandidates } from "./fastifyEndpointDiscovery.js";
+import {
+  discoverFastifyObservations,
+  FASTIFY_ENDPOINT_DISCOVERY_ADAPTER_ID,
+  mergeDuplicateObservations,
+  persistFastifyEndpointCandidates,
+} from "./fastifyEndpointDiscovery.js";
+import { readEndpointObservations } from "./endpointObservationProducer.js";
 import { persistNestEndpointCandidates } from "./nestEndpointDiscovery.js";
 
 const workspaces: string[] = [];
@@ -169,6 +175,67 @@ describe("Fastify endpoint observation producer", () => {
     }>;
     expect(coverage).toEqual([
       { kind: "symbol", coverage_status: "complete", object_count: 0 },
+    ]);
+    database.close();
+  });
+
+  it("builds the Candidate inputs from the recorded run, equal to the discovery output", () => {
+    const database = openDatabase();
+    const files = { "package.json": PACKAGE_JSON, "src/routes.ts": ROUTES };
+    insertFiles(database, ["package.json", "src/routes.ts"]);
+    const { readSource } = sourcesFor(files);
+    persistFastifyEndpointCandidates(database, "rev:1", readSource);
+
+    const run = database
+      .prepare(`SELECT id FROM observation_runs WHERE adapter_id = ?`)
+      .get(FASTIFY_ENDPOINT_DISCOVERY_ADAPTER_ID) as { id: string };
+    const fromRun = readEndpointObservations(database, run.id);
+    const direct = [
+      ...mergeDuplicateObservations(
+        discoverFastifyObservations(
+          new Map(Object.entries(files).filter(([f]) => f !== "package.json")),
+        ),
+      ).values(),
+    ];
+    expect(fromRun).toEqual(direct);
+    database.close();
+  });
+
+  it("does not reuse a stale run when the workspace changes under the same revision", () => {
+    const database = openDatabase();
+    const first = { "package.json": PACKAGE_JSON, "src/routes.ts": ROUTES };
+    insertFiles(database, ["package.json", "src/routes.ts"]);
+    persistFastifyEndpointCandidates(
+      database,
+      "rev:1",
+      sourcesFor(first).readSource,
+    );
+
+    // Same HEAD, one route removed in the working tree.
+    const edited = {
+      "package.json": PACKAGE_JSON,
+      "src/routes.ts": `import Fastify from "fastify";
+export default async function routes(fastify) {
+  fastify.get("/health", async () => ({ ok: true }));
+}
+`,
+    };
+    persistFastifyEndpointCandidates(
+      database,
+      "rev:1",
+      sourcesFor(edited).readSource,
+    );
+
+    const runs = database
+      .prepare(
+        `SELECT id FROM observation_runs WHERE adapter_id = ? ORDER BY started_at`,
+      )
+      .all(FASTIFY_ENDPOINT_DISCOVERY_ADAPTER_ID) as Array<{ id: string }>;
+    expect(runs).toHaveLength(2);
+    const latest = readEndpointObservations(database, runs[1]!.id);
+    // The route path carries the registering file, as the Candidate identity does.
+    expect(latest.map((observation) => observation.routePath)).toEqual([
+      "/health@src/routes.ts",
     ]);
     database.close();
   });

@@ -18,8 +18,10 @@ import {
 } from "./endpointCandidatePersistence.js";
 import { languageFor, literalString } from "./sourceHelpers.js";
 import {
+  contentRevisionLabel,
   endpointPayload,
   nestHandlerIdentityKey,
+  readEndpointObservations,
   recordEndpointObservationRun,
 } from "./endpointObservationProducer.js";
 
@@ -270,28 +272,31 @@ export function persistNestEndpointCandidates(
     );
     if (!uniqueObservations.has(key)) uniqueObservations.set(key, observation);
   }
-  recordEndpointObservationRun(database, {
+  const records = [...uniqueObservations.values()].map((observation) => ({
+    identityKey: nestHandlerIdentityKey(observation),
+    filePath: observation.filePath,
+    line: observation.line,
+    endLine: observation.endLine,
+    payload: endpointPayload("nest", observation),
+  }));
+  // The Candidates come from the recorded run, so the run must match this workspace.
+  const runId = recordEndpointObservationRun(database, {
     adapterId: NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
     contractVersion: NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
     kind: "symbol",
-    repositoryRevision,
+    repositoryRevision: contentRevisionLabel(repositoryRevision, records),
     scopeFiles: [...new Set(rows.map((row) => row.file_path))],
     description: "NestJS route handlers",
-    records: [...uniqueObservations.values()].map((observation) => ({
-      identityKey: nestHandlerIdentityKey(observation),
-      filePath: observation.filePath,
-      line: observation.line,
-      endLine: observation.endLine,
-      payload: endpointPayload("nest", observation),
-    })),
+    records,
   });
-  const discovered = [...uniqueObservations.values()].map((observation) =>
-    persistObservation(
-      database,
-      repositoryRevision,
-      observation,
-      NEST_ENDPOINT_PROFILE,
-    ),
+  const discovered = readEndpointObservations(database, runId).map(
+    (observation) =>
+      persistObservation(
+        database,
+        repositoryRevision,
+        observation,
+        NEST_ENDPOINT_PROFILE,
+      ),
   );
   const activeIdentityKeys = new Set(
     discovered.map((candidate) => candidate.identityKey),
