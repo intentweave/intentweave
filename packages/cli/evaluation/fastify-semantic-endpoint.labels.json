@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1",
+  "contract": "fastify-semantic-endpoint-labels@1",
+  "description": "Hand-labeled Fastify endpoint-authentication cases for the semantic Endpoint adapter. probable = the guard truly applies to the route from the source; ambiguous = the source does not establish the binding.",
+  "cases": [
+    {
+      "id": "hook-before-route",
+      "label": "probable",
+      "guard": "checkToken",
+      "rationale": "addHook precedes the route in the same plugin, so onRequest checkToken applies to GET /api/orders/orders.",
+      "files": {
+        "package.json": "{\n  \"name\": \"fastify-semantic-label-fixture\",\n  \"private\": true,\n  \"dependencies\": {\n    \"fastify\": \"^5.0.0\",\n    \"fastify-plugin\": \"^5.0.0\",\n    \"@fastify/autoload\": \"^6.0.0\"\n  }\n}\n",
+        "README.md": "# Fastify semantic label fixture\n",
+        "src/app.ts": "import AutoLoad from \"@fastify/autoload\";\nimport { join } from \"node:path\";\nexport default async function app(fastify, opts) {\n  await fastify.register(AutoLoad, { dir: join(__dirname, \"plugins\"), options: opts });\n  await fastify.register(AutoLoad, {\n    dir: join(__dirname, \"modules\"),\n    options: { ...opts, prefix: \"/api\" },\n    maxDepth: 2,\n  });\n}\n",
+        "src/plugins/token-a.ts": "import fp from \"fastify-plugin\";\nexport default fp(async function tokenA(fastify) {\n  fastify.decorate(\"checkToken\", async (request) => {\n    await request.jwtVerify();\n  });\n});\n",
+        "src/plugins/token-b.ts": "import fp from \"fastify-plugin\";\nexport default fp(async function tokenB(fastify) {\n  fastify.decorate(\"checkToken\", async (request) => {\n    await request.jwtVerify({ secret: process.env.SERVICE_JWT_SECRET });\n  });\n});\n",
+        "src/modules/orders/orders.plugin.ts": "export default async function ordersPlugin(fastify) {\n  fastify.addHook(\"onRequest\", fastify.checkToken);\n  fastify.get(\"/orders\", async () => ({ orders: [] }));\n  await fastify.register(async function nested() {});\n}\n"
+      }
+    },
+    {
+      "id": "hook-after-route",
+      "label": "ambiguous",
+      "rationale": "addHook follows the route, so it does not cover GET /api/orders/orders. The evidence records no declaration order, so the correct answer is not probable.",
+      "files": {
+        "package.json": "{\n  \"name\": \"fastify-semantic-label-fixture\",\n  \"private\": true,\n  \"dependencies\": {\n    \"fastify\": \"^5.0.0\",\n    \"fastify-plugin\": \"^5.0.0\",\n    \"@fastify/autoload\": \"^6.0.0\"\n  }\n}\n",
+        "README.md": "# Fastify semantic label fixture\n",
+        "src/app.ts": "import AutoLoad from \"@fastify/autoload\";\nimport { join } from \"node:path\";\nexport default async function app(fastify, opts) {\n  await fastify.register(AutoLoad, { dir: join(__dirname, \"plugins\"), options: opts });\n  await fastify.register(AutoLoad, {\n    dir: join(__dirname, \"modules\"),\n    options: { ...opts, prefix: \"/api\" },\n    maxDepth: 2,\n  });\n}\n",
+        "src/plugins/token-a.ts": "import fp from \"fastify-plugin\";\nexport default fp(async function tokenA(fastify) {\n  fastify.decorate(\"checkToken\", async (request) => {\n    await request.jwtVerify();\n  });\n});\n",
+        "src/modules/orders/orders.plugin.ts": "export default async function ordersPlugin(fastify) {\n  fastify.get(\"/orders\", async () => ({ orders: [] }));\n  fastify.addHook(\"onRequest\", fastify.checkToken);\n  await fastify.register(async function nested() {});\n}\n"
+      }
+    },
+    {
+      "id": "duplicate-route-paths",
+      "label": "ambiguous",
+      "rationale": "Two registrations serve GET /api/orders/orders; only the guarded one has a guard. The server cannot be shown to serve the guarded one.",
+      "files": {
+        "package.json": "{\n  \"name\": \"fastify-semantic-label-fixture\",\n  \"private\": true,\n  \"dependencies\": {\n    \"fastify\": \"^5.0.0\",\n    \"fastify-plugin\": \"^5.0.0\",\n    \"@fastify/autoload\": \"^6.0.0\"\n  }\n}\n",
+        "README.md": "# Fastify semantic label fixture\n",
+        "src/app.ts": "import AutoLoad from \"@fastify/autoload\";\nimport { join } from \"node:path\";\nexport default async function app(fastify, opts) {\n  await fastify.register(AutoLoad, { dir: join(__dirname, \"plugins\"), options: opts });\n  await fastify.register(AutoLoad, {\n    dir: join(__dirname, \"modules\"),\n    options: { ...opts, prefix: \"/api\" },\n    maxDepth: 2,\n  });\n}\n",
+        "src/plugins/token-a.ts": "import fp from \"fastify-plugin\";\nexport default fp(async function tokenA(fastify) {\n  fastify.decorate(\"checkToken\", async (request) => {\n    await request.jwtVerify();\n  });\n});\n",
+        "src/modules/orders/orders.plugin.ts": "import ordersRoutes from \"./orders.routes\";\nexport default async function ordersPlugin(fastify) {\n  await fastify.register(ordersRoutes);\n}\n",
+        "src/modules/orders/orders.routes.ts": "export default async function ordersRoutes(fastify) {\n  fastify.get(\"/orders\", { preHandler: [fastify.checkToken] }, async () => ({ orders: [] }));\n}\n",
+        "src/modules/orders/extra.plugin.ts": "import extraRoutes from \"./extra.routes\";\nexport default async function extraPlugin(fastify) {\n  await fastify.register(extraRoutes);\n}\n",
+        "src/modules/orders/extra.routes.ts": "export default async function extraRoutes(fastify) {\n  fastify.get(\"/orders\", async () => ({ orders: [] }));\n}\n"
+      }
+    },
+    {
+      "id": "duplicate-verifier-definitions",
+      "label": "ambiguous",
+      "rationale": "checkToken is defined by two verifiers. Neither definition can be chosen from the evidence.",
+      "files": {
+        "package.json": "{\n  \"name\": \"fastify-semantic-label-fixture\",\n  \"private\": true,\n  \"dependencies\": {\n    \"fastify\": \"^5.0.0\",\n    \"fastify-plugin\": \"^5.0.0\",\n    \"@fastify/autoload\": \"^6.0.0\"\n  }\n}\n",
+        "README.md": "# Fastify semantic label fixture\n",
+        "src/app.ts": "import AutoLoad from \"@fastify/autoload\";\nimport { join } from \"node:path\";\nexport default async function app(fastify, opts) {\n  await fastify.register(AutoLoad, { dir: join(__dirname, \"plugins\"), options: opts });\n  await fastify.register(AutoLoad, {\n    dir: join(__dirname, \"modules\"),\n    options: { ...opts, prefix: \"/api\" },\n    maxDepth: 2,\n  });\n}\n",
+        "src/plugins/token-a.ts": "import fp from \"fastify-plugin\";\nexport default fp(async function tokenA(fastify) {\n  fastify.decorate(\"checkToken\", async (request) => {\n    await request.jwtVerify();\n  });\n});\n",
+        "src/plugins/token-b.ts": "import fp from \"fastify-plugin\";\nexport default fp(async function tokenB(fastify) {\n  fastify.decorate(\"checkToken\", async (request) => {\n    await request.jwtVerify({ secret: process.env.SERVICE_JWT_SECRET });\n  });\n});\n",
+        "src/modules/orders/orders.plugin.ts": "import ordersRoutes from \"./orders.routes\";\nexport default async function ordersPlugin(fastify) {\n  await fastify.register(ordersRoutes);\n}\n",
+        "src/modules/orders/orders.routes.ts": "export default async function ordersRoutes(fastify) {\n  fastify.get(\"/orders\", { preHandler: [fastify.checkToken] }, async () => ({ orders: [] }));\n}\n"
+      }
+    }
+  ]
+}
