@@ -53,6 +53,7 @@ import {
   PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
 } from "../claims/publicSymbolDiscovery.js";
 import type { PublicSymbolDiscoveryContext } from "../claims/publicSymbolContinuity.js";
+import { persistFastifyEndpointCandidates } from "../claims/fastifyEndpointDiscovery.js";
 import {
   NEST_ENDPOINT_DISCOVERY_ADAPTER_ID,
   NEST_ENDPOINT_DISCOVERY_CONTRACT_VERSION,
@@ -519,16 +520,20 @@ export async function runClaimsDiscover(options: {
         database,
         revision,
       );
-      const endpointCandidates = persistNestEndpointCandidates(
-        database,
-        revision,
-        (filePath) => {
-          const absolutePath = path.join(workspaceRoot, filePath);
-          return fs.existsSync(absolutePath)
-            ? fs.readFileSync(absolutePath, "utf-8")
-            : undefined;
-        },
-      );
+      const readWorkspaceFile = (filePath: string) => {
+        const absolutePath = path.join(workspaceRoot, filePath);
+        return fs.existsSync(absolutePath)
+          ? fs.readFileSync(absolutePath, "utf-8")
+          : undefined;
+      };
+      const endpointCandidates = [
+        ...persistNestEndpointCandidates(database, revision, readWorkspaceFile),
+        ...persistFastifyEndpointCandidates(
+          database,
+          revision,
+          readWorkspaceFile,
+        ),
+      ];
       const rulesPath = path.join(workspaceRoot, ".iw", "rules.yaml");
       const architectureCandidates = persistArchitectureDependencyCandidates(
         database,
@@ -2620,11 +2625,18 @@ export async function runClaimsCheck(options: {
           revision,
           symbolDiscoveryContext,
         );
-        const endpointCandidates = persistNestEndpointCandidates(
-          database,
-          revision,
-          readOptionalCurrentFile,
-        );
+        const endpointCandidates = [
+          ...persistNestEndpointCandidates(
+            database,
+            revision,
+            readOptionalCurrentFile,
+          ),
+          ...persistFastifyEndpointCandidates(
+            database,
+            revision,
+            readOptionalCurrentFile,
+          ),
+        ];
         const architectureCandidates = persistArchitectureDependencyCandidates(
           database,
           revision,

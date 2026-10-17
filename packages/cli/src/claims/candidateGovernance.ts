@@ -366,6 +366,13 @@ function promoteR1Candidate(
   return result.assessments[0]!;
 }
 
+// Frameworks whose endpoint discoverers emit recognized framework Evidence.
+// Adding a framework here is additive: the rule contract version is unchanged.
+const SUPPORTED_ENDPOINT_FRAMEWORKS: ReadonlySet<string> = new Set([
+  "nestjs",
+  "fastify",
+]);
+
 function promoteGenericCandidate(
   database: Database.Database,
   candidate: CandidateDetails,
@@ -559,7 +566,8 @@ function promoteGenericCandidate(
     const routeKnown = routeValue.pathKnown === true;
     const frameworkKnown =
       frameworkValue.recognized === true &&
-      frameworkValue.framework === "nestjs";
+      typeof frameworkValue.framework === "string" &&
+      SUPPORTED_ENDPOINT_FRAMEWORKS.has(frameworkValue.framework);
     const guardPresent = guardValue.present === true;
     const publicExemption = guardValue.publicExemption === true;
     const documentationRequirement = optionalString(
