@@ -426,10 +426,12 @@ export function discoverFastifyObservations(
     const guards: string[] = [];
     const unverified: string[] = [...route.unparsedGuards];
     let ambiguous = false;
+    let guardAmbiguous = false;
 
     for (const guard of route.routeGuards) {
       const result = resolve(guard);
       ambiguous ||= result.ambiguous;
+      guardAmbiguous ||= result.ambiguous;
       if (result.verified) guards.push(guard.display);
       else unverified.push(guard.display);
     }
@@ -437,6 +439,7 @@ export function discoverFastifyObservations(
     for (const guard of scopeGuards) {
       const result = resolve(guard);
       ambiguous ||= result.ambiguous;
+      guardAmbiguous ||= result.ambiguous;
       if (result.verified) guards.push(guard.display);
       else unverified.push(guard.display);
     }
@@ -473,6 +476,7 @@ export function discoverFastifyObservations(
       line: route.line,
       endLine: route.line,
       guards: [...new Set(guards)].sort(),
+      guardAmbiguous,
       unverifiedGuards: [...new Set(unverified)].sort(),
       guardSource,
       publicExemption: false,

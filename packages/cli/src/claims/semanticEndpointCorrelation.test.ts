@@ -256,6 +256,50 @@ describe("semantic Endpoint authentication correlation", () => {
     });
   });
 
+  it("never accepts a probable binding when protection Evidence is ambiguous", async () => {
+    database
+      .prepare("UPDATE evidence_versions SET normalized_value = ? WHERE id = ?")
+      .run(
+        JSON.stringify({
+          mechanism: "requireAdmin",
+          order: "before-handler",
+          ambiguous: true,
+        }),
+        evidenceVersionIds[2],
+      );
+    const provider = new FixtureProvider((request) => {
+      const context = JSON.parse(request.messages[0]!.content) as {
+        workItem: { candidateIdentityKeys: string[] };
+        evidence: Array<{ id: string }>;
+      };
+      return {
+        selectedCandidateIdentityKey: context.workItem.candidateIdentityKeys[0],
+        evidenceVersionIds: context.evidence.map((evidence) => evidence.id),
+        subjectBindings,
+        confidence: "probable",
+        rationale:
+          "The model is confident that requireAdmin protects the route.",
+      };
+    });
+
+    const result = await runSemanticEndpointCorrelation({
+      database,
+      provider,
+    });
+
+    expect(result).toMatchObject({
+      status: "evaluated",
+      providerCalls: 1,
+      correlatedCandidateIds: [],
+      ambiguousCandidateIds: [expect.any(String)],
+      failures: [],
+    });
+    const candidates = new CandidateStore(database);
+    expect(
+      candidates.details(candidates.current(candidateIdentityKey)!.id),
+    ).toMatchObject({ state: "discovered", confidence: "ambiguous" });
+  });
+
   it("rejects output that omits the required protection Evidence", async () => {
     const provider = new FixtureProvider((request) => {
       const context = JSON.parse(request.messages[0]!.content) as {

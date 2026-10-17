@@ -125,6 +125,23 @@ describe("discoverFastifyObservations", () => {
     });
   });
 
+  it("flags a guard whose verifier definitions cannot be told apart", () => {
+    const secondVerifier = AUTH_PLUGIN.replace(
+      "await request.jwtVerify();",
+      "await request.jwtVerify({ secret: 'b' });",
+    );
+    const [me] = observationsFor({
+      "plugins/auth.ts": AUTH_PLUGIN,
+      "plugins/auth-b.ts": secondVerifier,
+      "modules/users.routes.ts": USER_ROUTES,
+    });
+    expect(me).toMatchObject({
+      guards: ["checkToken"],
+      guardAmbiguous: true,
+      ambiguous: true,
+    });
+  });
+
   it("marks a guard with conflicting decorator definitions as ambiguous", () => {
     const unverifiedAuth = `
       export default async function other(fastify) {

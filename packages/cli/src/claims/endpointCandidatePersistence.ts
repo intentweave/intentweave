@@ -47,6 +47,8 @@ export interface EndpointObservation {
   line: number;
   endLine: number;
   guards: string[];
+  /** A resolved guard had more than one definition; no positive match can separate them. */
+  guardAmbiguous?: boolean;
   /** Guards named in source that could not be verified; never count as Evidence. */
   unverifiedGuards?: string[];
   guardSource: "handler" | "controller" | "scope-hook" | "none";
@@ -150,6 +152,7 @@ export function persistObservation(
     source: observation.guardSource,
     publicExemption: observation.publicExemption,
     // Written only when present so existing NestJS material fingerprints hold.
+    ...(observation.guardAmbiguous ? { ambiguous: true } : {}),
     ...(observation.unverifiedGuards?.length
       ? { unverifiedGuards: observation.unverifiedGuards }
       : {}),

@@ -73,6 +73,7 @@ Use only the supplied Candidate, Route Evidence, handler Evidence, and protectio
 A probable correlation must bind the Endpoint, handler, and protection Subject and cite all three required Evidence anchors.
 Protection may be a Guard, middleware, wrapper, or project-specific authentication helper, but it must be represented by a supplied Subject and Evidence reference.
 If the route-to-protection relationship remains uncertain, return confidence ambiguous.
+If the protection Evidence is marked ambiguous, its definition cannot be told apart from the supplied Evidence; return confidence ambiguous.
 Do not invent IDs. Output only the requested JSON object.`;
 
 interface SemanticEndpointCorrelationOutput {
@@ -93,6 +94,8 @@ interface EndpointEvidenceRow {
 
 interface EndpointCorrelationGroup {
   candidate: CandidateDetails;
+  /** Protection Evidence is marked ambiguous; probable is never allowed. */
+  guardAmbiguous: boolean;
   evidenceVersionIds: string[];
   requiredEvidenceVersionIds: string[];
   input: unknown;
@@ -240,9 +243,15 @@ function endpointCorrelationGroups(
           displayName: subject.displayName,
         })),
     };
+    const guardAmbiguous = evidence.some(
+      (item) =>
+        item.role === "guard" &&
+        objectValue(item.normalizedValue)?.ambiguous === true,
+    );
     return [
       {
         candidate,
+        guardAmbiguous,
         evidenceVersionIds: evidence.map((item) => item.evidenceVersionId),
         requiredEvidenceVersionIds,
         input,
@@ -304,7 +313,9 @@ function groundedEndpointOutput(
       evidenceVersionIds: value.evidenceVersionIds,
       proposedClaimType: group.candidate.proposedClaimType,
       subjectBindings: value.subjectBindings,
-      confidence: value.confidence,
+      // Two equally grounded definitions cannot be separated, so the model's
+      // probable answer is not accepted for such guards.
+      confidence: group.guardAmbiguous ? "ambiguous" : value.confidence,
       rationale: value.rationale,
     });
   } catch {
