@@ -2227,6 +2227,30 @@ Decisions.
   `(adapter, contract, scope)` with coverage rows per kind; D3 Subject bridge only
   through a versioned rule or Review; D4 materiality only in `change_impacts`.
 
+Amendment A (D1, 2026-10-17). The CARI symbol id is not an observed identity.
+It is a hash of the file path, kind, name, and a signature hash, so a signature
+change or a move changes it. The Subject identity `symbol:<cariId>` therefore
+churns, and stability comes from the G3 continuity aliases. Observed identities
+for symbols are created from kind, file, and name at creation. The CARI id is
+stored as a reference attribute, never as identity. The Subject identity used by
+a Claim keeps its existing alias mechanism.
+
+Decision C (check continuity, 2026-10-17). `claims check` consumes continuity
+from the ChangeSet. Its inputs are restricted to two sources, and it never reads
+the last observation run as such:
+
+- decided continuity already persisted in `subject_continuity` (portable state);
+- deterministic continuity re-derived from Git history at the reference revision
+  (rename detection between the Subject's last decided revision and HEAD). This is
+  reproducible from repository history, not from local store contents.
+
+A Subject whose continuity cannot be derived, for example because history is
+shallow, is `inconclusive` with a named reason. It is never `not_applicable` and
+never a silent pass. Carry-forward applies only to moves with decided or
+re-derived continuity, and a move never creates a Review on its own. The
+discovery-first protocol remains a compatible path and produces the same decided
+continuity.
+
 Open questions.
 
 - Retention policy for run membership and inventory history.
