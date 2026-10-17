@@ -515,6 +515,43 @@ function dependencyDeclared(packageJson: string | undefined): boolean {
 }
 
 /**
+ * Registrations that share a method and path cannot be told apart by the
+ * server, so the merged observation is ambiguous and keeps only the guards
+ * every registration shares. Dropping a registration silently would hide it.
+ */
+export function mergeDuplicateObservations(
+  observations: readonly EndpointObservation[],
+): Map<string, EndpointObservation> {
+  const groups = new Map<string, EndpointObservation[]>();
+  for (const observation of observations) {
+    const key = `${observation.method} ${observation.routePath}`;
+    groups.set(key, [...(groups.get(key) ?? []), observation]);
+  }
+  const merged = new Map<string, EndpointObservation>();
+  for (const [key, group] of groups) {
+    const [first, ...rest] = group;
+    if (!first) continue;
+    if (rest.length === 0) {
+      merged.set(key, first);
+      continue;
+    }
+    const shared = first.guards.filter((guard) =>
+      group.every((item) => item.guards.includes(guard)),
+    );
+    merged.set(key, {
+      ...first,
+      guards: shared,
+      unverifiedGuards: [
+        ...new Set(group.flatMap((item) => item.unverifiedGuards ?? [])),
+      ].sort(),
+      guardAmbiguous: group.some((item) => item.guardAmbiguous === true),
+      ambiguous: true,
+    });
+  }
+  return merged;
+}
+
+/**
  * Persist Fastify endpoint-authentication Candidates for a workspace. The
  * framework gate requires `fastify` to be declared in `package.json`.
  */
@@ -542,18 +579,14 @@ export function persistFastifyEndpointCandidates(
   }
 
   const observations = discoverFastifyObservations(sources);
-  const unique = new Map<string, EndpointObservation>();
-  for (const observation of observations) {
-    const key = `${observation.method} ${observation.routePath}`;
-    if (!unique.has(key)) unique.set(key, observation);
-  }
-  const discovered = [...unique.values()].map((observation) =>
-    persistObservation(
-      database,
-      repositoryRevision,
-      observation,
-      FASTIFY_ENDPOINT_PROFILE,
-    ),
+  const discovered = [...mergeDuplicateObservations(observations).values()].map(
+    (observation) =>
+      persistObservation(
+        database,
+        repositoryRevision,
+        observation,
+        FASTIFY_ENDPOINT_PROFILE,
+      ),
   );
   const activeIdentityKeys = new Set(
     discovered.map((candidate) => candidate.identityKey),

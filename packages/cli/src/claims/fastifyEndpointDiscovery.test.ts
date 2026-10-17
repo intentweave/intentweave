@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { discoverFastifyObservations } from "./fastifyEndpointDiscovery.js";
+import {
+  discoverFastifyObservations,
+  mergeDuplicateObservations,
+} from "./fastifyEndpointDiscovery.js";
 
 const AUTH_PLUGIN = `
 import fp from "fastify-plugin";
@@ -262,6 +265,64 @@ describe("discoverFastifyObservations", () => {
       expect(observations.every((item) => item.routeKnown === false)).toBe(
         true,
       );
+    });
+  });
+
+  describe("duplicate registrations", () => {
+    const base = {
+      method: "GET",
+      routePath: "/api/orders/orders",
+      routeKnown: true,
+      controllerName: "orders",
+      handlerName: "handler",
+      handlerSignature: null,
+      filePath: "src/modules/orders/orders.routes.ts",
+      line: 1,
+      endLine: 1,
+      publicExemption: false,
+      guardSource: "handler" as const,
+      unverifiedGuards: [],
+      ambiguous: false,
+    };
+
+    it("keeps a guarded and an unguarded registration as ambiguous with no shared guard", () => {
+      const merged = mergeDuplicateObservations([
+        { ...base, guards: ["checkToken"] },
+        {
+          ...base,
+          guards: [],
+          guardSource: "none",
+          filePath: "src/modules/orders/extra.routes.ts",
+        },
+      ]);
+      expect(merged.get("GET /api/orders/orders")).toMatchObject({
+        ambiguous: true,
+        guards: [],
+      });
+    });
+
+    it("keeps a guard only when every registration shares it", () => {
+      const merged = mergeDuplicateObservations([
+        { ...base, guards: ["checkToken", "checkRole('USER')"] },
+        {
+          ...base,
+          guards: ["checkToken"],
+          filePath: "src/modules/orders/extra.routes.ts",
+        },
+      ]);
+      expect(merged.get("GET /api/orders/orders")?.guards).toEqual([
+        "checkToken",
+      ]);
+    });
+
+    it("returns a single registration unchanged", () => {
+      const merged = mergeDuplicateObservations([
+        { ...base, guards: ["checkToken"] },
+      ]);
+      expect(merged.get("GET /api/orders/orders")).toEqual({
+        ...base,
+        guards: ["checkToken"],
+      });
     });
   });
 });
