@@ -2165,10 +2165,11 @@ Phases.
 
 - O0 (decision gate): accept D1–D4, write the column-level migration 21 draft, and
   review it against the existing tables it bridges. No code and no behavior change.
-  Status: draft written in `docs/OBSERVATION-MIGRATION-21-DRAFT.md`. Review found that
-  native parity for schemas 17–20 is already missing (Definition of Done item 14).
-  Decisions A (native parity scope), B (bridge creation policy), and C (retention) are
-  open for acceptance before O1.
+  Status: decisions accepted 2026-10-17. Draft in
+  `docs/OBSERVATION-MIGRATION-21-DRAFT.md`. Decision A: option 2, native parity scope
+  amended in Definition of Done item 14. Decision B: `subject_observations` is written
+  only through a versioned rule or a Review. Decision C: keep all runs until O4
+  measures volume. O0 exit criteria are met; O1 is next.
 - O1: Language and kind registry; TypeScript and JavaScript adapter producing
   `file`, `module`, `symbol`, `dependency`, `call-site`, and coverage. Complete
   runs with coverage rows. Inventory recall measured against a hand-checked
@@ -3360,7 +3361,11 @@ Generalization is robust when:
 12. Review, carry-forward, reopen, retirement, and baseline acceptance are
     auditable,
 13. CLI text and JSON preserve the same domain reasons without loss,
-14. TypeScript and native schema creation implement the same schema contract,
+14. Native schema creation implements the CARI tables and the claims tables
+    defined through schema 16 with the same contract as TypeScript. Tables
+    introduced in schemas 17 and later are owned by the TypeScript schema, and
+    a test asserts that the native tables match and that those later tables are
+    created only by the TypeScript path (decision A, accepted 2026-10-17),
 15. the existing C0-C10 and P-001 slice remains fully green,
 16. at least Symbol or Endpoint Claims run against a real repository,
 17. effective Candidate and Assessment Reviews reproduce between two fresh

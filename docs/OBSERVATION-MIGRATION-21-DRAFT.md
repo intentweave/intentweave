@@ -1,6 +1,6 @@
 # Observation layer: migration 21 draft (Phase O0)
 
-Status: draft for review. Not applied to any database. No code depends on it yet.
+Status: draft, reviewed, decisions A–C accepted (section 5). Not applied to any database. No code depends on it yet.
 Scope: Phase G5.3 (`docs/PLAN-GENERALIZED-REPOSITORY-CLAIMS.md`), decisions D1–D4,
 Amendment A, and Decision C.
 
@@ -232,9 +232,9 @@ CREATE TABLE IF NOT EXISTS change_impacts (
    pre-migration snapshot and supports restore on failure. Downgrade is not
    supported.
 
-## 5. Open decisions to accept before O1
+## 5. Decisions (accepted 2026-10-17)
 
-- **A. Native parity for claims tables.** Options:
+- **A. Native parity for claims tables. Accepted: option 2.** Options:
   1. Port claims tables 17–21 into the native schema. This is large and touches
      the Rust crate for every claims schema change.
   2. Amend Definition of Done item 14: native parity covers the CARI tables and
@@ -242,12 +242,12 @@ CREATE TABLE IF NOT EXISTS change_impacts (
      The tables introduced in schemas 17 and later are owned by the TypeScript
      schema. A test asserts the native tables match, and asserts that the
      TypeScript-only tables are created only by the TypeScript path.
-     Recommendation: option 2, recorded explicitly, with item 14 amended to match.
-- **B. Creation policy for `subject_observations`.** Options: automatic for
+     Accepted: option 2. Definition of Done item 14 is amended to match.
+- **B. Creation policy for `subject_observations`. Accepted: rule or Review only.** Options: automatic for
   implementation-view objects, or only through a versioned rule or Review.
-  Recommendation: only through a rule or Review. Implementation-view objects stay
-  inventory-only until a Claim references them.
-- **C. Retention.** Options: keep all runs, or prune runs that no ChangeSet or
+  Accepted. Implementation-view objects stay inventory-only until a Claim references
+  them.
+- **C. Retention. Accepted: keep all runs until O4.** Options: keep all runs, or prune runs that no ChangeSet or
   Assessment references. Recommendation: keep all runs until O4 measures volume,
   then decide.
 
@@ -255,5 +255,5 @@ CREATE TABLE IF NOT EXISTS change_impacts (
 
 - Decisions A, B, and C are accepted, and the plan records them.
 - This draft is reviewed, and its findings are resolved or recorded as open.
-- The plan's Definition of Done item 14 is amended if decision A is option 2.
+- Definition of Done item 14 is amended to match decision A (done).
 - No code or schema change is made in O0. The first code change is O1.
