@@ -13,6 +13,8 @@ import {
 import {
   correlatePublicSymbolSubject,
   type PublicSymbolDiscoveryContext,
+  type PublicSymbolObservation,
+  type PublicSymbolSubjectBinding,
 } from "./publicSymbolContinuity.js";
 
 export const PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID =
@@ -242,10 +244,96 @@ function bindContinuedCariSymbolAlias(
   });
 }
 
+/**
+ * Bind a discovered symbol to a predecessor. With an explicit `--since` context the
+ * single context is used. For a plain check, each promoted Subject's base revision
+ * supplies a context. A predecessor is used only when exactly one context yields
+ * one. Several distinct predecessors are returned as ambiguous through
+ * `ambiguousKeys`, never guessed.
+ */
+function bindPublicSymbol(
+  database: Database.Database,
+  symbol: PublicSymbolObservation,
+  context: PublicSymbolDiscoveryContext | undefined,
+  continuityContexts: readonly PublicSymbolDiscoveryContext[] | undefined,
+  ambiguousKeys: Set<string>,
+): PublicSymbolSubjectBinding {
+  if (context || !continuityContexts) {
+    return correlatePublicSymbolSubject(
+      database,
+      PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+      symbol,
+      context,
+    );
+  }
+  const plain = correlatePublicSymbolSubject(
+    database,
+    PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+    symbol,
+    undefined,
+  );
+  if (plain.candidateIdentityKey !== `public-symbol-doc:${symbol.id}`) {
+    return plain;
+  }
+  const bindings = continuityContexts
+    .map((item) =>
+      correlatePublicSymbolSubject(
+        database,
+        PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
+        symbol,
+        item,
+      ),
+    )
+    .filter((binding) => binding.continuity !== undefined);
+  const keys = [
+    ...new Set(bindings.map((binding) => binding.candidateIdentityKey)),
+  ];
+  if (keys.length === 1) return bindings[0]!;
+  if (keys.length > 1) {
+    for (const key of keys) ambiguousKeys.add(key);
+  }
+  return plain;
+}
+
+/**
+ * Base revisions of promoted public-symbol Claims. A plain check derives continuity
+ * from each of these revisions to HEAD.
+ */
+export function promotedPublicSymbolBaseRevisions(
+  database: Database.Database,
+): string[] {
+  const candidates = new CandidateStore(database);
+  const bases = new Set<string>();
+  for (const candidate of candidates.listCurrent({ subjectKind: "symbol" })) {
+    if (
+      candidate.discoveryAdapterId !== PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID ||
+      candidate.candidateKind !== "public-symbol-documentation"
+    ) {
+      continue;
+    }
+    const promoted = database
+      .prepare(
+        `SELECT 1 AS present FROM candidate_reviews review
+         JOIN claim_candidates observed ON observed.id = review.candidate_id
+         WHERE observed.identity_key = ?
+           AND review.decision = 'promote'
+           AND review.effect = 'effective'
+           AND review.promoted_claim_identity_id IS NOT NULL
+         LIMIT 1`,
+      )
+      .get(candidate.identityKey);
+    const revision = (candidate.provenance as { repositoryRevision?: unknown })
+      ?.repositoryRevision;
+    if (promoted && typeof revision === "string") bases.add(revision);
+  }
+  return [...bases].sort();
+}
+
 export function persistPublicSymbolCandidates(
   database: Database.Database,
   repositoryRevision: string,
   context?: PublicSymbolDiscoveryContext,
+  continuityContexts?: readonly PublicSymbolDiscoveryContext[],
 ): PublicSymbolCandidateResult[] {
   const rows = database
     .prepare(
@@ -260,12 +348,12 @@ export function persistPublicSymbolCandidates(
     .all() as PublicSymbolRow[];
   const claims = new ClaimsStore(database);
   const candidates = new CandidateStore(database);
+  const ambiguousKeys = new Set<string>();
   const discovered = rows
     .filter((symbol) => !isFixtureOrTest(symbol.file_path))
     .map((symbol) => {
-      const binding = correlatePublicSymbolSubject(
+      const binding = bindPublicSymbol(
         database,
-        PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
         {
           id: symbol.id,
           name: symbol.name,
@@ -275,6 +363,8 @@ export function persistPublicSymbolCandidates(
           filePath: symbol.file_path,
         },
         context,
+        continuityContexts,
+        ambiguousKeys,
       );
       const subjectIdentityKey = binding.canonicalSubject.identityKey;
       const candidateIdentityKey = binding.candidateIdentityKey;
@@ -518,19 +608,34 @@ export function persistPublicSymbolCandidates(
       const subject = candidate.subjects[0];
       if (!subject) return [];
       const statement = statementRecord(candidate.normalizedStatement);
-      const definition = {
-        name:
-          typeof statement.symbolName === "string"
-            ? statement.symbolName
-            : subject.displayName,
-        kind:
-          typeof statement.symbolKind === "string"
-            ? statement.symbolKind
-            : "unknown",
-        signature: null,
-        exported: false,
-        lifecycle: "not-public-or-missing",
-      };
+      // Plain check: a predecessor whose base revision is not resolvable, or whose
+      // continuity is ambiguous, is unresolved. Its definition stays unknown, so the
+      // Rule is inconclusive, never not_applicable.
+      const base = (candidate.provenance as { repositoryRevision?: unknown })
+        ?.repositoryRevision;
+      const unresolved =
+        !context &&
+        continuityContexts !== undefined &&
+        (typeof base !== "string" ||
+          !continuityContexts.some((item) => item.baseRevision === base) ||
+          ambiguousKeys.has(candidate.identityKey));
+      const name =
+        typeof statement.symbolName === "string"
+          ? statement.symbolName
+          : subject.displayName;
+      const kind =
+        typeof statement.symbolKind === "string"
+          ? statement.symbolKind
+          : "unknown";
+      const definition = unresolved
+        ? { name, kind, signature: null, lifecycle: "continuity-unresolved" }
+        : {
+            name,
+            kind,
+            signature: null,
+            exported: false,
+            lifecycle: "not-public-or-missing",
+          };
       const definitionVersion = claims.persistGenericEvidence({
         subjects: [
           {

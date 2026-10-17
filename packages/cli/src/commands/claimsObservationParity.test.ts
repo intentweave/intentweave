@@ -28,7 +28,6 @@ import {
   runClaimsDiscover,
   runClaimsReview,
 } from "./claims.js";
-import { persistPublicSymbolCandidates } from "../claims/publicSymbolDiscovery.js";
 import {
   bridgeFromCari,
   buildChangeSet,
@@ -252,12 +251,10 @@ export function parseConfig(${parameters}): string {
     );
     const movePrediction = predictImpact(moveItems, new Set(bridgeS0.values()));
     const bridgeS1 = followBridge(bridgeS0, moveItems);
-    // Same protocol as the G3 Git fixture: discovery at S1, then check since S0.
-    const afterMove = new Database(path.join(workspace, ".iw/index.db"));
-    persistPublicSymbolCandidates(afterMove, revS1);
-    afterMove.close();
+    // Decision C: a plain check derives continuity from the promoted base revision
+    // to HEAD, without a prior discovery run.
     process.exitCode = undefined;
-    await runClaimsCheck({ since: revS0, format: "json" });
+    await runClaimsCheck({ format: "json" });
     expect(movePrediction.reopen).toEqual([]);
     expect(movePrediction.carryForward).toHaveLength(1);
     expect(process.exitCode).toBe(0);
@@ -290,7 +287,7 @@ export function parseConfig(${parameters}): string {
       new Set(bridgeS1.values()),
     );
     process.exitCode = undefined;
-    await runClaimsCheck({ since: revS1, format: "json" });
+    await runClaimsCheck({ format: "json" });
     expect(signaturePrediction.reopen).toHaveLength(1);
     expect(signaturePrediction.carryForward).toEqual([]);
     expect(process.exitCode).toBe(4);

@@ -49,6 +49,7 @@ import {
 } from "../claims/candidateDiscovery.js";
 import {
   persistPublicSymbolCandidates,
+  promotedPublicSymbolBaseRevisions,
   PUBLIC_SYMBOL_DISCOVERY_ADAPTER_ID,
   PUBLIC_SYMBOL_DISCOVERY_CONTRACT_VERSION,
 } from "../claims/publicSymbolDiscovery.js";
@@ -519,6 +520,8 @@ export async function runClaimsDiscover(options: {
       const publicSymbolCandidates = persistPublicSymbolCandidates(
         database,
         revision,
+        undefined,
+        promotedSymbolContinuityContexts(database, workspaceRoot),
       );
       const readWorkspaceFile = (filePath: string) => {
         const absolutePath = path.join(workspaceRoot, filePath);
@@ -2511,6 +2514,41 @@ function linkExplicitBindingPromotion(
   });
 }
 
+/**
+ * Continuity contexts for a plain run (no --since). Each promoted public-symbol
+ * Subject is continued from the revision where it was last decided to HEAD, using
+ * Git rename detection. A base revision that cannot be resolved produces no
+ * context, so its Subject is reported unresolved rather than removed.
+ */
+function promotedSymbolContinuityContexts(
+  database: Database.Database,
+  workspaceRoot: string,
+): PublicSymbolDiscoveryContext[] {
+  let git: ClaimsGit;
+  let head: string;
+  try {
+    git = new ClaimsGit(workspaceRoot);
+    head = git.head();
+  } catch {
+    return [];
+  }
+  const contexts: PublicSymbolDiscoveryContext[] = [];
+  for (const base of promotedPublicSymbolBaseRevisions(database)) {
+    try {
+      git.resolveCommit(base);
+      contexts.push({
+        baseRevision: base,
+        headRevision: head,
+        changedPaths: git.changedPaths(base, head),
+        renames: git.renames(base, head),
+      });
+    } catch {
+      continue;
+    }
+  }
+  return contexts;
+}
+
 export async function runClaimsCheck(options: {
   scope?: string;
   since?: string;
@@ -2624,6 +2662,9 @@ export async function runClaimsCheck(options: {
           database,
           revision,
           symbolDiscoveryContext,
+          symbolDiscoveryContext
+            ? undefined
+            : promotedSymbolContinuityContexts(database, workspaceRoot),
         );
         const endpointCandidates = [
           ...persistNestEndpointCandidates(

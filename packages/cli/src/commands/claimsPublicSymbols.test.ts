@@ -357,10 +357,14 @@ describe("CLM-PUBLIC-SYMBOL-DOCUMENTED", () => {
           ruleStatuses: string[];
         }>;
       };
+      // Decision C: this workspace has no Git history, so a removal cannot be told
+      // apart from a move. Continuity is undeterminable, which is inconclusive,
+      // never not_applicable. A real removal with history is covered in
+      // claimsContinuityPlain.test.ts.
       expect(removedCheck.claims).toContainEqual(
         expect.objectContaining({
           claimIdentityId: documented.assessment.claimIdentityId,
-          ruleStatuses: ["not_applicable"],
+          ruleStatuses: ["inconclusive"],
         }),
       );
 
@@ -379,7 +383,7 @@ describe("CLM-PUBLIC-SYMBOL-DOCUMENTED", () => {
           .get(),
       ).toEqual({
         applicability: "not_applicable",
-        normalized_status: "not_applicable",
+        normalized_status: "inconclusive",
       });
       expect(
         removed
@@ -423,8 +427,8 @@ describe("CLM-PUBLIC-SYMBOL-DOCUMENTED", () => {
         status: "inconclusive",
         dependencies: [
           {
-            rule_status: "not_applicable",
-            rule_reasons: ["public-symbol-no-longer-applicable"],
+            rule_status: "inconclusive",
+            rule_reasons: ["symbol-definition-evidence-missing"],
           },
         ],
       });

@@ -2315,10 +2315,20 @@ Outcome (2026-10-17, revised after review).
   explicit bridge binds each Subject to an observed identity through its CARI id,
   and that binding is followed through each ChangeSet. The move and signature
   steps both use the followed bridge.
-- Decided, not implemented: Decision C. `claims check` does not yet derive
-  continuity from the ChangeSet or from Git history. The parity test still runs
-  discovery before the check, so it does not test Decision C. Until the engine is
-  changed in O2, a plain check after a move still reports `not_applicable`.
+- Implemented: Decision C. A plain `claims check` and `discover` derive continuity
+  for each promoted public-symbol Subject from its decided revision to HEAD, using
+  Git rename detection and the existing predecessor correlation. No prior discovery
+  run is needed. A predecessor is used only when exactly one base revision yields
+  one. Ambiguous predecessors stay unresolved.
+- Verified: a move with a plain check carries forward with exit 0 and no reopen; a
+  signature change reopens with exit 4 and a `warrant-changed` reason; a
+  Subject whose base revision cannot be resolved is `inconclusive`, never
+  `not_applicable` (its base is removed in a mutation check, which then fails); a
+  real removal in a Git repository is `not_applicable`.
+- Behavior change: a removal in a workspace without Git history is now
+  `inconclusive` (`symbol-definition-evidence-missing`), because history cannot
+  distinguish a removal from a move. The G3 public-symbol test expectation for that
+  case is updated accordingly.
 - Finding 1 (CARI identity): the CARI symbol id embeds the path and a signature
   hash, so it is not an observed identity. The spike keys identities by kind, file,
   and name, and keeps the CARI id as a reference attribute. This is recorded in
@@ -2326,9 +2336,8 @@ Outcome (2026-10-17, revised after review).
 - Limits: TypeScript and JavaScript, one Claim family, one symbol kind, four
   commits, no native parity, and a spike store separate from migration 21.
 
-Gate. The approach holds on this slice, but Phase O-T is not complete while
-Decision C is decided and not implemented. O0 can proceed on the accepted D1–D4
-and Amendment A. Decision C is an O2 requirement and is verified there.
+Gate. The approach holds on this slice, and Decision C is implemented and verified
+for public symbols. O0 can proceed on the accepted D1–D4, Amendment A, and Decision C.
 
 Outcome gates the rest of the phase. If the spike shows a mismatch that the
 design cannot explain, O0–O2 are revised before implementation.
