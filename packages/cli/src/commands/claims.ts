@@ -104,6 +104,10 @@ import {
 } from "../claims/discovery.js";
 import { load as yamlLoad } from "js-yaml";
 import { ClaimsGit, ClaimsGitError } from "../claims/git.js";
+import {
+  captureObservationRun,
+  checkObservations,
+} from "../observation/observationCommands.js";
 import type { GitRename } from "../claims/git.js";
 import {
   CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
@@ -4615,8 +4619,67 @@ const claimsCandidatesCommand = new Command("candidates")
       .action(runClaimsCandidateReview),
   );
 
+const claimsObservationsCommand = new Command("observations")
+  .description(
+    "Capture observation runs and check continuity against a merge base",
+  )
+  .addCommand(
+    new Command("capture")
+      .description("Capture an inventory run for HEAD")
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(async (opts: { format: string }) => {
+        try {
+          const summary = captureObservationRun(process.cwd());
+          if (opts.format === "json") {
+            console.log(JSON.stringify(summary, null, 2));
+          } else {
+            console.log(
+              `Captured ${summary.recordCount} observed objects at ${summary.revision.slice(0, 12)} ` +
+                `(tracked ${summary.trackedCount}, bridged Subjects ${summary.bridgedSubjects}).`,
+            );
+          }
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exitCode = 64;
+        }
+      }),
+  )
+  .addCommand(
+    new Command("check")
+      .description("Derive changes since a ref and apply the continuity gate")
+      .requiredOption(
+        "--since <ref>",
+        "Reference to compare against through its merge base",
+      )
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(async (opts: { since: string; format: string }) => {
+        try {
+          const result = checkObservations(process.cwd(), opts.since);
+          if (opts.format === "json") {
+            console.log(JSON.stringify(result, null, 2));
+          } else {
+            console.log(
+              `Changes ${result.base.slice(0, 12)}..${result.head.slice(0, 12)}:`,
+            );
+            for (const [kind, count] of Object.entries(result.counts)) {
+              console.log(`  ${kind}: ${count}`);
+            }
+            console.log(
+              `Gate ${result.gate.mode}: ${result.gate.gated.length} blocking, ` +
+                `${result.gate.reported.length} reported.`,
+            );
+          }
+          process.exitCode = result.exitCode;
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exitCode = 64;
+        }
+      }),
+  );
+
 export const claimsCommand = new Command("claims")
   .description("Discover, assess, explain, and review repository claims")
+  .addCommand(claimsObservationsCommand)
   .addCommand(
     new Command("discover")
       .description("Persist findings as Candidates without activating Claims")

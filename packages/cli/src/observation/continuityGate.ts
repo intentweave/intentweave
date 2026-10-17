@@ -22,12 +22,21 @@ export interface ContinuityConfig {
   scopes: ContinuityScope[];
 }
 
+export interface ImplementationViewConfig {
+  /** Explicit file globs added to the derived view. */
+  globs: string[];
+  /** When true, only exported symbols are tracked in the view. */
+  exportedOnly: boolean;
+}
+
 export interface ObservationConfig {
   continuity: ContinuityConfig;
+  implementationView: ImplementationViewConfig;
 }
 
 export const DEFAULT_OBSERVATION_CONFIG: ObservationConfig = {
   continuity: { mode: "report", scopes: ["claim-subjects"] },
+  implementationView: { globs: [], exportedOnly: false },
 };
 
 export class ObservationConfigError extends Error {}
@@ -54,6 +63,23 @@ export function parseObservationConfig(
       `continuity.mode must be report or gate, got ${String(mode)}`,
     );
   }
+  const view = (
+    parsed as {
+      implementationView?: { globs?: unknown; exportedOnly?: unknown };
+    }
+  ).implementationView;
+  const globs = view?.globs ?? [];
+  if (!Array.isArray(globs) || globs.some((glob) => typeof glob !== "string")) {
+    throw new ObservationConfigError(
+      "implementationView.globs must be a list of strings",
+    );
+  }
+  const exportedOnly = view?.exportedOnly ?? false;
+  if (typeof exportedOnly !== "boolean") {
+    throw new ObservationConfigError(
+      "implementationView.exportedOnly must be true or false",
+    );
+  }
   const scopes = parsed.continuity?.scopes ?? ["claim-subjects"];
   if (
     !Array.isArray(scopes) ||
@@ -65,6 +91,7 @@ export function parseObservationConfig(
   }
   return {
     continuity: { mode, scopes: [...new Set(scopes as ContinuityScope[])] },
+    implementationView: { globs: [...(globs as string[])], exportedOnly },
   };
 }
 
@@ -100,4 +127,32 @@ export function evaluateContinuityGate(
     gated,
     reported,
   };
+}
+
+export interface TrackedCandidate {
+  filePath: string;
+  symbolName?: string;
+  exported: boolean;
+}
+
+/**
+ * The implementation view: the files of Claim Subjects, plus explicit globs, with an
+ * optional exported-only filter on symbols. The derived part is never silently
+ * extended by a glob, since globs are listed in the configuration.
+ */
+export function isInImplementationView(
+  config: ImplementationViewConfig,
+  claimSubjectFiles: ReadonlySet<string>,
+  candidate: TrackedCandidate,
+  matchGlob: (filePath: string, glob: string) => boolean,
+): boolean {
+  if (
+    config.exportedOnly &&
+    candidate.symbolName !== undefined &&
+    !candidate.exported
+  ) {
+    return false;
+  }
+  if (claimSubjectFiles.has(candidate.filePath)) return true;
+  return config.globs.some((glob) => matchGlob(candidate.filePath, glob));
 }

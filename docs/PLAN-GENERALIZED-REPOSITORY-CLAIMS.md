@@ -2223,11 +2223,25 @@ Phases.
     and no core change.
   - Fixed while doing this: `queries/shared.ts` hard-coded schema 20 and refused
     version 21 databases. It now uses the current constant.
-  - Not yet done: a CLI command for the continuity gate (the library function exists);
-    the projection path is tested as a link, not yet as a Claim through Reverse
-    Impact; `claims check` does not read the observation tables; no Subject bridge is
-    created from implementation views yet, since that policy is decision B's rule
-    path, not a default.
+  - Closed after the first O2 pass:
+    - `iw claims observations capture` and `iw claims observations check --since <ref>`
+      run the inventory on a revision's archive and apply the gate. Gate mode exits 1
+      for unresolved continuity on Claim Subjects. An end-to-end Git fixture covers a
+      move (followed through the ChangeSet) and an ambiguous rename (gated, then
+      reported).
+    - Reverse Impact runs through persisted dependencies only: a Claim whose current
+      Assessment depends on a projected evidence version is found after the observed
+      identity changes (`ObservationStore.dependentClaims`).
+    - Decision C is guarded by a test: no claims discovery or assessment code names an
+      observation table.
+    - Rebuilding the index used to drop observation history. Observation tables are
+      now restored with the Claims snapshot (`OBSERVATION_COMPANION_TABLES`).
+    - The gate treats a Subject bridge as current even when a later run retired it,
+      because the question is whether the base identity was a Subject.
+  - Limit that remains: the implementation view (Claim Subject files, plus explicit
+    globs, with an optional exported-only filter) is computed and counted in capture
+    output, but it does not yet filter ChangeSet items. Bridges from the view are not
+    created by default, since decision B keeps bridges to a rule or Review basis.
 
 - O3: NestJS and Fastify discoverers become observation producers. Their
   Assessment outcomes stay unchanged on E0–E6, A0–A5, the Fastify fixtures, and

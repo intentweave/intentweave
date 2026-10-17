@@ -6,6 +6,7 @@ import {
   DEFAULT_OBSERVATION_CONFIG,
   ObservationConfigError,
   evaluateContinuityGate,
+  isInImplementationView,
   parseObservationConfig,
 } from "./continuityGate.js";
 
@@ -77,5 +78,85 @@ describe("continuity gate", () => {
     expect(evaluateContinuityGate(gate, [UNRESOLVED_INVENTORY]).exitCode).toBe(
       0,
     );
+  });
+});
+
+describe("implementation view", () => {
+  const matchGlob = (filePath: string, glob: string) =>
+    filePath.startsWith(glob.replace("/**", ""));
+  const view = { globs: ["packages/api/**"], exportedOnly: false };
+
+  it("tracks the files of Claim Subjects without any glob", () => {
+    const files = new Set(["src/billing.ts"]);
+    expect(
+      isInImplementationView(
+        { globs: [], exportedOnly: false },
+        files,
+        { filePath: "src/billing.ts", symbolName: "charge", exported: false },
+        matchGlob,
+      ),
+    ).toBe(true);
+  });
+
+  it("adds files that match an explicit glob", () => {
+    expect(
+      isInImplementationView(
+        view,
+        new Set(),
+        {
+          filePath: "packages/api/routes.ts",
+          symbolName: "route",
+          exported: false,
+        },
+        matchGlob,
+      ),
+    ).toBe(true);
+  });
+
+  it("excludes unrelated files", () => {
+    expect(
+      isInImplementationView(
+        view,
+        new Set(["src/billing.ts"]),
+        { filePath: "src/other.ts", symbolName: "other", exported: true },
+        matchGlob,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps only exported symbols when exportedOnly is set", () => {
+    const exportedOnly = { globs: [], exportedOnly: true };
+    const files = new Set(["src/billing.ts"]);
+    expect(
+      isInImplementationView(
+        exportedOnly,
+        files,
+        { filePath: "src/billing.ts", symbolName: "helper", exported: false },
+        matchGlob,
+      ),
+    ).toBe(false);
+    expect(
+      isInImplementationView(
+        exportedOnly,
+        files,
+        { filePath: "src/billing.ts", symbolName: "charge", exported: true },
+        matchGlob,
+      ),
+    ).toBe(true);
+  });
+
+  it("parses the view and rejects malformed globs", () => {
+    const config = parseObservationConfig(
+      'schemaVersion: "1"\nimplementationView:\n  globs: ["packages/api/**"]\n  exportedOnly: true\n',
+    );
+    expect(config.implementationView).toEqual({
+      globs: ["packages/api/**"],
+      exportedOnly: true,
+    });
+    expect(() =>
+      parseObservationConfig(
+        'schemaVersion: "1"\nimplementationView:\n  globs: [1]\n',
+      ),
+    ).toThrow(ObservationConfigError);
   });
 });
