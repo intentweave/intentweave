@@ -18,3 +18,8 @@ export * from "./ax.js";
 
 // AX Helpers - shared utilities for language adapter plugins
 export * from "./ax-helpers.js";
+
+// Language registry and observation inventory (Phase O1)
+export * from "./languageRegistry.js";
+export * from "./observation/typescriptObservation.js";
+export * from "./observation/inventoryRun.js";

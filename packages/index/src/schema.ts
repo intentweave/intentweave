@@ -401,6 +401,26 @@ export const CLAIMS_COMPANION_TABLES = [
   "candidate_policy_decisions",
 ] as const;
 
+/**
+ * Observation history (migration 21). Runs, observed identities, bridges, and change
+ * impacts are durable records, so a rebuild restores them with the Claims tables.
+ * Listed parents first. Snapshots without these tables restore nothing here.
+ */
+export const OBSERVATION_COMPANION_TABLES = [
+  "observation_runs",
+  "observed_identities",
+  "observed_versions",
+  "observation_run_coverage",
+  "observation_run_items",
+  "observed_relations",
+  "observed_continuity_links",
+  "observed_evidence_projection",
+  "subject_observations",
+  "observed_changesets",
+  "observed_change_items",
+  "change_impacts",
+] as const;
+
 const SCHEMA_17_CLAIMS_COMPANION_TABLES =
   SCHEMA_18_CLAIMS_COMPANION_TABLES.filter(
     (table) => table !== "subject_continuity",
@@ -564,6 +584,40 @@ export function restoreClaimsHistory(
           .map((column) => column.name)
           .filter((column) => sourceColumns.has(column));
         const columns = commonColumns.join(", ");
+        db.exec(
+          `INSERT INTO ${table} (${columns})
+           SELECT ${columns} FROM claims_history.${table}`,
+        );
+      }
+      const sourceObservationTables = new Set(
+        (
+          db
+            .prepare(
+              `SELECT name FROM claims_history.sqlite_master WHERE type = 'table'`,
+            )
+            .all() as Array<{ name: string }>
+        ).map((row) => row.name),
+      );
+      for (const table of [...OBSERVATION_COMPANION_TABLES].reverse()) {
+        db.exec(`DELETE FROM ${table}`);
+      }
+      for (const table of OBSERVATION_COMPANION_TABLES) {
+        if (!sourceObservationTables.has(table)) continue;
+        const sourceColumns = new Set(
+          (
+            db
+              .prepare(`PRAGMA claims_history.table_info(${table})`)
+              .all() as Array<{ name: string }>
+          ).map((column) => column.name),
+        );
+        const columns = (
+          db.prepare(`PRAGMA main.table_info(${table})`).all() as Array<{
+            name: string;
+          }>
+        )
+          .map((column) => column.name)
+          .filter((column) => sourceColumns.has(column))
+          .join(", ");
         db.exec(
           `INSERT INTO ${table} (${columns})
            SELECT ${columns} FROM claims_history.${table}`,

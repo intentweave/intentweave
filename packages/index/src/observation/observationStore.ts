@@ -687,6 +687,81 @@ export class ObservationStore {
   }
 
   /**
+   * Reverse Impact from persisted dependencies only: the Claims whose current
+   * Assessments depend on any evidence projected from the observed identity.
+   */
+  dependentClaims(observedIdentityId: string): string[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT DISTINCT claim_version.claim_identity_id AS claim_identity_id
+           FROM observed_versions observed
+           JOIN observed_evidence_projection projection
+             ON projection.observed_version_id = observed.id
+           JOIN claim_assessment_dependencies dependency
+             ON dependency.dependency_kind = 'evidence_version'
+            AND dependency.dependency_version_id = projection.evidence_version_id
+           JOIN claim_assessments assessment
+             ON assessment.id = dependency.claim_assessment_id
+            AND assessment.is_current = 1
+           JOIN claim_versions claim_version
+             ON claim_version.id = assessment.claim_version_id
+           WHERE observed.observed_identity_id = ?
+           ORDER BY claim_version.claim_identity_id`,
+        )
+        .all(observedIdentityId) as Array<{ claim_identity_id: string }>
+    ).map((row) => row.claim_identity_id);
+  }
+
+  /**
+   * Whether an observed identity was ever bridged to a Claim Subject. A retired bridge
+   * still records that the identity was a Subject in its run, so it counts for the gate.
+   */
+  hasSubjectBridge(observedIdentityId: string): boolean {
+    return Boolean(
+      this.db
+        .prepare(
+          `SELECT 1 AS present FROM subject_observations
+           WHERE observed_identity_id = ? LIMIT 1`,
+        )
+        .get(observedIdentityId),
+    );
+  }
+
+  /**
+   * Bridge Claim Subjects to the observed identities of a run. A Subject is matched
+   * through its CARI id, which the run stores as a reference attribute. The bridge
+   * records the claim-subject rule as its basis (decision B).
+   */
+  bridgeClaimSubjectsInRun(
+    runId: string,
+    subjects: ReadonlyArray<{ subjectIdentityId: string; cariId: string }>,
+  ): number {
+    let bridged = 0;
+    for (const subject of subjects) {
+      const row = this.db
+        .prepare(
+          `SELECT identity.id AS identity_id
+           FROM observation_run_items item
+           JOIN observed_versions version ON version.id = item.effective_version_id
+           JOIN observed_identities identity ON identity.id = item.observed_identity_id
+           WHERE item.run_id = ? AND version.cari_id = ?`,
+        )
+        .get(runId, subject.cariId) as { identity_id: string } | undefined;
+      if (!row) continue;
+      this.bridgeSubject({
+        subjectIdentityId: subject.subjectIdentityId,
+        observedIdentityId: row.identity_id,
+        role: "subject",
+        basis: "rule:claim-subject-bridge@1",
+        contractVersion: "1",
+      });
+      bridged += 1;
+    }
+    return bridged;
+  }
+
+  /**
    * Store one materiality result for a change item and Claim. The result comes from
    * the Claim family's contract and is never asserted by the change itself (D4).
    */

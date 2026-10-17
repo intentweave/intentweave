@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { ClaimsStore } from "../claims/store.js";
 import Database from "@intentweave/sqlite-compat";
 import {
   initSchema,
@@ -449,5 +450,107 @@ describe("migration 21 from schema 20", () => {
       )
       .all();
     expect(tables).toHaveLength(1);
+  });
+});
+
+describe("Reverse Impact from projected observations", () => {
+  it("finds the Claims whose assessments depend on evidence projected from a changed observation", () => {
+    const { db, store } = fresh();
+    const base = run(store, "r1", [symbol("src/a.ts", "charge")]);
+    const version = db
+      .prepare(
+        `SELECT version.id FROM observed_versions version
+         JOIN observation_run_items item ON item.effective_version_id = version.id
+         WHERE item.run_id = ?`,
+      )
+      .get(base) as { id: string };
+    const subject = {
+      kind: "symbol" as const,
+      identityKey: "symbol:canonical-charge",
+      displayName: "charge",
+      role: "subject",
+      basis: "rule:claim-subject-bridge@1",
+      confidence: "certain" as const,
+    };
+    const evidenceVersion = store.projectVersion({
+      observedVersionId: version.id,
+      projectionContractVersion: "1",
+      evidence: {
+        subjects: [subject],
+        sourceKind: "observed-symbol",
+        identityKey: "observation:symbol:src/a.ts#charge",
+        fingerprint: "fp-1",
+        materialFingerprint: "mfp-1",
+        normalizedValue: { signature: "(a: string): void" },
+        semanticLocation: "src/a.ts#charge",
+        provenance: { source: "observation" },
+      },
+    });
+    const claims = new ClaimsStore(db);
+    const assessment = claims.persistGenericClaimAssessment({
+      subjects: [{ ...subject, role: "subject" }],
+      claimType: "CLM-OBSERVED-SYMBOL",
+      identityContract: { id: "observed-symbol-identity", version: "1" },
+      materialityContract: { id: "observed-symbol-materiality", version: "1" },
+      normalizedStatement: { symbol: "charge" },
+      assessmentPolicyId: "observed-symbol",
+      assessmentPolicyVersion: "1",
+      repositoryRevision: "r1",
+      status: "supported",
+      dependencies: [
+        {
+          dependencyKind: "evidence_version",
+          dependencyVersionId: evidenceVersion,
+          epistemicRole: "assertion",
+          warrantPolarity: null,
+          assessmentEffect: "neutral",
+        },
+      ],
+    });
+    const identity = db
+      .prepare("SELECT id FROM observed_identities WHERE identity_key = ?")
+      .get("symbol:function:src/a.ts#charge") as { id: string };
+    expect(store.dependentClaims(identity.id)).toEqual([
+      assessment.claimIdentityId,
+    ]);
+
+    // A signature change supersedes the projected evidence. The Claim still depends on
+    // the superseded basis, so it is in Reverse Impact.
+    const changed = run(store, "r2", [
+      symbol("src/a.ts", "charge", { signature: "(a: number): void" }),
+    ]);
+    const changedVersion = db
+      .prepare(
+        `SELECT version.id FROM observed_versions version
+         JOIN observation_run_items item ON item.effective_version_id = version.id
+         WHERE item.run_id = ?`,
+      )
+      .get(changed) as { id: string };
+    store.projectVersion({
+      observedVersionId: changedVersion.id,
+      projectionContractVersion: "1",
+      evidence: {
+        subjects: [subject],
+        sourceKind: "observed-symbol",
+        identityKey: "observation:symbol:src/a.ts#charge",
+        fingerprint: "fp-2",
+        materialFingerprint: "mfp-2",
+        normalizedValue: { signature: "(a: number): void" },
+        semanticLocation: "src/a.ts#charge",
+        provenance: { source: "observation" },
+      },
+    });
+    expect(store.dependentClaims(identity.id)).toEqual([
+      assessment.claimIdentityId,
+    ]);
+  });
+
+  it("returns no Claims for an observation that no assessment depends on", () => {
+    const { db, store } = fresh();
+    run(store, "r1", [symbol("src/a.ts", "unused")]);
+    const identity = db
+      .prepare("SELECT id FROM observed_identities WHERE identity_key = ?")
+      .get("symbol:function:src/a.ts#unused") as { id: string };
+    expect(store.dependentClaims(identity.id)).toEqual([]);
   });
 });
