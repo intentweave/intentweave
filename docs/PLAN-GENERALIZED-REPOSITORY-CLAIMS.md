@@ -2227,12 +2227,23 @@ of Candidates and Claims, plus configured implementation views, and reports
 changes to them. It does not claim to infer every relevant Claim from source
 code. Claims enter through Candidate discovery and explicit promotion.
 
-Open questions.
+Decisions.
 
-- The exact contents of the implementation view format (files, symbols, or
-  globs).
-- Whether the continuity gate's default scopes should be empty (opt-in) or Claim
-  Subjects (recommended as the first default once the gate is proven).
+- Implementation view (decided: derived from Claims, extended explicitly). The
+  implementation view is derived by default: the symbols referenced by Claim
+  Subjects, plus their direct dependencies. A project may extend it with an
+  explicit glob list in `.iw/claims/observations.yaml`, with optional symbol
+  filters such as exported symbols or name patterns. The effective view, that is,
+  the derived set plus the explicit additions, is written to the portable state.
+  Changes to the view are therefore visible and reviewable. A glob never adds
+  objects silently.
+- Continuity gate default (decided: report first, then gate on Claim Subjects).
+  The continuity checker has a `report` mode and a `gate` mode per scope. A
+  project starts in `report` mode, and the config records a report period, that
+  is, an explicit start date or number of CI runs. After that period, the gate
+  for Claim Subjects is enabled by an explicit configuration change, which is
+  itself reviewable. Projects that never change the setting stay in `report`
+  mode. An upgrade never fails CI on its own. Other scopes remain opt-in.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
