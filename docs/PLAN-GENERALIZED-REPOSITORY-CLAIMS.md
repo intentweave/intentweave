@@ -2165,6 +2165,10 @@ Phases.
 
 - O0 (decision gate): accept D1–D4, write the column-level migration 21 draft, and
   review it against the existing tables it bridges. No code and no behavior change.
+  Status: draft written in `docs/OBSERVATION-MIGRATION-21-DRAFT.md`. Review found that
+  native parity for schemas 17–20 is already missing (Definition of Done item 14).
+  Decisions A (native parity scope), B (bridge creation policy), and C (retention) are
+  open for acceptance before O1.
 - O1: Language and kind registry; TypeScript and JavaScript adapter producing
   `file`, `module`, `symbol`, `dependency`, `call-site`, and coverage. Complete
   runs with coverage rows. Inventory recall measured against a hand-checked
