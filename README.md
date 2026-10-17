@@ -239,9 +239,11 @@ Two depth modes:
 - `--depth structured` (default) — headings, bold text, code spans only. Fast and precise.
 - `--depth full` — adds body text scanning with IDF noise filtering. +72% more annotations.
 
-### Knowledge Graph — Neo4j Query (via MCP)
+### Knowledge Graph — Neo4j Query (via MCP, plugin required)
 
-For teams with a running Neo4j instance, the KG MCP tools connect directly:
+The `kg_*` MCP tools read through a `persistence` plugin. No such plugin ships in
+this repository, so these steps apply only once a plugin and a populated graph exist
+(see [`docs/API.md`](docs/API.md)):
 
 ```bash
 # Set credentials, then start the MCP server
@@ -250,8 +252,8 @@ export OPENAI_API_KEY=sk-...
 iw mcp --session my-project
 ```
 
-Use `kg_query`, `kg_context`, `kg_entities`, `kg_impact`, `kg_doc_health`, and `kg_schema`
-from GitHub Copilot to query the graph once populated.
+Once a plugin is installed, use `kg_query`, `kg_context`, `kg_entities`, `kg_impact`,
+`kg_doc_health`, and `kg_schema` from GitHub Copilot to query the graph.
 
 ### From source (development)
 
@@ -266,35 +268,17 @@ pnpm install && pnpm build
 
 ---
 
-## Selective Semantic Enrichment (Layer 2)
+## Enrichment candidates (CARI ranking)
 
-The bridge between free static analysis and full KG extraction. CARI identifies the
-highest-value targets so an LLM can extract semantic triples for just those files,
-with the results going back into the same SQLite index.
-
-Today this is available as the `cari_enrich` MCP tool (dry-run scoring — ranks
-files by hotspot/orphan/hub signals for enrichment candidacy; full LLM extraction
-isn't yet wired up to a CLI command):
+`cari_enrich` ranks files as candidates for semantic enrichment, using only CARI
+signals: hotspot, orphan ratio, hub degree, coverage gap, and drift. It is a dry run.
+LLM triple extraction and the SQLite knowledge-graph tables were removed in schema 22,
+so a dry run is the only mode.
 
 ```bash
-# Query code structure and (once enriched) semantic relationships
 iw index retrieve "authentication decisions"
-iw index connections "AuthService"         # structural + semantic connections
+iw index connections "AuthService"         # structural connections
 ```
-
-**What enrichment is designed to unlock:**
-
-| Use Case                              | How It Works                                                                                                            |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **Architecture diagram validation**   | LLM reads ASCII/Mermaid diagrams in your docs, extracts component flows, CARI validates against the actual import graph |
-| **Decision tracking**                 | LLM extracts decision triples from ADRs, CARI checks which decisions have code grounding                                |
-| **Cross-doc contradiction detection** | LLM extracts conflicting predicates from docs that CARI flags as drifted                                                |
-| **Config-to-docs sync**               | LLM maps config parameters to docs, CARI detects value mismatches                                                       |
-| **Setup instruction validation**      | LLM extracts step sequences from CONTRIBUTING.md, CARI validates commands exist                                         |
-
-All stored in the same `index.db` — no second database.
-
----
 
 ## What's Coming
 
@@ -475,7 +459,7 @@ optionally call one for naming):
 | `cari_resolve`                | Ground diagram component to code + docs                      | `name`, `limitSymbols?`                |
 | `cari_arch_diff`              | Validate diagram flows against CARI evidence                 | `paths?`, `provider?`, `refresh?`      |
 | `cari_component_evidence`     | All CARI evidence for one component                          | `name`, `limit?`                       |
-| `cari_living_score`           | Composite living documentation score                         | `minConfidence?`, `allowSkipLayer?`    |
+| `cari_living_score`           | Composite living documentation score                         | `allowSkipLayer?`                      |
 | `intent_check`                | Three-domain enforcement (structural/behavioral/documentary) | `domain?`, `severity?`, `changed?`     |
 | `cari_calls`                  | Query the call graph by caller file / callee name            | `callerFile?`, `calleeName?`, `limit?` |
 | `cari_trace`                  | BFS call-path trace from an entry-point file                 | `entry`, `hops?`, `direction?`         |
@@ -487,12 +471,10 @@ optionally call one for naming):
 | `cari_layers_from_decorators` | Layer assignment from class decorators                       | _(none)_                               |
 | `cari_rules_trend`            | ADR conformance trend over git history                       | `limit?`                               |
 | `cari_test_intent`            | Test descriptions vs. symbol alignment                       | `limit?`                               |
-| `cari_verify`                 | Spec-to-code grounding verification                          | _(none)_                               |
-| `cari_consistency`            | Constraint consistency check                                 | _(none)_                               |
 | `cari_rules_check`            | Rules check (structural domain, direct)                      | `severity?`, `changed?`                |
 | `cari_skipped_files`          | Files excluded from CARI analysis                            | _(none)_                               |
 | `cari_slices`                 | Vertical slice detection (feature cohorts spanning layers)   | `minLayers?`, `limit?`                 |
-| `cari_enrich`                 | Score + optionally trigger selective LLM enrichment          | `budget?`, `dryRun?`, `provider?`      |
+| `cari_enrich`                 | Rank files as enrichment candidates (dry run)                | `budget?`, `threshold?`, `focus?`      |
 | `cari_cypher`                 | Custom graph queries via CypherLite                          | `query`, `limit?`                      |
 | `cari_graph_schema`           | CARI graph schema — node/rel types, query templates          | _(none)_                               |
 | `cari_capsule`                | Architecture snapshot / capsule export                       | `format?`                              |

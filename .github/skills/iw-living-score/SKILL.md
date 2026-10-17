@@ -1,12 +1,12 @@
 ---
 name: iw-living-score
-description: "Living Documentation Score (12.3) with CARI. Use when: computing composite documentation health, checking iw verify --score, interpreting the 4-dimension score, investigating low dimension scores, using cari_living_score MCP tool, tracking documentation quality over time."
+description: "Living Documentation Score (12.3) with CARI. Use when: computing composite documentation health, checking iw verify --score, interpreting the two-dimension score, investigating low dimension scores, using cari_living_score MCP tool, tracking documentation quality over time."
 ---
 
 # IntentWeave Living Documentation Score
 
 Compute a composite 0–100 score with letter grade (A–F) that measures the health
-of a project's living documentation across four dimensions.
+of a project's living documentation across two dimensions.
 
 ## When to Use
 
@@ -16,17 +16,20 @@ of a project's living documentation across four dimensions.
 - Gating CI pipelines on documentation quality
 - Answering "how well does our documentation reflect reality?"
 
-## The Four Dimensions
+## The Two Dimensions
 
-| Dimension                    | Measures                                               | Requires            |
-| ---------------------------- | ------------------------------------------------------ | ------------------- |
-| **Spec Coverage**            | % of KG entities grounded in code symbols              | `iw run` enrichment |
-| **Constraint Consistency**   | % of relationships without contradictions              | `iw run` enrichment |
-| **Doc Freshness**            | % of doc files not stale (git churn vs. doc age)       | `iw index build`    |
-| **Architecture Conformance** | % of import edges respecting inferred layer boundaries | `iw index build`    |
+| Dimension                    | Measures                                               | Requires         |
+| ---------------------------- | ------------------------------------------------------ | ---------------- |
+| **Doc Freshness**            | % of doc files not stale (git churn vs. doc age)       | `iw index build` |
+| **Architecture Conformance** | % of import edges respecting inferred layer boundaries | `iw index build` |
 
-Dimensions that lack the required data are excluded from the composite average.
-The score = average of available dimensions (minimum 1 available required).
+A dimension whose data is missing is excluded from the composite average. The
+score is the average of the available dimensions, and at least one must be
+available.
+
+The spec-coverage and constraint-consistency dimensions were removed with the
+knowledge-graph tables (schema 22). The score was already computed from these two
+dimensions on every index without a knowledge graph.
 
 ### Grade Scale
 
@@ -50,24 +53,17 @@ iw verify --score -f json
 # Save to file
 iw verify --score -f json -o .iw/living-score.json
 
-# With custom confidence threshold (default 0.5)
-iw verify --score --min-confidence 0.7
-
-# Allow skip-layer imports without counting as violations
-iw verify --score --allow-skip-layer
-
 # Exit codes:  0 = grade A/B,  1 = grade C,  2 = grade D/F
 ```
+
+`iw verify` without flags prints the same score. `--score` is kept for scripts and
+the Doc Health action.
 
 ### Prerequisites
 
 ```bash
 # For Doc Freshness + Architecture Conformance:
 iw index build
-
-# Spec Coverage + Constraint Consistency require a populated Neo4j knowledge
-# graph (kg_entities / kg_relationships tables) — there is currently no CLI
-# command to populate one from scratch; see docs/kg/try-it.mdx.
 ```
 
 ## MCP Tool
@@ -78,7 +74,6 @@ cari_living_score
 
 **Parameters:**
 
-- `minConfidence` (number, default 0.5) — min annotation confidence for spec grounding
 - `allowSkipLayer` (boolean, default false) — allow skip-layer imports without penalty
 
 **Example Copilot prompts:**
@@ -94,44 +89,11 @@ cari_living_score
 
 | Dimension                | Score | Detail                                                                 | Available |
 | ------------------------ | ----- | ---------------------------------------------------------------------- | --------- |
-| Spec Coverage            | N/A   | No KG entities — requires a populated knowledge graph                  | ✗         |
-| Constraint Consistency   | N/A   | No KG relationships — requires a populated knowledge graph             | ✗         |
 | Doc Freshness            | 96%   | 1 stale doc out of 27 total                                            | ✓         |
 | Architecture Conformance | 88%   | 53 layer violations across 458 import edges (0 reverse, 53 skip-layer) | ✓         |
 ```
 
 ## Interpreting Each Dimension
-
-### Spec Coverage (requires enrichment)
-
-Measures how many knowledge-graph entities can be traced to real code symbols.
-
-- **High (> 80%)** — architecture concepts are well-grounded in code
-- **Low (< 60%)** — entities exist in docs but have no matching code; check for renamed symbols
-- **N/A** — no knowledge graph populated; see docs/kg/try-it.mdx (query-only
-  today, no CLI ingestion path)
-
-Investigation:
-
-```bash
-iw verify -v                        # see per-entity grounding detail
-iw index retrieve "AuthService"     # check if symbol exists in index
-```
-
-### Constraint Consistency (requires enrichment)
-
-Measures how many KG relationships are free of contradictions.
-
-- **High (> 90%)** — specifications are internally consistent
-- **Low (< 70%)** — conflicting statements exist; run `iw verify --consistency -v`
-- **N/A** — no knowledge graph populated
-
-Investigation:
-
-```bash
-iw verify --consistency -v          # list all conflicts
-iw verify --consistency -f json     # export for review
-```
 
 ### Doc Freshness
 
@@ -194,10 +156,9 @@ iw verify --score -f json | jq '{date: now | todate, score: .score, grade: .grad
 
 ## Troubleshooting
 
-| Symptom                       | Cause                                    | Fix                                                                    |
-| ----------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| All dimensions N/A            | Index not built                          | `iw index build`                                                       |
-| Arch Conformance N/A          | No relative imports resolved             | Check that source files use relative imports                           |
-| Spec Coverage stuck at N/A    | No knowledge graph populated             | See docs/kg/try-it.mdx — requires an existing populated Neo4j instance |
-| Score 100 but docs feel stale | `is_doc` flag not set                    | Confirm docs/ files are picked up: `iw index build -v`                 |
-| Very low Arch Conformance     | Auto-inferred layers don't match reality | Tune with `iw index layers-infer > .iw/layers.yaml` then re-run        |
+| Symptom                       | Cause                                    | Fix                                                             |
+| ----------------------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| All dimensions N/A            | Index not built                          | `iw index build`                                                |
+| Arch Conformance N/A          | No relative imports resolved             | Check that source files use relative imports                    |
+| Score 100 but docs feel stale | `is_doc` flag not set                    | Confirm docs/ files are picked up: `iw index build -v`          |
+| Very low Arch Conformance     | Auto-inferred layers don't match reality | Tune with `iw index layers-infer > .iw/layers.yaml` then re-run |

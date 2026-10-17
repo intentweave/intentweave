@@ -892,7 +892,6 @@ import {
   analyzeFocusInsights,
   archCheck,
   parseArchitectureYaml,
-  inferArchConfigFromKg,
   enrichArchConfigWithFiles,
   diagramEntityCheck,
   namingViolations,
@@ -1943,16 +1942,6 @@ async function buildPrescriptiveReportData(
       analyticsLivingScore = {
         score: lsResult.score,
         grade: lsResult.grade,
-        specCoverage: {
-          score: lsResult.specCoverage.score,
-          available: lsResult.specCoverage.available,
-          detail: lsResult.specCoverage.detail,
-        },
-        constraintConsistency: {
-          score: lsResult.constraintConsistency.score,
-          available: lsResult.constraintConsistency.available,
-          detail: lsResult.constraintConsistency.detail,
-        },
         docFreshness: {
           score: lsResult.docFreshness.score,
           available: lsResult.docFreshness.available,
@@ -6181,11 +6170,6 @@ const indexArchCheckSubcommand = new Command("arch-check")
     "Path to architecture.yaml (default: .iw/architecture.yaml)",
   )
   .option(
-    "--from-diagrams",
-    "Infer architecture config from enriched diagram triples in index.db (requires prior `iw index enrich`)",
-    false,
-  )
-  .option(
     "--from-scan [paths...]",
     "Scan markdown files for diagrams and interpret via LLM directly (no enrichment needed)",
   )
@@ -6237,7 +6221,6 @@ Architecture YAML schema example (.iw/architecture.yaml):
 
 Notes:
   - Use --from-scan <paths> to auto-generate config from Mermaid/ASCII diagrams (requires --provider openai).
-  - Use --from-diagrams to infer config from previously enriched diagram triples.
   - Omit --config to auto-discover .iw/architecture.yaml in the current directory.
 `,
   )
@@ -6303,22 +6286,6 @@ Notes:
         );
       }
 
-      // ── Priority 2: --from-diagrams — use enriched KG triples ───────────────
-    } else if (opts.fromDiagrams) {
-      config = inferArchConfigFromKg(dbPath, {
-        requireDiagramHints: true,
-        workspaceRoot: process.cwd(),
-      });
-
-      if (!config.components || config.components.length === 0) {
-        console.error(
-          chalk.red(
-            "\n  ✗ No architecture triples found from diagrams.\n    Run `iw index enrich --provider openai` first, or use --from-scan.\n",
-          ),
-        );
-        process.exit(1);
-      }
-
       // ── Priority 3: YAML config (explicit or auto-discovered) ───────────────
     } else {
       const configPath =
@@ -6329,29 +6296,13 @@ Notes:
       try {
         configContent = await readFile(configPath, "utf-8");
       } catch {
-        config = inferArchConfigFromKg(dbPath, {
-          requireDiagramHints: true,
-          workspaceRoot: process.cwd(),
-        });
-
-        if (!config.components || config.components.length === 0) {
-          console.error(
-            chalk.red(
-              `\n  ✗ Architecture config not found at ${configPath}, and no diagram triples were inferred.\n` +
-                `    Run --from-scan <paths> to scan diagrams directly, or create .iw/architecture.yaml.\n`,
-            ),
-          );
-          process.exit(1);
-        }
-
-        if (opts.format !== "json") {
-          console.log(
-            chalk.yellow(
-              `\n  ⚠ Architecture config not found at ${configPath}; using inferred diagram triples instead.\n`,
-            ),
-          );
-        }
-        configContent = "";
+        console.error(
+          chalk.red(
+            `\n  ✗ Architecture config not found at ${configPath}.\n` +
+              `    Run --from-scan <paths> to scan diagrams directly, or create .iw/architecture.yaml.\n`,
+          ),
+        );
+        process.exit(1);
       }
 
       if (configContent) {

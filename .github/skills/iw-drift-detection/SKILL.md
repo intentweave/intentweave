@@ -1,6 +1,6 @@
 ---
 name: iw-drift-detection
-description: "Documentation and architecture drift detection with CARI and KG. Use when: checking if docs are stale, finding which docs reference changed code, running doc-health, using cari_check MCP tool, detecting annotation drift, cross-group inconsistency, orphaned sections, or temporal staleness."
+description: "Documentation and architecture drift detection with CARI. Use when: checking if docs are stale, finding which docs reference changed code, running doc-health, using cari_check MCP tool, detecting annotation drift, cross-group inconsistency, orphaned sections, or temporal staleness."
 ---
 
 # IntentWeave Drift Detection

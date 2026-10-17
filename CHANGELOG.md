@@ -54,6 +54,25 @@ All notable changes to IntentWeave are documented in this file.
   findings no longer become active Claims merely because they were observed.
   Only explicit bindings, compatibility Policies, human promotion, or another
   enabled versioned Candidate Policy activate governance and CI behavior.
+- **Knowledge-graph tables removed (schema 22)** — the `kg_entities`,
+  `kg_relationships`, `kg_raw_triples`, and `enrichment_meta` tables are dropped
+  by migration 22. Nothing in IntentWeave wrote them. The migration keeps a durable
+  `.schema-21.backup` before it runs. The `kg_*` MCP tools still need an external
+  persistence plugin.
+- **Breaking: `iw verify` is the living documentation score only.** Spec-to-code
+  grounding (`iw verify [files...]`) and `--consistency` are removed, since they read
+  the knowledge-graph tables. `--score` remains, and the score JSON no longer contains
+  `specCoverage` or `constraintConsistency`. The score is unchanged, because those
+  dimensions were already unavailable without the tables.
+- **Breaking: removed MCP tools and parameters** — `cari_verify` and
+  `cari_consistency` are removed. `cari_enrich` loses `incremental`.
+  `cari_living_score` loses `minConfidence` and its two dimensions.
+  `cari_arch_check` loses `fromDiagrams`.
+- **Breaking: removed `iw index build --from-diagrams`.** The architecture config
+  from enriched diagram triples depended on the removed tables. Use `--config`,
+  `.iw/architecture.yaml`, or `--from-scan`.
+- **`docs/API.md` rewritten** to describe the surfaces that ship today (CLI, MCP,
+  programmatic API) and the `kg_*` plugin requirement.
 
 ### Fixed
 

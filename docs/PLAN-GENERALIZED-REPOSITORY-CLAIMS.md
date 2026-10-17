@@ -1039,7 +1039,8 @@ The existing Claims companion layer remains. Schema changes follow the current
 one-step, version-guarded migration discipline and are split at the G1/G2
 boundary rather than bundled into one large version. The sequence began at
 schema 16; schemas 17-20 are implemented and schema 20 is the current baseline.
-Schemas 21 (Phase G5.3) and 22 (Phase G6d) are planned:
+Schema 21 (Phase G5.3) is implemented; schema 22 removes the knowledge-graph tables;
+schema 23 (Phase G6d) is planned:
 
 | Schema | Phase | Change                                                                                                                                                                          |
 | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1048,7 +1049,8 @@ Schemas 21 (Phase G5.3) and 22 (Phase G6d) are planned:
 | `19`   | G2    | add `claim_candidates`, `candidate_evidence`, `candidate_subjects`, `candidate_inferences`, `candidate_reviews`, and `candidate_policy_decisions`                               |
 | `20`   | G6b   | rebuild `candidate_reviews` with explicit `inference_id` and `based_on_recommendation_id` references, constraints, and lookup indexes                                           |
 | `21`   | G5.3  | add the observation layer tables (runs, coverage, membership, identities, versions, relations, Subject bridge, evidence projection, ChangeSets, change impacts); see Phase G5.3 |
-| `22`   | G6d   | add append-only `candidate_automation_observations` for report-only Policy evaluation; effective decisions continue to use `candidate_policy_decisions`                         |
+| `22`   | KG    | drop `kg_entities`, `kg_relationships`, `kg_raw_triples`, and `enrichment_meta`, which nothing writes. A durable `.schema-21.backup` is kept first                              |
+| `23`   | G6d   | add append-only `candidate_automation_observations` for report-only Policy evaluation; effective decisions continue to use `candidate_policy_decisions`                         |
 
 Schemas 17-19 are historical compatibility surfaces and no longer renumber. If
 another migration lands before G6b or G6d implementation, planned schemas 20 or
@@ -1062,7 +1064,7 @@ counts and foreign keys before commit. Existing effective Reviews receive null
 values for both new references. A historical AI Recommendation is backfilled
 from the referenced Candidate version's single `inference_id`; if that link is
 missing or ambiguous, preflight fails with an actionable repair error and
-changes nothing. Migration `20 -> 21` is additive and transactional. The G5.3 observation migration is 21 and the G6d migration is 22, as in the schema table. A schema-19
+changes nothing. Migration `20 -> 21` is additive and transactional. The G5.3 observation migration is 21, the knowledge-graph removal is 22, and the G6d migration is 23. A schema-19
 database reaches 21 only through both guarded steps; unsupported downgrade
 remains rejected. TypeScript and native schema creation, migration, snapshot
 restoration, and parity tests must describe the same columns, constraints, and
@@ -1470,7 +1472,7 @@ re-run in this review.
 | G6c.1 Registry and grounding kernel                      | Implemented                          | `SemanticCorrelationRegistry`                                                                                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | G6c.2 Framework-independent Endpoint correlation         | Partial                              | `semanticEndpointCorrelation.ts`; live validation on a Fastify fixture with `ambiguous` routes (2026-10-17)                                                       | For an ambiguous guard with two verifier definitions, `gpt-5-mini` and `gpt-5.1` now both answer `ambiguous` once the guard is flagged; before the flag, both answered `probable`, and the Rule keeps such candidates inconclusive after promotion. Scope hooks now use declaration order (a hook applies only to routes registered after it in its file), so the probable case resolves deterministically. A four-case labeled set (`packages/cli/evaluation/fastify-semantic-endpoint.labels.json`, run with `packages/cli/evaluation/run-fastify-semantic.mjs`) matches 4 of 4 for both models, but only one case reaches a model at all; the set does not yet measure the model's ability to find positives no correlation yet that deterministic adapters miss on a real repo; the real Fastify repo has no ambiguous routes |
 | G6c.3 Cross-artifact and continuity expansion            | Implemented                          | Cross-artifact cohort resolver; semantic cross-artifact and public Symbol continuity adapters                                                                     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| G6d Policy-governed automation                           | Not started                          | No automation policy, report-only observations, or schema 22                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| G6d Policy-governed automation                           | Not started                          | No automation policy, report-only observations, or schema 23                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Communication track                                      | Not verified                         | —                                                                                                                                                                 | Publication checkpoints depend on the evidence above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | G5.3 Generalized observation and change layer            | Proposed (revised, not yet accepted) | No implementation; design revised after review                                                                                                                    | O0 persistence contract acceptance; then O1–O4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
@@ -2188,11 +2190,10 @@ Phases.
     route registrations in `packages/analyzer/evaluation/`: 14 of 14, with complete
     coverage for all five kinds over 58 tracked files. This is the easy case: literal
     paths, one framework, one repository. It is not a general recall figure.
-  - Native parity test (decision A): every native table matches TypeScript, except
-    four knowledge-graph tables that already diverge (`kg_entities`,
-    `kg_relationships`, `kg_raw_triples`, `enrichment_meta`). The test lists them as
-    known divergences and fails on any new one. Fixing or accepting these four is
-    still to be decided.
+  - Native parity test (decision A): every native table matches TypeScript. The four
+    knowledge-graph tables that diverged (`kg_entities`, `kg_relationships`,
+    `kg_raw_triples`, `enrichment_meta`) were removed from both schemas in schema 22,
+    so the known-divergence list is empty.
   - Not in O1: observation tables and their writes (migration 21, O2), identities and
     membership in the database, ChangeSets over the inventory, the projection, and
     change impacts. Route interpretation is not part of the inventory.
@@ -3159,7 +3160,7 @@ Implementation is split as follows:
 
 ##### G6d.1: Report-Only Policy
 
-- implement strict Policy parsing, schema 22 migration (after the Phase G5.3 observation migration), eligibility
+- implement strict Policy parsing, schema 23 migration (after the schema 22 knowledge-graph removal), eligibility
   evaluation, idempotent observations, Explain output, and metrics calculation,
 - generate a canonical activation-basis proposal only after the prior
   behavior-equivalent report-only Policy version has a passing labeled dataset

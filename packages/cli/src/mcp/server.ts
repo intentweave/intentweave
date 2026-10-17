@@ -3745,10 +3745,6 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
         .describe(
           "If true (default), only score and return candidates. If false, run LLM enrichment.",
         ),
-      incremental: z
-        .boolean()
-        .optional()
-        .describe("Skip files unchanged since last enrichment"),
     },
     async (args) => {
       try {
@@ -3759,14 +3755,12 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
         const { enrichmentScore } = await import("@intentweave/index");
         const scoreResult = enrichmentScore(resolveIndexDb(), {
           focus: args.focus,
-          incremental: args.incremental,
         });
 
         const threshold = args.threshold ?? 0.1;
         const budget = args.budget ?? 20;
         const eligible = scoreResult.candidates.filter((c) => {
           if (c.impactScore < threshold) return false;
-          if (args.incremental && c.alreadyEnriched) return false;
           return true;
         });
         const selected = eligible.slice(0, budget);
@@ -3819,213 +3813,6 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
       }
     },
   );
-  // ── Tool: cari_verify ───────────────────────────────────────────────
-  server.tool(
-    "cari_verify",
-    "Spec-to-code verification: check whether KG entities (from enrichment) are grounded in code symbols. " +
-      "Returns grounded/ungrounded/partial/untested status for each entity. " +
-      "Requires prior enrichment (iw index enrich). " +
-      "Use to validate that documented decisions, requirements, and components have corresponding code.",
-    {
-      files: z
-        .array(z.string())
-        .optional()
-        .describe("Restrict to entities from these source files"),
-      types: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Only verify entities of these types (e.g., decision, requirement, component)",
-        ),
-      minConfidence: z
-        .number()
-        .optional()
-        .describe(
-          "Minimum annotation confidence to count as grounded (default: 0.5)",
-        ),
-      checkTests: z
-        .boolean()
-        .optional()
-        .describe("Check test coverage for grounded entities (default: true)"),
-    },
-    async (args) => {
-      try {
-        log(
-          `cari_verify: files=${args.files}, types=${args.types}, checkTests=${args.checkTests}`,
-        );
-
-        const { verify } = await import("@intentweave/index");
-        const dbPath = resolveIndexDb();
-
-        const result = verify(dbPath, {
-          files: args.files,
-          types: args.types,
-          minConfidence: args.minConfidence,
-          checkTests: args.checkTests,
-        });
-
-        await logMcpSessionEvent({
-          tool: "cari_verify",
-          confidence: result.summary.coveragePercent,
-          resultCount: result.entities.length,
-        });
-
-        if (result.entities.length === 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "No KG entities found. Run `iw index enrich` first to extract semantic entities.",
-              },
-            ],
-          };
-        }
-
-        const { summary } = result;
-        const lines: string[] = [
-          `## Spec-to-Code Verification`,
-          "",
-          `**${summary.total}** entities checked — **${summary.coveragePercent}%** spec coverage`,
-          "",
-          "| Status | Entity | Type | Source | Grounded In |",
-          "|--------|--------|------|--------|-------------|",
-        ];
-
-        const STATUS_ICONS: Record<string, string> = {
-          grounded: "✓",
-          untested: "⚠",
-          partial: "~",
-          ungrounded: "✗",
-        };
-
-        for (const e of result.entities) {
-          const icon = STATUS_ICONS[e.status] ?? "?";
-          const groundedStr =
-            e.groundedIn.length > 0
-              ? e.groundedIn
-                  .map((g) => `${g.symbolName} (${g.filePath})`)
-                  .join(", ")
-              : "—";
-          lines.push(
-            `| ${icon} ${e.status} | ${e.name} | ${e.entityType} | ${e.sourceFile} | ${groundedStr} |`,
-          );
-        }
-
-        lines.push(
-          "",
-          "### Summary",
-          "",
-          `- ✓ **${summary.grounded}** grounded`,
-          `- ⚠ **${summary.untested}** untested (code found but no tests)`,
-          `- ~ **${summary.partial}** partial (mentioned in docs, no code symbol)`,
-          `- ✗ **${summary.ungrounded}** ungrounded (no code references)`,
-        );
-
-        if (result.byFile.length > 1) {
-          lines.push("", "### By File", "");
-          for (const f of result.byFile) {
-            lines.push(
-              `- **${f.file}**: ${f.coveragePercent}% (${f.grounded}/${f.total})`,
-            );
-          }
-        }
-
-        return { content: [{ type: "text", text: lines.join("\n") }] };
-      } catch (err: any) {
-        const msg = handleCariError(err);
-        return { content: [{ type: "text", text: msg }], isError: true };
-      }
-    },
-  );
-
-  // ── Tool: cari_consistency ──────────────────────────────────────────
-  server.tool(
-    "cari_consistency",
-    "Constraint consistency check: detect contradictions between KG relationships across different " +
-      "source documents. Finds opposing predicates (e.g., REQUIRES vs DECIDED_AGAINST the same entity) " +
-      "and exclusive-predicate conflicts (e.g., DECIDED_FOR two different targets). " +
-      "Requires prior enrichment (iw index enrich).",
-    {
-      files: z
-        .array(z.string())
-        .optional()
-        .describe("Restrict to relationships from these source files"),
-      types: z
-        .array(z.string())
-        .optional()
-        .describe("Only check relationships involving entities of these types"),
-      minConfidence: z
-        .number()
-        .optional()
-        .describe("Minimum relationship confidence to include (default: 0.5)"),
-    },
-    async (args) => {
-      try {
-        log(`cari_consistency: files=${args.files}, types=${args.types}`);
-
-        const { consistency } = await import("@intentweave/index");
-        const dbPath = resolveIndexDb();
-
-        const result = consistency(dbPath, {
-          files: args.files,
-          types: args.types,
-          minConfidence: args.minConfidence,
-        });
-
-        const { summary } = result;
-
-        await logMcpSessionEvent({
-          tool: "cari_consistency",
-          confidence: summary.consistencyPercent,
-          resultCount: result.conflicts.length,
-        });
-
-        if (result.conflicts.length === 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text:
-                  `## Constraint Consistency\n\n` +
-                  `✓ All **${summary.totalRelationships}** relationships are internally consistent.`,
-              },
-            ],
-          };
-        }
-
-        const lines: string[] = [
-          `## Constraint Consistency`,
-          "",
-          `**${summary.totalRelationships}** relationships checked — **${summary.consistencyPercent}%** consistent`,
-          "",
-          "| Sev | Entity A | Predicate A | Entity B | Predicate B | Source A | Source B |",
-          "|-----|----------|-------------|----------|-------------|---------|---------|",
-        ];
-
-        for (const c of result.conflicts) {
-          const icon = c.severity === "error" ? "✗" : "⚠";
-          lines.push(
-            `| ${icon} | ${c.entityA.name} | ${c.predicateA} | ${c.entityB.name} | ${c.predicateB} | ${c.sourceFileA} | ${c.sourceFileB} |`,
-          );
-        }
-
-        lines.push(
-          "",
-          "### Summary",
-          "",
-          `- ✗ **${summary.errors}** errors (hard contradictions)`,
-          `- ⚠ **${summary.warnings}** warnings (potential conflicts)`,
-          `- ✓ **${summary.consistencyPercent}%** consistent`,
-        );
-
-        return { content: [{ type: "text", text: lines.join("\n") }] };
-      } catch (err: any) {
-        const msg = handleCariError(err);
-        return { content: [{ type: "text", text: msg }], isError: true };
-      }
-    },
-  );
-
   // ── Tool: cari_arch_check ─────────────────────────────────────────
   server.tool(
     "cari_arch_check",
@@ -4046,83 +3833,30 @@ Returns:
         .boolean()
         .optional()
         .describe("Treat undocumented flows as errors"),
-      fromDiagrams: z
-        .boolean()
-        .optional()
-        .describe(
-          "Infer architecture config from enriched diagram triples (no YAML required)",
-        ),
     },
     async (args) => {
       try {
-        const { archCheck, parseArchitectureYaml, inferArchConfigFromKg } =
-          await loadIndex();
+        const { archCheck, parseArchitectureYaml } = await loadIndex();
         const { readFile } = await import("node:fs/promises");
         const dbPath = resolveIndexDb();
-        let config: ReturnType<typeof parseArchitectureYaml> | null = null;
-        let usedDiagramFallback = false;
 
-        if (args.fromDiagrams) {
-          config = inferArchConfigFromKg(dbPath, {
-            requireDiagramHints: true,
-            workspaceRoot: process.cwd(),
-          });
-
-          if (!config.components || config.components.length === 0) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: "✗ No architecture triples found from diagrams. Run `iw index enrich --provider openai` first, or provide `config`.",
-                },
-              ],
-              isError: true,
-            };
-          }
-        } else {
-          const configPath =
-            args.config ?? path.join(process.cwd(), ".iw", "architecture.yaml");
-
-          let configContent: string;
-          try {
-            configContent = await readFile(configPath, "utf-8");
-          } catch {
-            config = inferArchConfigFromKg(dbPath, {
-              requireDiagramHints: true,
-              workspaceRoot: process.cwd(),
-            });
-
-            if (!config.components || config.components.length === 0) {
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: `✗ Architecture config not found at ${configPath}, and no diagram triples were inferred. Use fromDiagrams=true after enrichment or create .iw/architecture.yaml.`,
-                  },
-                ],
-                isError: true,
-              };
-            }
-            usedDiagramFallback = true;
-            configContent = "";
-          }
-
-          if (configContent) {
-            config = parseArchitectureYaml(configContent);
-          }
-        }
-
-        if (!config) {
+        const configPath =
+          args.config ?? path.join(process.cwd(), ".iw", "architecture.yaml");
+        let configContent: string;
+        try {
+          configContent = await readFile(configPath, "utf-8");
+        } catch {
           return {
             content: [
               {
                 type: "text",
-                text: "✗ Failed to load architecture config.",
+                text: `✗ Architecture config not found at ${configPath}. Create .iw/architecture.yaml or pass \`config\`.`,
               },
             ],
             isError: true,
           };
         }
+        const config = parseArchitectureYaml(configContent);
 
         const result = archCheck(dbPath, config);
         const { summary } = result;
@@ -4150,13 +3884,6 @@ Returns:
           `**${summary.conformancePercent}%** conformance`,
           "",
         ];
-
-        if (usedDiagramFallback) {
-          lines.push(
-            "⚠ Config missing; used inferred architecture from enriched diagram triples.",
-            "",
-          );
-        }
 
         // Component summary
         lines.push("### Components", "");
@@ -4596,21 +4323,14 @@ No LLM or Neo4j needed — pure SQLite.`,
   // ── Tool: cari_living_score ─────────────────────────────────────────
   server.tool(
     "cari_living_score",
-    `Compute the Living Documentation Score (12.3) — a composite 0–100 score with letter grade (A–F) across four dimensions:
-- Spec Coverage: % of KG entities grounded in code (requires prior \`iw run\` enrichment)
-- Constraint Consistency: % of constraints without contradictions (requires prior enrichment)
+    `Compute the Living Documentation Score (12.3) — a composite 0–100 score with letter grade (A–F) across two dimensions:
 - Doc Freshness: % of documentation files not stale
 - Architecture Conformance: % of import edges respecting inferred layer boundaries
 
-Unavailable dimensions (e.g., no enrichment run) are excluded from the composite average.
+Unavailable dimensions (e.g., no layer config) are excluded from the composite average.
 Grades: A ≥ 90, B ≥ 75, C ≥ 60, D ≥ 45, F < 45.
 Use to get an at-a-glance health score for a project's living documentation.`,
     {
-      minConfidence: z
-        .number()
-        .optional()
-        .default(0.5)
-        .describe("Minimum annotation confidence (0–1) for spec grounding"),
       allowSkipLayer: z
         .boolean()
         .optional()
@@ -4620,14 +4340,11 @@ Use to get an at-a-glance health score for a project's living documentation.`,
         ),
     },
     async (args) => {
-      log(
-        `cari_living_score: minConfidence=${args.minConfidence}, allowSkipLayer=${args.allowSkipLayer}`,
-      );
+      log(`cari_living_score: allowSkipLayer=${args.allowSkipLayer}`);
       try {
         const { livingScore } = await loadIndex();
         const dbPath = resolveIndexDb();
         const result = livingScore(dbPath, {
-          minConfidence: args.minConfidence,
           allowSkipLayer: args.allowSkipLayer,
         });
 
@@ -4643,12 +4360,7 @@ Use to get an at-a-glance health score for a project's living documentation.`,
           D: "🔴",
           F: "⛔",
         };
-        const dims = [
-          result.specCoverage,
-          result.constraintConsistency,
-          result.docFreshness,
-          result.archConformance,
-        ];
+        const dims = [result.docFreshness, result.archConformance];
         const gradeEmoji = GRADE_EMOJI[result.grade] ?? "";
         const lines = [
           `## Living Documentation Score: ${result.score}/100  (${gradeEmoji} Grade ${result.grade})`,

@@ -342,7 +342,8 @@ iw intent extract docs/ --provider openai       # batch: all markdown in directo
 
 ### `iw intent score` / `iw verify --score`
 
-Composite living documentation score (A–F) across four dimensions.
+Composite living documentation score (A–F) across two dimensions: documentation
+freshness and architecture conformance.
 
 ```bash
 iw intent score
@@ -405,8 +406,7 @@ automatic runtime adaptation.
 
 Covered on both the CLI and MCP surfaces: `iw index retrieve` / `cari_retrieve`,
 `iw index connections` / `cari_connections`, `iw index check` / `cari_check`,
-`iw index arch-check` / `cari_arch_diff`, `iw verify` / `cari_verify`,
-`iw verify --consistency` / `cari_consistency`, `iw verify --score` /
+`iw index arch-check` / `cari_arch_diff`, `iw verify --score` /
 `cari_living_score`.
 
 Each line looks like:

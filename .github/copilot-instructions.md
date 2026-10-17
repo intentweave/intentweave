@@ -497,8 +497,6 @@ programmatic API.
 | `cari_rules_trend`            | ADR conformance trend over git history                     | `limit?`                                                             |
 | `cari_layers_from_decorators` | Layer assignment from class decorators                     | _(none)_                                                             |
 | `cari_layers_name`            | LLM-generated layer & directory names                      | `provider`, `model?`, `api_key?`                                     |
-| `cari_verify`                 | Spec-to-code grounding verification                        | _(none)_                                                             |
-| `cari_consistency`            | Constraint consistency check                               | _(none)_                                                             |
 | `cari_arch_check`             | Validate diagrams against import evidence                  | `paths?`, `provider?`                                                |
 | `cari_cypher`                 | Custom graph queries via CypherLite                        | `query`, `limit?`                                                    |
 | `cari_graph_schema`           | CARI graph schema — node/rel types, query templates        | _(none)_                                                             |
@@ -508,35 +506,35 @@ programmatic API.
 
 All CARI query functions are available as direct API calls, MCP tools, and CLI subcommands:
 
-| Function                     | CLI Command                    | Purpose                                                                                  |
-| ---------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
-| `clones()`                   | `iw index clones`              | Exact clone detection (identical body hash)                                              |
-| `structuralClones()`         | `iw index structural-clones`   | Type 2 clones (same control flow, different identifiers)                                 |
-| `circularImports()`          | `iw index circular-imports`    | Import cycle detection                                                                   |
-| `unusedExports()`            | `iw index unused-exports`      | Exported symbols never imported                                                          |
-| `hotspotPriority()`          | `iw index hotspot-priority`    | High-churn low-doc files ranked by urgency                                               |
-| `todos()`                    | `iw index todos`               | TODO/FIXME/HACK/XXX inventory                                                            |
-| `moduleCoverage()`           | `iw index module-coverage`     | Documentation coverage % per directory                                                   |
-| `orphanedSections()`         | `iw index orphaned-sections`   | Doc sections with all-ungrounded mentions                                                |
-| `docCompleteness()`          | `iw index doc-completeness`    | Per-doc completeness vs. referenced exports                                              |
-| `crossGroupDrift()`          | `iw index cross-group-drift`   | Entity coverage conflicts across doc groups                                              |
-| `mentionsOf()`               | `iw index mentions-of`         | Find doc mentions of a code or external entity                                           |
-| `annotationsForFile()`       | `iw index annotations-for`     | List all annotations for a documentation file                                            |
-| `testCoverage()`             | `iw index test-coverage`       | Map test files to source files, find untested exports                                    |
-| `hubs()`                     | `iw index hubs`                | Degree centrality across all edge types (god-node)                                       |
-| `communities()`              | `iw index communities`         | Label-propagation community detection                                                    |
-| `surprises()`                | `iw index surprises`           | Surprising connection ranking (composite score)                                          |
-| `rationale()`                | `iw index rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                                            |
-| `terminologyInconsistency()` | `iw index terminology`         | Detect different doc names for the same code symbol                                      |
-| `dependencyDepth()`          | `iw index dep-depth`           | Transitive import depth + fan-in/fan-out risk                                            |
-| `boundaryViolations()`       | `iw index boundary-violations` | Cross-package internal import detection                                                  |
-| `layersInfer()`              | `iw index layers-infer`        | Auto-infer architectural layers from import graph                                        |
-| `layersCheck()`              | `iw index layers-check`        | Validate imports against layer configuration                                             |
-| `focus()`                    | `iw index focus`               | Focused architecture view around a target entity                                         |
-| `livingScore()`              | `iw verify --score`            | Composite living documentation score (spec + consistency + freshness + arch conformance) |
-| `calls()`                    | `iw index calls`               | Query symbol_calls call graph (Phase 4)                                                  |
-| `trace()`                    | `iw index trace`               | BFS call-path tracing from entry-point file (Phase 4)                                    |
-| `ruleCoverage()`             | `iw index rule-coverage`       | Flag packages with zero behavioral rules (Phase 4)                                       |
+| Function                     | CLI Command                    | Purpose                                                                 |
+| ---------------------------- | ------------------------------ | ----------------------------------------------------------------------- |
+| `clones()`                   | `iw index clones`              | Exact clone detection (identical body hash)                             |
+| `structuralClones()`         | `iw index structural-clones`   | Type 2 clones (same control flow, different identifiers)                |
+| `circularImports()`          | `iw index circular-imports`    | Import cycle detection                                                  |
+| `unusedExports()`            | `iw index unused-exports`      | Exported symbols never imported                                         |
+| `hotspotPriority()`          | `iw index hotspot-priority`    | High-churn low-doc files ranked by urgency                              |
+| `todos()`                    | `iw index todos`               | TODO/FIXME/HACK/XXX inventory                                           |
+| `moduleCoverage()`           | `iw index module-coverage`     | Documentation coverage % per directory                                  |
+| `orphanedSections()`         | `iw index orphaned-sections`   | Doc sections with all-ungrounded mentions                               |
+| `docCompleteness()`          | `iw index doc-completeness`    | Per-doc completeness vs. referenced exports                             |
+| `crossGroupDrift()`          | `iw index cross-group-drift`   | Entity coverage conflicts across doc groups                             |
+| `mentionsOf()`               | `iw index mentions-of`         | Find doc mentions of a code or external entity                          |
+| `annotationsForFile()`       | `iw index annotations-for`     | List all annotations for a documentation file                           |
+| `testCoverage()`             | `iw index test-coverage`       | Map test files to source files, find untested exports                   |
+| `hubs()`                     | `iw index hubs`                | Degree centrality across all edge types (god-node)                      |
+| `communities()`              | `iw index communities`         | Label-propagation community detection                                   |
+| `surprises()`                | `iw index surprises`           | Surprising connection ranking (composite score)                         |
+| `rationale()`                | `iw index rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                           |
+| `terminologyInconsistency()` | `iw index terminology`         | Detect different doc names for the same code symbol                     |
+| `dependencyDepth()`          | `iw index dep-depth`           | Transitive import depth + fan-in/fan-out risk                           |
+| `boundaryViolations()`       | `iw index boundary-violations` | Cross-package internal import detection                                 |
+| `layersInfer()`              | `iw index layers-infer`        | Auto-infer architectural layers from import graph                       |
+| `layersCheck()`              | `iw index layers-check`        | Validate imports against layer configuration                            |
+| `focus()`                    | `iw index focus`               | Focused architecture view around a target entity                        |
+| `livingScore()`              | `iw verify --score`            | Composite living documentation score (doc freshness + arch conformance) |
+| `calls()`                    | `iw index calls`               | Query symbol_calls call graph (Phase 4)                                 |
+| `trace()`                    | `iw index trace`               | BFS call-path tracing from entry-point file (Phase 4)                   |
+| `ruleCoverage()`             | `iw index rule-coverage`       | Flag packages with zero behavioral rules (Phase 4)                      |
 
 ### Entity Bridge
 
