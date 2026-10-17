@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   StructuredInferenceService,
+  isReusableStructuredOutcome,
   type LLMProvider,
   type LLMProviderCapabilities,
   type LLMProviderV2,
@@ -122,6 +123,51 @@ describe("StructuredInferenceService", () => {
       }),
     );
     expect(result.meta.rawOutputFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("reuses only outcomes the model produced, never transport failures", () => {
+    expect(isReusableStructuredOutcome({ ok: true })).toBe(true);
+    expect(
+      isReusableStructuredOutcome({
+        ok: false,
+        failure: { kind: "schema_mismatch" },
+      }),
+    ).toBe(true);
+    expect(
+      isReusableStructuredOutcome({ ok: false, failure: { kind: "refusal" } }),
+    ).toBe(true);
+    expect(
+      isReusableStructuredOutcome({ ok: false, failure: { kind: "provider" } }),
+    ).toBe(false);
+    expect(
+      isReusableStructuredOutcome({ ok: false, failure: { kind: "timeout" } }),
+    ).toBe(false);
+  });
+
+  it("sends providers a schema without uniqueItems but keeps duplicate rejection local", async () => {
+    const schema = {
+      type: "object",
+      required: ["ids"],
+      additionalProperties: false,
+      properties: {
+        ids: { type: "array", uniqueItems: true, items: { type: "string" } },
+      },
+    };
+    const provider = new StubV2Provider(
+      response({ content: JSON.stringify({ ids: ["a", "a"] }) }),
+    );
+
+    const result = await new StructuredInferenceService(provider).infer({
+      ...request(),
+      responseSchema: schema,
+    });
+
+    const sent = provider.complete.mock.calls[0]?.[0].responseSchema;
+    expect(JSON.stringify(sent)).not.toContain("uniqueItems");
+    expect(result).toMatchObject({
+      ok: false,
+      failure: { kind: "schema_mismatch", retryable: false },
+    });
   });
 
   it("distinguishes invalid JSON from a local schema mismatch", async () => {

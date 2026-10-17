@@ -13,6 +13,29 @@ import {
   type LLMTransportErrorKind,
 } from "../interfaces.js";
 
+/**
+ * Strict structured-output providers reject some JSON Schema keywords that the
+ * local validator enforces. `uniqueItems` is the known case, so the provider
+ * receives a copy without it. Local validation still uses the full schema.
+ */
+export function providerResponseSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const strip = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(strip);
+    if (value && typeof value === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, child] of Object.entries(value)) {
+        if (key === "uniqueItems") continue;
+        out[key] = strip(child);
+      }
+      return out;
+    }
+    return value;
+  };
+  return strip(schema) as Record<string, unknown>;
+}
+
 export interface StructuredInferenceRequest {
   schemaName: string;
   responseSchema: Record<string, unknown>;
@@ -61,6 +84,32 @@ export type StructuredInferenceFailureKind =
   | "schema_mismatch"
   | "transport"
   | "provider";
+
+/**
+ * Whether a stored outcome can stand in for a fresh provider call. A model that
+ * produced output (success, refusal, filtered, truncated, or malformed output)
+ * is deterministic for the same input. Transport outcomes are not, so a stored
+ * provider error must not suppress a retry.
+ */
+const MODEL_OUTPUT_FAILURE_KINDS: readonly string[] = [
+  "refusal",
+  "content_filter",
+  "truncated",
+  "invalid_json",
+  "schema_mismatch",
+];
+
+export function isReusableStructuredOutcome(result: {
+  ok: boolean;
+  failure?: unknown;
+}): boolean {
+  if (result.ok) return true;
+  const kind =
+    typeof result.failure === "object" && result.failure !== null
+      ? (result.failure as { kind?: unknown }).kind
+      : undefined;
+  return typeof kind === "string" && MODEL_OUTPUT_FAILURE_KINDS.includes(kind);
+}
 
 export interface StructuredInferenceFailure {
   kind: StructuredInferenceFailureKind;
@@ -237,7 +286,7 @@ export class StructuredInferenceService {
       response = await this.provider.complete({
         system: request.system,
         messages: request.messages,
-        responseSchema: request.responseSchema,
+        responseSchema: providerResponseSchema(request.responseSchema),
         responseSchemaName: request.schemaName,
         temperature: request.temperature,
         maxTokens: request.maxTokens,

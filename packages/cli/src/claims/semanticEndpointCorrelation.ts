@@ -4,6 +4,7 @@
 import {
   StructuredInferenceService,
   type LLMProvider,
+  isReusableStructuredOutcome,
   type StructuredInferenceResult,
 } from "@intentweave/core";
 import {
@@ -153,6 +154,10 @@ function cachedResult(
   const provenance = objectValue(inference.provenance);
   const result = objectValue(provenance?.structuredInference);
   if (typeof result?.ok !== "boolean") return undefined;
+  if (
+    !isReusableStructuredOutcome(result as { ok: boolean; failure?: unknown })
+  )
+    return undefined;
   return result as unknown as StructuredInferenceResult<SemanticEndpointCorrelationOutput>;
 }
 
