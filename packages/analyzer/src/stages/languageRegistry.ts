@@ -53,6 +53,9 @@ export interface LanguageAdapter {
   /** File extensions this adapter handles (with leading dot, e.g., ".ts") */
   readonly extensions: readonly string[];
 
+  /** Optional observation capability (Phase O1). */
+  readonly observation?: LanguageObservation;
+
   /**
    * Process a single source file and produce a unified AxFileResult.
    *
@@ -64,6 +67,75 @@ export interface LanguageAdapter {
     workspaceRoot: string,
     relativePath: string,
   ): Promise<AxFileResult>;
+}
+
+// ============================================================================
+// Observation Capability (Phase O1)
+// ============================================================================
+
+/**
+ * Kinds of observed objects in the generic observation layer. Adapters declare the
+ * kinds they produce. Claim families consume kinds and never add them.
+ */
+export const OBSERVATION_KINDS = [
+  "file",
+  "module",
+  "symbol",
+  "dependency",
+  "call-site",
+] as const;
+
+export type ObservationKind = (typeof OBSERVATION_KINDS)[number];
+
+/**
+ * Per-kind capability an adapter declares. `not_observed` and `unsupported` are
+ * never reported as absent by the core.
+ */
+export type ObservationCapability =
+  | { status: "observed" }
+  | { status: "not_observed"; reason: string }
+  | { status: "unsupported" };
+
+/** Where an observed object sits. */
+export interface ObservedLocator {
+  filePath: string;
+  container?: string;
+  line?: number;
+  endLine?: number;
+}
+
+/**
+ * One observation of an object in one file. `identityKey` is the creation key
+ * (Amendment A): it is built from kind and defining locator, never from a CARI id.
+ */
+export interface ObservedRecord {
+  kind: ObservationKind;
+  identityKey: string;
+  locator: ObservedLocator;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * Observation capability of a language adapter. Optional, so adapters that only
+ * extract AX symbols keep working unchanged.
+ */
+export interface LanguageObservation {
+  /** Adapter contract version. A change here starts a new observation run. */
+  readonly contractVersion: string;
+  /** Capability for every kind in OBSERVATION_KINDS. */
+  readonly capabilities: Readonly<
+    Record<ObservationKind, ObservationCapability>
+  >;
+  /**
+   * Observe one file. Throws when the file cannot be read or parsed, so the
+   * runner can mark the kind partial instead of recording absence.
+   */
+  observeFile(workspaceRoot: string, relativePath: string): ObservedRecord[];
+  /**
+   * Observe a package manifest (for example package.json). Manifests have no
+   * source extension, so they are observed by the adapter that owns the ecosystem.
+   */
+  observeManifest?(workspaceRoot: string): ObservedRecord[];
 }
 
 /**
@@ -124,6 +196,23 @@ export class LanguageRegistry {
     return this.adapters.flatMap((a) =>
       a.extensions.map((ext) => `**/*${ext}`),
     );
+  }
+
+  /**
+   * Every registered adapter that declares an observation capability. Manifests
+   * have no source extension, so they are found here, not by extension.
+   */
+  observationAdapters(): LanguageAdapter[] {
+    return this.adapters.filter((adapter) => adapter.observation !== undefined);
+  }
+
+  /**
+   * The adapter that observes the given file, when it declares an observation
+   * capability. Null when no registered adapter observes that extension.
+   */
+  observationAdapterFor(filePath: string): LanguageAdapter | null {
+    const adapter = this.adapterFor(filePath);
+    return adapter?.observation ? adapter : null;
   }
 
   /**

@@ -31,6 +31,7 @@ import {
   type ExtractionOptions,
 } from "@intentweave/ast-extractor";
 
+import { createTypeScriptObservation } from "./observation/typescriptObservation.js";
 import {
   LanguageRegistry,
   type LanguageAdapter,
@@ -749,6 +750,7 @@ export function createTypeScriptAdapter(
 
   return {
     extensions: [".ts", ".tsx", ".js", ".jsx"],
+    observation: createTypeScriptObservation(options.workspaceRoot),
 
     async processFile(workspaceRoot, relativePath) {
       return processFile(getExtractor(), workspaceRoot, relativePath);
