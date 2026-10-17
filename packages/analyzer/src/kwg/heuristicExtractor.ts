@@ -112,7 +112,7 @@ const NOISE_WORDS = new Set([
 // Helpers
 // =============================================================================
 
-/** Check if a string is PascalCase (e.g., "AuthService", "Neo4j"). */
+/** Check if a string is PascalCase (e.g., "AuthService", "PostgreSQL"). */
 function isPascalCase(s: string): boolean {
   return /^[A-Z][a-zA-Z0-9]+$/.test(s) && /[a-z]/.test(s);
 }

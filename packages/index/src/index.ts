@@ -5,7 +5,7 @@
  * @intentweave/index — Code-Aware Retrieval Index (CARI)
  *
  * Lightweight SQLite-based index for agents, CI, and editors.
- * Zero-infrastructure alternative to the full Neo4j knowledge graph.
+ * Zero-infrastructure alternative to a full graph database.
  */
 
 // Phase 1: Core index

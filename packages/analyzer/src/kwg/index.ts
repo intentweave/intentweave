@@ -7,7 +7,7 @@
  * Pipeline: KWX (keyword extraction) → COX (co-occurrence) → CLX (clustering)
  *
  * Exports the three pipeline stages, the heuristic extractor, qualifier
- * detector, and Neo4j persistence function.
+ * and detector.
  */
 
 // Heuristic keyword extractor

@@ -16,7 +16,7 @@
  *   5. Return EntityCluster[]
  *
  * Connected-component clustering is the only algorithm in v1. Leiden/Louvain
- * (via Neo4j GDS) is a v2 concern.
+ * (via a graph-database procedure library) is a v2 concern.
  *
  * @version 0.1
  */

@@ -5,7 +5,7 @@
  * CARI (Code-Aware Retrieval Index) Types
  *
  * Lightweight types for the SQLite-based retrieval index.
- * Consumed by agents, CI, and editors — no Neo4j required.
+ * Consumed by agents, CI, and editors.
  */
 
 import type { SqliteMetrics } from "@intentweave/sqlite-compat";

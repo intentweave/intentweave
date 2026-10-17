@@ -6,7 +6,7 @@
  *
  * Builds virtual `kg_entities` and `kg_relationships` CTEs from the CARI
  * SQLite tables so that CypherLite queries can traverse the full CARI graph
- * without Neo4j.
+ * without a graph database.
  *
  * Node labels available in queries:
  *   - FILE      (from `files`)

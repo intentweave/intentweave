@@ -5,14 +5,13 @@
  * CARI-backed doc health analysis.
  *
  * Reads the SQLite index (.iw/index.db) via @intentweave/index queries
- * to produce a UnifiedDriftReport without requiring Neo4j.
+ * to produce a UnifiedDriftReport without requiring a graph database.
  *
  * Delegates to the existing `report()` query for coverage, staleness,
  * hidden couplings, and undocumented deps — then maps results into
  * DriftSignal[] for unified output.
  *
- * This is the default mode for `iw doc-health`. Use `--neo4j` to
- * enable the richer KG-based analysis (decision predicates, etc.).
+ * This is the default mode for `iw doc-health`.
  */
 
 import * as path from "node:path";
@@ -47,7 +46,7 @@ export interface CariHealthResult {
 
 /**
  * Run doc-health analysis from the CARI SQLite index.
- * No Neo4j, no LLM, instant results.
+ * No LLM, instant results.
  */
 export function analyzeFromCari(options: CariHealthOptions): CariHealthResult {
   const cwd = process.cwd();

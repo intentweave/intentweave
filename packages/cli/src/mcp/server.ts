@@ -63,7 +63,7 @@ import {
   enrichWithDescriptions,
   enrichWithCodeRefs,
   formatContextMarkdown as sharedFormatContextMarkdown,
-  type Neo4jRunner,
+  type GraphRunner,
   type ContextOptions,
   type FormatOptions,
 } from "../context/index.js";
@@ -116,7 +116,7 @@ async function llmComplete(
 // =============================================================================
 
 const GRAPH_SCHEMA_TEXT = `
-Neo4j Multi-Layer Graph Schema:
+Multi-Layer Graph Schema:
 
 Layer 1 — KWG (Keywords):
   :KWEntity (name, mentionCount, session_id)
@@ -162,7 +162,7 @@ Query tips:
 `.trim();
 
 function buildCypherSystemPrompt(sessionId: string): string {
-  return `You are a Cypher query generator for a Neo4j knowledge graph.
+  return `You are a Cypher query generator for a knowledge graph.
 
 ${GRAPH_SCHEMA_TEXT}
 
@@ -357,14 +357,6 @@ async function toolDocHealth(args: {
   return formatPreflightForAgent(result);
 }
 
-async function toolImpact(_args: {
-  files: string[];
-  session_id: string;
-  hops: number;
-}): Promise<string> {
-  return "Impact analysis via Neo4j is not available in this build. Use `cari_check` or `cari_connections` for CARI-based impact analysis.";
-}
-
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -432,7 +424,6 @@ function handleCariError(err: unknown): string {
 
 export interface McpServerOptions {
   sessionId: string;
-  neo4jUri?: string;
   verbose?: boolean;
 }
 
@@ -580,40 +571,6 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
     },
   );
 
-  // ── Tool: kg_impact ──────────────────────────────────────────────
-  server.tool(
-    "kg_impact",
-    "Analyze semantic impact of changing file(s). Shows which concepts, decisions, and risks are affected. Use this before making changes to understand the blast radius.",
-    {
-      files: z
-        .array(z.string())
-        .describe(
-          'Workspace-relative file path(s) to analyze (e.g. ["package.json", "ui/src/App.tsx"])',
-        ),
-      hops: z
-        .number()
-        .optional()
-        .default(2)
-        .describe("Ripple expansion depth (1-3)"),
-    },
-    async (args) => {
-      log(`kg_impact: files=${JSON.stringify(args.files)}`);
-      try {
-        const result = await toolImpact({
-          files: args.files,
-          session_id: sessionId,
-          hops: args.hops ?? 2,
-        });
-        return { content: [{ type: "text", text: result }] };
-      } catch (err: any) {
-        return {
-          content: [{ type: "text", text: `Error: ${err.message}` }],
-          isError: true,
-        };
-      }
-    },
-  );
-
   // ── Tool: kg_doc_health ─────────────────────────────────────────────
   server.tool(
     "kg_doc_health",
@@ -639,7 +596,7 @@ The structured JSON block at the end contains per-document grounding details. Us
         .boolean()
         .optional()
         .describe(
-          "Lightweight keyword-only mode. No Neo4j or LLM required. " +
+          "Lightweight keyword-only mode. No LLM required. " +
             "Extracts entity names from markdown structure (headings, bold, code spans) " +
             "and checks if they appear in source files. Fast pre-flight check.",
         ),
@@ -677,7 +634,7 @@ The structured JSON block at the end contains per-document grounding details. Us
 
   // ── CARI Tools (Code-Aware Retrieval Index) ──────────────────────────
   // These tools query the SQLite-based CARI index (.iw/index.db).
-  // No Neo4j or LLM required — pure local, precomputed data.
+  // No LLM required — pure local, precomputed data.
 
   /** Resolve the CARI index.db path (workspace .iw/index.db) */
   function resolveIndexDb(): string {
@@ -734,7 +691,7 @@ The structured JSON block at the end contains per-document grounding details. Us
 
 Use this to find code and documentation related to a concept (e.g. "authentication", "payment flow") or a symbol (e.g. "AuthService", "validateUser").
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       query: z
         .string()
@@ -821,7 +778,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
 Highlights **gaps** where evidence layers disagree (hidden couplings, undocumented dependencies).
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       entity: z
         .string()
@@ -934,7 +891,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 - Co-change partners missing from the PR (files that usually change together)
 - Documentation files referencing hotspot code not included in the PR
 
-Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
+Returns actionable findings with severity levels. No LLM needed.`,
     {
       changed: z
         .array(z.string())
@@ -991,7 +948,7 @@ Returns actionable findings with severity levels. No LLM or Neo4j needed.`,
     "cari_clones",
     `Detect exact code clones (Type 1). Finds functions/methods with identical normalised bodies (same body hash). Returns clone groups with file locations.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       layerAnalysis: z
         .boolean()
@@ -1064,7 +1021,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_structural_clones",
     `Detect structural code clones (Type 2). Finds functions/methods with the same control-flow structure but different identifiers or literals. Excludes groups that are already exact clones.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       layerAnalysis: z
         .boolean()
@@ -1142,7 +1099,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_circular_imports",
     `Detect circular import cycles in the codebase. Returns each cycle as an ordered list of files forming the loop.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {},
     async () => {
       log("cari_circular_imports");
@@ -1186,7 +1143,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_unused_exports",
     `Find exported symbols that are never imported anywhere in the codebase. Helps identify dead public API surface.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -1243,7 +1200,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_hotspot_priority",
     `Rank files by documentation urgency: high churn × low documentation coverage = high priority. Helps focus documentation effort where it matters most.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -1294,7 +1251,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_todos",
     `List all TODO, FIXME, HACK, and XXX comments found in the codebase. Returns file, line, kind, and comment text.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       kind: z
         .string()
@@ -1384,7 +1341,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_naming_violations",
     `List code symbols that violate standard naming conventions (camelCase for functions/methods, PascalCase for classes/interfaces/types, UPPER_SNAKE for constants). Skips $-prefixed names (JSON Schema convention), snake_case properties (external data/DB convention), and quoted names.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       kind: z
         .string()
@@ -1467,7 +1424,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_comment_code_ratio",
     `Show comment-to-code ratio anomalies for indexed source files. Flags under-commented files (ratio far below workspace average) and over-commented files.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       showAll: z
         .boolean()
@@ -1531,7 +1488,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_skipped_files",
     `List source files that were skipped during AX extraction, typically because they exceeded the --max-file-size threshold. These files have no extracted symbols in the index.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {},
     async () => {
       log("cari_skipped_files");
@@ -1578,7 +1535,7 @@ Detects violations of custom architectural constraints — property access patte
 
 Rules are defined in a .iw/rules.yaml file committed to the workspace. Each rule references an ADR and specifies which patterns are forbidden in which files.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       severity: z
         .enum(["high", "medium", "low"])
@@ -1721,7 +1678,7 @@ Domain options:
 Behavioral rules require a \`domain: behavioral\` rule in rules.yaml with a \`mermaid:\` key
 (inline diagram) or \`source.type: mermaid_file\` pointing to an ADR markdown file.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       domain: z
         .enum(["structural", "behavioral", "documentary", "all"])
@@ -1893,7 +1850,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
 Cross-references symbols marked @deprecated (in JSDoc) against all function call records to surface files that still use symbols that should be migrated. Use for CI enforcement or migration planning.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       changed: z
         .array(z.string())
@@ -1965,7 +1922,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
 Enforces visibility conventions at scale: symbols tagged @internal in JSDoc or named with a leading underscore are flagged when imported by files in different packages.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       checkJsDoc: z
         .boolean()
@@ -2049,7 +2006,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
 Use this to find type-safety escape hatches and rank them by risk (files with high fan-in are higher risk).
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       kind: z
         .enum(["as_any", "double_cast", "angle_cast", "as_cast"])
@@ -2123,7 +2080,7 @@ Scans all test descriptions (from describe/it/test blocks) and identifies:
 
 Useful for finding outdated tests that may need cleanup or updating.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -2194,7 +2151,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 Snapshots are recorded automatically after each \`iw index build\` when .iw/rules.yaml is present.
 Trend is computed as improving / worsening / stable from first to last snapshot in the time window.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       days: z
         .number()
@@ -2264,7 +2221,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 
 Uses built-in presets (nestjs, angular, spring) to map decorator names like \`@Controller\`, \`@Injectable\`, \`@Entity\` to architectural layers.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       preset: z
         .enum(["nestjs", "angular", "spring"])
@@ -2325,7 +2282,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_module_coverage",
     `Show documentation coverage percentage per directory/module. Lists how many exported symbols in each directory have at least one documentation mention.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {},
     async () => {
       log("cari_module_coverage");
@@ -2366,7 +2323,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_orphaned_sections",
     `Find documentation sections where all entity mentions are ungrounded (not linked to any code symbol). These sections may reference stale, renamed, or fictional entities.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {},
     async () => {
       log("cari_orphaned_sections");
@@ -2410,7 +2367,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_doc_completeness",
     `Score each document by how completely it covers the exports from the code files it references. Shows which exported symbols are missing from each doc.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {},
     async () => {
       log("cari_doc_completeness");
@@ -2473,7 +2430,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_cross_group_drift",
     `Detect entities mentioned in multiple documentation groups with conflicting qualifiers or coverage patterns. Reveals inconsistencies across docs.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {},
     async () => {
       log("cari_cross_group_drift");
@@ -2528,7 +2485,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_mentions_of",
     `Find all document mentions that reference a given entity (code symbol or external entity). Returns document paths, lines, confidence scores, and match types.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       entityId: z
         .string()
@@ -2592,7 +2549,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_annotations_for",
     `List all annotations in a document file, showing which code symbols or external entities each mention maps to. Useful for understanding doc-to-code coverage.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       filePath: z
         .string()
@@ -2658,7 +2615,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_test_coverage",
     `Map test files to source files and find untested exported symbols. Uses naming conventions (foo.test.ts → foo.ts, foo.spec.ts, __tests__/) and import analysis to determine coverage.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -2746,7 +2703,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_hubs",
     `Rank entities by degree centrality across all edge types (annotations, imports, co-occurrences, co-changes). God nodes are entities everything connects through — highest architectural risk and documentation priority.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -2803,7 +2760,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
 Use 'resolution' to control granularity: higher values (2–5) produce more, smaller communities.
 Communities larger than 'maxSize' (default 100) are recursively sub-split.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       mode: z
         .enum(["structural", "semantic", "temporal"])
@@ -2879,7 +2836,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_surprises",
     `Rank connections by composite surprise score — cross-layer weight (code↔doc), community distance, and inverse frequency. Finds unexpected couplings in your codebase.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -2929,7 +2886,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_rationale",
     `List WHY/NOTE/IMPORTANT/DESIGN rationale comments found in the codebase. Not just what the code does — why it was written that way.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       kind: z
         .string()
@@ -2998,7 +2955,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_terminology",
     `Detect terminology inconsistencies — when docs use different names for the same code symbol (e.g., "auth service", "AuthService", "authentication module" all referring to the same class). Suggests the canonical name for each entity.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -3060,7 +3017,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_dep_depth",
     `Compute transitive import depth per file — flag excessive fan-in (many dependents) or fan-out (many dependencies). Helps identify god-modules, fragile bottlenecks, and deeply-chained imports.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       limit: z
         .number()
@@ -3113,7 +3070,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_boundary_violations",
     `Detect when files import from another package's internal modules instead of using the public API (index barrel). Finds cross-package coupling violations in monorepos.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {},
     async () => {
       log("cari_boundary_violations");
@@ -3175,7 +3132,7 @@ Supports three modes:
 - **hierarchical**: two-level inference — macro layers across packages, sub-layers within large packages
 - **scoped**: infer layers within a single package/directory
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       hierarchical: z
         .boolean()
@@ -3282,7 +3239,7 @@ No LLM or Neo4j needed — queries a local SQLite index.`,
     "cari_layers_check",
     `Validate imports against a committed layer configuration. Detects two violation types: (1) reverse — a lower layer importing from a higher layer, and (2) skip-layer — an import that skips one or more intermediate layers. Reads the layer config from .iw/layers.yaml by default.
 
-No LLM or Neo4j needed — queries a local SQLite index.`,
+No LLM needed — queries a local SQLite index.`,
     {
       allowSkipLayer: z
         .boolean()
@@ -3473,7 +3430,7 @@ Requires an OpenAI API key (OPENAI_API_KEY env var or api_key parameter).`,
     "cari_slices",
     `Detect vertical slices — communities that span multiple architectural layers end-to-end. A vertical slice is a feature cohort (e.g., "auth") that cuts through foundation, core, interface, and entry layers. Communities spanning only 1–2 layers are horizontal modules.
 
-No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
+No LLM needed — pure SQLite analysis on the CARI index.`,
     {
       minLayers: z
         .number()
@@ -3568,7 +3525,7 @@ No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
 Three edge types: import (structural), co_change (temporal), doc_cooc (semantic).
 Ideal for understanding the local architecture around any code entity.
 
-No LLM or Neo4j needed — pure SQLite analysis on the CARI index.`,
+No LLM needed — pure SQLite analysis on the CARI index.`,
     {
       target: z
         .string()
@@ -3971,7 +3928,7 @@ Returns:
 
 Use this before \`cari_arch_diff\` when a component name is ambiguous, or to understand what concrete artifacts a high-level label refers to.
 
-No LLM or Neo4j needed — pure SQLite.`,
+No LLM needed — pure SQLite.`,
     {
       name: z
         .string()
@@ -4066,7 +4023,7 @@ Returns:
 
 Use for drift analysis between documented and actual architecture — without needing import-level code analysis.
 
-No Neo4j needed — LLM is used only for the initial diagram scan (cached after first run).`,
+LLM is used only for the initial diagram scan (cached after first run).`,
     {
       paths: z
         .array(z.string())
@@ -4205,7 +4162,7 @@ Combines three signals:
 
 Use after \`cari_arch_diff\` to drill into a specific ungrounded or missing component.
 
-No LLM or Neo4j needed — pure SQLite.`,
+No LLM needed — pure SQLite.`,
     {
       name: z
         .string()
@@ -5098,9 +5055,6 @@ or debugging an architectural issue — without calling 5 separate tools.`,
   );
 
   // ── Plugin MCP tools ─────────────────────────────────────────────────
-  if (options.neo4jUri) {
-    process.env.NEO4J_URI = options.neo4jUri;
-  }
   const registry = getPluginRegistry();
   await registry.discover((pkg) => import(pkg));
   await registry.resolveCapabilities({

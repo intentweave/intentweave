@@ -10,7 +10,7 @@
  *   - classes / interfaces / types / enums → PascalCase
  *   - UPPER_SNAKE constants (all-caps names) → UPPER_SNAKE_CASE
  *
- * No LLM or Neo4j needed — queries the local SQLite index.
+ * No LLM needed — queries the local SQLite index.
  */
 
 import type Database from "@intentweave/sqlite-compat";

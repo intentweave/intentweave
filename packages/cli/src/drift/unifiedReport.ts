@@ -5,7 +5,7 @@
  * Unified Drift Report
  *
  * Merges output from all four drift detectors into a single
- * UnifiedDriftReport. Used by both CLI rendering and Neo4j persistence.
+ * UnifiedDriftReport. Used by CLI rendering and the CARI doc-health report.
  *
  * @see PHASE-C-SPEC.md §8
  * @version 0.1

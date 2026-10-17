@@ -4,7 +4,7 @@
 /**
  * Preflight Document Health — Lightweight, zero-dependency doc health analysis.
  *
- * Runs without Neo4j or any LLM pipeline. Uses only:
+ * Runs without any LLM pipeline. Uses only:
  *   1. Markdown parsing to extract candidate entity names (headings, bold, code spans, etc.)
  *   2. Keyword indexing to check if those names appear in source files.
  *
@@ -207,7 +207,7 @@ function stripInlineMarkdown(text: string): string {
     .trim();
 }
 
-/** Check if a string is PascalCase (e.g., "AuthService", "Neo4j"). */
+/** Check if a string is PascalCase (e.g., "AuthService", "PostgreSQL"). */
 function isPascalCase(s: string): boolean {
   return /^[A-Z][a-zA-Z0-9]+$/.test(s) && /[a-z]/.test(s);
 }
@@ -302,7 +302,7 @@ const NOISE_WORDS = new Set([
  * 2. Build a keyword index from source files in the cwd.
  * 3. Report which entity names are grounded (found in code) vs floating.
  *
- * No Neo4j or LLM required.
+ * No LLM required.
  */
 export async function preflightDocHealth(
   options: PreflightOptions,

@@ -40,7 +40,7 @@ export const KWG_SCHEMAS = {
  * A qualifier that categorizes the *intent* of a mention.
  *
  * Examples:
- *   "We decided for Neo4j"          → 'decision'
+ *   "We decided for PostgreSQL"     → 'decision'
  *   "@deprecated since v2"          → 'deprecated'
  *   "TODO: migrate to PostgreSQL"   → 'planned'
  *   "We chose X over Y"             → 'alternative'
@@ -354,7 +354,7 @@ export interface KwgPipelineOutput {
 // =============================================================================
 
 /**
- * Result of persisting KWG data to Neo4j.
+ * Result of persisting KWG data to a graph store.
  */
 export interface PersistResult {
   nodesCreated: number;

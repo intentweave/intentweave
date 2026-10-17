@@ -171,30 +171,6 @@ export class AbortThresholdError extends PipelineError {
 }
 
 // =============================================================================
-// Neo4j / Connection Errors
-// =============================================================================
-
-/**
- * Error connecting to or querying Neo4j.
- */
-export class Neo4jError extends IWError {
-  constructor(message: string, options: IWErrorOptions = {}) {
-    super(message, { ...options, code: options.code ?? "neo4j_error" });
-    this.name = "Neo4jError";
-  }
-}
-
-/**
- * Neo4j connection is unavailable (server down, timeout, etc.)
- */
-export class Neo4jConnectionError extends Neo4jError {
-  constructor(message: string, options: IWErrorOptions = {}) {
-    super(message, { ...options, code: "neo4j_connection" });
-    this.name = "Neo4jConnectionError";
-  }
-}
-
-// =============================================================================
 // Configuration Errors
 // =============================================================================
 

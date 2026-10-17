@@ -9,7 +9,7 @@
  *
  * These files are recorded in the files table with indexed=0.
  *
- * No LLM or Neo4j needed — queries the local SQLite index.
+ * No LLM needed — queries the local SQLite index.
  */
 
 import type Database from "@intentweave/sqlite-compat";

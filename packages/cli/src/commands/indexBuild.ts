@@ -6818,9 +6818,7 @@ const indexSlicesSubcommand = new Command("slices")
 // ── iw index impact ─────────────────────────────────────────────
 
 const indexImpactSubcommand = new Command("impact")
-  .description(
-    "Analyze impact of changed files using the CARI index (no Neo4j required)",
-  )
+  .description("Analyze impact of changed files using the CARI index ")
   .argument("<files...>", "Changed file paths (workspace-relative)")
   .option("--db <path>", "Path to index.db")
   .option(

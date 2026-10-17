@@ -9,7 +9,7 @@
  * 2. ExtractionProvider = RX-stage service (uses LLMProvider, owns extraction logic)
  *
  * Other providers:
- * - Database providers (Neo4j, SQLite, in-memory)
+ * - Database providers (SQLite, in-memory)
  * - Parser providers (TreeSitter, TypeScript, custom)
  */
 
@@ -744,7 +744,7 @@ export interface LedgerWriteResult {
  *
  * Defines the contract for persisting StagingSnapshots to an append-only ledger.
  * This is the boundary between the core pipeline (@intentweave/analyzer) and
- * the server's persistence layer (Neo4j, SQLite, etc.).
+ * the server's persistence layer (SQLite, etc.).
  *
  * Design principles:
  * 1. Append-only: Never mutate existing assertions, create new versions
@@ -753,7 +753,6 @@ export interface LedgerWriteResult {
  * 4. Evidence linking: Connect assertions to source chunks
  *
  * Implementations:
- * - Neo4jLedgerWriter (server): Writes to Neo4j graph database
  * - NoopLedgerWriter (CLI): Does nothing (pure file-based output)
  * - MockLedgerWriter (tests): In-memory for assertions
  */

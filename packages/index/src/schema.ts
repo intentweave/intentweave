@@ -1501,7 +1501,7 @@ export function migrateSchema20To21(db: Database.Database): void {
 }
 
 /**
- * Remove the Neo4j-era knowledge-graph tables. Nothing in IntentWeave writes them
+ * Remove the knowledge-graph tables. Nothing in IntentWeave writes them
  * any longer, and their readers are removed with them. The step is destructive, so
  * openMigratedDatabase keeps a durable backup of the version-21 index first.
  */
