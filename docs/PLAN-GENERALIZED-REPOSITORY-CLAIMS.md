@@ -2222,13 +2222,61 @@ Decisions.
 - Continuity gate: `report` mode first, with an explicit report period in the
   config. A reviewable configuration change then enables the gate for Claim
   Subjects. Other scopes stay opt-in. An upgrade never fails CI on its own.
-- D1–D4 as above: pending acceptance at O0.
+- D1–D4 accepted (2026-10-17) as recommended: D1 two-level identity (portable
+  Subject identity with continuity; local inventory identity); D2 run per
+  `(adapter, contract, scope)` with coverage rows per kind; D3 Subject bridge only
+  through a versioned rule or Review; D4 materiality only in `change_impacts`.
 
 Open questions.
 
 - Retention policy for run membership and inventory history.
 - Whether the `subject_observations` bridge is created automatically for
   implementation-view objects or only on Candidate or Claim promotion.
+
+### Phase O-T: Tracer Spike (before O0–O2)
+
+Purpose. Validate the approach end to end before investing in the full design.
+The spike answers one question: does a generic ChangeSet over observed Subject
+identities predict the same Claim impact that the existing Claim lifecycle
+produces?
+
+Scope and deliberate deviations.
+
+- TypeScript and JavaScript exported symbols only.
+- A spike store `.iw/observation-spike.db`, not migration 21. The spike does not
+  touch `CURRENT_SCHEMA_VERSION`.
+- Continuity is the minimum deterministic checker: Git rename detection for file
+  moves, applied to symbols with the same name and kind. Anything else is
+  `continuity-unclear`.
+- Native schema parity, runs for all kinds, and change impacts persisted in the
+  portable state are not part of the spike.
+
+Chain under test.
+
+```text
+commit A -> complete symbol run          (membership, versions)
+commit B -> complete symbol run
+ChangeSet(A, B)                           (generic change items)
+existing claims check at A and B          (current Claim lifecycle)
+predicted impact = change items on Subjects that the Claim depends on
+```
+
+Acceptance.
+
+- A signature change on a Subject of a promoted public-symbol Claim yields a
+  `property-changed` item on that identity, and the existing lifecycle reopens the
+  Claim. The predicted impact and the actual reopen agree.
+- A file move with Git rename detection yields `moved`, with no `removed` or
+  `added` for that symbol, and the existing lifecycle carries the Review forward.
+- Removal yields `removed` only for complete coverage. A partial run yields
+  `not_comparable`.
+- ChangeSet output is identical for the same two runs, regardless of which was
+  captured first.
+- Any mismatch between predicted and actual impact is recorded as a finding
+  before O0 starts, and the design is revised from it.
+
+Outcome gates the rest of the phase. If the spike shows a mismatch that the
+design cannot explain, O0–O2 are revised before implementation.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
