@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS observation_runs (
 CREATE TABLE IF NOT EXISTS observation_run_coverage (
   run_id TEXT NOT NULL REFERENCES observation_runs(id),
   kind TEXT NOT NULL,
-  coverage_status TEXT NOT NULL CHECK (coverage_status IN ('complete', 'partial')),
+  coverage_status TEXT NOT NULL CHECK (coverage_status IN ('complete', 'partial', 'not_observed', 'unsupported')),
   reason TEXT,
   object_count INTEGER NOT NULL,
   PRIMARY KEY (run_id, kind),
@@ -81,7 +81,6 @@ CREATE TABLE IF NOT EXISTS observed_versions (
   cari_id TEXT,
   first_run_id TEXT NOT NULL REFERENCES observation_runs(id),
   UNIQUE (observed_identity_id, version_ordinal),
-  UNIQUE (observed_identity_id, payload_fingerprint),
   UNIQUE (id, observed_identity_id)
 );
 
@@ -257,3 +256,13 @@ CREATE TABLE IF NOT EXISTS change_impacts (
 - This draft is reviewed, and its findings are resolved or recorded as open.
 - Definition of Done item 14 is amended to match decision A (done).
 - No code or schema change is made in O0. The first code change is O1.
+
+## 7. Corrections made during O2 implementation
+
+- `observed_versions` no longer has `UNIQUE (observed_identity_id, payload_fingerprint)`.
+  That constraint forbids a history A -> B -> A. `payload_fingerprint` is the
+  fingerprint of locator and payload together, and the current version is compared
+  by fingerprint, not by uniqueness.
+- `observation_run_coverage.coverage_status` also allows `not_observed` and
+  `unsupported`, so a capability that an adapter declares can be stored. Both still
+  require a reason.

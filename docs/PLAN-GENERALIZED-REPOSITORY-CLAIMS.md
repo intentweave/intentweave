@@ -2202,6 +2202,33 @@ Phases.
   each change kind, same-name definitions, moves and renames through Subject
   continuity, removals of complete and partial coverage, and a second language
   adapter as a test double.
+  Status (2026-10-17): implemented, with the gaps listed below.
+  - Migration 21 adds the observation tables from the draft. Two draft corrections
+    were made (see the draft, section 7). Fresh and upgraded databases reach version
+    21, and existing claims data is unchanged. The migration is additive, so it uses
+    a transaction and needs no restore snapshot, as in G2.
+  - `ObservationStore` persists complete and partial runs (idempotent per adapter,
+    contract, scope, and revision), identities, versions (only on change), run
+    membership, and ChangeSets. A ChangeSet is stored once and recomputes to the same
+    result in either capture order. Removal needs complete coverage in both runs.
+  - The Subject bridge accepts only a rule or Review basis (decision B). A move
+    followed through a ChangeSet retires the old bridge and binds the successor under
+    a versioned move rule.
+  - Evidence projection creates ordinary evidence versions and links them to observed
+    versions. Change impacts are stored separately from change items (D4).
+  - The continuity checker reads `.iw/claims/observations.yaml`. It defaults to report
+    mode. Gate mode fails only for configured scopes with unresolved continuity, and
+    it makes no model call.
+  - A second language is admitted through the adapter contract, with a test double
+    and no core change.
+  - Fixed while doing this: `queries/shared.ts` hard-coded schema 20 and refused
+    version 21 databases. It now uses the current constant.
+  - Not yet done: a CLI command for the continuity gate (the library function exists);
+    the projection path is tested as a link, not yet as a Claim through Reverse
+    Impact; `claims check` does not read the observation tables; no Subject bridge is
+    created from implementation views yet, since that policy is decision B's rule
+    path, not a default.
+
 - O3: NestJS and Fastify discoverers become observation producers. Their
   Assessment outcomes stay unchanged on E0–E6, A0–A5, the Fastify fixtures, and
   C0–C10, except for intended changes listed before the migration starts.
