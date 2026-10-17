@@ -38,6 +38,18 @@ const TYPESCRIPT_OWNED_TABLES = new Set([
   "candidate_reviews_g",
   "claim_identities_g",
   "subject_identities_g",
+  "observation_runs",
+  "observation_run_coverage",
+  "observation_run_items",
+  "observed_identities",
+  "observed_versions",
+  "observed_relations",
+  "observed_continuity_links",
+  "subject_observations",
+  "observed_evidence_projection",
+  "observed_changesets",
+  "observed_change_items",
+  "change_impacts",
 ]);
 
 /**
@@ -72,6 +84,10 @@ function tablesIn(sql: string): Map<string, TableDefinition> {
   for (const match of sql.matchAll(pattern)) {
     const name = match[1]!;
     const body = match[2]!;
+    // A match inside migration code, not a DDL block, contains statements or
+    // template syntax. Such a match is not a table definition.
+    if (/[;`]|\$\{|\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b/.test(body))
+      continue;
     const columns: string[] = [];
     for (const rawLine of body.split("\n")) {
       const line = rawLine.trim();

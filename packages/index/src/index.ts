@@ -36,6 +36,14 @@ export {
   ruleResultFingerprint,
 } from "./claims/canonical.js";
 export { ClaimsStore } from "./claims/store.js";
+export {
+  ObservationStore,
+  type RecordRunInput,
+  type RunCoverageInput,
+  type RunRecordInput,
+  type ChangeKind,
+  type ChangeItem,
+} from "./observation/observationStore.js";
 export { CandidateStore } from "./claims/candidates.js";
 export { CandidateInferenceStore } from "./claims/inferences.js";
 export type {

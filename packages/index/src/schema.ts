@@ -428,7 +428,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "20";
+export const CURRENT_SCHEMA_VERSION = "21";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -1327,6 +1327,170 @@ export function migrateSchema18To19(db: Database.Database): void {
  * are backfilled from the Candidate version's single inference_id; malformed
  * rows fail before the old table is replaced.
  */
+/**
+ * Observation layer tables (Phase G5.3, migration 21). Created additively. Identity,
+ * version, membership, ChangeSet, bridge, projection, and impact rules follow
+ * docs/OBSERVATION-MIGRATION-21-DRAFT.md.
+ */
+const OBSERVATION_SCHEMA_SQL = `
+-- Runs: one per (adapter, contract, scope, repository revision).
+CREATE TABLE IF NOT EXISTS observation_runs (
+  id TEXT PRIMARY KEY,
+  adapter_id TEXT NOT NULL,
+  adapter_contract_version TEXT NOT NULL,
+  scope_fingerprint TEXT NOT NULL,
+  scope_descriptor_json TEXT NOT NULL,
+  repository_revision TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running', 'finished', 'failed')),
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  fingerprint TEXT NOT NULL,
+  UNIQUE (adapter_id, adapter_contract_version, scope_fingerprint, repository_revision)
+);
+
+-- Coverage: completeness per kind within a run.
+CREATE TABLE IF NOT EXISTS observation_run_coverage (
+  run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  kind TEXT NOT NULL,
+  coverage_status TEXT NOT NULL CHECK (coverage_status IN ('complete', 'partial', 'not_observed', 'unsupported')),
+  reason TEXT,
+  object_count INTEGER NOT NULL,
+  PRIMARY KEY (run_id, kind),
+  CHECK (coverage_status = 'complete' OR reason IS NOT NULL)
+);
+
+-- Inventory identities: store-local, never exported.
+CREATE TABLE IF NOT EXISTS observed_identities (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  identity_key TEXT NOT NULL UNIQUE,
+  creation_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  created_at INTEGER NOT NULL
+);
+
+-- Versions: one per payload change, not one per run.
+CREATE TABLE IF NOT EXISTS observed_versions (
+  id TEXT PRIMARY KEY,
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  locator_json TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  payload_fingerprint TEXT NOT NULL,
+  cari_id TEXT,
+  first_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  UNIQUE (observed_identity_id, version_ordinal),
+  UNIQUE (id, observed_identity_id)
+);
+
+-- Membership: which identities a run saw, and with which version.
+CREATE TABLE IF NOT EXISTS observation_run_items (
+  run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  effective_version_id TEXT NOT NULL,
+  PRIMARY KEY (run_id, observed_identity_id),
+  FOREIGN KEY (effective_version_id, observed_identity_id)
+    REFERENCES observed_versions(id, observed_identity_id)
+);
+
+-- Relations between observed versions.
+CREATE TABLE IF NOT EXISTS observed_relations (
+  id TEXT PRIMARY KEY,
+  observed_version_id TEXT NOT NULL REFERENCES observed_versions(id),
+  relation_kind TEXT NOT NULL,
+  target_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  target_version_id TEXT REFERENCES observed_versions(id),
+  basis TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  UNIQUE (observed_version_id, relation_kind, target_identity_id)
+);
+
+-- Inventory continuity only. Subject continuity stays in subject_continuity.
+CREATE TABLE IF NOT EXISTS observed_continuity_links (
+  id TEXT PRIMARY KEY,
+  from_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  to_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  basis TEXT NOT NULL CHECK (basis IN ('git_rename', 'unique_merge_base', 'structural_match', 'reviewed')),
+  decided_by TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK (from_identity_id != to_identity_id),
+  UNIQUE (from_identity_id, to_identity_id)
+);
+
+-- Subject bridge: written only through a versioned rule or a Review.
+CREATE TABLE IF NOT EXISTS subject_observations (
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  role TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  retired_run_id TEXT REFERENCES observation_runs(id),
+  PRIMARY KEY (subject_identity_id, observed_identity_id, role),
+  UNIQUE (observed_identity_id, role, retired_run_id)
+);
+
+-- Projection to ordinary evidence, so existing dependencies reach observations.
+CREATE TABLE IF NOT EXISTS observed_evidence_projection (
+  observed_version_id TEXT NOT NULL REFERENCES observed_versions(id),
+  evidence_identity_id TEXT NOT NULL REFERENCES evidence_identities(id),
+  evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  projection_contract_version TEXT NOT NULL,
+  PRIMARY KEY (observed_version_id, evidence_identity_id, projection_contract_version)
+);
+
+-- ChangeSets: a pure function of the base run, head run, and contract.
+CREATE TABLE IF NOT EXISTS observed_changesets (
+  id TEXT PRIMARY KEY,
+  base_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  head_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  adapter_contract_fingerprint TEXT NOT NULL,
+  changeset_fingerprint TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  CHECK (base_run_id != head_run_id),
+  UNIQUE (base_run_id, head_run_id, adapter_contract_fingerprint)
+);
+
+-- Change items: generic facts, no materiality.
+CREATE TABLE IF NOT EXISTS observed_change_items (
+  id TEXT PRIMARY KEY,
+  changeset_id TEXT NOT NULL REFERENCES observed_changesets(id),
+  change_kind TEXT NOT NULL CHECK (change_kind IN (
+    'added', 'removed', 'moved', 'renamed', 'property-changed',
+    'relation-changed', 'continuity-unclear', 'not_comparable')),
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  base_version_id TEXT REFERENCES observed_versions(id),
+  head_version_id TEXT REFERENCES observed_versions(id),
+  successor_identity_id TEXT REFERENCES observed_identities(id),
+  basis TEXT NOT NULL,
+  changed_properties_json TEXT,
+  CHECK (change_kind NOT IN ('moved', 'renamed') OR successor_identity_id IS NOT NULL),
+  UNIQUE (changeset_id, observed_identity_id, change_kind)
+);
+
+-- Materiality: derived by the Claim family's contract, recomputable.
+CREATE TABLE IF NOT EXISTS change_impacts (
+  id TEXT PRIMARY KEY,
+  change_item_id TEXT NOT NULL REFERENCES observed_change_items(id),
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  materiality_contract_version TEXT NOT NULL,
+  result TEXT NOT NULL CHECK (result IN ('material', 'immaterial', 'not_applicable')),
+  decided_at INTEGER NOT NULL,
+  UNIQUE (change_item_id, claim_identity_id, materiality_contract_version)
+);
+`;
+
+export function migrateSchema20To21(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(OBSERVATION_SCHEMA_SQL);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '21')`,
+    ).run();
+  });
+  migrate();
+}
+
 export function migrateSchema19To20(db: Database.Database): void {
   const columns = db
     .prepare(`PRAGMA table_info(candidate_reviews)`)
@@ -1505,9 +1669,8 @@ export function migrateSchema19To20(db: Database.Database): void {
 
 /**
  * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
- * Supported transitions: 14 -> 15 -> 16 -> 17 -> 18 -> 19 -> 20,
- * 15 -> 16 -> 17 -> 18 -> 19 -> 20, 16 -> 17 -> 18 -> 19 -> 20,
- * 17 -> 18 -> 19 -> 20, 18 -> 19 -> 20, and 19 -> 20.
+ * Supported transitions end at 21 from every supported earlier version, including
+ * 20 -> 21.
  * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
  */
 export function migrateSchemaToCurrent(db: Database.Database): void {
@@ -1519,6 +1682,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema17To18(db);
     migrateSchema18To19(db);
     migrateSchema19To20(db);
+    migrateSchema20To21(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1527,6 +1691,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema17To18(db);
     migrateSchema18To19(db);
     migrateSchema19To20(db);
+    migrateSchema20To21(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1534,21 +1699,29 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema17To18(db);
     migrateSchema18To19(db);
     migrateSchema19To20(db);
+    migrateSchema20To21(db);
     return;
   }
   if (schemaVersion === "17") {
     migrateSchema17To18(db);
     migrateSchema18To19(db);
     migrateSchema19To20(db);
+    migrateSchema20To21(db);
     return;
   }
   if (schemaVersion === "18") {
     migrateSchema18To19(db);
     migrateSchema19To20(db);
+    migrateSchema20To21(db);
     return;
   }
   if (schemaVersion === "19") {
     migrateSchema19To20(db);
+    migrateSchema20To21(db);
+    return;
+  }
+  if (schemaVersion === "20") {
+    migrateSchema20To21(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1571,6 +1744,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "17" &&
     schemaVersion !== "18" &&
     schemaVersion !== "19" &&
+    schemaVersion !== "20" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

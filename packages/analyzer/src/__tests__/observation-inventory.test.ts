@@ -212,4 +212,61 @@ describe("TypeScript observation inventory (Phase O1)", () => {
     });
     expect(registry.observationAdapterFor("src/a.ts")).toBeNull();
   });
+
+  it("admits a second language through the adapter contract without core changes", () => {
+    const root = workspaceWith({
+      "src/routes.ts": ROUTES,
+      "tools/check.py": "def check(value):\n    return value\n",
+    });
+    // Test double: a Python observer that declares the kinds it produces.
+    const python = {
+      extensions: [".py"],
+      processFile: async () => {
+        throw new Error("unused");
+      },
+      observation: {
+        contractVersion: "test-1",
+        capabilities: {
+          file: { status: "observed" as const },
+          module: {
+            status: "not_observed" as const,
+            reason: "test double declares no modules",
+          },
+          symbol: { status: "observed" as const },
+          dependency: { status: "unsupported" as const },
+          "call-site": { status: "observed" as const },
+        },
+        observeFile(_root: string, relativePath: string) {
+          return [
+            {
+              kind: "file" as const,
+              identityKey: `file:${relativePath}`,
+              locator: { filePath: relativePath },
+              payload: { extension: ".py" },
+            },
+            {
+              kind: "symbol" as const,
+              identityKey: `symbol:function:${relativePath}#check`,
+              locator: { filePath: relativePath, line: 1 },
+              payload: { name: "check" },
+            },
+          ];
+        },
+      },
+    };
+    const registry = registryFor(root);
+    registry.register(python);
+    const run = runObservationInventory(registry, root, [
+      "src/routes.ts",
+      "tools/check.py",
+    ]);
+    expect(run.records.map((record) => record.locator.filePath)).toEqual(
+      expect.arrayContaining(["src/routes.ts", "tools/check.py"]),
+    );
+    expect(run.coverage.symbol.status).toBe("complete");
+    expect(run.coverage.module).toEqual({
+      status: "not_observed",
+      reason: "test double declares no modules",
+    });
+  });
 });

@@ -5,6 +5,7 @@
  * Shared helpers for CARI query modules.
  */
 
+import { CURRENT_SCHEMA_VERSION } from "../schema.js";
 import Database from "@intentweave/sqlite-compat";
 import * as fs from "fs";
 import { openMigratedDatabase } from "../schema.js";
@@ -13,7 +14,7 @@ import { openMigratedDatabase } from "../schema.js";
  * Open the index database in read-only mode.
  * Throws if the file doesn't exist.
  */
-const EXPECTED_SCHEMA_VERSION = "20";
+const EXPECTED_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
 
 export function openIndex(dbPath: string): Database.Database {
   if (!fs.existsSync(dbPath)) {
