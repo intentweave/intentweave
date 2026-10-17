@@ -2275,6 +2275,31 @@ Acceptance.
 - Any mismatch between predicted and actual impact is recorded as a finding
   before O0 starts, and the design is revised from it.
 
+Outcome (2026-10-17).
+
+- Passed: a signature change on a documented public symbol predicts `reopen` and
+  the lifecycle reopens it (`warrant-changed`, exit 4); a file move predicts
+  carry-forward and the lifecycle keeps the accepted Review (exit 0); removal is
+  reported only for complete coverage; the ChangeSet is deterministic. These are
+  in `symbolSpike.test.ts` and `claimsObservationParity.test.ts`.
+- Finding 1 (identity): the CARI symbol id is a hash of file path, kind, name, and
+  signature hash. It is not an observed identity. A signature change or a move
+  changes it. The Subject identity `symbol:<cariId>` therefore churns, and the G3
+  continuity aliases are what keep the Claim stable. D1 must state this
+  explicitly. The spike uses kind, file, and name as the creation key, with the
+  CARI id stored for reference.
+- Finding 2 (check after move): the plain `claims check` reports the moved
+  Subject as `not_applicable` (exit 2) until discovery persists the continuity.
+  The `--since` path carries forward only with discovery run first. The observed
+  ChangeSet knows about the move without discovery. O2 must decide whether the
+  check consumes continuity from the ChangeSet or the protocol stays
+  discovery-first and is documented.
+- Limits: TypeScript and JavaScript, one Claim family, one symbol kind, four
+  commits, no native parity, spike store separate from migration 21.
+
+Gate. The approach holds on this slice. O0 proceeds with D1 amended as in
+Finding 1, and with Finding 2 recorded as an O2 requirement.
+
 Outcome gates the rest of the phase. If the spike shows a mismatch that the
 design cannot explain, O0–O2 are revised before implementation.
 
