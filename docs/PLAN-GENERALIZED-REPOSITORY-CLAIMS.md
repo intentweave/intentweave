@@ -2174,6 +2174,29 @@ Phases.
   `file`, `module`, `symbol`, `dependency`, `call-site`, and coverage. Complete
   runs with coverage rows. Inventory recall measured against a hand-checked
   reference list for the Phase G6 evaluation repositories.
+  Status (2026-10-17): implemented in memory; persistence is O2.
+  - `LanguageAdapter` gains an optional `observation` capability. The existing
+    `LanguageRegistry` provides `observationAdapterFor` and `observationAdapters`.
+    Adapters without observation are unchanged.
+  - The TypeScript and JavaScript adapter observes `file`, `module`, `symbol`,
+    `dependency` (from package.json), and `call-site` (calls with a literal string
+    argument). Creation keys follow Amendment A.
+  - `runObservationInventory` reports per-kind coverage. A kind is complete only when
+    every in-scope file was observed. Unreadable files, unparseable files, and files
+    with no adapter make it partial, with the reason. It never reports absence.
+  - Recall on Tony133/fastify-api-boilerplate-jwt (b659da7) against 14 hand-checked
+    route registrations in `packages/analyzer/evaluation/`: 14 of 14, with complete
+    coverage for all five kinds over 58 tracked files. This is the easy case: literal
+    paths, one framework, one repository. It is not a general recall figure.
+  - Native parity test (decision A): every native table matches TypeScript, except
+    four knowledge-graph tables that already diverge (`kg_entities`,
+    `kg_relationships`, `kg_raw_triples`, `enrichment_meta`). The test lists them as
+    known divergences and fails on any new one. Fixing or accepting these four is
+    still to be decided.
+  - Not in O1: observation tables and their writes (migration 21, O2), identities and
+    membership in the database, ChangeSets over the inventory, the projection, and
+    change impacts. Route interpretation is not part of the inventory.
+
 - O2: Inventory identities, versions, run membership, ChangeSets, Subject bridge,
   evidence projection, change impacts, and the continuity checker. Fixtures cover
   each change kind, same-name definitions, moves and renames through Subject
