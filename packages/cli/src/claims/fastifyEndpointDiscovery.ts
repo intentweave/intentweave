@@ -4,22 +4,27 @@
 /**
  * Deterministic Fastify endpoint discovery.
  *
- * Recognizes literal route registrations (`fastify.get("/path", options, handler)`)
- * and the route-level and scope-level hooks that protect them. A guard counts as
- * positive authentication Evidence only when its `fastify.decorate` definition
- * calls a token verifier in its body. Anything else is recorded as an unverified
- * guard and never as `passed` Evidence.
+ * Recognizes literal route registrations (`fastify.get("/path", options, handler)`),
+ * the hooks that protect them, and the plugin graph that gives each route its
+ * full path:
  *
- * Route prefixes are not resolved: Fastify plugins may add prefixes through
- * autoload, `register`, or `prefix` options. Routes are therefore recorded with
- * `pathKnown: false`, and the endpoint-authentication contract keeps them
- * inconclusive.
+ * - `fastify.register(routesModule[, { prefix }])` edges between files, resolved
+ *   through relative imports;
+ * - `fastify.register(AutoLoad, { dir: join(__dirname, "x"), options: { prefix } })`
+ *   roots, including autoload's directory-name route prefix.
+ *
+ * A guard counts as positive authentication Evidence only when its
+ * `fastify.decorate` definition calls a token verifier in its body. Anything else
+ * is recorded as an unverified guard and never as `passed` Evidence. A route whose
+ * prefix cannot be proven from literals is recorded with `routeKnown: false`, and
+ * the endpoint-authentication contract keeps it inconclusive.
  */
 
 import path from "node:path";
 import {
   createExtractor,
   type ExtractedCall,
+  type ExtractedImport,
 } from "@intentweave/ast-extractor";
 import type Database from "@intentweave/sqlite-compat";
 import {
@@ -68,7 +73,6 @@ const GUARD_EXPRESSION =
 
 interface Decoration {
   verified: boolean;
-  file: string;
 }
 
 interface GuardRef {
@@ -84,7 +88,26 @@ interface RouteRegistration {
   handlerName: string;
   routeGuards: GuardRef[];
   unparsedGuards: string[];
-  hasOptions: boolean;
+}
+
+/** A `fastify.register(identifier, options)` call inside a file. */
+interface RegisterCall {
+  from: string;
+  identifier: string;
+  prefix: string | null;
+}
+
+/** A `fastify.register(AutoLoad, { dir, options })` root. */
+interface AutoloadRoot {
+  directory: string;
+  prefix: string | null;
+  directoryPrefix: boolean;
+}
+
+interface ParsedFile {
+  file: string;
+  calls: ExtractedCall[];
+  imports: ExtractedImport[];
 }
 
 /** Split on commas that are not nested inside brackets or parentheses. */
@@ -160,14 +183,15 @@ function routeRegistrations(
     if (!route || !route.startsWith("/")) continue;
 
     const handlerText = args[args.length - 1]!;
-    const optionsText = args.length >= 3 ? args[1]! : undefined;
-    const hasOptions = optionsText?.trim().startsWith("{") ?? false;
-    const hookExpressions = hasOptions
-      ? routeHookExpressions(optionsText!)
-      : [];
+    const optionsText =
+      args.length >= 3 && args[1]!.trim().startsWith("{")
+        ? args[1]!
+        : undefined;
     const routeGuards: GuardRef[] = [];
     const unparsedGuards: string[] = [];
-    for (const expression of hookExpressions) {
+    for (const expression of optionsText
+      ? routeHookExpressions(optionsText)
+      : []) {
       const guard = parseGuard(expression);
       if (guard) routeGuards.push(guard);
       else unparsedGuards.push(expression);
@@ -183,10 +207,63 @@ function routeRegistrations(
       handlerName: handlerIdentifier ?? `anonymous@${call.callerLine}`,
       routeGuards,
       unparsedGuards,
-      hasOptions,
     });
   }
   return registrations;
+}
+
+/** The literal `prefix` in a register options object, or null when unprovable. */
+function registerPrefix(optionsText: string | undefined): string | null {
+  if (optionsText === undefined) return "";
+  const literal = /\bprefix\s*:\s*(['"`])([^'"`]*)\1/.exec(optionsText);
+  if (literal) return literal[2]!;
+  return /\bprefix\s*:/.test(optionsText) ? null : "";
+}
+
+function autoloadRoot(
+  file: string,
+  optionsText: string | undefined,
+): AutoloadRoot | undefined {
+  if (optionsText === undefined) return undefined;
+  const directory =
+    /\bdir\s*:\s*(?:path\.)?join\(\s*__dirname\s*,\s*(['"`])([^'"`]+)\1\s*\)/.exec(
+      optionsText,
+    );
+  if (!directory) return undefined;
+  const prefix = /\bprefix\s*:\s*(['"`])([^'"`]*)\1/.exec(optionsText);
+  const hasPrefixKey = /\bprefix\s*:/.test(optionsText);
+  return {
+    directory: path.posix.join(path.posix.dirname(file), directory[2]!),
+    prefix: prefix ? prefix[2]! : hasPrefixKey ? null : "",
+    directoryPrefix: !/dirNameRoutePrefix\s*:\s*false/.test(optionsText),
+  };
+}
+
+function resolveModule(
+  fromFile: string,
+  specifier: string,
+  files: ReadonlySet<string>,
+): string | undefined {
+  if (!specifier.startsWith(".")) return undefined;
+  const base = path.posix.normalize(
+    path.posix.join(path.posix.dirname(fromFile), specifier),
+  );
+  return [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}.js`,
+    `${base}/index.ts`,
+    `${base}/index.js`,
+  ].find((candidate) => files.has(candidate));
+}
+
+function joinRoute(...segments: string[]): string {
+  const joined = segments
+    .join("/")
+    .split("/")
+    .filter((segment) => segment.length > 0);
+  return `/${joined.join("/")}`;
 }
 
 /**
@@ -197,10 +274,14 @@ export function discoverFastifyObservations(
   sources: ReadonlyMap<string, string>,
 ): EndpointObservation[] {
   const extractor = createExtractor(process.cwd());
+  const files = new Set(sources.keys());
   const decorations = new Map<string, Decoration[]>();
   const routes: RouteRegistration[] = [];
   const scopeGuardsByFile = new Map<string, GuardRef[]>();
   const scopeUnparsedByFile = new Map<string, string[]>();
+  const parsed: ParsedFile[] = [];
+  const registerCalls: RegisterCall[] = [];
+  const autoloads: AutoloadRoot[] = [];
 
   for (const [file, source] of sources) {
     if (TEST_FILE_PATTERN.test(file)) continue;
@@ -210,15 +291,33 @@ export function discoverFastifyObservations(
       languageFor(file),
     );
     const calls = extraction.calls ?? [];
+    parsed.push({ file, calls, imports: extraction.imports });
 
     for (const call of calls) {
-      if (!call.isMethod || call.calleeName !== "decorate") continue;
-      const name = literalString(call.argumentTexts?.[0]);
-      if (!name) continue;
-      const handlerText = call.argumentTexts?.[1] ?? "";
-      const list = decorations.get(name) ?? [];
-      list.push({ file, verified: VERIFIER_PATTERN.test(handlerText) });
-      decorations.set(name, list);
+      if (!call.isMethod) continue;
+      if (call.calleeName === "decorate") {
+        const name = literalString(call.argumentTexts?.[0]);
+        if (!name) continue;
+        const handlerText = call.argumentTexts?.[1] ?? "";
+        const list = decorations.get(name) ?? [];
+        list.push({ verified: VERIFIER_PATTERN.test(handlerText) });
+        decorations.set(name, list);
+      }
+      if (call.calleeName === "register") {
+        const args = call.argumentTexts ?? [];
+        const target = args[0]?.trim() ?? "";
+        const optionsText = args[1];
+        if (target === "AutoLoad") {
+          const root = autoloadRoot(file, optionsText);
+          if (root) autoloads.push(root);
+        } else if (/^[A-Za-z_$][\w$]*$/.test(target)) {
+          registerCalls.push({
+            from: file,
+            identifier: target,
+            prefix: registerPrefix(optionsText),
+          });
+        }
+      }
     }
 
     routes.push(...routeRegistrations(file, calls));
@@ -234,6 +333,81 @@ export function discoverFastifyObservations(
     scopeUnparsedByFile.set(file, scopeUnparsed);
   }
 
+  // Resolve each `register(identifier)` through the importing file's imports.
+  const edges: Array<{ from: string; to: string; prefix: string | null }> = [];
+  for (const call of registerCalls) {
+    const importer = parsed.find((item) => item.file === call.from);
+    const binding = importer?.imports.find((imported) =>
+      imported.imports.some(
+        (item) => (item.alias ?? item.name) === call.identifier,
+      ),
+    );
+    if (!binding) continue;
+    const target = resolveModule(call.from, binding.moduleSpecifier, files);
+    if (target)
+      edges.push({ from: call.from, to: target, prefix: call.prefix });
+  }
+
+  const memo = new Map<string, string | null>();
+  const prefixFor = (
+    file: string,
+    visiting = new Set<string>(),
+  ): string | null => {
+    if (memo.has(file)) return memo.get(file)!;
+    if (visiting.has(file)) return null;
+    visiting.add(file);
+
+    // Autoload loads plugin files, not routes modules. A file under an autoload
+    // directory counts as loaded only when it registers plugins itself.
+    const registersPlugins = parsed.some(
+      (item) =>
+        item.file === file &&
+        item.calls.some((call) => call.calleeName === "register"),
+    );
+    const owning = registersPlugins
+      ? autoloads
+          .filter((root) => file.startsWith(`${root.directory}/`))
+          .sort((a, b) => b.directory.length - a.directory.length)[0]
+      : undefined;
+    let result: string | null;
+    if (owning) {
+      // Autoload loads plugin files; a plugin's directory under the autoload
+      // root becomes its route prefix when dirNameRoutePrefix is enabled.
+      const relativeDirectory = path.posix.dirname(
+        file.slice(owning.directory.length + 1),
+      );
+      const directoryPrefix =
+        owning.directoryPrefix && relativeDirectory !== "."
+          ? `/${relativeDirectory}`
+          : "";
+      result =
+        owning.prefix === null
+          ? null
+          : joinRoute(owning.prefix, directoryPrefix);
+    } else {
+      const parents = edges.filter((edge) => edge.to === file);
+      if (parents.length === 0) {
+        // A root registers plugins itself and is served without a prefix.
+        result = registersPlugins ? "/" : null;
+      } else {
+        const prefixes = new Set<string>();
+        let unknown = false;
+        for (const parent of parents) {
+          const parentPrefix = prefixFor(parent.from, visiting);
+          if (parentPrefix === null || parent.prefix === null) {
+            unknown = true;
+          } else {
+            prefixes.add(joinRoute(parentPrefix, parent.prefix));
+          }
+        }
+        result = !unknown && prefixes.size === 1 ? [...prefixes][0]! : null;
+      }
+    }
+    visiting.delete(file);
+    memo.set(file, result);
+    return result;
+  };
+
   const resolve = (
     guard: GuardRef,
   ): { verified: boolean; ambiguous: boolean } => {
@@ -248,17 +422,10 @@ export function discoverFastifyObservations(
     return { verified: found[0]!.verified, ambiguous: false };
   };
 
-  const keyCounts = new Map<string, number>();
-  for (const route of routes) {
-    const key = `${route.method} ${route.route} ${route.file}`;
-    keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
-  }
-
-  return routes.map((route): EndpointObservation => {
+  const observations = routes.map((route): EndpointObservation => {
     const guards: string[] = [];
     const unverified: string[] = [...route.unparsedGuards];
-    let ambiguous =
-      (keyCounts.get(`${route.method} ${route.route} ${route.file}`) ?? 0) > 1;
+    let ambiguous = false;
 
     for (const guard of route.routeGuards) {
       const result = resolve(guard);
@@ -275,8 +442,8 @@ export function discoverFastifyObservations(
     }
     const scopeUnparsed = scopeUnparsedByFile.get(route.file) ?? [];
     unverified.push(...scopeUnparsed);
-    // Scope hooks apply to every route in their encapsulation context. Same-file
-    // routes are treated as in scope, which is an approximation.
+    // Scope hooks apply to every route in their encapsulation context. Routes in
+    // the same file are treated as in scope, which is an approximation.
     if (scopeGuards.length > 0 || scopeUnparsed.length > 0) ambiguous = true;
 
     const guardSource: EndpointObservation["guardSource"] =
@@ -286,11 +453,20 @@ export function discoverFastifyObservations(
           ? "scope-hook"
           : "none";
 
+    const prefix = prefixFor(route.file);
+    const routeKnown = prefix !== null;
+    const routePath = routeKnown
+      ? joinRoute(prefix, route.route)
+      : `${route.route}@${route.file}`;
+
     return {
       method: route.method,
-      routePath: `${route.route}@${route.file}`,
-      routeKnown: false,
-      controllerName: path.basename(route.file, path.extname(route.file)),
+      routePath,
+      routeKnown,
+      controllerName: path.posix.basename(
+        route.file,
+        path.posix.extname(route.file),
+      ),
       handlerName: route.handlerName,
       handlerSignature: null,
       filePath: route.file,
@@ -303,6 +479,20 @@ export function discoverFastifyObservations(
       ambiguous,
     };
   });
+
+  // The same method and path from different registrations cannot be told apart.
+  const keyCounts = new Map<string, number>();
+  for (const observation of observations) {
+    const key = `${observation.method} ${observation.routePath}`;
+    keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+  }
+  return observations.map((observation) => ({
+    ...observation,
+    ambiguous:
+      observation.ambiguous ||
+      (keyCounts.get(`${observation.method} ${observation.routePath}`) ?? 0) >
+        1,
+  }));
 }
 
 function dependencyDeclared(packageJson: string | undefined): boolean {
