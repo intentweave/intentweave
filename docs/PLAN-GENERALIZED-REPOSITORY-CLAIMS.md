@@ -2273,6 +2273,40 @@ Phases.
   seeded changes, membership and removal correctness on partial and complete
   runs, change volume per commit on Subjects, and continuity decisions against
   labels. Semantic Candidate measures remain under G6c.
+- O4: Evaluation: inventory recall per framework, change-detection precision on
+  seeded changes, membership and removal correctness on partial and complete
+  runs, change volume per commit on Subjects, and continuity decisions against
+  labels. Semantic Candidate measures remain under G6c.
+  Results (2026-10-17, harness in `packages/cli/src/observation/observationEvaluation.ts`):
+  - Seeded change detection: 8 scenarios, 53 labelled changes, exact agreement on
+    every scenario. Precision and recall are 1 for `moved` (43), `continuity-unclear`
+    (3), `property-changed` (2), `removed` (2), `added` (2), and `not_comparable` (1).
+    This set was designed together with the detector, so it shows that the rules are
+    applied consistently, not how the detector performs on code it has not seen.
+  - Removal correctness: a removal under complete coverage is `removed`. The same
+    removal under partial coverage is `not_comparable`. Both are covered.
+  - Inventory recall per framework: not re-measured here. The Fastify reference
+    repository (14 of 14, earlier measurement) is not in this workspace, and no NestJS
+    labelled reference exists.
+  - Change volume and retention, measured on this repository over six commits: one full
+    inventory stores about 33,000 records, so about 200,000 run-membership rows over
+    six runs. Each code commit adds 117 to 206 new versions, and docs-only commits add
+    none. Run membership therefore dominates storage, which bears on the retention
+    question.
+  - Finding, blocking meaningful volume: the observation adapter fails a whole run when
+    one file does not parse, and every kind then becomes partial. Three of 372 files
+    fail in this repository, 8 of 599 in `codegraph`, and 5 of 771 in
+    `codegraphchat-v2`. The failing constructs are labelled tuple members such as
+    `[subject: string]`, and an inline `import("…").T[]` type. The CARI extractor
+    tolerates these, because it ignores `hasError`. The newer grammar (tree-sitter-typescript
+    0.23.2) fails on the same constructs, so a version bump is not a fix. Under the
+    current rules, the change volume on real repositories is entirely `not_comparable`.
+  - Decisions needed before G5.3 can be accepted: (a) coverage per file rather than per
+    run and kind, so that one unparsable file makes only its own objects not comparable,
+    which changes the O1 and O2 contract; or (b) an error-tolerant adapter that uses
+    the tree only where it is clean, which needs a rule for when a partial tree may be
+    trusted; (c) the retention rule for run membership, which the figures above make
+    concrete.
 - O5 (optional, later): additional language adapters as extensions, each proving
   the contract on its own reference repositories.
 
