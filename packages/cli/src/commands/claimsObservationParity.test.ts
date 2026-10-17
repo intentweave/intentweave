@@ -30,8 +30,10 @@ import {
 } from "./claims.js";
 import { persistPublicSymbolCandidates } from "../claims/publicSymbolDiscovery.js";
 import {
+  bridgeFromCari,
   buildChangeSet,
   captureSymbolRun,
+  followBridge,
   gitRenames,
   openSpikeStore,
   predictImpact,
@@ -203,16 +205,30 @@ export function parseConfig(${parameters}): string {
     await runClaimsCheck({ format: "json" });
     expect(process.exitCode).toBe(0);
 
-    // Claim Subject: the documented symbol at S0, as observed in the spike.
-    const claimSubjects = (runId: string): Set<string> => {
-      const observed = store
-        .prepare(
-          `SELECT identity_key FROM spike_observations
-           WHERE run_id = ? AND name = 'parseConfig'`,
-        )
-        .all(runId) as Array<{ identity_key: string }>;
-      return new Set(observed.map((row) => row.identity_key));
-    };
+    // The Claim's real Subjects, read from claim_subjects, not selected by name.
+    const subjectKeys = (() => {
+      const database = new Database(path.join(workspace, ".iw/index.db"), {
+        readonly: true,
+      });
+      try {
+        return (
+          database
+            .prepare(
+              `SELECT subject.identity_key AS key
+               FROM claim_subjects link
+               JOIN subject_identities subject ON subject.id = link.subject_identity_id
+               WHERE link.claim_identity_id = ? AND subject.identity_key LIKE 'symbol:%'`,
+            )
+            .all(claimIdentityId) as Array<{ key: string }>
+        ).map((row) => row.key);
+      } finally {
+        database.close();
+      }
+    })();
+    expect(subjectKeys.length).toBeGreaterThan(0);
+    // Explicit bridge at S0: Claim Subject -> observed identity, via the CARI id.
+    const bridgeS0 = bridgeFromCari(store, runS0, subjectKeys);
+    expect(bridgeS0.size).toBe(subjectKeys.length);
 
     // S1: move only. Predicted carry-forward, actual: accepted Review stays.
     mkdirSync(path.join(workspace, "src/settings"), { recursive: true });
@@ -234,7 +250,8 @@ export function parseConfig(${parameters}): string {
       runS1,
       gitRenames(workspace, revS0, revS1),
     );
-    const movePrediction = predictImpact(moveItems, claimSubjects(runS0));
+    const movePrediction = predictImpact(moveItems, new Set(bridgeS0.values()));
+    const bridgeS1 = followBridge(bridgeS0, moveItems);
     // Same protocol as the G3 Git fixture: discovery at S1, then check since S0.
     const afterMove = new Database(path.join(workspace, ".iw/index.db"));
     persistPublicSymbolCandidates(afterMove, revS1);
@@ -245,6 +262,9 @@ export function parseConfig(${parameters}): string {
     expect(movePrediction.carryForward).toHaveLength(1);
     expect(process.exitCode).toBe(0);
     expect(reopenReasons(workspace, claimIdentityId)).toEqual([]);
+    expect([...bridgeS1.values()]).toEqual([
+      expect.stringContaining("src/settings/config.ts#parseConfig"),
+    ]);
 
     // S2: signature change. Predicted reopen, actual: warrant-changed reopen.
     writeFileSync(
@@ -267,7 +287,7 @@ export function parseConfig(${parameters}): string {
     );
     const signaturePrediction = predictImpact(
       signatureItems,
-      claimSubjects(runS1),
+      new Set(bridgeS1.values()),
     );
     process.exitCode = undefined;
     await runClaimsCheck({ since: revS1, format: "json" });

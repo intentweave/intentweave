@@ -21,6 +21,7 @@ export interface SymbolObservation {
   filePath: string;
   line: number;
   payload: {
+    duplicateOf: number | null;
     name: string;
     kind: string;
     signature: string | null;
@@ -36,6 +37,7 @@ export type SpikeChangeKind =
   | "removed"
   | "moved"
   | "property-changed"
+  | "continuity-unclear"
   | "not_comparable";
 
 export interface SpikeChangeItem {
@@ -53,6 +55,7 @@ const PROPERTY_NAMES = [
   "documented",
   "documentationHash",
   "deprecated",
+  "duplicateOf",
 ] as const;
 
 /**
@@ -149,8 +152,23 @@ export function captureSymbolRun(
        (run_id, identity_key, cari_id, name, kind, file_path, line, payload_json, payload_fingerprint)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  // Overloads and other same-name declarations share kind, file, and name. Each
+  // gets an ordinal suffix in source order, so the identity stays unique and the
+  // duplicate is explicit in the payload.
+  const seen = new Map<string, number>();
+  const totals = new Map<string, number>();
   for (const row of rows) {
+    const base = symbolIdentityKey(row.kind, row.file_path, row.name);
+    totals.set(base, (totals.get(base) ?? 0) + 1);
+  }
+  for (const row of rows) {
+    const base = symbolIdentityKey(row.kind, row.file_path, row.name);
+    const ordinal = (seen.get(base) ?? 0) + 1;
+    seen.set(base, ordinal);
+    const duplicate = (totals.get(base) ?? 1) > 1;
+    const identityKey = duplicate ? `${base}~${ordinal}` : base;
     const payload = {
+      duplicateOf: duplicate ? totals.get(base) : null,
       name: row.name,
       kind: row.kind,
       signature: row.signature,
@@ -160,7 +178,7 @@ export function captureSymbolRun(
     };
     insert.run(
       runId,
-      symbolIdentityKey(row.kind, row.file_path, row.name),
+      identityKey,
       row.id,
       row.name,
       row.kind,
@@ -236,6 +254,10 @@ export function gitRenames(
 /**
  * ChangeSet between a base and a head run. It depends only on the two runs and
  * the rename map, so the output does not depend on which run was captured first.
+ *
+ * A rename match must be one-to-one. A base symbol with several candidates in the
+ * renamed file, or a head symbol claimed by several base symbols, is reported as
+ * `continuity-unclear` rather than guessed.
  */
 export function buildChangeSet(
   store: Database.Database,
@@ -247,26 +269,42 @@ export function buildChangeSet(
   const head = readRun(store, headRunId);
   const items: SpikeChangeItem[] = [];
 
-  // Successor of a base symbol: same name and kind in the renamed file.
-  const successorOf = new Map<string, string>();
+  const candidatesOf = new Map<string, string[]>();
   for (const [identityKey, observation] of base.observations) {
     const renamedTo = renames.get(observation.filePath);
-    if (!renamedTo) continue;
-    for (const candidate of head.observations.values()) {
-      if (
-        candidate.filePath === renamedTo &&
-        candidate.name === observation.name &&
-        candidate.kind === observation.kind &&
-        !successorOf.has(identityKey)
-      ) {
-        successorOf.set(identityKey, candidate.identityKey);
-      }
+    if (!renamedTo || head.observations.has(identityKey)) continue;
+    const matches = [...head.observations.values()]
+      .filter(
+        (candidate) =>
+          candidate.filePath === renamedTo &&
+          candidate.name === observation.name &&
+          candidate.kind === observation.kind,
+      )
+      .map((candidate) => candidate.identityKey)
+      .sort();
+    candidatesOf.set(identityKey, matches);
+  }
+  const claimantsOf = new Map<string, string[]>();
+  for (const [baseKey, matches] of candidatesOf) {
+    for (const match of matches) {
+      claimantsOf.set(match, [...(claimantsOf.get(match) ?? []), baseKey]);
     }
   }
-  const claimedHeads = new Set(successorOf.values());
+
+  const successorOf = new Map<string, string>();
+  const unclear = new Set<string>();
+  const unclearHeads = new Set<string>();
+  for (const [baseKey, matches] of candidatesOf) {
+    if (matches.length === 1 && claimantsOf.get(matches[0]!)?.length === 1) {
+      successorOf.set(baseKey, matches[0]!);
+    } else {
+      unclear.add(baseKey);
+      for (const match of matches) unclearHeads.add(match);
+    }
+  }
 
   for (const [identityKey, observation] of base.observations) {
-    if (head.observations.has(identityKey) && !successorOf.has(identityKey)) {
+    if (head.observations.has(identityKey)) {
       const after = head.observations.get(identityKey)!;
       if (after.payloadFingerprint !== observation.payloadFingerprint) {
         const changed = PROPERTY_NAMES.filter(
@@ -281,6 +319,14 @@ export function buildChangeSet(
           basis: "identity-equal",
         });
       }
+      continue;
+    }
+    if (unclear.has(identityKey)) {
+      items.push({
+        kind: "continuity-unclear",
+        identityKey,
+        basis: "ambiguous-rename-match",
+      });
       continue;
     }
     const successor = successorOf.get(identityKey);
@@ -311,10 +357,17 @@ export function buildChangeSet(
     }
   }
 
+  const claimedHeads = new Set(successorOf.values());
   for (const identityKey of head.observations.keys()) {
     if (base.observations.has(identityKey) || claimedHeads.has(identityKey))
       continue;
-    if (!head.complete || !base.complete) {
+    if (unclearHeads.has(identityKey)) {
+      items.push({
+        kind: "continuity-unclear",
+        identityKey,
+        basis: "ambiguous-rename-match",
+      });
+    } else if (!head.complete || !base.complete) {
       items.push({
         kind: "not_comparable",
         identityKey,
@@ -330,6 +383,52 @@ export function buildChangeSet(
       `${right.kind}:${right.identityKey}`,
     ),
   );
+}
+
+/**
+ * Explicit Subject bridge. A Claim Subject is bound to an observed identity in a
+ * base run through its CARI id, which is stored as a reference attribute. The
+ * binding is then followed through ChangeSets, so it survives moves and signature
+ * changes without re-reading CARI ids.
+ */
+export function bridgeFromCari(
+  store: Database.Database,
+  runId: string,
+  subjectKeys: readonly string[],
+): Map<string, string> {
+  const bridge = new Map<string, string>();
+  for (const subjectKey of subjectKeys) {
+    const cariId = subjectKey.replace(/^symbol:/, "");
+    const row = store
+      .prepare(
+        "SELECT identity_key FROM spike_observations WHERE run_id = ? AND cari_id = ?",
+      )
+      .get(runId, cariId) as { identity_key: string } | undefined;
+    if (row) bridge.set(subjectKey, row.identity_key);
+  }
+  return bridge;
+}
+
+/** Follow a Subject bridge through a ChangeSet to the next run's identities. */
+export function followBridge(
+  bridge: ReadonlyMap<string, string>,
+  items: readonly SpikeChangeItem[],
+): Map<string, string> {
+  const next = new Map<string, string>();
+  for (const [subjectKey, identityKey] of bridge) {
+    const item = items.find(
+      (candidate) => candidate.identityKey === identityKey,
+    );
+    if (!item) {
+      next.set(subjectKey, identityKey);
+    } else if (item.kind === "moved" && item.successorIdentityKey) {
+      next.set(subjectKey, item.successorIdentityKey);
+    } else if (item.kind === "property-changed") {
+      next.set(subjectKey, identityKey);
+    }
+    // removed, not_comparable, and continuity-unclear leave the Subject unbound.
+  }
+  return next;
 }
 
 /**

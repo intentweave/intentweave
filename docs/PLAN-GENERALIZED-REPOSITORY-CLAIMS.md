@@ -1038,8 +1038,8 @@ violations.
 The existing Claims companion layer remains. Schema changes follow the current
 one-step, version-guarded migration discipline and are split at the G1/G2
 boundary rather than bundled into one large version. The sequence began at
-schema 16; schemas 17-19 are implemented and schema 19 is the current G6
-baseline:
+schema 16; schemas 17-20 are implemented and schema 20 is the current baseline.
+Schemas 21 (Phase G5.3) and 22 (Phase G6d) are planned:
 
 | Schema | Phase | Change                                                                                                                                                                          |
 | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -2079,9 +2079,12 @@ Two identity levels exist, and only one of them is portable.
   bridge (below). The bridge, not the inventory key, becomes portable.
 
 This resolves the contradiction between "a move is a link" and "a move keeps
-identity". For Subjects, a move creates a continuity link to the same canonical
-identity through the existing mechanism. For inventory objects, identity is local
-and continuity is recomputed, so no portable identity changes.
+identity". For Subjects, a move creates a new observed Subject identity, and
+`subject_continuity` links it to the canonical identity that the Claim already
+references. The two identities are distinct: `subject_continuity` requires a from
+and a to identity. This is the G3 pattern, where the new observed identity is
+linked to the canonical one through an alias. For inventory objects, identity is
+local and continuity is recomputed, so no portable identity changes.
 
 Decision D2: run membership and coverage.
 
@@ -2189,9 +2192,9 @@ Acceptance.
   `not_comparable`.
 - A ChangeSet is identical for the same base and head runs, regardless of
   execution order.
-- Same-name definitions never share an identity. A move of a Subject keeps its
-  canonical identity through `subject_continuity`, and portable state does not
-  change.
+- Same-name definitions never share an identity. A move of a Subject leaves the
+  Claim's canonical identity unchanged. The moved observed identity is linked to
+  it by `subject_continuity`, and portable state does not change.
 - Materiality appears only in `change_impacts` and is derived by the family
   contract. No change item carries materiality.
 - An observed version reaches an Assessment only through a projection to evidence
@@ -2299,30 +2302,33 @@ Acceptance.
 - Any mismatch between predicted and actual impact is recorded as a finding
   before O0 starts, and the design is revised from it.
 
-Outcome (2026-10-17).
+Outcome (2026-10-17, revised after review).
 
-- Passed: a signature change on a documented public symbol predicts `reopen` and
-  the lifecycle reopens it (`warrant-changed`, exit 4); a file move predicts
-  carry-forward and the lifecycle keeps the accepted Review (exit 0); removal is
-  reported only for complete coverage; the ChangeSet is deterministic. These are
-  in `symbolSpike.test.ts` and `claimsObservationParity.test.ts`.
-- Finding 1 (identity): the CARI symbol id is a hash of file path, kind, name, and
-  signature hash. It is not an observed identity. A signature change or a move
-  changes it. The Subject identity `symbol:<cariId>` therefore churns, and the G3
-  continuity aliases are what keep the Claim stable. D1 must state this
-  explicitly. The spike uses kind, file, and name as the creation key, with the
-  CARI id stored for reference.
-- Finding 2 (check after move): the plain `claims check` reports the moved
-  Subject as `not_applicable` (exit 2) until discovery persists the continuity.
-  The `--since` path carries forward only with discovery run first. The observed
-  ChangeSet knows about the move without discovery. O2 must decide whether the
-  check consumes continuity from the ChangeSet or the protocol stays
-  discovery-first and is documented.
+- Validated: a signature change on a documented public symbol predicts `reopen`,
+  and the lifecycle reopens it (`warrant-changed`, exit 4). A move predicts
+  carry-forward, and the lifecycle keeps the accepted Review (exit 0). Removal is
+  reported only for complete coverage. The ChangeSet is identical for the same two
+  runs, including when they are captured in reverse order in a second store.
+  Overloads are captured under unique identities. Ambiguous rename matches are
+  `continuity-unclear`, never `moved`.
+- Parity now runs through the Claim's real Subjects in `claim_subjects`. An
+  explicit bridge binds each Subject to an observed identity through its CARI id,
+  and that binding is followed through each ChangeSet. The move and signature
+  steps both use the followed bridge.
+- Decided, not implemented: Decision C. `claims check` does not yet derive
+  continuity from the ChangeSet or from Git history. The parity test still runs
+  discovery before the check, so it does not test Decision C. Until the engine is
+  changed in O2, a plain check after a move still reports `not_applicable`.
+- Finding 1 (CARI identity): the CARI symbol id embeds the path and a signature
+  hash, so it is not an observed identity. The spike keys identities by kind, file,
+  and name, and keeps the CARI id as a reference attribute. This is recorded in
+  Amendment A.
 - Limits: TypeScript and JavaScript, one Claim family, one symbol kind, four
-  commits, no native parity, spike store separate from migration 21.
+  commits, no native parity, and a spike store separate from migration 21.
 
-Gate. The approach holds on this slice. O0 proceeds with D1 amended as in
-Finding 1, and with Finding 2 recorded as an O2 requirement.
+Gate. The approach holds on this slice, but Phase O-T is not complete while
+Decision C is decided and not implemented. O0 can proceed on the accepted D1–D4
+and Amendment A. Decision C is an O2 requirement and is verified there.
 
 Outcome gates the rest of the phase. If the spike shows a mismatch that the
 design cannot explain, O0–O2 are revised before implementation.
