@@ -573,7 +573,10 @@ function promoteGenericCandidate(
     const documentationRequirement = optionalString(
       documentationValue.requirement,
     );
-    const ambiguous = candidate.confidence === "ambiguous";
+    // Ambiguity from deterministic discovery is recorded in Route Evidence. A
+    // semantic correlation can raise the candidate's confidence but cannot clear it.
+    const ambiguous =
+      candidate.confidence === "ambiguous" || routeValue.ambiguous === true;
     const documentationConflict =
       (documentationRequirement === "required" && publicExemption) ||
       (documentationRequirement === "public" && guardPresent);
@@ -642,8 +645,8 @@ function promoteGenericCandidate(
       },
       normalizedReasons: [reason],
       evidenceVersionIds,
-      ruleContractVersion: "endpoint-authentication-nestjs-v1",
-      implementationFingerprint: "endpoint-authentication-nestjs-impl-v1",
+      ruleContractVersion: "endpoint-authentication-v2",
+      implementationFingerprint: "endpoint-authentication-impl-v2",
     };
     const previousWarrantMaterialFingerprint =
       currentRuleWarrantMaterialFingerprint(

@@ -135,6 +135,9 @@ export function persistObservation(
     path: observation.routePath,
     pathKnown: observation.routeKnown,
     active: true,
+    // Deterministic ambiguity lives in Route Evidence so a later correlation
+    // cannot clear it. Written only when true to keep existing fingerprints.
+    ...(observation.ambiguous ? { ambiguous: true } : {}),
   };
   const handlerValue = {
     controller: observation.controllerName,
