@@ -105,6 +105,77 @@ function extractRevision(workspaceRoot: string, revision: string): string {
   return directory;
 }
 
+/** The file an observed identity belongs to, or undefined for a dependency. */
+export function identityFilePath(identityKey: string): string | undefined {
+  if (identityKey.startsWith("file:")) return identityKey.slice("file:".length);
+  if (identityKey.startsWith("module:"))
+    return identityKey.slice("module:".length);
+  if (identityKey.startsWith("symbol:")) {
+    const rest = identityKey.slice("symbol:".length);
+    const kindEnd = rest.indexOf(":");
+    const hash = rest.indexOf("#", kindEnd + 1);
+    return hash === -1 ? undefined : rest.slice(kindEnd + 1, hash);
+  }
+  if (identityKey.startsWith("call-site:")) {
+    const rest = identityKey.slice("call-site:".length);
+    const hash = rest.indexOf("#");
+    return hash === -1 ? undefined : rest.slice(0, hash);
+  }
+  return undefined;
+}
+
+export interface ImplementationView {
+  /** Files of the Claim Subjects. */
+  subjectFiles: string[];
+  /** Files that the Subject files import directly, from the CARI imports table. */
+  directDependencyFiles: string[];
+  /** Files matched by the configured globs. */
+  globFiles: string[];
+  /** Union of the three tiers, the files whose changes are in view. */
+  files: string[];
+}
+
+/**
+ * The implementation view (O2): Claim Subject files, their direct file dependencies
+ * from the CARI imports table, and files matched by explicit globs.
+ */
+export function deriveImplementationView(
+  db: Database.Database,
+  subjectFiles: ReadonlySet<string>,
+  allFiles: readonly string[],
+  view: ObservationConfig["implementationView"],
+  matchGlob: (filePath: string, glob: string) => boolean = (filePath, glob) =>
+    minimatch(filePath, glob, { dot: true }),
+): ImplementationView {
+  const directDependencyFiles = new Set<string>();
+  const importStatement = db.prepare(
+    `SELECT DISTINCT target_file FROM imports WHERE source_file = ? AND target_file IS NOT NULL`,
+  );
+  for (const file of subjectFiles) {
+    for (const row of importStatement.all(file) as Array<{
+      target_file: string;
+    }>) {
+      directDependencyFiles.add(row.target_file);
+    }
+  }
+  const globFiles = view.globs.length
+    ? allFiles.filter((file) =>
+        view.globs.some((glob) => matchGlob(file, glob)),
+      )
+    : [];
+  const files = new Set([
+    ...subjectFiles,
+    ...directDependencyFiles,
+    ...globFiles,
+  ]);
+  return {
+    subjectFiles: [...subjectFiles].sort(),
+    directDependencyFiles: [...directDependencyFiles].sort(),
+    globFiles: [...new Set(globFiles)].sort(),
+    files: [...files].sort(),
+  };
+}
+
 export interface CaptureSummary {
   runId: string;
   revision: string;
@@ -244,6 +315,13 @@ export interface CheckSummary {
   head: string;
   changeSetId: string;
   counts: Record<string, number>;
+  /** Change volume: all changes, those inside the implementation view, and the view size. */
+  volume: {
+    changes: number;
+    inView: number;
+    outOfView: number;
+    viewFiles: number;
+  };
   followedBridges: number;
   gate: ReturnType<typeof evaluateContinuityGate>;
   exitCode: 0 | 1;
@@ -291,6 +369,45 @@ export function checkObservations(
     for (const item of items)
       counts[item.changeKind] = (counts[item.changeKind] ?? 0) + 1;
 
+    // Volume bound: the view is Subject files, their direct dependencies, and globs.
+    const allFiles = git
+      .listFiles(head)
+      .filter((file) => SOURCE_PATTERN.test(file) && !file.endsWith(".d.ts"));
+    const identityKeyOf = db.prepare(
+      `SELECT identity_key FROM observed_identities WHERE id = ?`,
+    );
+    const keyOf = (identityId: string): string | undefined =>
+      (identityKeyOf.get(identityId) as { identity_key: string } | undefined)
+        ?.identity_key;
+    const subjectFileSet = new Set<string>();
+    const subjectIdentities = db
+      .prepare(`SELECT DISTINCT observed_identity_id FROM subject_observations`)
+      .all() as Array<{ observed_identity_id: string }>;
+    for (const row of subjectIdentities) {
+      const key = keyOf(row.observed_identity_id);
+      const file = key ? identityFilePath(key) : undefined;
+      if (file) subjectFileSet.add(file);
+    }
+    const view = deriveImplementationView(
+      db,
+      subjectFileSet,
+      allFiles,
+      config?.implementationView ?? { globs: [], exportedOnly: false },
+    );
+    const viewFiles = new Set(view.files);
+    let inView = 0;
+    for (const item of items) {
+      const key = keyOf(item.observedIdentityId);
+      const file = key ? identityFilePath(key) : undefined;
+      if (file && viewFiles.has(file)) inView += 1;
+    }
+    const volume = {
+      changes: items.length,
+      inView,
+      outOfView: items.length - inView,
+      viewFiles: view.files.length,
+    };
+
     const unresolved: UnresolvedContinuity[] = items
       .filter((item) => item.changeKind === "continuity-unclear")
       .map((item) => ({
@@ -303,6 +420,7 @@ export function checkObservations(
       head,
       changeSetId,
       counts,
+      volume,
       followedBridges,
       gate,
       exitCode: gate.exitCode,

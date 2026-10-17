@@ -22,6 +22,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   captureObservationRun,
   checkObservations,
+  deriveImplementationView,
+  identityFilePath,
 } from "../observation/observationCommands.js";
 
 const repoRoot = path.resolve(
@@ -139,6 +141,11 @@ describe("observation capture and continuity check", () => {
     expect(moved.counts).toMatchObject({ moved: 4 });
     expect(moved.exitCode).toBe(0);
     expect(moved.followedBridges).toBe(1);
+    // The view holds the Subject file and its direct dependencies, and the bound is reported.
+    expect(moved.volume.viewFiles).toBeGreaterThan(0);
+    expect(moved.volume.changes).toBe(
+      moved.volume.inView + moved.volume.outOfView,
+    );
 
     // Ambiguous rename: the file is renamed and gains a second `charge` declaration,
     // so the moved symbol has two candidates and cannot be matched.
@@ -182,5 +189,47 @@ export function charge(amount: number, currency: string): void {
     expect(reported.gate.reported.length).toBeGreaterThan(0);
     expect(reported.exitCode).toBe(0);
     expect(revC).not.toBe(revA);
+  });
+});
+
+describe("implementation view derivation", () => {
+  it("maps each identity kind to its file", () => {
+    expect(identityFilePath("file:src/a.ts")).toBe("src/a.ts");
+    expect(identityFilePath("module:src/a.ts")).toBe("src/a.ts");
+    expect(identityFilePath("symbol:function:src/a.ts#charge")).toBe(
+      "src/a.ts",
+    );
+    expect(identityFilePath("symbol:function:src/a.ts#charge~1")).toBe(
+      "src/a.ts",
+    );
+    expect(identityFilePath("call-site:src/a.ts#12:charge")).toBe("src/a.ts");
+    expect(identityFilePath("dependency:zod@package.json")).toBeUndefined();
+  });
+
+  it("adds the direct imports of Subject files and matches globs, and nothing further", () => {
+    const db = new Database(":memory:");
+    db.exec(
+      "CREATE TABLE imports (source_file TEXT, target_file TEXT, module_specifier TEXT)",
+    );
+    db.exec(`INSERT INTO imports VALUES
+      ('src/billing.ts', 'src/ledger.ts', './ledger'),
+      ('src/ledger.ts', 'src/deep.ts', './deep'),
+      ('src/billing.ts', NULL, 'zod')`);
+    const view = deriveImplementationView(
+      db,
+      new Set(["src/billing.ts"]),
+      ["src/billing.ts", "src/ledger.ts", "src/deep.ts", "src/api/route.ts"],
+      { globs: ["src/api/**"], exportedOnly: false },
+      (file, glob) => file.startsWith(glob.replace("/**", "")),
+    );
+    expect(view.subjectFiles).toEqual(["src/billing.ts"]);
+    expect(view.directDependencyFiles).toEqual(["src/ledger.ts"]);
+    expect(view.globFiles).toEqual(["src/api/route.ts"]);
+    expect(view.files).toEqual([
+      "src/api/route.ts",
+      "src/billing.ts",
+      "src/ledger.ts",
+    ]);
+    db.close();
   });
 });

@@ -4665,6 +4665,9 @@ const claimsObservationsCommand = new Command("observations")
               console.log(`  ${kind}: ${count}`);
             }
             console.log(
+              `Volume: ${result.volume.changes} changes, ${result.volume.inView} in the implementation view (${result.volume.viewFiles} files), ${result.volume.outOfView} outside.`,
+            );
+            console.log(
               `Gate ${result.gate.mode}: ${result.gate.gated.length} blocking, ` +
                 `${result.gate.reported.length} reported.`,
             );

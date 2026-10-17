@@ -2239,10 +2239,16 @@ Phases.
       now restored with the Claims snapshot (`OBSERVATION_COMPANION_TABLES`).
     - The gate treats a Subject bridge as current even when a later run retired it,
       because the question is whether the base identity was a Subject.
-  - Limit that remains: the implementation view (Claim Subject files, plus explicit
-    globs, with an optional exported-only filter) is computed and counted in capture
-    output, but it does not yet filter ChangeSet items. Bridges from the view are not
-    created by default, since decision B keeps bridges to a rule or Review basis.
+  - Implementation view and volume bound (completed): the view is the Subject files,
+    their direct file dependencies from the CARI `imports` table, and explicit globs.
+    `check` reports the change volume split into changes inside the view and changes
+    outside it, with the view size. Change items themselves stay complete, because
+    removal and continuity need them; the bound applies to what is reported and gated.
+  - Still open, needing a decision: (a) writing the view definition into the portable
+    Claims state is a versioned schema change that the golden vectors pin, so it is
+    not done; (b) the explicit report period in `observations.yaml` needs its semantics
+    decided (a date, or a reviewed config change); (c) bridges from view objects stay
+    off by default, as in the plan's open question.
 
 - O3: NestJS and Fastify discoverers become observation producers. Their
   Assessment outcomes stay unchanged on E0–E6, A0–A5, the Fastify fixtures, and
