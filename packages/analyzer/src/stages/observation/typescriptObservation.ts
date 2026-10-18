@@ -220,7 +220,10 @@ export function createTypeScriptObservation(
       );
       records.push(...withOrdinals(symbolRecords));
 
-      const callRecords = extraction.calls ?? [];
+      // Source order, so the ordinal suffix of repeated call sites is stable.
+      const callRecords = [...(extraction.calls ?? [])].sort(
+        (left, right) => left.callerLine - right.callerLine,
+      );
       const callSites = callRecords
         .map((call) => {
           const literals = (call.argumentTexts ?? [])
@@ -229,7 +232,9 @@ export function createTypeScriptObservation(
           if (literals.length === 0) return null;
           const callee = call.calleeId ?? call.calleeName;
           return {
-            base: `call-site:${relativePath}#${call.callerLine}:${callee}`,
+            // The identity is the enclosing symbol and the callee, not the line. The
+            // line is kept in the locator, so an edit above a call does not churn it.
+            base: `call-site:${relativePath}#${call.callerName ?? "<module>"}:${callee}`,
             record: {
               kind: "call-site" as const,
               identityKey: "",

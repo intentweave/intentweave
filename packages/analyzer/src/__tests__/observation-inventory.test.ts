@@ -270,3 +270,39 @@ describe("TypeScript observation inventory (Phase O1)", () => {
     });
   });
 });
+
+describe("call-site identity", () => {
+  const callSiteKeys = (source: string): Map<string, number> => {
+    const root = workspaceWith({ "src/calls.ts": source });
+    const run = runObservationInventory(registryFor(root), root, [
+      "src/calls.ts",
+    ]);
+    return new Map(
+      run.records
+        .filter((record) => record.kind === "call-site")
+        .map((record) => [record.identityKey, record.locator.line ?? 0]),
+    );
+  };
+
+  it("does not change when lines are added above the call", () => {
+    const before = "export function run(): void {\n  console.log('a');\n}\n";
+    const after =
+      "// new comment\n// another\nexport function run(): void {\n  console.log('a');\n}\n";
+    const beforeKeys = [...callSiteKeys(before).keys()];
+    const afterKeys = [...callSiteKeys(after).keys()];
+    expect(afterKeys).toEqual(beforeKeys);
+    expect(afterKeys).toEqual(["call-site:src/calls.ts#run:console.log"]);
+  });
+
+  it("gives a second call of the same callee in the same symbol its own identity", () => {
+    const keys = [
+      ...callSiteKeys(
+        "export function run(): void {\n  console.log('a');\n  console.log('b');\n}\n",
+      ).keys(),
+    ];
+    expect(keys.sort()).toEqual([
+      "call-site:src/calls.ts#run:console.log~1",
+      "call-site:src/calls.ts#run:console.log~2",
+    ]);
+  });
+});
