@@ -1509,11 +1509,6 @@ export function migrateSchema20To21(db: Database.Database): void {
 }
 
 /**
- * Remove the knowledge-graph tables. Nothing in IntentWeave writes them
- * any longer, and their readers are removed with them. The step is destructive, so
- * openMigratedDatabase keeps a durable backup of the version-21 index first.
- */
-/**
  * Per-file observation coverage (decision 1a). Additive: one table, created in a
  * transaction, with no data rewritten.
  */
@@ -1535,6 +1530,11 @@ export function migrateSchema22To23(db: Database.Database): void {
   migrate();
 }
 
+/**
+ * Remove the knowledge-graph tables. Nothing in IntentWeave writes them
+ * any longer, and their readers are removed with them. The step is destructive, so
+ * openMigratedDatabase keeps a durable backup of the version-21 index first.
+ */
 export function migrateSchema21To22(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
   const migrate = db.transaction(() => {
