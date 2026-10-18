@@ -29,14 +29,21 @@ export interface ImplementationViewConfig {
   exportedOnly: boolean;
 }
 
+export interface RetentionConfig {
+  /** Newest observation runs whose membership is kept, besides the runs a check uses. */
+  maxRuns: number;
+}
+
 export interface ObservationConfig {
   continuity: ContinuityConfig;
   implementationView: ImplementationViewConfig;
+  retention: RetentionConfig;
 }
 
 export const DEFAULT_OBSERVATION_CONFIG: ObservationConfig = {
   continuity: { mode: "report", scopes: ["claim-subjects"] },
   implementationView: { globs: [], exportedOnly: false },
+  retention: { maxRuns: 20 },
 };
 
 export class ObservationConfigError extends Error {}
@@ -48,6 +55,7 @@ export function parseObservationConfig(
   const parsed = yamlLoad(text) as {
     schemaVersion?: unknown;
     continuity?: { mode?: unknown; scopes?: unknown };
+    retention?: { maxRuns?: unknown };
   } | null;
   if (!parsed || typeof parsed !== "object") {
     throw new ObservationConfigError("observations.yaml must be a mapping");
@@ -92,7 +100,23 @@ export function parseObservationConfig(
   return {
     continuity: { mode, scopes: [...new Set(scopes as ContinuityScope[])] },
     implementationView: { globs: [...(globs as string[])], exportedOnly },
+    retention: { maxRuns: parseMaxRuns(parsed) },
   };
+}
+
+function parseMaxRuns(parsed: { retention?: { maxRuns?: unknown } }): number {
+  const maxRuns =
+    parsed.retention?.maxRuns ?? DEFAULT_OBSERVATION_CONFIG.retention.maxRuns;
+  if (
+    typeof maxRuns !== "number" ||
+    !Number.isInteger(maxRuns) ||
+    maxRuns < 1
+  ) {
+    throw new ObservationConfigError(
+      "retention.maxRuns must be a whole number of at least 1",
+    );
+  }
+  return maxRuns;
 }
 
 export interface UnresolvedContinuity {

@@ -5,11 +5,12 @@
  * Inventory run (Phase O1). Observes a scope through the registered observation
  * adapters and reports completeness per kind.
  *
- * Coverage rules:
- * - a kind is `complete` only when every in-scope file that it could be observed
- *   from was observed without error;
- * - a file without an observation adapter, or one that fails to parse, makes the
- *   kinds it could produce `partial`, with the reason;
+ * Coverage rules (per file, decision 1a):
+ * - a kind is `complete` over the files that were observed. A file without an
+ *   observation adapter, or one that fails to parse, is listed in `unobservedFiles`
+ *   with its reason. Its objects are not comparable; no other object is affected;
+ * - a failure that is not tied to one file (an unreadable manifest) makes its kind
+ *   `partial`, with the reason;
  * - a kind that no adapter observes is `not_observed`, never absent.
  *
  * The run is in memory. Persistence in observation_runs and
@@ -30,10 +31,17 @@ export type KindCoverage =
   | { status: "not_observed"; reason: string }
   | { status: "unsupported"; reason: string };
 
+export interface UnobservedFile {
+  filePath: string;
+  reason: string;
+}
+
 export interface InventoryRun {
   scope: { files: readonly string[] };
   coverage: Record<ObservationKind, KindCoverage>;
   records: ObservedRecord[];
+  /** In-scope files that were not observed, each with its reason. */
+  unobservedFiles: UnobservedFile[];
 }
 
 export function runObservationInventory(
@@ -43,7 +51,7 @@ export function runObservationInventory(
 ): InventoryRun {
   const records: ObservedRecord[] = [];
   const failures = new Map<ObservationKind, string[]>();
-  const unobservedFiles: string[] = [];
+  const unobservedFiles: UnobservedFile[] = [];
   const observedKinds = new Map<ObservationKind, number>();
   const declared = new Map<ObservationKind, ObservationCapability[]>();
 
@@ -54,7 +62,10 @@ export function runObservationInventory(
   for (const file of [...files].sort()) {
     const adapter = registry.observationAdapterFor(file);
     if (!adapter?.observation) {
-      unobservedFiles.push(file);
+      unobservedFiles.push({
+        filePath: file,
+        reason: "no observation adapter for this file type",
+      });
       continue;
     }
     for (const kind of OBSERVATION_KINDS) {
@@ -75,11 +86,10 @@ export function runObservationInventory(
         );
       }
     } catch (error) {
-      for (const kind of OBSERVATION_KINDS) {
-        if (adapter.observation.capabilities[kind].status === "observed") {
-          note(kind, `observation failed: ${String(error)}`);
-        }
-      }
+      unobservedFiles.push({
+        filePath: file,
+        reason: `observation failed: ${String(error)}`,
+      });
     }
   }
 
@@ -143,11 +153,6 @@ export function runObservationInventory(
       continue;
     }
     const reasons = [...(failures.get(kind) ?? [])];
-    if (unobservedFiles.length > 0 && kind !== "dependency") {
-      reasons.push(
-        `${unobservedFiles.length} in-scope file(s) have no observation adapter`,
-      );
-    }
     if (reasons.length > 0) {
       coverage[kind] = {
         status: "partial",
@@ -159,5 +164,12 @@ export function runObservationInventory(
     }
   }
 
-  return { scope: { files: [...files].sort() }, coverage, records };
+  return {
+    scope: { files: [...files].sort() },
+    coverage,
+    records,
+    unobservedFiles: [...unobservedFiles].sort((a, b) =>
+      a.filePath.localeCompare(b.filePath),
+    ),
+  };
 }

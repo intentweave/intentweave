@@ -111,6 +111,7 @@ export function recordRevision(
       scope: { files, description: "tracked TypeScript and JavaScript files" },
       repositoryRevision: revision,
       coverage,
+      unobservedFiles: inventory.unobservedFiles,
       records: inventory.records.map((record) => ({
         kind: record.kind,
         identityKey: record.identityKey,

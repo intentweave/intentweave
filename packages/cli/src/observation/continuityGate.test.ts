@@ -160,3 +160,24 @@ describe("implementation view", () => {
     ).toThrow(ObservationConfigError);
   });
 });
+
+describe("retention setting", () => {
+  it("defaults to 20 runs and reads an explicit value", () => {
+    expect(parseObservationConfig(undefined).retention.maxRuns).toBe(20);
+    expect(
+      parseObservationConfig('schemaVersion: "1"\nretention:\n  maxRuns: 5\n')
+        .retention.maxRuns,
+    ).toBe(5);
+  });
+
+  it("rejects a value that is not a whole number of at least 1", () => {
+    expect(() =>
+      parseObservationConfig('schemaVersion: "1"\nretention:\n  maxRuns: 0\n'),
+    ).toThrow(ObservationConfigError);
+    expect(() =>
+      parseObservationConfig(
+        'schemaVersion: "1"\nretention:\n  maxRuns: 2.5\n',
+      ),
+    ).toThrow(ObservationConfigError);
+  });
+});

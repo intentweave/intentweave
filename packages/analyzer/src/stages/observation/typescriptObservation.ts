@@ -20,6 +20,8 @@ import {
   createExtractor,
   type ExtractedSymbol,
 } from "@intentweave/ast-extractor";
+
+type Extractor = ReturnType<typeof createExtractor>;
 import type {
   LanguageObservation,
   ObservationCapability,
@@ -55,6 +57,48 @@ function languageFor(
     default:
       return "typescript";
   }
+}
+
+/**
+ * Source rewrites for two type constructs that the tree-sitter TypeScript grammar
+ * in use rejects: labelled tuple members (`[subject: string]`) and an inline import
+ * type used as an array element (`import("./a.js").T[]`). Each rewrite replaces the
+ * text with spaces of the same length, so offsets and line numbers do not change.
+ * They are applied only to a file that already fails to parse.
+ */
+export function normalizeGrammarGaps(content: string): string {
+  return content
+    .replace(/import\((["'])[^"'\n]*\1\)\.(?=[\w$]+\s*\[\])/g, (match) =>
+      " ".repeat(match.length),
+    )
+    .split("\n")
+    .map((line) =>
+      /:\s*\[|<\s*\[/.test(line)
+        ? line.replace(
+            /([[,]\s*)([A-Za-z_$][\w$]*\??)(\s*):(?!:)/g,
+            (_match, lead: string, name: string, space: string) =>
+              lead + " ".repeat(name.length + space.length + 1),
+          )
+        : line,
+    )
+    .join("\n");
+}
+
+/**
+ * Extract a file, retrying with the grammar-gap rewrites only when the original
+ * source reports parse errors. A clean file is never rewritten.
+ */
+function extractForObservation(
+  extractor: Extractor,
+  content: string,
+  relativePath: string,
+) {
+  const language = languageFor(relativePath);
+  const first = extractor.extractFromString(content, relativePath, language);
+  if (!first.errors?.length) return first;
+  const normalized = normalizeGrammarGaps(content);
+  if (normalized === content) return first;
+  return extractor.extractFromString(normalized, relativePath, language);
 }
 
 /** Literal string argument: unquoted text, or null when not a plain literal. */
@@ -114,10 +158,10 @@ export function createTypeScriptObservation(
           `unreadable: ${String(error)}`,
         );
       }
-      const extraction = getExtractor().extractFromString(
+      const extraction = extractForObservation(
+        getExtractor(),
         content,
         relativePath,
-        languageFor(relativePath),
       );
       if (extraction.errors?.length) {
         throw new ObservationParseError(relativePath, "parse errors");

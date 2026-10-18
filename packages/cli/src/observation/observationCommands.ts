@@ -30,6 +30,7 @@ import {
 import { minimatch } from "minimatch";
 import { ClaimsGit } from "../claims/git.js";
 import {
+  DEFAULT_OBSERVATION_CONFIG,
   OBSERVATION_CONFIG_RELATIVE_PATH,
   evaluateContinuityGate,
   isInImplementationView,
@@ -176,6 +177,21 @@ export function deriveImplementationView(
   };
 }
 
+/**
+ * Retention (decision 3b): keep the membership of the runs a command uses and the
+ * newest `retention.maxRuns` runs. Older membership is pruned; run headers stay.
+ */
+function applyRetention(
+  store: ObservationStore,
+  keepRunIds: readonly string[],
+  config: ObservationConfig | undefined,
+): void {
+  store.pruneRuns({
+    keepRunIds,
+    maxRuns: (config ?? DEFAULT_OBSERVATION_CONFIG).retention.maxRuns,
+  });
+}
+
 export interface CaptureSummary {
   runId: string;
   revision: string;
@@ -253,6 +269,7 @@ export function captureObservationRun(
         repositoryRevision: target,
         coverage,
         records,
+        unobservedFiles: inventory.unobservedFiles,
       });
 
       const view = config?.implementationView ?? {
@@ -285,6 +302,7 @@ export function captureObservationRun(
       const bridgedSubjects = withIndex
         ? store.bridgeClaimSubjectsInRun(runId, subjects)
         : 0;
+      applyRetention(store, [runId], config);
 
       return {
         runId,
@@ -415,6 +433,7 @@ export function checkObservations(
         isClaimSubject: store.hasSubjectBridge(item.observedIdentityId),
       }));
     const gate = evaluateContinuityGate(config, unresolved);
+    applyRetention(store, [baseRun.runId, headRun.runId], config);
     return {
       base,
       head,

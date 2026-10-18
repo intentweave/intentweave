@@ -2301,6 +2301,29 @@ Phases.
     tolerates these, because it ignores `hasError`. The newer grammar (tree-sitter-typescript
     0.23.2) fails on the same constructs, so a version bump is not a fix. Under the
     current rules, the change volume on real repositories is entirely `not_comparable`.
+  - Decisions taken (2026-10-18):
+    - 1a, per-file coverage. A file that fails to parse or has no adapter is recorded
+      as unobserved for its run, with its reason. Its objects are `not_comparable`;
+      removals need the object's file observed in head, additions in base. Other
+      objects are compared. A failure not tied to one file still makes its kind
+      `partial`. Migration 23 adds `observation_run_unobserved_files`.
+    - 2b, grammar-gap rewrites. Labelled tuple members and inline `import()` array
+      types are rewritten to spaces of the same length, only in a file that already
+      fails to parse. Clean files are parsed as before. 2c (a different parser) is
+      deferred.
+    - 3b, retention. `observations.yaml` takes `retention.maxRuns` (default 20). Each
+      capture and check keeps the membership of the runs it uses and of the newest
+      `maxRuns` runs, and prunes the rest with the ChangeSets built on them. Run
+      headers stay, because identities and versions refer to them. A pruned revision is
+      recorded again on demand.
+  - Volume after 1a, on this repository (six commits, the same method as above):
+    removals and additions are now measured. The O2 commit shows 49 removed, 78 added,
+    and 4 property-changed. Its removals are call sites in the files it changed.
+  - Finding: a call site's identity includes its line number. An edit that shifts lines
+    in a file therefore reads as many removals and additions, although the calls did
+    not change. This inflates change volume. The fix is an identity change (for example,
+    file, callee, and ordinal within the enclosing symbol), which needs a decision
+    because it changes the O1 contract.
   - Decisions needed before G5.3 can be accepted: (a) coverage per file rather than per
     run and kind, so that one unparsable file makes only its own objects not comparable,
     which changes the O1 and O2 contract; or (b) an error-tolerant adapter that uses

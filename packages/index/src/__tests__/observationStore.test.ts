@@ -65,7 +65,7 @@ function run(
 describe("observation store (migration 21)", () => {
   it("creates the observation tables on a fresh database at the current schema version", () => {
     const { db } = fresh();
-    expect(CURRENT_SCHEMA_VERSION).toBe("22");
+    expect(CURRENT_SCHEMA_VERSION).toBe("23");
     const tables = (
       db
         .prepare(
@@ -443,7 +443,7 @@ describe("migration 21 from schema 20", () => {
     const version = db
       .prepare("SELECT value FROM _meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe("22");
+    expect(version.value).toBe("23");
     const tables = db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'observation_runs'",
@@ -552,5 +552,181 @@ describe("Reverse Impact from projected observations", () => {
       .prepare("SELECT id FROM observed_identities WHERE identity_key = ?")
       .get("symbol:function:src/a.ts#unused") as { id: string };
     expect(store.dependentClaims(identity.id)).toEqual([]);
+  });
+});
+
+describe("per-file coverage (decision 1a)", () => {
+  function runWithUnobserved(
+    store: ObservationStore,
+    revision: string,
+    records: RunRecordInput[],
+    unobservedFiles: { filePath: string; reason: string }[],
+    files: string[],
+  ): string {
+    return store.recordRun({
+      adapterId: "test-typescript",
+      adapterContractVersion: "1",
+      scope: { files, description: "tracked files" },
+      repositoryRevision: revision,
+      coverage: complete(),
+      records,
+      unobservedFiles,
+    });
+  }
+
+  it("makes only the objects of an unobserved file not comparable", () => {
+    const { db, store } = fresh();
+    const before = run(
+      store,
+      "r1",
+      [symbol("src/a.ts", "charge"), symbol("src/b.ts", "refund")],
+      complete(),
+      ["src/a.ts", "src/b.ts"],
+    );
+    const after = runWithUnobserved(
+      store,
+      "r2",
+      [symbol("src/a.ts", "charge")],
+      [{ filePath: "src/b.ts", reason: "observation failed: parse" }],
+      ["src/a.ts", "src/b.ts"],
+    );
+    const items = store.changeItems(
+      store.computeChangeSet({
+        baseRunId: before,
+        headRunId: after,
+        contractFingerprint: "c1",
+        renames: new Map(),
+      }),
+    );
+    expect(items.map((item) => item.changeKind)).toEqual(["not_comparable"]);
+    expect(items[0]!.basis).toBe("unobserved-file");
+    db.close();
+  });
+
+  it("still reports a removal in an observed file while another file is unobserved", () => {
+    const { db, store } = fresh();
+    const before = run(
+      store,
+      "r1",
+      [
+        symbol("src/a.ts", "charge"),
+        symbol("src/a.ts", "refund"),
+        symbol("src/b.ts", "audit"),
+      ],
+      complete(),
+      ["src/a.ts", "src/b.ts"],
+    );
+    const after = runWithUnobserved(
+      store,
+      "r2",
+      [symbol("src/a.ts", "charge"), symbol("src/b.ts", "audit")],
+      [{ filePath: "src/c.ts", reason: "observation failed: parse" }],
+      ["src/a.ts", "src/b.ts", "src/c.ts"],
+    );
+    const items = store.changeItems(
+      store.computeChangeSet({
+        baseRunId: before,
+        headRunId: after,
+        contractFingerprint: "c1",
+        renames: new Map(),
+      }),
+    );
+    expect(items.map((item) => item.changeKind)).toEqual(["removed"]);
+    db.close();
+  });
+});
+
+describe("retention (decision 3b)", () => {
+  function count(
+    db: ReturnType<typeof fresh>["db"],
+    sql: string,
+    runId: string,
+  ): number {
+    return (db.prepare(sql).get(runId) as { n: number }).n;
+  }
+
+  it("prunes membership outside the keep set, keeps the headers, and restores on re-record", () => {
+    const { db, store } = fresh();
+    const old = run(store, "r1", [symbol("src/a.ts", "charge")]);
+    const middle = run(store, "r2", [
+      symbol("src/a.ts", "charge"),
+      symbol("src/a.ts", "refund"),
+    ]);
+    const latest = run(store, "r3", [symbol("src/a.ts", "refund")]);
+
+    const result = store.pruneRuns({ keepRunIds: [middle], maxRuns: 1 });
+    expect(result.runsPruned).toBe(1);
+    expect(
+      count(
+        db,
+        "SELECT COUNT(*) AS n FROM observation_run_items WHERE run_id = ?",
+        old,
+      ),
+    ).toBe(0);
+    expect(
+      count(
+        db,
+        "SELECT COUNT(*) AS n FROM observation_run_coverage WHERE run_id = ?",
+        old,
+      ),
+    ).toBe(0);
+    expect(
+      count(
+        db,
+        "SELECT COUNT(*) AS n FROM observation_run_items WHERE run_id = ?",
+        middle,
+      ),
+    ).toBe(2);
+    expect(
+      count(
+        db,
+        "SELECT COUNT(*) AS n FROM observation_run_items WHERE run_id = ?",
+        latest,
+      ),
+    ).toBe(1);
+
+    // The header survives, so provenance links still resolve.
+    expect(
+      count(db, "SELECT COUNT(*) AS n FROM observation_runs WHERE id = ?", old),
+    ).toBe(1);
+
+    // Recording the same revision again restores the membership.
+    const again = run(store, "r1", [symbol("src/a.ts", "charge")]);
+    expect(again).toBe(old);
+    expect(
+      count(
+        db,
+        "SELECT COUNT(*) AS n FROM observation_run_items WHERE run_id = ?",
+        old,
+      ),
+    ).toBe(1);
+    db.close();
+  });
+
+  it("drops ChangeSets built on a pruned run and keeps the others", () => {
+    const { db, store } = fresh();
+    const a = run(store, "r1", [symbol("src/a.ts", "charge")]);
+    const b = run(store, "r2", [symbol("src/a.ts", "charge")]);
+    const c = run(store, "r3", [symbol("src/a.ts", "charge")]);
+    store.computeChangeSet({
+      baseRunId: a,
+      headRunId: b,
+      contractFingerprint: "c1",
+      renames: new Map(),
+    });
+    store.computeChangeSet({
+      baseRunId: b,
+      headRunId: c,
+      contractFingerprint: "c1",
+      renames: new Map(),
+    });
+    store.pruneRuns({ keepRunIds: [b, c], maxRuns: 1 });
+    const left = db
+      .prepare(
+        "SELECT base_run_id AS base, head_run_id AS head FROM observed_changesets",
+      )
+      .all() as Array<{ base: string; head: string }>;
+    expect(left).toEqual([{ base: b, head: c }]);
+    db.close();
   });
 });

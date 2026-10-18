@@ -392,7 +392,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "22";
+export const CURRENT_SCHEMA_VERSION = "23";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -1449,6 +1449,14 @@ CREATE TABLE IF NOT EXISTS observed_evidence_projection (
 );
 
 -- ChangeSets: a pure function of the base run, head run, and contract.
+-- Per-file coverage (decision 1a): in-scope files a run did not observe.
+CREATE TABLE IF NOT EXISTS observation_run_unobserved_files (
+  run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  file_path TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (run_id, file_path)
+);
+
 CREATE TABLE IF NOT EXISTS observed_changesets (
   id TEXT PRIMARY KEY,
   base_run_id TEXT NOT NULL REFERENCES observation_runs(id),
@@ -1505,6 +1513,28 @@ export function migrateSchema20To21(db: Database.Database): void {
  * any longer, and their readers are removed with them. The step is destructive, so
  * openMigratedDatabase keeps a durable backup of the version-21 index first.
  */
+/**
+ * Per-file observation coverage (decision 1a). Additive: one table, created in a
+ * transaction, with no data rewritten.
+ */
+export function migrateSchema22To23(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS observation_run_unobserved_files (
+        run_id TEXT NOT NULL REFERENCES observation_runs(id),
+        file_path TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (run_id, file_path)
+      );
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '23')`,
+    ).run();
+  });
+  migrate();
+}
+
 export function migrateSchema21To22(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
   const migrate = db.transaction(() => {
@@ -1707,8 +1737,8 @@ export function migrateSchema19To20(db: Database.Database): void {
 
 /**
  * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
- * Supported transitions end at 22 from every supported earlier version, including
- * 20 -> 21 and 21 -> 22.
+ * Supported transitions end at 23 from every supported earlier version, including
+ * 20 -> 21, 21 -> 22, and 22 -> 23.
  * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
  */
 export function migrateSchemaToCurrent(db: Database.Database): void {
@@ -1722,6 +1752,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema19To20(db);
     migrateSchema20To21(db);
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1732,6 +1763,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema19To20(db);
     migrateSchema20To21(db);
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1741,6 +1773,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema19To20(db);
     migrateSchema20To21(db);
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === "17") {
@@ -1749,6 +1782,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema19To20(db);
     migrateSchema20To21(db);
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === "18") {
@@ -1756,21 +1790,29 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema19To20(db);
     migrateSchema20To21(db);
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === "19") {
     migrateSchema19To20(db);
     migrateSchema20To21(db);
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === "20") {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === "21") {
     migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    return;
+  }
+  if (schemaVersion === "22") {
+    migrateSchema22To23(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1795,6 +1837,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "19" &&
     schemaVersion !== "20" &&
     schemaVersion !== "21" &&
+    schemaVersion !== "22" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

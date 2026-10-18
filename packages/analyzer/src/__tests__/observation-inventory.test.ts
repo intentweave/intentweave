@@ -148,7 +148,7 @@ describe("TypeScript observation inventory (Phase O1)", () => {
     }
   });
 
-  it("reports a kind partial when an in-scope file has no observation adapter", () => {
+  it("keeps a kind complete and lists a file with no observation adapter as unobserved", () => {
     const root = workspaceWith({
       "src/routes.ts": ROUTES,
       "src/app.py": "print('x')\n",
@@ -157,22 +157,22 @@ describe("TypeScript observation inventory (Phase O1)", () => {
       "src/routes.ts",
       "src/app.py",
     ]);
-    expect(run.coverage.symbol).toMatchObject({
-      status: "partial",
-      reason: expect.stringContaining("no observation adapter"),
-    });
+    expect(run.coverage.symbol.status).toBe("complete");
+    expect(run.unobservedFiles).toEqual([
+      expect.objectContaining({ filePath: "src/app.py" }),
+    ]);
   });
 
-  it("reports a kind partial when a file cannot be read, never as absent", () => {
+  it("keeps a kind complete over the readable files and lists an unreadable file as unobserved", () => {
     const root = workspaceWith({ "src/routes.ts": ROUTES });
     const run = runObservationInventory(registryFor(root), root, [
       "src/routes.ts",
       "src/missing.ts",
     ]);
-    expect(run.coverage.symbol).toMatchObject({
-      status: "partial",
-      reason: expect.stringContaining("missing.ts"),
-    });
+    expect(run.coverage.symbol.status).toBe("complete");
+    expect(run.unobservedFiles).toEqual([
+      expect.objectContaining({ filePath: "src/missing.ts" }),
+    ]);
     // The readable file is still observed.
     expect(
       run.records.some((record) => record.locator.filePath === "src/routes.ts"),

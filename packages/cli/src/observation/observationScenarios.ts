@@ -120,18 +120,28 @@ export const SCENARIOS: Scenario[] = [
     ],
   },
   {
-    name: "removal under partial coverage",
+    name: "removal in an observed file under a file that fails to parse",
     base: { "src/a.ts": CHARGE + "\n" + REFUND },
     head: {
       "src/a.ts": CHARGE,
       "src/broken.ts": "export function (((\n",
     },
     labels: [
+      { identityKey: "symbol:function:src/a.ts#refund", kind: "removed" },
+      { identityKey: "module:src/a.ts", kind: "property-changed" },
+    ],
+  },
+  {
+    name: "removal in a file that fails to parse at head",
+    base: { "src/a.ts": CHARGE, "src/b.ts": REFUND },
+    head: { "src/a.ts": CHARGE, "src/b.ts": "export function (((\n" },
+    labels: [
       {
-        identityKey: "symbol:function:src/a.ts#refund",
+        identityKey: "symbol:function:src/b.ts#refund",
         kind: "not_comparable",
       },
-      { identityKey: "module:src/a.ts", kind: "property-changed" },
+      { identityKey: "file:src/b.ts", kind: "not_comparable" },
+      { identityKey: "module:src/b.ts", kind: "not_comparable" },
     ],
   },
 ];

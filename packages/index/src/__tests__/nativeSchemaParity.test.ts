@@ -50,6 +50,7 @@ const TYPESCRIPT_OWNED_TABLES = new Set([
   "observed_changesets",
   "observed_change_items",
   "change_impacts",
+  "observation_run_unobserved_files",
 ]);
 
 /**

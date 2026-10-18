@@ -53,6 +53,8 @@ export interface RecordRunInput {
   repositoryRevision: string;
   coverage: readonly RunCoverageInput[];
   records: readonly RunRecordInput[];
+  /** In-scope files that were not observed, with reasons (per-file coverage). */
+  unobservedFiles?: readonly { filePath: string; reason: string }[];
 }
 
 export type ChangeKind =
@@ -105,32 +107,46 @@ export class ObservationStore {
     const existing = this.db
       .prepare("SELECT id FROM observation_runs WHERE id = ?")
       .get(runId);
-    if (existing) return runId;
+    // A run whose membership was pruned keeps its header but has no coverage rows.
+    // Record it again, reusing the header, so its provenance links stay valid.
+    if (existing && this.coverageOf(runId).size > 0) return runId;
 
     const now = Date.now();
+    const headerFields = [
+      input.adapterId,
+      input.adapterContractVersion,
+      scopeFingerprint,
+      JSON.stringify({
+        description: input.scope.description,
+        files: [...input.scope.files].sort(),
+      }),
+      input.repositoryRevision,
+      now,
+      now,
+      fingerprint({ runId, coverage: input.coverage }),
+    ];
     const record = this.db.transaction(() => {
-      this.db
-        .prepare(
-          `INSERT INTO observation_runs
-             (id, adapter_id, adapter_contract_version, scope_fingerprint,
-              scope_descriptor_json, repository_revision, status, started_at,
-              finished_at, fingerprint)
-           VALUES (?, ?, ?, ?, ?, ?, 'finished', ?, ?, ?)`,
-        )
-        .run(
-          runId,
-          input.adapterId,
-          input.adapterContractVersion,
-          scopeFingerprint,
-          JSON.stringify({
-            description: input.scope.description,
-            files: [...input.scope.files].sort(),
-          }),
-          input.repositoryRevision,
-          now,
-          now,
-          fingerprint({ runId, coverage: input.coverage }),
-        );
+      if (existing) {
+        this.db
+          .prepare(
+            `UPDATE observation_runs
+             SET adapter_id = ?, adapter_contract_version = ?, scope_fingerprint = ?,
+                 scope_descriptor_json = ?, repository_revision = ?, status = 'finished',
+                 started_at = ?, finished_at = ?, fingerprint = ?
+             WHERE id = ?`,
+          )
+          .run(...headerFields, runId);
+      } else {
+        this.db
+          .prepare(
+            `INSERT INTO observation_runs
+               (id, adapter_id, adapter_contract_version, scope_fingerprint,
+                scope_descriptor_json, repository_revision, status, started_at,
+                finished_at, fingerprint)
+             VALUES (?, ?, ?, ?, ?, ?, 'finished', ?, ?, ?)`,
+          )
+          .run(runId, ...headerFields);
+      }
 
       for (const coverage of input.coverage) {
         if (coverage.status !== "complete" && !coverage.reason) {
@@ -151,6 +167,15 @@ export class ObservationStore {
             coverage.reason ?? null,
             coverage.objectCount,
           );
+      }
+
+      for (const unobserved of input.unobservedFiles ?? []) {
+        this.db
+          .prepare(
+            `INSERT INTO observation_run_unobserved_files (run_id, file_path, reason)
+             VALUES (?, ?, ?)`,
+          )
+          .run(runId, unobserved.filePath, unobserved.reason);
       }
 
       const seen = new Set<string>();
@@ -274,6 +299,75 @@ export class ObservationStore {
     }>;
   }
 
+  /**
+   * Retention (decision 3b). Delete the membership, coverage, and unobserved-file rows
+   * of every run outside the keep set, and every ChangeSet built on those runs. The
+   * keep set is the given runs plus the newest `maxRuns` runs. Run headers stay,
+   * because identities and versions refer to them, and recordRun restores a pruned run
+   * from its header when it is recorded again.
+   */
+  pruneRuns(options: { keepRunIds: readonly string[]; maxRuns: number }): {
+    runsPruned: number;
+    rowsDeleted: number;
+  } {
+    const ordered = (
+      this.db
+        .prepare(
+          "SELECT id FROM observation_runs ORDER BY started_at DESC, rowid DESC",
+        )
+        .all() as Array<{ id: string }>
+    ).map((row) => row.id);
+    const keep = new Set(options.keepRunIds);
+    for (const runId of ordered.slice(0, options.maxRuns)) keep.add(runId);
+    const prunable = ordered.filter(
+      (runId) => !keep.has(runId) && this.coverageOf(runId).size > 0,
+    );
+
+    let rowsDeleted = 0;
+    const remove = (sql: string, ...params: unknown[]) => {
+      rowsDeleted += this.db.prepare(sql).run(...params).changes;
+    };
+    const apply = this.db.transaction(() => {
+      for (const runId of prunable) {
+        const changeSets = this.db
+          .prepare(
+            "SELECT id FROM observed_changesets WHERE base_run_id = ? OR head_run_id = ?",
+          )
+          .all(runId, runId) as Array<{ id: string }>;
+        for (const { id } of changeSets) {
+          remove(
+            `DELETE FROM change_impacts WHERE change_item_id IN
+               (SELECT id FROM observed_change_items WHERE changeset_id = ?)`,
+            id,
+          );
+          remove(
+            "DELETE FROM observed_change_items WHERE changeset_id = ?",
+            id,
+          );
+          remove("DELETE FROM observed_changesets WHERE id = ?", id);
+        }
+        remove("DELETE FROM observation_run_items WHERE run_id = ?", runId);
+        remove("DELETE FROM observation_run_coverage WHERE run_id = ?", runId);
+        remove(
+          "DELETE FROM observation_run_unobserved_files WHERE run_id = ?",
+          runId,
+        );
+      }
+    });
+    apply();
+    return { runsPruned: prunable.length, rowsDeleted };
+  }
+
+  /** Files of a run that were not observed. Their objects are not comparable. */
+  private unobservedOf(runId: string): Set<string> {
+    const rows = this.db
+      .prepare(
+        "SELECT file_path FROM observation_run_unobserved_files WHERE run_id = ?",
+      )
+      .all(runId) as Array<{ file_path: string }>;
+    return new Set(rows.map((row) => row.file_path));
+  }
+
   private coverageOf(runId: string): Map<string, CoverageStatus> {
     const rows = this.db
       .prepare(
@@ -311,6 +405,17 @@ export class ObservationStore {
     const completeFor = (kind: string) =>
       baseCoverage.get(kind) === "complete" &&
       headCoverage.get(kind) === "complete";
+    const unobservedBase = this.unobservedOf(input.baseRunId);
+    const unobservedHead = this.unobservedOf(input.headRunId);
+    // A removal needs the object's file observed in head; an addition, in base.
+    const removalIsComparable = (member: {
+      kind: string;
+      locator_json: string;
+    }) => completeFor(member.kind) && !unobservedHead.has(filePath(member));
+    const additionIsComparable = (member: {
+      kind: string;
+      locator_json: string;
+    }) => completeFor(member.kind) && !unobservedBase.has(filePath(member));
 
     const base = this.membersOf(input.baseRunId);
     const head = this.membersOf(input.headRunId);
@@ -436,12 +541,14 @@ export class ObservationStore {
         continue;
       }
       items.push({
-        kind: completeFor(member.kind) ? "removed" : "not_comparable",
+        kind: removalIsComparable(member) ? "removed" : "not_comparable",
         identityId: member.identity_id,
         successorId: null,
-        basis: completeFor(member.kind)
+        basis: removalIsComparable(member)
           ? "complete-coverage"
-          : "partial-coverage",
+          : unobservedHead.has(filePath(member))
+            ? "unobserved-file"
+            : "partial-coverage",
         changed: [],
         baseVersion: null,
         headVersion: null,
@@ -468,12 +575,14 @@ export class ObservationStore {
         continue;
       }
       items.push({
-        kind: completeFor(member.kind) ? "added" : "not_comparable",
+        kind: additionIsComparable(member) ? "added" : "not_comparable",
         identityId: member.identity_id,
         successorId: null,
-        basis: completeFor(member.kind)
+        basis: additionIsComparable(member)
           ? "complete-coverage"
-          : "partial-coverage",
+          : unobservedBase.has(filePath(member))
+            ? "unobserved-file"
+            : "partial-coverage",
         changed: [],
         baseVersion: null,
         headVersion: null,
