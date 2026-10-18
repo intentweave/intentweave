@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IntentWeave Claims — generalized repository claims</title>
+<style>
+  :root {
+    --ink: #1c1f24;
+    --muted: #5b6270;
+    --line: #d8dce3;
+    --bg: #ffffff;
+    --panel: #f5f7fa;
+    --accent: #1f5eff;
+    --warn: #8a5a00;
+    --warn-bg: #fff6df;
+    --code: #0f1620;
+    --code-ink: #e6edf7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e6e9ef;
+      --muted: #9aa3b2;
+      --line: #2c323d;
+      --bg: #12151b;
+      --panel: #1a1f28;
+      --accent: #7ea6ff;
+      --warn: #f2c46d;
+      --warn-bg: #2d2412;
+      --code: #0a0d12;
+      --code-ink: #dbe4f3;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e6e9ef;
+    --muted: #9aa3b2;
+    --line: #2c323d;
+    --bg: #12151b;
+    --panel: #1a1f28;
+    --accent: #7ea6ff;
+    --warn: #f2c46d;
+    --warn-bg: #2d2412;
+    --code: #0a0d12;
+    --code-ink: #dbe4f3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+  section { padding: 40px 0; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 2.1rem; margin: 0 0 8px; line-height: 1.2; }
+  h2 { font-size: 1.5rem; margin: 0 0 14px; }
+  h3 { font-size: 1.1rem; margin: 22px 0 8px; }
+  p, li { max-width: 72ch; }
+  .lede { font-size: 1.15rem; color: var(--muted); }
+  .label {
+    display: inline-block; font-size: 0.8rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--accent); margin-bottom: 6px;
+  }
+  .notice {
+    background: var(--warn-bg); color: var(--warn);
+    border: 1px solid var(--warn); border-radius: 8px;
+    padding: 12px 14px; margin: 18px 0;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card h3 { margin-top: 0; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 0.95rem; }
+  .arrow { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+  pre {
+    background: var(--code); color: var(--code-ink); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font-size: 0.85rem; line-height: 1.45;
+  }
+  pre code { font-size: inherit; }
+  .yes { color: #15803d; font-weight: 600; }
+  .no { color: var(--warn); font-weight: 600; }
+  footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.9rem; }
+  @media (max-width: 600px) {
+    h1 { font-size: 1.7rem; }
+    table { font-size: 0.85rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<section>
+  <span class="label">Pre-release · 0.x</span>
+  <h1>IntentWeave Claims</h1>
+  <p class="lede">Repository statements that are backed by evidence, reviewed by people, and rechecked when the code changes.</p>
+  <div class="notice">
+    <strong>Pre-release.</strong> The generalized repository Claims work lives on the
+    branch <code>feat/generalized-repository-claims</code> and is not merged. IntentWeave
+    is version 0.17.5. Compatibility surfaces (CLI output, JSON shapes, portable state,
+    schema versions) may change in 0.x releases.
+  </div>
+  <p>This presentation covers what the branch adds, how the pieces fit together, a worked
+  example that runs end to end, and what is still missing. It makes no claim about AI
+  precision: the AI-assisted curation step has no quality measurement yet.</p>
+</section>
+
+<section>
+  <span class="label">1 · The problem</span>
+  <h2>Documentation and configuration drift quietly</h2>
+  <p>A repository says things about itself: a default timeout is 1800, the public
+  function is documented, the endpoint requires authentication, the layers may not
+  import each other. Those statements are written once and checked rarely. When the code
+  moves, nothing says which statement is now wrong.</p>
+  <p>Claims make such a statement an explicit object. A Claim has a subject, a rule that
+  checks it against the repository, evidence with provenance, and a human review. When
+  the evidence changes, the Claim is reopened instead of silently passing.</p>
+</section>
+
+<section>
+  <span class="label">2 · What is new</span>
+  <h2>The lifecycle, end to end</h2>
+  <div class="flow">
+    <span class="step">Discovery</span><span class="arrow">→</span>
+    <span class="step">Candidate</span><span class="arrow">→</span>
+    <span class="step">Triage</span><span class="arrow">→</span>
+    <span class="step">Promotion</span><span class="arrow">→</span>
+    <span class="step">Claim</span><span class="arrow">→</span>
+    <span class="step">Assessment</span><span class="arrow">→</span>
+    <span class="step">Review</span><span class="arrow">→</span>
+    <span class="step">Reopen</span>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>Candidates are not Claims</h3>
+      <p>Discovery proposes statements. Nothing becomes governed until it is triaged and
+      promoted explicitly, by a person or by a versioned Policy. Discovered findings are
+      Candidates by default.</p>
+    </div>
+    <div class="card">
+      <h3>Assessments are reproducible</h3>
+      <p>Checks are deterministic and make no model call. Each Assessment records its
+      dependencies: the evidence versions and rule results it was built from.</p>
+    </div>
+    <div class="card">
+      <h3>Reopens are explained</h3>
+      <p><code>claims check --since</code> and <code>claims explain</code> show why a Claim
+      was reopened, which evidence version changed, and which revisions were compared.</p>
+    </div>
+    <div class="card">
+      <h3>Subjects and continuity</h3>
+      <p>A Claim has one or more Subjects. When a Subject moves or is renamed, continuity
+      decides whether it is the same Subject. Unclear continuity is reported as
+      inconclusive, never as a silent pass.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <span class="label">3 · Claim families</span>
+  <h2>What can be claimed today</h2>
+  <table>
+    <tr><th>Family</th><th>Example statement</th><th>Status on this branch</th></tr>
+    <tr><td>Parameter values (V1)</td><td>The default of <code>session.timeout</code> is 1800</td><td>Shipped, with compatibility vectors pinned</td></tr>
+    <tr><td>Public symbol documentation</td><td>An exported function has documentation</td><td>Deterministic slice, with continuity across moves</td></tr>
+    <tr><td>Endpoint authentication, NestJS</td><td>A route requires an authentication guard</td><td>Deterministic slice, with ambiguity kept inconclusive</td></tr>
+    <tr><td>Endpoint authentication, Fastify</td><td>A route is protected by a verified guard</td><td>Deterministic slice; live correlation validated on one fixture</td></tr>
+    <tr><td>Architecture dependency</td><td>A layer may not import another</td><td>Deterministic slice, with Git continuity and selective reopen</td></tr>
+  </table>
+  <p>Endpoint discovery in both frameworks now writes its findings as observation runs,
+  and the Candidates are built from those runs. Outcomes on the endpoint fixtures did
+  not change.</p>
+</section>
+
+<section>
+  <span class="label">4 · Supporting layers</span>
+  <h2>How the pieces fit together</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Intent gate</h3>
+      <p><code>iw intent check</code> runs the existing Intent rules and the promoted
+      Claims as one CI gate. A governed architecture violation is reported once.</p>
+    </div>
+    <div class="card">
+      <h3>Semantic correlation (opt-in)</h3>
+      <p><code>iw claims discover --semantic</code> may propose correlations for ambiguous
+      findings. A model proposes; deterministic checks and review decide. Ambiguity that
+      the code records is kept, even when a model says otherwise.</p>
+    </div>
+    <div class="card">
+      <h3>Observation layer</h3>
+      <p>A complete inventory of files, modules, symbols, dependencies, and call sites per
+      revision. Changes are derived from two complete runs. Coverage is per file, so one
+      file that cannot be parsed does not blank the whole comparison.</p>
+    </div>
+    <div class="card">
+      <h3>Continuity gate</h3>
+      <p><code>iw claims observations check --since</code> reports unresolved continuity
+      for Claim Subjects. It fails CI only when the reviewed config sets
+      <code>mode: gate</code>. An upgrade never fails CI on its own.</p>
+    </div>
+  </div>
+  <h3>Boundaries we keep</h3>
+  <ul>
+    <li><code>claims check</code> never reads observation history. It uses persisted continuity and Git history at the reference revision.</li>
+    <li>Observation runs are pruned to the newest 20 runs plus the runs a command uses. Run headers stay, so provenance holds.</li>
+    <li>Subject bridges are created only on Candidate or Claim promotion.</li>
+  </ul>
+</section>
+
+<section>
+  <span class="label">5 · Worked example</span>
+  <h2>A timeout default that changes</h2>
+  <p>The 90-second demo (<code>scripts/claims-90-second-demo.sh</code>) runs this story on a
+  temporary repository. The excerpts below are from a clean run at commit
+  <code>25fdd58</code>, with the build cache bypassed. The demo exited with code 0 in
+  5 seconds.</p>
+
+  <h3>1. Discover and evaluate</h3>
+  <pre><code>{
+  "gateStatus": "evaluated",
+  "claims": [{ "parameterKey": "session.timeout", "claimType": "CLM-DEFAULT",
+               "ruleStatuses": ["passed"], "assessmentStatuses": ["supported"] }],
+  "candidates": { "discovered": 1, "active": 1, "issues": [] }
+}
+Initial claims exit: 4 (review required is expected)</code></pre>
+  <p>Discovery found the default, but the Claim still needs a human review, so the
+  check exits with 4.</p>
+
+  <h3>2. Review and explain</h3>
+  <pre><code>session.timeout defaults to 1800
+  Status: supported
+  Type: Default value (CLM-DEFAULT)
+  Check: passed
+    Why: Literal binding found. (literal-binding-found)
+  Review: accepted</code></pre>
+
+  <h3>3. Change the value and check against the merge base</h3>
+  <pre><code>Changed claims exit: 1 (contested plus an open reopen is expected)
+
+session.timeout defaults to 3600
+  Status: contested
+  Reopen: Material change. (open, material-change)
+    Dependency: evidence_version:evidence:91cadbf8…@2
+    Provenance: {"changedPaths":["src/session.ts"], "materialChange":true, …}</code></pre>
+  <p>The rule still passes, because the literal is present. The Claim is contested,
+  because the evidence it was reviewed against has changed. A person must review it
+  again.</p>
+
+  <h3>A second example: continuity</h3>
+  <p>In a seeded observation scenario, a file is renamed, and the new file contains two
+  definitions with the same name. Git pairs the files, but the target is ambiguous:</p>
+  <pre><code>symbol:function:src/a.ts#charge            continuity-unclear
+symbol:function:src/c.ts#charge~1         continuity-unclear
+symbol:function:src/c.ts#charge~2         continuity-unclear
+file:src/a.ts                             moved
+module:src/a.ts                           moved</code></pre>
+  <p>The two overloads are not guessed to be the old function. The Subject is reported as
+  unclear, and the gate treats it as unresolved for Claim Subjects.</p>
+</section>
+
+<section>
+  <span class="label">6 · Commands</span>
+  <h2>The shipped surface</h2>
+  <table>
+    <tr><th>Command</th><th>Purpose</th></tr>
+    <tr><td><code>iw claims discover</code></td><td>Persist findings as Candidates, without activating Claims</td></tr>
+    <tr><td><code>iw claims candidates list | triage | review | evaluate | recommend</code></td><td>Govern the Candidate inbox; <code>recommend</code> is bounded and AI-assisted</td></tr>
+    <tr><td><code>iw claims check [--since ref] [--refresh]</code></td><td>Evaluate promoted Claims; reopen on change</td></tr>
+    <tr><td><code>iw claims review</code></td><td>Record a human decision on a Claim's current assessment</td></tr>
+    <tr><td><code>iw claims explain [--claim id]</code></td><td>Show versioned dependencies and reopens</td></tr>
+    <tr><td><code>iw claims observations capture | check</code></td><td>Capture an inventory run; derive changes against a merge base and apply the gate</td></tr>
+    <tr><td><code>iw intent check [--domain …]</code></td><td>One CI gate for rules and promoted Claims</td></tr>
+  </table>
+  <p>The commands in the user-facing docs were checked against the shipped CLI on this
+  branch.</p>
+</section>
+
+<section>
+  <span class="label">7 · Status</span>
+  <h2>What is done, and what is still missing</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Done on this branch</h3>
+      <ul>
+        <li>Candidate, Claim, Assessment, Review, and reopen lifecycle</li>
+        <li>Five Claim families, with the endpoint and architecture slices</li>
+        <li>Observation layer, with per-file coverage, retention, and continuity links</li>
+        <li>Knowledge-graph tables and the Neo4j path removed; SQLite graph kept via plugin-kg-lite</li>
+        <li>1313 tests in the full suite; the 90-second demo runs from a clean worktree</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Still missing</h3>
+      <ul>
+        <li><span class="no">Open:</span> the AI-assisted curation quality gate: labelled sets from at least two more external repositories, plus a cost cap</li>
+        <li><span class="no">Gated:</span> policy-governed automation, which waits for that gate</li>
+        <li><span class="no">Not done:</span> external field reports from at least three repositories</li>
+        <li><span class="no">Deferred:</span> a different parser for the observation adapter; under 1.5% of files fail to parse in the three repositories measured, and the rewrites cover only two constructs</li>
+        <li><span class="no">Not done:</span> observation adapters for other languages</li>
+        <li><span class="no">Partial:</span> endpoint correlation beyond NestJS and one Fastify fixture</li>
+        <li><span class="no">Not merged:</span> the branch is open as PR #2</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Decided against, on purpose</h3>
+  <ul>
+    <li>The implementation view stays in the local configuration and is not written into portable Claims state.</li>
+    <li>No time-based report period. The gate is enabled by a reviewed config change.</li>
+    <li>No automatic bridges for every observed object. Bridges need a promotion or a Review.</li>
+  </ul>
+</section>
+
+<section>
+  <span class="label">8 · The boundary</span>
+  <h2>What IntentWeave does not claim</h2>
+  <p>It gives a complete, reproducible inventory for each supported kind and scope, tracks
+  the Subjects of Candidates and Claims, and reports changes between complete runs. It
+  does not infer every relevant Claim from source code. Claims enter through Candidate
+  discovery and explicit promotion, and that is a deliberate limit.</p>
+  <p>The labelled measurements so far are small. The observation detector agrees exactly
+  with 55 seeded changes, but those labels were written alongside the detector, so they
+  show consistency, not performance on unseen code. The Fastify reference of 14
+  registrations was measured on one external repository and is not re-measured here.</p>
+</section>
+
+<footer>
+  Generated from branch <code>feat/generalized-repository-claims</code>. Versions and
+  numbers match the plan (<code>docs/PLAN-GENERALIZED-REPOSITORY-CLAIMS.md</code>) as of
+  commit 25fdd58.
+</footer>
+
+</main>
+</body>
+</html>
