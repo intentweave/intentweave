@@ -2319,17 +2319,21 @@ Phases.
   - Volume after 1a, on this repository (six commits, the same method as above):
     removals and additions are now measured. The O2 commit shows 49 removed, 78 added,
     and 4 property-changed. Its removals are call sites in the files it changed.
-  - Finding: a call site's identity includes its line number. An edit that shifts lines
-    in a file therefore reads as many removals and additions, although the calls did
-    not change. This inflates change volume. The fix is an identity change (for example,
-    file, callee, and ordinal within the enclosing symbol), which needs a decision
-    because it changes the O1 contract.
+  - Finding, resolved (commit 94e1210): a call site's identity included its line
+    number, so an edit that shifted lines read as removals and additions. The identity
+    is now file, enclosing symbol, and callee, with an ordinal when the callee repeats
+    in one symbol. The line stays in the locator. On this repository the removals fell
+    from 15 to 0 on one commit and from 30 to 1 on another. Changes that remain are
+    real: an added call, or a second call of the same callee that shifts the ordinals of
+    later ones in its symbol.
+
   - Decisions needed before G5.3 can be accepted: (a) coverage per file rather than per
     run and kind, so that one unparsable file makes only its own objects not comparable,
     which changes the O1 and O2 contract; or (b) an error-tolerant adapter that uses
     the tree only where it is clean, which needs a rule for when a partial tree may be
     trusted; (c) the retention rule for run membership, which the figures above make
     concrete.
+
 - O5 (optional, later): additional language adapters as extensions, each proving
   the contract on its own reference repositories.
 
