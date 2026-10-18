@@ -14,6 +14,7 @@
  * source order, so keys stay unique.
  */
 
+import { createHash } from "node:crypto";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -99,6 +100,14 @@ function extractForObservation(
   const normalized = normalizeGrammarGaps(content);
   if (normalized === content) return first;
   return extractor.extractFromString(normalized, relativePath, language);
+}
+
+/** Short, stable digest of a call's literal arguments, in argument order. */
+function literalDigest(literals: readonly string[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(literals))
+    .digest("hex")
+    .slice(0, 12);
 }
 
 /** Literal string argument: unquoted text, or null when not a plain literal. */
@@ -250,9 +259,10 @@ export function createTypeScriptObservation(
           if (literals.length === 0) return null;
           const callee = call.calleeId ?? call.calleeName;
           return {
-            // The identity is the enclosing symbol and the callee, not the line. The
-            // line is kept in the locator, so an edit above a call does not churn it.
-            base: `call-site:${relativePath}#${enclosingOf(call.callerLine)}:${callee}`,
+            // The identity is the enclosing symbol, the callee, and a digest of the literal
+            // arguments. The line is kept in the locator, so an edit above a call does not
+            // churn it, and a call whose literals change is removed and added, not changed.
+            base: `call-site:${relativePath}#${enclosingOf(call.callerLine)}:${callee}:${literalDigest(literals)}`,
             record: {
               kind: "call-site" as const,
               identityKey: "",

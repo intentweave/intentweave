@@ -2319,6 +2319,12 @@ Phases.
   - Volume after 1a, on this repository (six commits, the same method as above):
     removals and additions are now measured. The O2 commit shows 49 removed, 78 added,
     and 4 property-changed. Its removals are call sites in the files it changed.
+  - O1 identity contract for call sites (decided 2026-10-18, implemented): a call-site
+    identity is `call-site:<file>#<enclosing symbol>:<callee>:<digest>`, where the digest
+    is a short hash of the call's literal arguments in order. The enclosing symbol is the
+    innermost symbol whose range contains the call. Repeated identical calls in one
+    symbol take an ordinal suffix in source order. The line is in the locator only. A
+    changed literal reads as removed and added, not as a property change.
   - Follow-up (2026-10-18): the 33 property changes on 7d84790 were two causes. Two
     module export lists changed for real. The rest came from my first version of the
     fix, which attributed calls inside class methods to the module. Each call is now

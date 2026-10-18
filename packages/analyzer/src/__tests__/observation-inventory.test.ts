@@ -272,38 +272,48 @@ describe("TypeScript observation inventory (Phase O1)", () => {
 });
 
 describe("call-site identity", () => {
-  const callSiteKeys = (source: string): Map<string, number> => {
+  const callSiteKeys = (source: string): string[] => {
     const root = workspaceWith({ "src/calls.ts": source });
     const run = runObservationInventory(registryFor(root), root, [
       "src/calls.ts",
     ]);
-    return new Map(
-      run.records
-        .filter((record) => record.kind === "call-site")
-        .map((record) => [record.identityKey, record.locator.line ?? 0]),
-    );
+    return run.records
+      .filter((record) => record.kind === "call-site")
+      .map((record) => record.identityKey)
+      .sort();
   };
+  const withPrefix = (keys: string[], prefix: string) =>
+    keys.filter((key) => key.startsWith(prefix));
 
   it("does not change when lines are added above the call", () => {
     const before = "export function run(): void {\n  console.log('a');\n}\n";
     const after =
       "// new comment\n// another\nexport function run(): void {\n  console.log('a');\n}\n";
-    const beforeKeys = [...callSiteKeys(before).keys()];
-    const afterKeys = [...callSiteKeys(after).keys()];
-    expect(afterKeys).toEqual(beforeKeys);
-    expect(afterKeys).toEqual(["call-site:src/calls.ts#run:console.log"]);
+    expect(callSiteKeys(after)).toEqual(callSiteKeys(before));
+    expect(
+      withPrefix(
+        callSiteKeys(before),
+        "call-site:src/calls.ts#run:console.log:",
+      ),
+    ).toHaveLength(1);
   });
 
-  it("gives a second call of the same callee in the same symbol its own identity", () => {
-    const keys = [
-      ...callSiteKeys(
-        "export function run(): void {\n  console.log('a');\n  console.log('b');\n}\n",
-      ).keys(),
-    ];
-    expect(keys.sort()).toEqual([
-      "call-site:src/calls.ts#run:console.log~1",
-      "call-site:src/calls.ts#run:console.log~2",
-    ]);
+  it("gives calls with different literal arguments different identities", () => {
+    const keys = callSiteKeys(
+      "export function run(): void {\n  console.log('a');\n  console.log('b');\n}\n",
+    );
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys).size).toBe(2);
+    expect(keys.some((key) => key.endsWith("~1") || key.endsWith("~2"))).toBe(
+      false,
+    );
+  });
+
+  it("numbers identical calls in one symbol in source order", () => {
+    const keys = callSiteKeys(
+      "export function run(): void {\n  console.log('a');\n  console.log('a');\n}\n",
+    );
+    expect(keys.map((key) => key.slice(-2))).toEqual(["~1", "~2"]);
   });
 
   it("keeps a method's call sites apart from other methods' calls to the same callee", () => {
@@ -323,16 +333,11 @@ describe("call-site identity", () => {
       "    this.db.prepare('a');",
       "    this.db.prepare('a0');\n    this.db.prepare('a');",
     );
-    const beforeKeys = callSiteKeys(before);
-    const afterKeys = callSiteKeys(after);
-    expect(
-      afterKeys.has("call-site:src/calls.ts#Store.write:this.db.prepare"),
-    ).toBe(true);
-    expect(
-      beforeKeys.has("call-site:src/calls.ts#Store.write:this.db.prepare"),
-    ).toBe(true);
-    expect(
-      afterKeys.has("call-site:src/calls.ts#Store.read:this.db.prepare~2"),
-    ).toBe(true);
+    const writeKey = (keys: string[]) =>
+      withPrefix(keys, "call-site:src/calls.ts#Store.write:this.db.prepare:");
+    expect(writeKey(callSiteKeys(after))).toEqual(
+      writeKey(callSiteKeys(before)),
+    );
+    expect(writeKey(callSiteKeys(before))).toHaveLength(1);
   });
 });
