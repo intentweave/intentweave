@@ -635,6 +635,23 @@ export class ObservationStore {
             item.basis,
             item.changed.length ? JSON.stringify(item.changed) : null,
           );
+        // A decided move is a continuity link (DoD 47). An ambiguous rename writes none.
+        if (item.kind === "moved" && item.successorId) {
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO observed_continuity_links
+                 (id, from_identity_id, to_identity_id, basis, decided_by,
+                  contract_version, created_at)
+               VALUES (?, ?, ?, 'git_rename', ?, '1', ?)`,
+            )
+            .run(
+              stableId("continuity-link", item.identityId, item.successorId),
+              item.identityId,
+              item.successorId,
+              CONTINUITY_RULE_BASIS,
+              Date.now(),
+            );
+        }
       }
     });
     store();

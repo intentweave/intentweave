@@ -730,3 +730,86 @@ describe("retention (decision 3b)", () => {
     db.close();
   });
 });
+
+describe("continuity links for moves (DoD 47)", () => {
+  it("records a decided move as one git_rename link, and an ambiguous rename as none", () => {
+    const { db, store } = fresh();
+    const before = run(
+      store,
+      "r1",
+      [symbol("src/a.ts", "charge")],
+      complete(),
+      ["src/a.ts"],
+    );
+    const moved = run(store, "r2", [symbol("src/b.ts", "charge")], complete(), [
+      "src/b.ts",
+    ]);
+    const renames = new Map([["src/a.ts", "src/b.ts"]]);
+    const changeSet = store.computeChangeSet({
+      baseRunId: before,
+      headRunId: moved,
+      contractFingerprint: "c1",
+      renames,
+    });
+    // Computing the same ChangeSet again must not add a second link.
+    store.computeChangeSet({
+      baseRunId: before,
+      headRunId: moved,
+      contractFingerprint: "c1",
+      renames,
+    });
+    const links = db
+      .prepare(
+        "SELECT basis, decided_by, from_identity_id AS f, to_identity_id AS t FROM observed_continuity_links",
+      )
+      .all() as Array<{
+      basis: string;
+      decided_by: string;
+      f: string;
+      t: string;
+    }>;
+    expect(links).toHaveLength(1);
+    expect(links[0]!.basis).toBe("git_rename");
+    expect(links[0]!.decided_by).toBe("rule:observation-changeset-move@1");
+    const item = store.changeItems(changeSet)[0]!;
+    expect(item.changeKind).toBe("moved");
+    expect(links[0]!.t).toBe(item.successorIdentityId);
+
+    // An ambiguous rename (two candidates at the target) writes no link.
+    const { db: db2, store: store2 } = fresh();
+    const base2 = run(
+      store2,
+      "r1",
+      [symbol("src/a.ts", "charge")],
+      complete(),
+      ["src/a.ts"],
+    );
+    const head2 = run(
+      store2,
+      "r2",
+      [
+        symbol("src/b.ts", "charge"),
+        {
+          ...symbol("src/b.ts", "charge", { signature: "(a: number): void" }),
+          identityKey: "symbol:function:src/b.ts#charge~1",
+        },
+      ],
+      complete(),
+      ["src/b.ts"],
+    );
+    store2.computeChangeSet({
+      baseRunId: base2,
+      headRunId: head2,
+      contractFingerprint: "c1",
+      renames: new Map([["src/a.ts", "src/b.ts"]]),
+    });
+    const count = (
+      db2
+        .prepare("SELECT COUNT(*) AS n FROM observed_continuity_links")
+        .get() as { n: number }
+    ).n;
+    expect(count).toBe(0);
+    db.close();
+    db2.close();
+  });
+});
