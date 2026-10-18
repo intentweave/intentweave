@@ -305,4 +305,34 @@ describe("call-site identity", () => {
       "call-site:src/calls.ts#run:console.log~2",
     ]);
   });
+
+  it("keeps a method's call sites apart from other methods' calls to the same callee", () => {
+    const before = [
+      "export class Store {",
+      "  read(): void {",
+      "    this.db.prepare('a');",
+      "  }",
+      "  write(): void {",
+      "    this.db.prepare('b');",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    // A call added to the first method must not renumber the second method's call.
+    const after = before.replace(
+      "    this.db.prepare('a');",
+      "    this.db.prepare('a0');\n    this.db.prepare('a');",
+    );
+    const beforeKeys = callSiteKeys(before);
+    const afterKeys = callSiteKeys(after);
+    expect(
+      afterKeys.has("call-site:src/calls.ts#Store.write:this.db.prepare"),
+    ).toBe(true);
+    expect(
+      beforeKeys.has("call-site:src/calls.ts#Store.write:this.db.prepare"),
+    ).toBe(true);
+    expect(
+      afterKeys.has("call-site:src/calls.ts#Store.read:this.db.prepare~2"),
+    ).toBe(true);
+  });
 });

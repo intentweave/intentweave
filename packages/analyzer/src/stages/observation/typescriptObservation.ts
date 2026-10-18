@@ -220,6 +220,24 @@ export function createTypeScriptObservation(
       );
       records.push(...withOrdinals(symbolRecords));
 
+      // The innermost symbol whose range contains a call. The extractor reports no
+      // enclosing name for calls inside class methods, so the range is used instead.
+      const enclosingOf = (line: number): string => {
+        let best: ExtractedSymbol | null = null;
+        for (const symbol of extraction.symbols) {
+          if (symbol.range.startLine > line || symbol.range.endLine < line)
+            continue;
+          if (
+            !best ||
+            symbol.range.endLine - symbol.range.startLine <
+              best.range.endLine - best.range.startLine
+          ) {
+            best = symbol;
+          }
+        }
+        if (!best) return "<module>";
+        return best.parent ? `${best.parent}.${best.name}` : best.name;
+      };
       // Source order, so the ordinal suffix of repeated call sites is stable.
       const callRecords = [...(extraction.calls ?? [])].sort(
         (left, right) => left.callerLine - right.callerLine,
@@ -234,7 +252,7 @@ export function createTypeScriptObservation(
           return {
             // The identity is the enclosing symbol and the callee, not the line. The
             // line is kept in the locator, so an edit above a call does not churn it.
-            base: `call-site:${relativePath}#${call.callerName ?? "<module>"}:${callee}`,
+            base: `call-site:${relativePath}#${enclosingOf(call.callerLine)}:${callee}`,
             record: {
               kind: "call-site" as const,
               identityKey: "",

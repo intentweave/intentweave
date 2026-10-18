@@ -2319,6 +2319,16 @@ Phases.
   - Volume after 1a, on this repository (six commits, the same method as above):
     removals and additions are now measured. The O2 commit shows 49 removed, 78 added,
     and 4 property-changed. Its removals are call sites in the files it changed.
+  - Follow-up (2026-10-18): the 33 property changes on 7d84790 were two causes. Two
+    module export lists changed for real. The rest came from my first version of the
+    fix, which attributed calls inside class methods to the module. Each call is now
+    attributed to its innermost enclosing symbol, which brings the count to 20. Two of
+    those are the export lists again. The other 18 are ordinal shifts inside one method
+    when a call to the same callee is added there. Reporting them as property changes is
+    misleading, because the call identity now points at a different call. The
+    refinement under consideration: include a digest of the literal arguments in the
+    identity, so that a changed call reads as removed and added. That is an O1 contract
+    change and needs a decision.
   - Finding, resolved (commit 94e1210): a call site's identity included its line
     number, so an edit that shifted lines read as removals and additions. The identity
     is now file, enclosing symbol, and callee, with an ordinal when the callee repeats
