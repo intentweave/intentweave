@@ -18,6 +18,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -328,5 +329,73 @@ describe("session acceptance: intent anchors on a parameter Claim", () => {
     expect(amended.output.intentAnchors?.map((a) => a.outcome)).toEqual([
       "satisfied",
     ]);
+  });
+
+  /** Delete the index database and its WAL files, as a rebuild starts from nothing. */
+  function discardIndex(workspace: string): void {
+    for (const name of readdirSync(path.join(workspace, ".iw"))) {
+      if (name.startsWith("index.db")) {
+        rmSync(path.join(workspace, ".iw", name), { force: true });
+      }
+    }
+    // Recreate an empty index the same way the fixture does, so a check starts clean.
+    const database = new Database(path.join(workspace, ".iw", "index.db"));
+    initSchema(database);
+    database.close();
+  }
+
+  it("keeps a rejected change after the index is rebuilt", async () => {
+    const workspace = newWorkspace("structured", "structured");
+    setGateMode(workspace, "gate");
+    await protectDefault();
+    writeDefault(workspace, "full", "structured");
+    await check();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runClaimsConflictResolve({
+      claim: "cli.index-build.depth",
+      type: "CLM-DEFAULT",
+      decision: "reject_change",
+      actor: "acceptance",
+      rationale: "Full depth is not the documented contract",
+      format: "json",
+    });
+    vi.restoreAllMocks();
+
+    discardIndex(workspace);
+    const rebuilt = await check();
+    const outcome = rebuilt.output.intentAnchors?.[0];
+    expect(outcome?.outcome).toBe("intent_conflict");
+    expect(outcome?.reason).toContain("rejected by acceptance");
+    expect(rebuilt.exitCode).toBe(1);
+  });
+
+  it("keeps an exception, and its expiry, after the index is rebuilt", async () => {
+    const workspace = newWorkspace("structured", "structured");
+    setGateMode(workspace, "gate");
+    await protectDefault();
+    writeDefault(workspace, "full", "structured");
+    await check();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runClaimsConflictResolve({
+      claim: "cli.index-build.depth",
+      type: "CLM-DEFAULT",
+      decision: "grant_exception",
+      actor: "acceptance",
+      rationale: "Migration in progress",
+      expires: "2030-01-01T00:00:00Z",
+      format: "json",
+    });
+    vi.restoreAllMocks();
+
+    discardIndex(workspace);
+    const before = await check({ asOf: "2029-06-01T00:00:00Z" });
+    expect(before.output.intentAnchors?.[0]?.outcome).toBe("intent_excepted");
+
+    discardIndex(workspace);
+    const after = await check({ asOf: "2031-01-01T00:00:00Z" });
+    expect(after.output.intentAnchors?.[0]?.outcome).toBe("intent_conflict");
+    expect(after.output.intentAnchors?.[0]?.reason).toContain("expired");
   });
 });
