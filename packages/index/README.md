@@ -130,10 +130,10 @@ const drift = db.crossGroupDrift();
 
 ## Depth Modes
 
-| Mode                     | Flag                 | Sources                                         | Use Case                                 |
-| ------------------------ | -------------------- | ----------------------------------------------- | ---------------------------------------- |
-| **Structured** (default) | `--depth structured` | Headings, bold, code spans, identifiers         | Fast, precise, low noise                 |
-| **Full**                 | `--depth full`       | + body text dictionary matching + IDF filtering | Higher recall, more grounded annotations |
+| Mode               | Flag                 | Sources                                         | Use Case                                 |
+| ------------------ | -------------------- | ----------------------------------------------- | ---------------------------------------- |
+| **Structured**     | `--depth structured` | Headings, bold, code spans, identifiers         | Fast, precise, low noise                 |
+| **Full** (default) | `--depth full`       | + body text dictionary matching + IDF filtering | Higher recall, more grounded annotations |
 
 Full-depth mode uses a symbol dictionary (from AX) to match terms in markdown body text,
 then applies IDF penalties to suppress high-frequency filler words. The IDF scorer includes

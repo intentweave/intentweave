@@ -72,7 +72,7 @@ _Also referred to as CARI Evidence Engine. `iw index _` is the canonical power A
 
 ```bash
 # Build the index
-iw index build                        # structured depth (default)
+iw index build                        # full depth (default)
 iw index build --depth full           # + body text with IDF filtering
 
 # Query the index

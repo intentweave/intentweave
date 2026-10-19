@@ -98,7 +98,7 @@ Runs the full CARI pipeline: AST extraction → keyword extraction → co-occurr
 git analysis → annotation → SQLite write.
 
 ```bash
-iw index build                    # structured depth (default)
+iw index build                    # full depth (default)
 iw index build --depth full       # + body text with IDF filtering (+72% annotations)
 iw index build --verbose          # show per-stage timing
 iw index build --include "src/**" # only index specific directories

@@ -117,8 +117,8 @@ iw index todos                         # TODO/FIXME/HACK inventory
 
 Two depth modes:
 
-- `--depth structured` (default) — headings, bold text, code spans only. Fast and precise.
-- `--depth full` — adds body text scanning with IDF noise filtering. +72% more annotations.
+- `--depth structured` — headings, bold text, code spans only. Fast and precise.
+- `--depth full` (default) — adds body text scanning with IDF noise filtering. +72% more annotations.
 
 ---
 

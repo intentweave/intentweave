@@ -8,4 +8,4 @@ parameters:
         assertions:
           - id: default-depth-doc
             target: default
-            pattern: '^iw index build\s+# (?<value>structured) depth \(default\)$'
+            pattern: '^iw index build\s+# (?<value>full) depth \(default\)$'
