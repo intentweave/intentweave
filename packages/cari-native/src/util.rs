@@ -14,3 +14,22 @@ pub fn make_id(input: &str) -> String {
     let hex = hash.to_hex();
     hex[..16].to_string()
 }
+
+/// Symbol identity in the TypeScript AX scheme (`generateSymbolId`):
+/// `impl:<path>#<kind>:<container.>name` plus `(<sha256(signature)[..8]>)` when a
+/// signature is present. Identities are shared with the claims layer, so they must match.
+pub fn symbol_identity(s: &crate::types::Symbol) -> String {
+    use sha2::{Digest, Sha256};
+    let base = match s.container.as_deref() {
+        Some(c) if !c.is_empty() => format!("{c}.{}", s.name),
+        _ => s.name.clone(),
+    };
+    let path = s.file_path.replace('\\', "/");
+    match s.signature.as_deref() {
+        Some(sig) if !sig.is_empty() => {
+            let hex = format!("{:x}", Sha256::digest(sig.as_bytes()));
+            format!("impl:{path}#{}:{base}({})", s.kind, &hex[..8])
+        }
+        _ => format!("impl:{path}#{}:{base}", s.kind),
+    }
+}

@@ -3488,12 +3488,21 @@ export async function runClaimsCheck(options: {
             }
           }
         }
+        let missingAnchorClaims: Array<{
+          anchorId: string;
+          claimIdentityId: string;
+          statementFingerprint: string;
+        }> = [];
         if (portableState) {
           const projection = projectPortableAssessmentReviews(
             database,
             portableState,
           );
-          projectPortableIntentAnchors(database, portableState);
+          const anchorProjection = projectPortableIntentAnchors(
+            database,
+            portableState,
+          );
+          missingAnchorClaims = anchorProjection.missingClaims;
           projectPortableConflictDecisions(database, portableState);
           output.portableStateIssues.push(...projection.issues);
           allAssessmentStatuses.push(
@@ -3550,7 +3559,7 @@ export async function runClaimsCheck(options: {
             }
           }
           output.intentMode = intentConfig.mode;
-          output.intentAnchors = new IntentAnchorStore(database).evaluate({
+          const evaluated = new IntentAnchorStore(database).evaluate({
             asOf: expiryInstant(workspaceRoot, options.asOf),
             followUps: intentConfig.followUps,
             evaluatedClaimIds,
@@ -3558,17 +3567,29 @@ export async function runClaimsCheck(options: {
               output.retiredClaims.map((claim) => claim.claimIdentityId),
             ),
           });
-          intentConflict = output.intentAnchors.some(
+          // An anchor whose Claim is absent from this index cannot be decided: report it.
+          const anchorReports: IntentAnchorEvaluation[] = [
+            ...evaluated,
+            ...missingAnchorClaims.map((missing) => ({
+              anchorId: missing.anchorId,
+              claimIdentityId: missing.claimIdentityId,
+              anchoredStatementFingerprint: missing.statementFingerprint,
+              outcome: "intent_unresolved" as const,
+              reason: "the anchored Claim is not present in this index",
+            })),
+          ];
+          output.intentAnchors = anchorReports;
+          intentConflict = anchorReports.some(
             (anchor) => anchor.outcome === "intent_conflict",
           );
-          intentUnresolved = output.intentAnchors.some(
+          intentUnresolved = anchorReports.some(
             (anchor) => anchor.outcome === "intent_unresolved",
           );
           // A declared follow-up is reviewed by its declaration, so it records the
           // review of the new statement. Recording is idempotent across checks.
           const followUpStore = new IntentAnchorStore(database);
           const reviewStore = new ClaimsReviewStore(database);
-          for (const evaluation of output.intentAnchors) {
+          for (const evaluation of anchorReports) {
             if (!evaluation.followUp) continue;
             const basis = followUpStore.currentAssessmentId(
               evaluation.claimIdentityId,

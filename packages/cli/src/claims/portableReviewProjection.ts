@@ -340,10 +340,24 @@ export function persistPortableIntentAnchor(
 export function projectPortableIntentAnchors(
   database: Database.Database,
   state: PortableClaimsState,
-): { imported: number; skipped: number } {
+): {
+  imported: number;
+  skipped: number;
+  /** Anchors whose Claim is not in this index: they must be reported, not dropped. */
+  missingClaims: Array<{
+    anchorId: string;
+    claimIdentityId: string;
+    statementFingerprint: string;
+  }>;
+} {
   const store = new IntentAnchorStore(database);
   let imported = 0;
   let skipped = 0;
+  const missingClaims: Array<{
+    anchorId: string;
+    claimIdentityId: string;
+    statementFingerprint: string;
+  }> = [];
   for (const [id, anchor] of Object.entries(state.intentAnchors)) {
     const outcome = store.importAnchor({
       id,
@@ -357,8 +371,15 @@ export function projectPortableIntentAnchors(
     });
     if (outcome === "imported") imported += 1;
     else skipped += 1;
+    if (outcome === "unknown_claim" && anchor.status === "active") {
+      missingClaims.push({
+        anchorId: id,
+        claimIdentityId: anchor.claimIdentityId,
+        statementFingerprint: anchor.statementFingerprint,
+      });
+    }
   }
-  return { imported, skipped };
+  return { imported, skipped, missingClaims };
 }
 
 /** Persist a conflict decision (G5.4) to portable state. Decisions are append-only. */

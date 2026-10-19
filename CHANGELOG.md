@@ -6,6 +6,16 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
+- **Native CARI parity for Claims** — the Rust `cari-build` now writes the same symbol
+  identities, signatures, doc summaries, body and structure hashes, export status,
+  deprecation flags, and `implements` lists as the TypeScript AX stage, and it applies
+  the same file-discovery rules. A replay of 49 commits and a base check of 100
+  protected Claims give identical outcomes on both engines. Symbol sets still differ
+  for some function and variable declarations (365 TypeScript-only and 245 native-only
+  symbols in this repository). The shipped `cari-build` binary predates these changes
+  and must be rebuilt before the default native path matches.
+- **Anchors whose Claim is missing are reported** — `claims check` reports an active
+  anchor whose Claim is not in the index as `intent_unresolved`, instead of dropping it.
 - **Intent Anchors (first slice)** — `iw claims review --purpose protect` records a
   human decision that protects an accepted Claim's current statement. Schema 24 adds
   `intent_anchors`, and portable state schema 3 keeps anchors across index rebuilds.

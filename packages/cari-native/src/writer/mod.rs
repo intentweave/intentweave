@@ -112,12 +112,24 @@ pub fn write(
               implements, deprecated, deprecated_note, is_internal, decorators)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
         )?;
+        // Top-level export status per (file, name). Members inherit their container's.
+        let top_export: std::collections::HashMap<(&str, &str), bool> = ax
+            .symbols
+            .iter()
+            .filter(|s| s.container.is_none())
+            .map(|s| ((s.file_path.as_str(), s.name.as_str()), s.export))
+            .collect();
         for s in &ax.symbols {
-            let id = util::make_id(&format!("sym:{}:{}", s.file_path, s.name));
+            let id = util::symbol_identity(s);
+            let exported = match s.container.as_deref() {
+                Some(c) => top_export.get(&(s.file_path.as_str(), c)).copied().unwrap_or(false),
+                None => s.export,
+            };
+            let export_text = if exported { "exported" } else { "internal" };
             stmt.execute(rusqlite::params![
                 id, s.name, s.kind, s.container, s.signature,
                 s.file_path, s.line, s.end_line,
-                s.export as i64, s.doc_summary, s.body_hash, s.body_lines,
+                export_text, s.doc_summary, s.body_hash, s.body_lines,
                 s.structure_hash, s.implements, s.deprecated as i64,
                 s.deprecated_note, s.is_internal as i64, s.decorators,
             ])?;
@@ -253,3 +265,27 @@ pub fn write(
 }
 
 
+#[cfg(test)]
+mod symbol_identity_tests {
+    use crate::util::symbol_identity;
+
+    fn symbol(name: &str, kind: &str, container: Option<&str>, signature: Option<&str>) -> crate::types::Symbol {
+        crate::ax::test_symbol(name, kind, container, signature, None)
+    }
+
+    #[test]
+    fn identity_matches_the_typescript_scheme() {
+        // sha256("interface Extractor")[..8] = 4f65b0c2, as in the TypeScript index.
+        let s = symbol("Extractor", "interface", None, Some("interface Extractor"));
+        assert_eq!(symbol_identity(&s), "impl:src/a.ts#interface:Extractor(4f65b0c2)");
+        let p = symbol("name", "property", Some("Extractor"), None);
+        assert_eq!(symbol_identity(&p), "impl:src/a.ts#property:Extractor.name");
+    }
+
+    #[test]
+    fn same_name_members_in_one_file_keep_distinct_identities() {
+        let a = symbol("name", "property", Some("PrescriptiveElementNode"), None);
+        let b = symbol("name", "property", Some("PrescriptiveLayerNode"), None);
+        assert_ne!(symbol_identity(&a), symbol_identity(&b));
+    }
+}

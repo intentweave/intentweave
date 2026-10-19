@@ -32,6 +32,12 @@ ignore = "0.4"
 # Content hashing — 10× faster than SHA-256
 blake3 = "1"
 
+# SHA-256 for symbol identities, matching the TypeScript AX stage (generateSymbolId)
+sha2 = "0.10"
+
+# Literal and identifier normalisation for structure hashes (TypeScript AX parity)
+regex = "1"
+
 # JSON I/O — zero-copy deserialization for config files
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

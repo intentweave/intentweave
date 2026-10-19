@@ -33,6 +33,22 @@ fn is_source_file(path: &Path) -> bool {
     )
 }
 
+/// Whether AX extracts symbols from a file. The TypeScript stage's discovery covers
+/// `.ts/.tsx/.js/.jsx`, ignores `node_modules` and `dist`, `*.d.ts`, `*.test.ts`,
+/// `*.spec.ts`, and does not follow dot-directories (tinyglobby defaults).
+fn ax_extracts_symbols(rel_path: &str) -> bool {
+    let parts: Vec<&str> = rel_path.split('/').collect();
+    if parts.iter().any(|p| *p == "node_modules" || *p == "dist" || p.starts_with('.')) {
+        return false;
+    }
+    let name = parts.last().copied().unwrap_or("");
+    if name.ends_with(".d.ts") || name.ends_with(".test.ts") || name.ends_with(".spec.ts") {
+        return false;
+    }
+    let ext = name.rsplit('.').next().unwrap_or("");
+    matches!(ext, "ts" | "tsx" | "js" | "jsx")
+}
+
 fn build_line_index(text: &str) -> Vec<usize> {
     let mut idx = vec![0usize];
     for (i, b) in text.bytes().enumerate() {
@@ -908,6 +924,298 @@ struct ProcessedFile {
     file_entry: FileEntry,
 }
 
+
+/// Reserved words kept verbatim by the structure hash (TypeScript `RESERVED` in ax-helpers).
+const RESERVED_WORDS: &[&str] = &[
+    "async", "await", "break", "case", "catch", "class", "const", "continue", "debugger",
+    "default", "delete", "do", "else", "enum", "export", "extends", "false", "finally", "for",
+    "function", "if", "implements", "import", "in", "instanceof", "interface", "let", "new",
+    "null", "of", "return", "static", "super", "switch", "this", "throw", "true", "try", "type",
+    "typeof", "undefined", "var", "void", "while", "with", "yield",
+];
+
+/// Truncate a documentation summary to 600 characters, as the TypeScript extractor does.
+fn cap_summary(text: String) -> String {
+    if text.chars().count() > 600 {
+        let head: String = text.chars().take(597).collect();
+        format!("{head}…")
+    } else {
+        text
+    }
+}
+
+/// Documentation summary of the declaration starting at `start` (0-based line index).
+/// Port of `extractDocComment` in ast-extractor: a JSDoc block directly above, then a run
+/// of `//` lines, and never past real code.
+fn doc_summary_at(lines: &[&str], start: usize) -> Option<String> {
+    use regex::Regex;
+    let single = Regex::new(r"^/\*+\s*(.+?)\s*\*/$").unwrap();
+    let open = Regex::new(r"^/\*+\s*(.+)").unwrap();
+    let star = Regex::new(r"^\*\s*(.*)").unwrap();
+
+    let lower = start.saturating_sub(20);
+    let mut i = start;
+    while i > lower {
+        i -= 1;
+        let line = lines[i].trim();
+        if line.starts_with("/**") || (line.starts_with("/*") && !line.starts_with("/**/")) {
+            let mut parts: Vec<String> = Vec::new();
+            for doc in lines.iter().take(start).skip(i).map(|l| l.trim()) {
+                if doc.starts_with("* @") || doc.starts_with('@') {
+                    break;
+                }
+                if matches!(doc, "/**" | "*/" | "/*" | "*") {
+                    continue;
+                }
+                if let Some(c) = single.captures(doc) {
+                    parts.push(c[1].to_string());
+                    continue;
+                }
+                if let Some(c) = open.captures(doc) {
+                    parts.push(c[1].to_string());
+                    continue;
+                }
+                if let Some(c) = star.captures(doc) {
+                    if !c[1].is_empty() {
+                        parts.push(c[1].to_string());
+                    }
+                }
+            }
+            if !parts.is_empty() {
+                let full = parts.join(" ");
+                let full = full.split_whitespace().collect::<Vec<_>>().join(" ");
+                return Some(cap_summary(full));
+            }
+            break;
+        }
+        if !line.is_empty() && !line.starts_with("//") && !line.starts_with('*') && !line.starts_with("*/") {
+            break;
+        }
+    }
+
+    let mut comments: Vec<String> = Vec::new();
+    let lower = start.saturating_sub(10);
+    let mut j = start;
+    while j > lower {
+        j -= 1;
+        let line = lines[j].trim();
+        if let Some(rest) = line.strip_prefix("//") {
+            comments.insert(0, rest.strip_prefix(' ').unwrap_or(rest).to_string());
+        } else {
+            break;
+        }
+    }
+    if comments.is_empty() {
+        return None;
+    }
+    let full = comments.join(" ");
+    let full = full.split_whitespace().collect::<Vec<_>>().join(" ");
+    Some(cap_summary(full))
+}
+
+/// Body hash, body length, and structure hash for a declaration spanning at least four
+/// lines (TypeScript `computeBodyHash`). Hashes are SHA-256, truncated to 16 hex digits.
+fn body_fingerprints(lines: &[&str], start: usize, end: usize) -> Option<(String, i64, String)> {
+    use regex::Regex;
+    use sha2::{Digest, Sha256};
+    let count = end + 1 - start;
+    if count < 4 {
+        return None;
+    }
+    let body = lines
+        .iter()
+        .take(end)
+        .skip(start - 1)
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if body.is_empty() {
+        return None;
+    }
+    let hex16 = |text: &str| format!("{:x}", Sha256::digest(text.as_bytes()))[..16].to_string();
+    let body_hash = hex16(&body);
+
+    let numeric = Regex::new(r"\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b").unwrap();
+    let identifier = Regex::new(r"\b[a-zA-Z_$][a-zA-Z0-9_$]*\b").unwrap();
+    let normalised = replace_string_literals(&body);
+    let normalised = numeric.replace_all(&normalised, "0").to_string();
+    let structural = identifier
+        .replace_all(&normalised, |caps: &regex::Captures| {
+            let word = &caps[0];
+            if RESERVED_WORDS.contains(&word) { word.to_string() } else { "_".to_string() }
+        })
+        .to_string();
+    Some((body_hash, count as i64, hex16(&structural)))
+}
+
+/// Replace each string literal (`'…'`, `"…"`, or `` `…` ``) with `"S"`, as the TypeScript
+/// normalisation does. A literal is a quote, then characters that are neither that quote nor a
+/// backslash (or an escaped character), then the same quote, all on one line.
+fn replace_string_literals(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' || c == '"' || c == '`' {
+            let mut j = i + 1;
+            let mut closed = None;
+            while j < chars.len() {
+                let d = chars[j];
+                if d == '\n' {
+                    break;
+                }
+                if d == c {
+                    closed = Some(j);
+                    break;
+                }
+                if d == '\\' {
+                    if j + 1 < chars.len() && chars[j + 1] != '\n' {
+                        j += 2;
+                        continue;
+                    }
+                    break;
+                }
+                j += 1;
+            }
+            if let Some(end) = closed {
+                out.push_str("\"S\"");
+                i = end + 1;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+/// Summaries, body and structure fingerprints for every symbol with a line span, as the
+/// TypeScript AX stage records them.
+fn apply_source_fingerprints(symbols: &mut [Symbol], content: &str) {
+    let lines: Vec<&str> = content.lines().collect();
+    // Top-level declarations by name: members look up their container's JSDoc.
+    let containers: std::collections::HashMap<String, (String, bool, Option<String>)> = symbols
+        .iter()
+        .filter(|s| s.container.is_none())
+        .filter_map(|s| {
+            let line = s.line? as usize;
+            if line == 0 || line > lines.len() {
+                return None;
+            }
+            let (deprecated, note) = deprecation_at(&lines, line - 1);
+            Some((s.name.clone(), (s.kind.clone(), deprecated, note)))
+        })
+        .collect();
+    for sym in symbols.iter_mut() {
+        let Some(line) = sym.line else { continue };
+        let start = line as usize;
+        if start == 0 || start > lines.len() {
+            continue;
+        }
+        let container = sym.container.as_ref().and_then(|c| containers.get(c));
+        // Properties never carry a summary. Interface methods have no body to document.
+        let interface_member = container.map(|c| c.0 == "interface").unwrap_or(false);
+        sym.doc_summary = if sym.kind == "property" || (sym.kind == "method" && interface_member) {
+            None
+        } else {
+            doc_summary_at(&lines, start - 1)
+        };
+        let end = sym.end_line.map(|e| e as usize).unwrap_or(start);
+        // Each fingerprint is set or cleared, so a value from an earlier pass cannot survive.
+        let fingerprints = body_fingerprints(&lines, start, end);
+        sym.body_hash = fingerprints.as_ref().map(|f| f.0.clone());
+        sym.body_lines = fingerprints.as_ref().map(|f| f.1);
+        sym.structure_hash = fingerprints.as_ref().map(|f| f.2.clone());
+        // A member's documentation lookup lands on its container, so it inherits the
+        // container's @deprecated tag.
+        let (deprecated, note) = match container {
+            Some(c) => (c.1, c.2.clone()),
+            None => deprecation_at(&lines, start - 1),
+        };
+        sym.deprecated = deprecated;
+        sym.deprecated_note = note;
+        if sym.kind == "class" {
+            sym.implements = implements_from_header(sym.signature.as_deref());
+        }
+    }
+}
+
+/// `@deprecated` in the JSDoc block directly above a declaration (TypeScript
+/// `extractJsDocTags`): the flag, and the note after the tag when there is one.
+fn deprecation_at(lines: &[&str], start: usize) -> (bool, Option<String>) {
+    let lower = start.saturating_sub(8);
+    let mut block = None;
+    for i in (lower..start).rev() {
+        let line = lines[i].trim();
+        if line.starts_with("/**") {
+            block = Some(i);
+            break;
+        }
+        if !line.is_empty() && !line.starts_with("//") && !line.starts_with('*') {
+            break;
+        }
+    }
+    let Some(block) = block else { return (false, None) };
+    let mut deprecated = false;
+    let mut note = None;
+    for line in lines.iter().take(start).skip(block) {
+        let text = line.trim();
+        let text = text.strip_prefix('*').unwrap_or(text);
+        let text = text.strip_prefix(' ').unwrap_or(text);
+        if let Some(rest) = text.strip_prefix("@deprecated") {
+            deprecated = true;
+            let rest = rest.trim();
+            if !rest.is_empty() {
+                note = Some(rest.to_string());
+            }
+        }
+    }
+    (deprecated, note)
+}
+
+/// Interface names from a class header's `implements` clause, as a JSON array string
+/// (TypeScript stores `JSON.stringify(names)`). Generic arguments are dropped.
+fn implements_from_header(header: Option<&str>) -> Option<String> {
+    let header = header?;
+    let (_, after) = header.split_once(" implements ")?;
+    let names: Vec<String> = after
+        .split('{')
+        .next()?
+        .split(',')
+        .map(|part| part.split('<').next().unwrap_or("").trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    Some(serde_json::to_string(&names).ok()?)
+}
+
+/// Signature of a declaration, as the TypeScript AX stage records it: the header text
+/// from the declaration's first line, up to `{`. Only interfaces, classes, functions and
+/// methods carry one; properties and type aliases do not.
+fn apply_declaration_headers(symbols: &mut [Symbol], content: &str) {
+    let lines: Vec<&str> = content.lines().collect();
+    for sym in symbols.iter_mut() {
+        if !matches!(sym.kind.as_str(), "interface" | "class" | "function" | "method") {
+            continue;
+        }
+        // Interfaces carry the constructed form `interface <Name>`, not the source header.
+        if sym.kind == "interface" {
+            sym.signature = Some(format!("interface {}", sym.name));
+            continue;
+        }
+        let Some(line) = sym.line else { continue };
+        let Some(text) = lines.get((line as usize).saturating_sub(1)) else { continue };
+        let header = text.split('{').next().unwrap_or("").trim();
+        if !header.is_empty() {
+            sym.signature = Some(header.to_string());
+        }
+    }
+}
+
 fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
     let content = std::fs::read_to_string(path).ok()?;
     let rel_path = path
@@ -924,17 +1232,21 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
     for stmt in ret.program.body.iter() {
         extractor.visit_statement(stmt, None, false);
     }
+    apply_declaration_headers(&mut extractor.symbols, &content);
+    apply_source_fingerprints(&mut extractor.symbols, &content);
     let content_hash = blake3::hash(content.as_bytes())
         .as_bytes()[..8]
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
+    // Files outside AX discovery keep their file row, but contribute no symbols or edges.
+    let in_scope = ax_extracts_symbols(&rel_path);
     Some(ProcessedFile {
-        symbols: extractor.symbols,
-        imports: extractor.imports,
-        calls: extractor.calls,
-        todos,
-        rationale,
+        symbols: if in_scope { extractor.symbols } else { Vec::new() },
+        imports: if in_scope { extractor.imports } else { Vec::new() },
+        calls: if in_scope { extractor.calls } else { Vec::new() },
+        todos: if in_scope { todos } else { Vec::new() },
+        rationale: if in_scope { rationale } else { Vec::new() },
         file_entry: FileEntry {
             path: rel_path,
             last_modified: None,
@@ -1089,5 +1401,59 @@ mod tests {
         let (target, is_rel) = resolve_specifier("src/auth.ts", "express");
         assert!(!is_rel);
         assert_eq!(target, "express");
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_symbol(name: &str, kind: &str, container: Option<&str>, signature: Option<&str>, line: Option<i64>) -> crate::types::Symbol {
+    crate::types::Symbol {
+        name: name.to_string(),
+        kind: kind.to_string(),
+        container: container.map(str::to_string),
+        signature: signature.map(str::to_string),
+        file_path: "src/a.ts".to_string(),
+        line,
+        end_line: line,
+        export: false,
+        doc_summary: None,
+        body_hash: None,
+        body_lines: None,
+        structure_hash: None,
+        implements: None,
+        deprecated: false,
+        deprecated_note: None,
+        is_internal: false,
+        decorators: None,
+    }
+}
+
+#[cfg(test)]
+mod declaration_header_tests {
+    use super::{apply_declaration_headers, test_symbol};
+
+    #[test]
+    fn header_is_the_declaration_up_to_the_brace() {
+        let content = "export interface Extractor {\n  name: string;\n}\nexport function f(a: number): number {\n}\n";
+        let mut symbols = vec![
+            test_symbol("Extractor", "interface", None, None, Some(1)),
+            test_symbol("f", "function", None, None, Some(4)),
+            test_symbol("name", "property", Some("Extractor"), None, Some(2)),
+        ];
+        apply_declaration_headers(&mut symbols, content);
+        assert_eq!(symbols[0].signature.as_deref(), Some("interface Extractor"));
+        assert_eq!(symbols[1].signature.as_deref(), Some("export function f(a: number): number"));
+        assert_eq!(symbols[2].signature, None);
+    }
+}
+
+#[cfg(test)]
+mod string_literal_tests {
+    use super::replace_string_literals;
+
+    #[test]
+    fn literals_are_replaced_and_escapes_respected() {
+        assert_eq!(replace_string_literals(r#"a = "x"; b = 'y\'z';"#), r#"a = "S"; b = "S";"#);
+        assert_eq!(replace_string_literals("c = `t`"), r#"c = "S""#);
+        assert_eq!(replace_string_literals("open 'never"), "open 'never");
     }
 }
