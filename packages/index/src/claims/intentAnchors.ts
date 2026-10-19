@@ -16,7 +16,21 @@ export type IntentAnchorStatus = "active" | "superseded" | "retired";
 export type IntentAnchorOutcome =
   | "satisfied"
   | "intent_conflict"
-  | "intent_unresolved";
+  | "intent_unresolved"
+  | "intent_excepted";
+
+/** A recorded decision on the conflict of one anchor and one exact statement. */
+export interface ConflictDecision {
+  id: string;
+  anchorId: string;
+  claimIdentityId: string;
+  statementFingerprint: string;
+  decision: "rejected" | "excepted";
+  actor: string;
+  rationale?: string;
+  decidedAt: number;
+  expiresAt?: number;
+}
 
 export interface IntentAnchor {
   id: string;
@@ -45,6 +59,8 @@ export interface IntentAnchorEvaluation {
   anchorId: string;
   /** True when a declared follow-up made the statement change acceptable (G5.4). */
   followUp?: boolean;
+  /** The recorded decision that shaped a conflict, if any (G5.4). */
+  decision?: "rejected" | "excepted" | "exception-expired";
   claimIdentityId: string;
   outcome: IntentAnchorOutcome;
   reason: string;
@@ -63,6 +79,8 @@ export interface DeclaredFollowUp {
 }
 
 export interface AnchorEvaluationInput {
+  /** The instant an exception is judged against (ms since epoch). */
+  asOf?: number;
   /** Declared follow-ups from `.iw/claims/intent.yaml`. */
   followUps?: readonly DeclaredFollowUp[];
   /** Claim identities that discovery or promotion evaluated in this run. */
@@ -306,6 +324,137 @@ export class IntentAnchorStore {
       .run(id);
   }
 
+  /** Record a decision on the conflict of an active anchor's current change. */
+  recordConflictDecision(input: {
+    anchorId: string;
+    decision: "rejected" | "excepted";
+    actor: string;
+    rationale?: string;
+    decidedAt: number;
+    expiresAt?: number;
+  }): ConflictDecision {
+    const anchor = this.get(input.anchorId);
+    if (!anchor || anchor.status !== "active") {
+      throw new Error(`Intent anchor ${input.anchorId} is not active`);
+    }
+    const latest = this.latestVersion(anchor.claimIdentityId);
+    if (
+      !latest ||
+      latest.statementFingerprint === anchor.statementFingerprint
+    ) {
+      throw new Error(
+        `Claim ${anchor.claimIdentityId} has no changed statement to decide`,
+      );
+    }
+    const decision: ConflictDecision = {
+      id: `conflict-decision:${fingerprint({
+        anchor: anchor.id,
+        statement: latest.statementFingerprint,
+        decision: input.decision,
+        decidedAt: input.decidedAt,
+      }).slice(0, 24)}`,
+      anchorId: anchor.id,
+      claimIdentityId: anchor.claimIdentityId,
+      statementFingerprint: latest.statementFingerprint,
+      decision: input.decision,
+      actor: input.actor,
+      ...(input.rationale ? { rationale: input.rationale } : {}),
+      decidedAt: input.decidedAt,
+      ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+    };
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO intent_conflict_decisions (
+           id, anchor_id, claim_identity_id, statement_fingerprint, decision,
+           actor, rationale, decided_at, expires_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        decision.id,
+        decision.anchorId,
+        decision.claimIdentityId,
+        decision.statementFingerprint,
+        decision.decision,
+        decision.actor,
+        decision.rationale ?? null,
+        decision.decidedAt,
+        decision.expiresAt ?? null,
+      );
+    return decision;
+  }
+
+  /** The latest decision on an anchor's conflict for one statement fingerprint. */
+  conflictDecision(
+    anchorId: string,
+    statementFingerprint: string,
+  ): ConflictDecision | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM intent_conflict_decisions
+         WHERE anchor_id = ? AND statement_fingerprint = ?
+         ORDER BY decided_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(anchorId, statementFingerprint) as
+      | {
+          id: string;
+          anchor_id: string;
+          claim_identity_id: string;
+          statement_fingerprint: string;
+          decision: "rejected" | "excepted";
+          actor: string;
+          rationale: string | null;
+          decided_at: number;
+          expires_at: number | null;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      anchorId: row.anchor_id,
+      claimIdentityId: row.claim_identity_id,
+      statementFingerprint: row.statement_fingerprint,
+      decision: row.decision,
+      actor: row.actor,
+      ...(row.rationale ? { rationale: row.rationale } : {}),
+      decidedAt: row.decided_at,
+      ...(row.expires_at !== null ? { expiresAt: row.expires_at } : {}),
+    };
+  }
+
+  /** Import a conflict decision from portable state. Existing rows are kept. */
+  importConflictDecision(
+    decision: ConflictDecision,
+  ): "imported" | "present" | "unknown_anchor" {
+    const exists = this.db
+      .prepare(
+        `SELECT 1 AS present FROM intent_conflict_decisions WHERE id = ?`,
+      )
+      .get(decision.id) as { present: number } | undefined;
+    if (exists) return "present";
+    const anchor = this.get(decision.anchorId);
+    if (!anchor) return "unknown_anchor";
+    this.db
+      .prepare(
+        `INSERT INTO intent_conflict_decisions (
+           id, anchor_id, claim_identity_id, statement_fingerprint, decision,
+           actor, rationale, decided_at, expires_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        decision.id,
+        decision.anchorId,
+        decision.claimIdentityId,
+        decision.statementFingerprint,
+        decision.decision,
+        decision.actor,
+        decision.rationale ?? null,
+        decision.decidedAt,
+        decision.expiresAt ?? null,
+      );
+    return "imported";
+  }
+
   /** The id of the current assessment of a Claim identity, when one exists. */
   currentAssessmentId(claimIdentityId: string): string | undefined {
     const row = this.db
@@ -356,6 +505,45 @@ export class IntentAnchorStore {
    * - otherwise `satisfied`.
    */
   evaluate(input: AnchorEvaluationInput): IntentAnchorEvaluation[] {
+    const asOf = input.asOf ?? Date.now();
+    return this.evaluateAnchors(input).map((result) => {
+      if (
+        result.outcome !== "intent_conflict" ||
+        !result.currentStatementFingerprint
+      ) {
+        return result;
+      }
+      const decision = this.conflictDecision(
+        result.anchorId,
+        result.currentStatementFingerprint,
+      );
+      if (!decision) return result;
+      if (decision.decision === "rejected") {
+        return {
+          ...result,
+          decision: "rejected",
+          reason: `${result.reason}; the change was rejected by ${decision.actor}`,
+        };
+      }
+      if (decision.expiresAt === undefined || asOf < decision.expiresAt) {
+        return {
+          ...result,
+          outcome: "intent_excepted",
+          decision: "excepted",
+          reason: `${result.reason}; excepted by ${decision.actor}${decision.expiresAt === undefined ? "" : ` until ${new Date(decision.expiresAt).toISOString()}`}`,
+        };
+      }
+      return {
+        ...result,
+        decision: "exception-expired",
+        reason: `${result.reason}; the exception expired at ${new Date(decision.expiresAt).toISOString()}`,
+      };
+    });
+  }
+
+  private evaluateAnchors(
+    input: AnchorEvaluationInput,
+  ): IntentAnchorEvaluation[] {
     const results: IntentAnchorEvaluation[] = [];
     for (const anchor of this.active()) {
       if (anchor.mode !== "protect") continue;

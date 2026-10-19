@@ -5,11 +5,25 @@ import { canonicalJson, fingerprint } from "./canonical.js";
 
 export const CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION = "1" as const;
 export const CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION = "2" as const;
-export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "3" as const;
+export const CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION = "3" as const;
+export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "4" as const;
 export type ClaimsPortableStateSchemaVersion =
   | typeof CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION
+  | typeof CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_SCHEMA_VERSION;
+
+/** A recorded conflict decision (G5.4), keyed by its decision id. */
+export interface PortableConflictDecision {
+  anchorId: string;
+  claimIdentityId: string;
+  statementFingerprint: string;
+  decision: "rejected" | "excepted";
+  actor: PortableClaimsActor;
+  decidedAt: string;
+  rationale?: string;
+  expiresAt?: string;
+}
 
 /** A human Intent Anchor (G5.4). Keyed by anchor id; superseded anchors stay as history. */
 export interface PortableIntentAnchor {
@@ -128,6 +142,8 @@ export interface PortableClaimsState {
   claimOrigins: Record<string, PortableClaimOrigin[]>;
   /** Intent Anchors (G5.4); absent in v1 and v2 files. */
   intentAnchors: Record<string, PortableIntentAnchor>;
+  /** Conflict decisions (G5.4); absent before schema 4. */
+  conflictDecisions: Record<string, PortableConflictDecision>;
 }
 
 export class ClaimsPortableStateError extends Error {
@@ -486,6 +502,46 @@ function parseSubjectBinding(
   };
 }
 
+function parseConflictDecision(
+  value: unknown,
+  path: string,
+): PortableConflictDecision {
+  const record = requireRecord(value, path);
+  assertOnlyKeys(record, path, [
+    "anchorId",
+    "claimIdentityId",
+    "statementFingerprint",
+    "decision",
+    "actor",
+    "decidedAt",
+    "rationale",
+    "expiresAt",
+  ]);
+  return {
+    anchorId: requireString(record.anchorId, `${path}.anchorId`),
+    claimIdentityId: requireString(
+      record.claimIdentityId,
+      `${path}.claimIdentityId`,
+    ),
+    statementFingerprint: requireFingerprint(
+      record.statementFingerprint,
+      `${path}.statementFingerprint`,
+    ),
+    decision: requireEnum(record.decision, `${path}.decision`, [
+      "rejected",
+      "excepted",
+    ]),
+    actor: parseActor(record.actor, `${path}.actor`),
+    decidedAt: requireTimestamp(record.decidedAt, `${path}.decidedAt`),
+    ...(record.rationale !== undefined
+      ? { rationale: requireString(record.rationale, `${path}.rationale`) }
+      : {}),
+    ...(record.expiresAt !== undefined
+      ? { expiresAt: requireTimestamp(record.expiresAt, `${path}.expiresAt`) }
+      : {}),
+  };
+}
+
 function parseIntentAnchor(value: unknown, path: string): PortableIntentAnchor {
   const anchor = requireRecord(value, path);
   assertOnlyKeys(anchor, path, [
@@ -724,6 +780,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     "baselineAcceptances",
     "claimOrigins",
     "intentAnchors",
+    "conflictDecisions",
   ]);
   const schemaVersion = requireEnum(
     state.schemaVersion,
@@ -731,24 +788,26 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     [
       CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION,
+      CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
     ],
   );
   if (
     schemaVersion !== CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION &&
+    schemaVersion !== CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION
   ) {
     throw new ClaimsPortableStateError(
-      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION}, or ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION}, or ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
     );
   }
   if (
     schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION &&
-    state.intentAnchors !== undefined
+    (state.intentAnchors !== undefined || state.conflictDecisions !== undefined)
   ) {
     throw new ClaimsPortableStateError(
-      `intentAnchors requires schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+      `intentAnchors and conflictDecisions require schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
     );
   }
   if (schemaVersion === CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION) {
@@ -795,6 +854,11 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       "intentAnchors",
       parseIntentAnchor,
     ),
+    conflictDecisions: parseMap(
+      state.conflictDecisions ?? {},
+      "conflictDecisions",
+      parseConflictDecision,
+    ),
   };
   assertNoSubjectBindingConflicts(parsed.subjectBindings);
   assertNoBaselineConflicts(parsed.baselineAcceptances);
@@ -811,5 +875,6 @@ export function emptyPortableClaimsState(): PortableClaimsState {
     baselineAcceptances: {},
     claimOrigins: {},
     intentAnchors: {},
+    conflictDecisions: {},
   };
 }

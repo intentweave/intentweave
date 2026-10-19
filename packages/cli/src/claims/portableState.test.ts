@@ -33,18 +33,19 @@ function stateWithPolicies(): PortableClaimsState {
 }
 
 describe("Claims portable-state YAML", () => {
-  it("migrates v1 input to canonical v3 and round-trips byte-identically", () => {
+  it("migrates v1 input to canonical v4 and round-trips byte-identically", () => {
     const current = serializePortableClaimsState(stateWithPolicies());
-    // v1 predates intent anchors, so the input omits that section.
+    // v1 predates intent anchors and conflict decisions, so the input omits them.
     const v1 = current
-      .replace('schemaVersion: "3"', 'schemaVersion: "1"')
-      .replace(/^intentAnchors: \{\}\n/m, "");
+      .replace('schemaVersion: "4"', 'schemaVersion: "1"')
+      .replace(/^intentAnchors: \{\}\n/m, "")
+      .replace(/^conflictDecisions: \{\}\n/m, "");
     const migrated = serializePortableClaimsState(
       parsePortableClaimsStateYaml(v1),
     );
 
     expect(migrated).toBe(current);
-    expect(migrated).toContain('schemaVersion: "3"');
+    expect(migrated).toContain('schemaVersion: "4"');
   });
 
   it("round-trips byte-identically with canonical map ordering", () => {
@@ -108,13 +109,13 @@ baselineAcceptances: {}
 
     expect(() =>
       parsePortableClaimsStateYaml(`
-schemaVersion: "4"
+schemaVersion: "5"
 policies: {}
 candidateDecisions: {}
 subjectBindings: {}
 assessmentReviews: {}
 baselineAcceptances: {}
 `),
-    ).toThrow("must be one of: 1, 2, 3");
+    ).toThrow("must be one of: 1, 2, 3, 4");
   });
 });

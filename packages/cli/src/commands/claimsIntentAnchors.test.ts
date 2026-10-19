@@ -214,7 +214,7 @@ describe("Intent Anchors through claims check", () => {
     expect(output.intentMode).toBeUndefined();
   });
 
-  it("refuses decisions other than accept_amendment", async () => {
+  it("refuses an unknown conflict decision", async () => {
     const { claimIdentityId } = await protectedWorkspace();
     const errors = vi
       .spyOn(console, "error")
@@ -222,12 +222,12 @@ describe("Intent Anchors through claims check", () => {
     process.exitCode = undefined;
     await runClaimsConflictResolve({
       claim: claimIdentityId,
-      decision: "grant_exception",
+      decision: "forget_it",
       actor: "intent-anchors",
       format: "json",
     });
     expect(process.exitCode).toBe(64);
-    expect(String(errors.mock.calls[0]?.[0])).toContain("accept_amendment");
+    expect(String(errors.mock.calls[0]?.[0])).toContain("reject_change");
   });
 
   it("refuses to amend a Claim whose current assessment is not supported", async () => {

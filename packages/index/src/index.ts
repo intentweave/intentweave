@@ -78,6 +78,8 @@ export {
   DEFAULT_ANCHOR_SCOPE,
   IntentAnchorStore,
   type AnchorEvaluationInput,
+  type ConflictDecision,
+  type DeclaredFollowUp,
   type IntentAnchor,
   type IntentAnchorEvaluation,
   type IntentAnchorMode,
@@ -137,6 +139,7 @@ export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
 export {
   CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
   CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
+  type PortableConflictDecision,
   type PortableIntentAnchor,
   ClaimsPortableStateError,
   emptyPortableClaimsState,

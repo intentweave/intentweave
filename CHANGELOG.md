@@ -22,7 +22,15 @@ All notable changes to IntentWeave are documented in this file.
   the current assessment is supported. A declaration never lifts a refuted assessment.
   An accepted follow-up records an accepted review of the new statement (origin
   `follow-up`, actor `intent-follow-up`), so the protected Claim needs no separate
-  review. Unprotected Claims that change still need review, as before.
+  Unprotected Claims that change still need review in report mode. In gate mode they
+  do not block.
+- **Conflict decisions (G5.4)** — `iw claims conflicts resolve --decision reject_change`
+  records a rejected change: the conflict stays active until the statement is
+  corrected. `--decision grant_exception --rationale --expires` records a time-limited
+  exception to the exact statement change: it is reported as `intent_excepted` until
+  the expiry, after which the conflict is active again. Expiry is judged at the head
+  commit date, or at `claims check --as-of`. Decisions are stored in portable state
+  schema 4 and survive an index rebuild.
 - **Generalized repository Claims lifecycle** — schema versions 17-20 add
   durable Subjects, Subject continuity, append-only Claim Candidates,
   Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference

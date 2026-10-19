@@ -93,7 +93,7 @@ describe("Claims portable state", () => {
       "zebra",
     ]);
     expect(emptyPortableClaimsState()).toEqual({
-      schemaVersion: "3",
+      schemaVersion: "4",
       policies: {},
       candidateDecisions: {},
       subjectBindings: {},
@@ -101,13 +101,14 @@ describe("Claims portable state", () => {
       baselineAcceptances: {},
       claimOrigins: {},
       intentAnchors: {},
+      conflictDecisions: {},
     });
   });
 
   it("fails closed for unsupported versions and unknown fields", () => {
     expect(() =>
-      parsePortableClaimsState({ ...validState(), schemaVersion: "4" }),
-    ).toThrow("must be one of: 1, 2, 3");
+      parsePortableClaimsState({ ...validState(), schemaVersion: "5" }),
+    ).toThrow("must be one of: 1, 2, 3, 4");
     expect(() =>
       parsePortableClaimsState({ ...validState(), providerPayloads: {} }),
     ).toThrow("providerPayloads is not supported");
@@ -160,7 +161,7 @@ describe("Claims portable state", () => {
     };
 
     const parsed = parsePortableClaimsState(state);
-    expect(parsed.schemaVersion).toBe("3");
+    expect(parsed.schemaVersion).toBe("4");
     expect(
       parsed.candidateDecisions["candidate:endpoint-admin-users"]
         .recommendationBasis,

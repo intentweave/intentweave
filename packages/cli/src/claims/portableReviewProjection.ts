@@ -7,6 +7,8 @@ import {
   emptyPortableClaimsState,
   fingerprint,
   IntentAnchorStore,
+  type ConflictDecision,
+  type PortableConflictDecision,
   type PortableAssessmentReview,
   type PortableClaimsActor,
   type PortableClaimsState,
@@ -352,6 +354,57 @@ export function projectPortableIntentAnchors(
       actor: portableActorLabel(anchor.actor),
       ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
       createdAt: Date.parse(anchor.decidedAt),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  return { imported, skipped };
+}
+
+/** Persist a conflict decision (G5.4) to portable state. Decisions are append-only. */
+export function persistPortableConflictDecision(
+  workspaceRoot: string,
+  decision: ConflictDecision,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  const record: PortableConflictDecision = {
+    anchorId: decision.anchorId,
+    claimIdentityId: decision.claimIdentityId,
+    statementFingerprint: decision.statementFingerprint,
+    decision: decision.decision,
+    actor: { kind: "human", id: decision.actor },
+    decidedAt: new Date(decision.decidedAt).toISOString(),
+    ...(decision.rationale ? { rationale: decision.rationale } : {}),
+    ...(decision.expiresAt !== undefined
+      ? { expiresAt: new Date(decision.expiresAt).toISOString() }
+      : {}),
+  };
+  state.conflictDecisions[decision.id] = record;
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Import portable conflict decisions whose anchors exist in SQLite. */
+export function projectPortableConflictDecisions(
+  database: Database.Database,
+  state: PortableClaimsState,
+): { imported: number; skipped: number } {
+  const store = new IntentAnchorStore(database);
+  let imported = 0;
+  let skipped = 0;
+  for (const [id, decision] of Object.entries(state.conflictDecisions)) {
+    const outcome = store.importConflictDecision({
+      id,
+      anchorId: decision.anchorId,
+      claimIdentityId: decision.claimIdentityId,
+      statementFingerprint: decision.statementFingerprint,
+      decision: decision.decision,
+      actor: portableActorLabel(decision.actor),
+      ...(decision.rationale ? { rationale: decision.rationale } : {}),
+      decidedAt: Date.parse(decision.decidedAt),
+      ...(decision.expiresAt
+        ? { expiresAt: Date.parse(decision.expiresAt) }
+        : {}),
     });
     if (outcome === "imported") imported += 1;
     else skipped += 1;

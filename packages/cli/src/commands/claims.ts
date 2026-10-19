@@ -140,8 +140,10 @@ import {
 } from "../claims/origins.js";
 import {
   persistPortableAssessmentReview,
+  persistPortableConflictDecision,
   persistPortableIntentAnchor,
   projectPortableAssessmentReviews,
+  projectPortableConflictDecisions,
   projectPortableIntentAnchors,
   type PortableReviewProjectionIssue,
 } from "../claims/portableReviewProjection.js";
@@ -2572,6 +2574,7 @@ function promotedSymbolContinuityContexts(
 
 export async function runClaimsCheck(options: {
   scope?: string;
+  asOf?: string;
   since?: string;
   refresh?: boolean;
   format: string;
@@ -3491,6 +3494,7 @@ export async function runClaimsCheck(options: {
             portableState,
           );
           projectPortableIntentAnchors(database, portableState);
+          projectPortableConflictDecisions(database, portableState);
           output.portableStateIssues.push(...projection.issues);
           allAssessmentStatuses.push(
             ...projection.issues.map(() => "inconclusive" as const),
@@ -3547,6 +3551,7 @@ export async function runClaimsCheck(options: {
           }
           output.intentMode = intentConfig.mode;
           output.intentAnchors = new IntentAnchorStore(database).evaluate({
+            asOf: expiryInstant(workspaceRoot, options.asOf),
             followUps: intentConfig.followUps,
             evaluatedClaimIds,
             retiredClaimIds: new Set(
@@ -3581,8 +3586,16 @@ export async function runClaimsCheck(options: {
         if (output.claims.length === 0 && output.scopes.length === 0) {
           output.gateStatus = "no_active_claims";
         }
+        // In gate mode an unprotected Claim does not block on review (G5.4 case 1).
+        const gateMode = intentConfig.mode === "gate";
+        const isGoverned = (claimIdentityId: string): boolean =>
+          !gateMode ||
+          new IntentAnchorStore(database).active(claimIdentityId).length > 0;
         const reviewRequired =
-          output.retiredClaims.some((claim) => claim.reviewReopened) ||
+          output.retiredClaims.some(
+            (claim) =>
+              claim.reviewReopened && isGoverned(claim.claimIdentityId),
+          ) ||
           assessmentIds.some((assessmentId) => {
             const row = database
               .prepare(
@@ -3596,17 +3609,22 @@ export async function runClaimsCheck(options: {
                     JOIN claim_versions cv ON cv.id = ca.claim_version_id
                     WHERE reopen.claim_identity_id = cv.claim_identity_id
                       AND reopen.status = 'open'
-                  ) AS open_reopen
-           FROM claim_assessments ca WHERE ca.id = ?`,
+                  ) AS open_reopen,
+                  cv.claim_identity_id AS claim_identity_id
+           FROM claim_assessments ca
+           JOIN claim_versions cv ON cv.id = ca.claim_version_id
+           WHERE ca.id = ?`,
               )
               .get(assessmentId) as {
               epistemic_status: string;
               reviewed: number;
               open_reopen: number;
+              claim_identity_id: string;
             };
             return (
               row.epistemic_status !== "inconclusive" &&
-              (row.reviewed === 0 || row.open_reopen === 1)
+              (row.reviewed === 0 || row.open_reopen === 1) &&
+              isGoverned(row.claim_identity_id)
             );
           });
         output.candidates.active = candidateStore.listCurrent({
@@ -3656,10 +3674,13 @@ export async function runClaimsCheck(options: {
 }
 
 /**
- * Resolve an `intent_conflict` (G5.4 slice 1 supports `accept_amendment` only). The
- * current statement becomes the protected one, and the superseded anchor stays as
- * history. The Claim must have an active anchor and a supported current assessment: a
- * refuted Claim needs correction or retirement, not an amendment.
+ * Resolve an `intent_conflict` on a protected Claim (G5.4). Decisions:
+ * - `accept_amendment`: the current statement becomes the protected one. The Claim must
+ *   have a supported current assessment, so a refuted or unassessed Claim is refused.
+ * - `reject_change`: the change is recorded as rejected. The conflict stays active until
+ *   the statement is corrected.
+ * - `grant_exception`: a time-limited exception for the current change. It needs a
+ *   reason and an expiry. After expiry the conflict is active again.
  */
 export async function runClaimsConflictResolve(options: {
   claim: string;
@@ -3668,61 +3689,103 @@ export async function runClaimsConflictResolve(options: {
   decision: string;
   actor: string;
   rationale?: string;
+  expires?: string;
   format: string;
 }): Promise<void> {
   try {
-    if (options.decision !== "accept_amendment") {
+    if (
+      options.decision !== "accept_amendment" &&
+      options.decision !== "reject_change" &&
+      options.decision !== "grant_exception"
+    ) {
       throw new ClaimsBindingError(
-        "Conflict decision must be accept_amendment; reject_change and grant_exception are not implemented yet",
+        "Conflict decision must be accept_amendment, reject_change, or grant_exception",
       );
+    }
+    if (options.decision === "grant_exception") {
+      if (!options.rationale) {
+        throw new ClaimsBindingError("grant_exception requires --rationale");
+      }
+      if (!options.expires || Number.isNaN(Date.parse(options.expires))) {
+        throw new ClaimsBindingError(
+          "grant_exception requires --expires as an ISO date or timestamp",
+        );
+      }
     }
     const workspaceRoot = process.cwd();
     const database = claimsDatabase(workspaceRoot);
     try {
-      // A rebuilt index has no anchors until portable state is imported.
+      // A rebuilt index has no anchors or decisions until portable state is imported.
       const portable = loadPortableClaimsState(workspaceRoot);
-      if (portable) projectPortableIntentAnchors(database, portable);
+      if (portable) {
+        projectPortableIntentAnchors(database, portable);
+        projectPortableConflictDecisions(database, portable);
+      }
       const claim = resolveSingleClaimIdentity(database, options);
       const store = new IntentAnchorStore(database);
       const active = store.active(claim.id);
       if (active.length === 0) {
         throw new ClaimsBindingError(
-          `Claim ${claim.id} has no active Intent Anchor to amend`,
-        );
-      }
-      const assessment = store.currentAssessmentStatus(claim.id);
-      if (assessment !== "supported") {
-        throw new ClaimsBindingError(
-          `Current assessment is ${assessment ?? "missing"}; amend only a supported Claim. Run claims check, then correct or retire a refuted Claim`,
+          `Claim ${claim.id} has no active Intent Anchor to resolve`,
         );
       }
       const superseded = active[0]!;
-      const anchor = store.protect({
-        claimIdentityId: claim.id,
-        actor: options.actor,
-        rationale: options.rationale,
-        scope: superseded.scope,
-        createdAt: Date.now(),
-      });
-      persistPortableIntentAnchor(workspaceRoot, {
-        id: anchor.id,
-        claimIdentityId: anchor.claimIdentityId,
-        scope: anchor.scope,
-        statementFingerprint: anchor.statementFingerprint,
-        actor: anchor.actor,
-        ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
-        createdAt: anchor.createdAt,
-      });
-      const output = {
-        claimIdentityId: claim.id,
-        decision: "accept_amendment",
-        supersededAnchorId: superseded.id,
-        anchor,
-      };
+      const decidedAt = Date.now();
+      let output: Record<string, unknown>;
+      if (options.decision === "accept_amendment") {
+        const assessment = store.currentAssessmentStatus(claim.id);
+        if (assessment !== "supported") {
+          throw new ClaimsBindingError(
+            `Current assessment is ${assessment ?? "missing"}; amend only a supported Claim. Run claims check, then correct or retire a refuted Claim`,
+          );
+        }
+        const anchor = store.protect({
+          claimIdentityId: claim.id,
+          actor: options.actor,
+          rationale: options.rationale,
+          scope: superseded.scope,
+          createdAt: decidedAt,
+        });
+        persistPortableIntentAnchor(workspaceRoot, {
+          id: anchor.id,
+          claimIdentityId: anchor.claimIdentityId,
+          scope: anchor.scope,
+          statementFingerprint: anchor.statementFingerprint,
+          actor: anchor.actor,
+          ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+          createdAt: anchor.createdAt,
+        });
+        output = {
+          claimIdentityId: claim.id,
+          decision: "accept_amendment",
+          supersededAnchorId: superseded.id,
+          anchor,
+        };
+      } else {
+        const kind =
+          options.decision === "reject_change" ? "rejected" : "excepted";
+        const decision = store.recordConflictDecision({
+          anchorId: superseded.id,
+          decision: kind,
+          actor: options.actor,
+          ...(options.rationale ? { rationale: options.rationale } : {}),
+          decidedAt,
+          ...(options.expires
+            ? { expiresAt: Date.parse(options.expires) }
+            : {}),
+        });
+        persistPortableConflictDecision(workspaceRoot, decision);
+        output = {
+          claimIdentityId: claim.id,
+          decision: options.decision,
+          anchorId: superseded.id,
+          conflictDecision: decision,
+        };
+      }
       console.log(
         options.format === "json"
           ? JSON.stringify(output, null, 2)
-          : `Amendment accepted: ${anchor.id} supersedes ${superseded.id}`,
+          : `${options.decision} recorded for ${claim.id}`,
       );
       process.exitCode = 0;
     } finally {
@@ -3732,6 +3795,32 @@ export async function runClaimsConflictResolve(options: {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
     process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
+}
+
+/**
+ * The instant conflict exceptions are judged against (G5.4). Defaults to the head
+ * commit's date, so the same repository state gives the same result on every run.
+ * `--as-of` overrides it.
+ */
+function expiryInstant(workspaceRoot: string, asOf?: string): number {
+  if (asOf !== undefined) {
+    const parsed = Date.parse(asOf);
+    if (Number.isNaN(parsed)) {
+      throw new ClaimsBindingError("--as-of must be an ISO date or timestamp");
+    }
+    return parsed;
+  }
+  try {
+    const committed = execFileSync("git", ["log", "-1", "--format=%cI"], {
+      cwd: workspaceRoot,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const parsed = Date.parse(committed);
+    return Number.isNaN(parsed) ? Date.now() : parsed;
+  } catch {
+    return Date.now();
   }
 }
 
@@ -4903,6 +4992,10 @@ export const claimsCommand = new Command("claims")
       )
       .option("--scope <scope>", "Registered scope to evaluate")
       .option(
+        "--as-of <isoDate>",
+        "Instant that intent exceptions are judged against (default: head commit date)",
+      )
+      .option(
         "--since <ref>",
         "Compare immutable HEAD evidence with the merge-base of a Git ref",
       )
@@ -4943,7 +5036,7 @@ export const claimsCommand = new Command("claims")
       .addCommand(
         new Command("resolve")
           .description(
-            "Record a decision on an intent_conflict (supported: accept_amendment)",
+            "Decide an intent_conflict: accept_amendment, reject_change, or grant_exception",
           )
           .requiredOption(
             "--claim <claimIdOrCandidateRefOrParameterKey>",
@@ -4957,6 +5050,10 @@ export const claimsCommand = new Command("claims")
           .requiredOption("--decision <decision>", "Conflict decision")
           .requiredOption("--actor <name>", "Decision actor")
           .option("--rationale <text>", "Reason for the decision")
+          .option(
+            "--expires <isoDate>",
+            "Expiry of a grant_exception (ISO date or timestamp)",
+          )
           .option(
             "-f, --format <format>",
             "Output format: text or json",

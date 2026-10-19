@@ -392,7 +392,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "24";
+export const CURRENT_SCHEMA_VERSION = "25";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -1531,6 +1531,36 @@ export function migrateSchema22To23(db: Database.Database): void {
 }
 
 /**
+ * Conflict decisions (G5.4): a rejected change, or a time-limited exception to an
+ * intent conflict. Keyed to the anchor and the exact statement fingerprint decided.
+ * Additive: one table, created in a transaction, with no data rewritten.
+ */
+export function migrateSchema24To25(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS intent_conflict_decisions (
+        id TEXT PRIMARY KEY,
+        anchor_id TEXT NOT NULL REFERENCES intent_anchors(id),
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        statement_fingerprint TEXT NOT NULL,
+        decision TEXT NOT NULL CHECK (decision IN ('rejected', 'excepted')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        decided_at INTEGER NOT NULL,
+        expires_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_intent_conflict_decisions_anchor
+        ON intent_conflict_decisions(anchor_id, statement_fingerprint);
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '25')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
  * Intent Anchors (G5.4): a human decision that protects one Claim statement.
  * Additive: one table, created in a transaction, with no data rewritten.
  */
@@ -1787,6 +1817,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1799,6 +1830,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1810,6 +1842,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "17") {
@@ -1820,6 +1853,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "18") {
@@ -1829,6 +1863,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "19") {
@@ -1837,6 +1872,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "20") {
@@ -1844,21 +1880,25 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "21") {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "22") {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === "23") {
     migrateSchema23To24(db);
+    migrateSchema24To25(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1885,6 +1925,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "21" &&
     schemaVersion !== "22" &&
     schemaVersion !== "23" &&
+    schemaVersion !== "24" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(
