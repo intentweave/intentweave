@@ -17,6 +17,9 @@ All notable changes to IntentWeave are documented in this file.
   `iw claims conflicts resolve --decision accept_amendment` protects the current
   statement of a supported Claim and supersedes the old anchor. `reject_change` and
   `grant_exception` are not implemented yet.
+  A statement change is accepted automatically when `.iw/claims/intent.yaml` declares
+  it as a `followUps` entry (Claim identity and exact new statement fingerprint) and
+  the current assessment is supported. A declaration never lifts a refuted assessment.
 - **Generalized repository Claims lifecycle** — schema versions 17-20 add
   durable Subjects, Subject continuity, append-only Claim Candidates,
   Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference

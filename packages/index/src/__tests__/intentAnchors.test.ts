@@ -204,4 +204,62 @@ describe("IntentAnchorStore", () => {
     });
     expect(results.map((r) => r.outcome)).toEqual(["satisfied"]);
   });
+
+  it("accepts a declared follow-up only with a supported assessment", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    setAssessment("claim:timeout", "supported");
+    const followUps = [
+      {
+        claimIdentityId: "claim:timeout",
+        statementFingerprint: fingerprint({ value: 3600 }),
+      },
+    ];
+    const accepted = store.evaluate({
+      followUps,
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(accepted.map((r) => r.outcome)).toEqual(["satisfied"]);
+    expect(accepted[0]!.reason).toContain("declared follow-up");
+  });
+
+  it("keeps a conflict when the declared follow-up is refuted or not declared", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    setAssessment("claim:timeout", "refuted");
+    const declared = [
+      {
+        claimIdentityId: "claim:timeout",
+        statementFingerprint: fingerprint({ value: 3600 }),
+      },
+    ];
+    expect(
+      store
+        .evaluate({
+          followUps: declared,
+          evaluatedClaimIds: new Set(["claim:timeout"]),
+          retiredClaimIds: new Set(),
+        })
+        .map((r) => r.outcome),
+    ).toEqual(["intent_conflict"]);
+    expect(
+      store
+        .evaluate({
+          evaluatedClaimIds: new Set(["claim:timeout"]),
+          retiredClaimIds: new Set(),
+        })
+        .map((r) => r.outcome),
+    ).toEqual(["intent_conflict"]);
+  });
 });

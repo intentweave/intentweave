@@ -15,19 +15,24 @@ export type IntentMode = "off" | "report" | "gate";
 
 export interface IntentConfig {
   mode: IntentMode;
+  /** Declared follow-ups (G5.4): intended statement changes, reviewed in the repository. */
+  followUps: Array<{ claimIdentityId: string; statementFingerprint: string }>;
 }
+
+const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 
 export class IntentConfigError extends Error {}
 
 export function parseIntentConfig(text: string): IntentConfig {
   const raw = yamlLoad(text);
-  if (raw === undefined || raw === null) return { mode: "report" };
+  if (raw === undefined || raw === null)
+    return { mode: "report", followUps: [] };
   if (typeof raw !== "object" || Array.isArray(raw)) {
     throw new IntentConfigError("intent.yaml must be a mapping");
   }
   const record = raw as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (key !== "schemaVersion" && key !== "mode") {
+    if (key !== "schemaVersion" && key !== "mode" && key !== "followUps") {
       throw new IntentConfigError(`intent.yaml has unknown key ${key}`);
     }
   }
@@ -40,12 +45,49 @@ export function parseIntentConfig(text: string): IntentConfig {
       "intent.yaml mode must be off, report, or gate",
     );
   }
-  return { mode };
+  const followUps = parseFollowUps(record.followUps ?? []);
+  return { mode, followUps };
+}
+
+function parseFollowUps(value: unknown): IntentConfig["followUps"] {
+  if (!Array.isArray(value)) {
+    throw new IntentConfigError("intent.yaml followUps must be a list");
+  }
+  return value.map((entry, index) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new IntentConfigError(`followUps[${index}] must be a mapping`);
+    }
+    const record = entry as Record<string, unknown>;
+    for (const key of Object.keys(record)) {
+      if (key !== "claimIdentityId" && key !== "statementFingerprint") {
+        throw new IntentConfigError(
+          `followUps[${index}] has unknown key ${key}`,
+        );
+      }
+    }
+    if (typeof record.claimIdentityId !== "string" || !record.claimIdentityId) {
+      throw new IntentConfigError(
+        `followUps[${index}].claimIdentityId is required`,
+      );
+    }
+    if (
+      typeof record.statementFingerprint !== "string" ||
+      !FINGERPRINT_PATTERN.test(record.statementFingerprint)
+    ) {
+      throw new IntentConfigError(
+        `followUps[${index}].statementFingerprint must be a 64-character lowercase hex digest`,
+      );
+    }
+    return {
+      claimIdentityId: record.claimIdentityId,
+      statementFingerprint: record.statementFingerprint,
+    };
+  });
 }
 
 /** Read `.iw/claims/intent.yaml`. A missing file means the default mode, `report`. */
 export function readIntentConfig(workspaceRoot: string): IntentConfig {
   const file = path.join(workspaceRoot, INTENT_CONFIG_RELATIVE_PATH);
-  if (!fs.existsSync(file)) return { mode: "report" };
+  if (!fs.existsSync(file)) return { mode: "report", followUps: [] };
   return parseIntentConfig(fs.readFileSync(file, "utf-8"));
 }

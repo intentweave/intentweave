@@ -3578,6 +3578,7 @@ export async function runClaimsCheck(options: {
           }
           output.intentMode = intentConfig.mode;
           output.intentAnchors = new IntentAnchorStore(database).evaluate({
+            followUps: intentConfig.followUps,
             evaluatedClaimIds,
             retiredClaimIds: new Set(
               output.retiredClaims.map((claim) => claim.claimIdentityId),

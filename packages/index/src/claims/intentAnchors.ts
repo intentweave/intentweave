@@ -51,7 +51,18 @@ export interface IntentAnchorEvaluation {
 }
 
 /** Everything the evaluator needs to know about the current run, per Claim identity. */
+/**
+ * A declared follow-up: the repository's own versioned record that a statement change
+ * is intended. It names the Claim identity and the exact new statement fingerprint.
+ */
+export interface DeclaredFollowUp {
+  claimIdentityId: string;
+  statementFingerprint: string;
+}
+
 export interface AnchorEvaluationInput {
+  /** Declared follow-ups from `.iw/claims/intent.yaml`. */
+  followUps?: readonly DeclaredFollowUp[];
   /** Claim identities that discovery or promotion evaluated in this run. */
   evaluatedClaimIds: ReadonlySet<string>;
   /** Claim identities that were retired in this run. */
@@ -361,17 +372,34 @@ export class IntentAnchorStore {
         });
         continue;
       }
-      const assessment = this.currentAssessmentStatus(anchor.claimIdentityId);
       const current = {
         currentStatementFingerprint: latest.statementFingerprint,
       };
+      const assessment = this.currentAssessmentStatus(anchor.claimIdentityId);
       if (latest.statementFingerprint !== anchor.statementFingerprint) {
-        results.push({
-          ...base,
-          ...current,
-          outcome: "intent_conflict",
-          reason: "the Claim statement differs from the anchored statement",
-        });
+        const declared = (input.followUps ?? []).some(
+          (followUp) =>
+            followUp.claimIdentityId === anchor.claimIdentityId &&
+            followUp.statementFingerprint === latest.statementFingerprint,
+        );
+        // A declared follow-up is accepted only with a supported assessment, so it
+        // cannot lift a refuted or unassessed statement.
+        results.push(
+          declared && assessment === "supported"
+            ? {
+                ...base,
+                ...current,
+                outcome: "satisfied",
+                reason: "the statement change is a declared follow-up",
+              }
+            : {
+                ...base,
+                ...current,
+                outcome: "intent_conflict",
+                reason:
+                  "the Claim statement differs from the anchored statement",
+              },
+        );
       } else if (assessment === "refuted" || assessment === "contested") {
         results.push({
           ...base,
