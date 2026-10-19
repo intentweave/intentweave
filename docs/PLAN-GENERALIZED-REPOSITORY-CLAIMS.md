@@ -1475,6 +1475,7 @@ re-run in this review.
 | G6d Policy-governed automation                           | Not started                    | No automation policy, report-only observations, or schema 23                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Communication track                                      | Not verified                   | —                                                                                                                                                                 | Publication checkpoints depend on the evidence above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | G5.3 Generalized observation and change layer            | Accepted for O0–O4             | Migration 21; `ObservationStore`; `iw claims observations capture` / `check`; O2 gaps listed in Phase G5.3                                                        | O0 persistence contract acceptance; then O1–O4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| G5.4 Intent Anchors, Claim Relations, conflict semantics | Proposed (after G5.3)          | Section G5.4; no implementation                                                                                                                                   |
 
 Verification on 2026-10-16: the full CI sequence passed build (exit 0), typecheck
 (exit 0), tests (1,227 passed, 4 skipped, 97 files), and lint (exit 0).
@@ -2540,6 +2541,130 @@ for public symbols. O0 can proceed on the accepted D1–D4, Amendment A, and Dec
 
 Outcome gates the rest of the phase. If the spike shows a mismatch that the
 design cannot explain, O0–O2 are revised before implementation.
+
+### Phase G5.4: Intent Anchors, Claim Relations, and Conflict Semantics (Proposed)
+
+Purpose. Separate two things that a Review currently treats as one. An epistemic
+confirmation says that a statement describes the current state correctly. A
+normative decision says that the state is intended and must be protected. Today every
+material change reopens a Review (Section 13), so a correct observation is handled
+like a protected decision. G5.4 makes the difference explicit. It does not add a
+claim hierarchy and does not add automatic logic. Claim families keep their own
+Assessment Policies.
+
+Vocabulary.
+
+- Intent Anchor: a versioned governance record over one Claim version. It states that
+  the scoped intent is protected. Fields: `claimIdentityId`, `claimVersionId`, `scope`,
+  `mode` (`observe` or `protect`), `authority` (`human` or `reviewed-policy`),
+  `source` (`review`, `adr`, `spec`, or `declaration`), `status` (`active`,
+  `superseded`, or `retired`), a contract version, and provenance. An AI component may
+  recommend an anchor. Only a human, or a Policy explicitly reviewed for that purpose,
+  may activate one.
+- Claim Relation: a minimal, versioned edge `sourceClaimId → targetClaimId` with
+  `relation` in `realizes`, `refines`, `constrains`, or `warrants`, a contract
+  version, and provenance. It is not a hierarchy. Each family's Assessment Policy
+  defines how its realizations aggregate. Realization is a fact about the design. It
+  does not decide anything.
+- "Root Claim" is a UI and mental metaphor only. It is not a model term.
+
+Review purposes. A Review carries one of four purposes:
+
+- `verify`: epistemic confirmation. It creates no anchor.
+- `protect`: creates an Intent Anchor with `mode = protect`.
+- `amend`: supersedes an anchor version with a new one.
+- `resolve_conflict`: records a decision on an `intent_conflict`.
+
+Conflict pipeline. For each observed change, in order:
+
+1. Which Claims are affected? Dependency tracing, as today.
+2. Is the change material for the Claim's family? The family contract decides.
+3. Which active anchors apply? An anchor applies directly to the Claim, or through a
+   `realizes` or `refines` Claim Relation to an anchored Claim.
+4. Does the anchored Claim still satisfy its anchored intent in its anchored scope?
+
+Outcomes:
+
+- No active anchor applies. The Assessment is updated and the change is recorded. It
+  is not a blocking conflict. A `verify` Review becomes stale, and the existing reopen
+  rule applies as an observation, not as a protected-intent conflict.
+- An anchor applies and is still satisfied. The Review carries forward automatically,
+  even when the evidence changed materially. This is an automatic follow-up.
+- An anchor applies and is clearly violated. The result is `intent_conflict`. An
+  active decision is required before the change is accepted.
+- The anchored intent cannot be decided: missing evidence, unavailable continuity, or
+  an ambiguous rule result. The result is `intent_unresolved`. It is never a silent
+  pass. Under the continuity gate's rules (Section G5.3), it blocks only when the
+  configured gate applies.
+
+Follow-up rule. Changing code and documentation in the same change is only a
+follow-up signal. It is never an automatic acceptance. A change counts as an authorized
+follow-up only when one of the following holds:
+
+- the change modifies the anchor's source (an ADR, a specification, or a declaration),
+  and that source is an authorized intent source under the Policy; or
+- the change carries an explicit, versioned follow-up declaration that names the
+  anchor and the new scope.
+
+This prevents a documentation edit made alongside a regression from quietly lifting
+the protection.
+
+Configurable index (worked example). An anchor protects the capability "the CARI
+index is configurable per project." Derived Claims realize it: "the index depth is
+configurable," "some paths can be excluded," "the parser mode can be chosen." Each
+derived Claim has concrete evidence: CLI options, the configuration schema, the
+implementation. If a concrete option is removed because a new algorithm makes it
+unnecessary:
+
+- the removal is still observed and recorded;
+- the derived Claim is replaced or retired;
+- the anchor is still satisfied, so there is no conflict;
+- if the removed option was itself anchored, the change needs an explicit decision;
+- if the change removes configurability as a whole, the anchor is violated and the
+  result is `intent_conflict`.
+
+An unlabelled Claim may therefore be updated automatically. Nothing protects that
+concrete design, so the change is not ignored, only not blocked.
+
+Decisions for a conflict:
+
+- `accept_amendment`: a new Claim version and a new anchor version. The old anchor
+  becomes `superseded`.
+- `reject_change`: the conflict stays active, and the gate fails, until the
+  implementation is corrected.
+- `grant_exception`: a limited exception with a scope, a stated reason, and an optional
+  expiry. The anchor stays active. The exception is a versioned record. When it
+  expires, the conflict becomes active again.
+
+Evaluation. The G5.4 measures replace relevance labels. Replay commit pairs. Classify
+each change under the pipeline above. A person labels only the flagged events. Measures:
+
+- conflict precision and recall on historical decisions that have been recorded as
+  intent (ADR, Review, or declaration history);
+- the rate of undeclared changes accepted as follow-ups, which must be zero;
+- how often `intent_unresolved` occurs, and why.
+
+Slice (acceptance). A single `session.timeout` example covers five cases:
+
+1. An observed default with no anchor. The Assessment updates, and nothing blocks.
+2. A protected anchor on 1800. An unauthorized change to 3600 is `intent_conflict`.
+3. An authorized follow-up. The ADR or specification changes to 3600 in the same
+   change set, and the change is accepted automatically.
+4. A real contradiction. `reject_change` keeps the conflict active until the value is
+   corrected.
+5. An amendment and an exception. `accept_amendment` creates the new anchor version.
+   A separate `grant_exception` covers a time-limited case, and its expiry reactivates
+   the conflict.
+
+Dependencies and order. G5.4 comes before G6d. Automation must respect anchors, and
+G6d must not promote, reject, or accept a change that an anchor governs. G6b's quality
+gate is independent of G5.4.
+
+Open decisions:
+
+- Whether the minimal Claim Relation ships in G5.4, or after the first slice.
+- Whether `reviewed-policy` authority may create anchors, and under which Policy.
+- The format of an explicit follow-up declaration.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
