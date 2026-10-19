@@ -38,6 +38,10 @@ import {
   predictImpact,
 } from "../observation/symbolSpike.js";
 
+// These suites build indexes and run real Git history. They take 15-25 s alone and
+// more under parallel load, so they get a longer per-test timeout than the default.
+vi.setConfig({ testTimeout: 180_000 });
+
 describe("tracer parity: observed ChangeSet predicts Claim impact", () => {
   const originalCwd = process.cwd();
   const originalExitCode = process.exitCode;

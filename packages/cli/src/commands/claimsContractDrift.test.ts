@@ -339,6 +339,10 @@ function expectC10OpenReviews(workspace: string): void {
   ]);
 }
 
+// These suites build indexes and run real Git history. They take 15-25 s alone and
+// more under parallel load, so they get a longer per-test timeout than the default.
+vi.setConfig({ testTimeout: 180_000 });
+
 describe("claims contract drift (C9/C10)", () => {
   it.each(["regular-first", "since-first"] as const)(
     "carries reviews forward for an R3 implementation-only change in %s order (C9)",
