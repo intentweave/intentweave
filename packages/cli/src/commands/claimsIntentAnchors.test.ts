@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  runClaimsConflictResolve,
   runClaimsCandidateReview,
   runClaimsCandidatesTriage,
   runClaimsCheck,
@@ -211,5 +212,44 @@ describe("Intent Anchors through claims check", () => {
     };
     expect(output.intentAnchors).toBeUndefined();
     expect(output.intentMode).toBeUndefined();
+  });
+
+  it("refuses decisions other than accept_amendment", async () => {
+    const { claimIdentityId } = await protectedWorkspace();
+    const errors = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    process.exitCode = undefined;
+    await runClaimsConflictResolve({
+      claim: claimIdentityId,
+      decision: "grant_exception",
+      actor: "intent-anchors",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(64);
+    expect(String(errors.mock.calls[0]?.[0])).toContain("accept_amendment");
+  });
+
+  it("refuses to amend a Claim whose current assessment is not supported", async () => {
+    const { workspace, claimIdentityId } = await protectedWorkspace();
+    changeStatement(workspace);
+    // Only a check re-evaluates the Claim, so run it before deciding on an amendment.
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+    const errors = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    process.exitCode = undefined;
+    await runClaimsConflictResolve({
+      claim: claimIdentityId,
+      decision: "accept_amendment",
+      actor: "intent-anchors",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(64);
+    expect(String(errors.mock.calls[0]?.[0])).toContain(
+      "amend only a supported Claim",
+    );
   });
 });

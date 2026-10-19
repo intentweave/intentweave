@@ -35,8 +35,10 @@ describe("IntentAnchorStore", () => {
   beforeEach(() => {
     db = new Database(":memory:");
     initSchema(db);
-    // The fixture inserts without parameter identities, so FK checks are relaxed here.
-    db.pragma("foreign_keys = OFF");
+    db.exec(
+      `INSERT INTO parameter_identities (id, canonical_key, created_at)
+       VALUES ('param', 'param', 0)`,
+    );
     store = new IntentAnchorStore(db);
   });
 
@@ -141,5 +143,65 @@ describe("IntentAnchorStore", () => {
         .prepare(`UPDATE intent_anchors SET status = 'bogus' WHERE id = ?`)
         .run(anchor.id),
     ).toThrow();
+  });
+
+  /** Record the current assessment of the newest version of a Claim identity. */
+  function setAssessment(
+    claimIdentityId: string,
+    status: "supported" | "refuted" | "contested" | "inconclusive",
+  ): void {
+    const version = store.latestVersion(claimIdentityId)!;
+    db.prepare(
+      `INSERT INTO claim_assessments
+         (id, claim_version_id, assessment_key, epistemic_status, repository_revision,
+          reference_key, is_current, created_at)
+       VALUES (?, ?, ?, ?, 'rev', NULL, 1, 0)`,
+    ).run(
+      `assessment:${claimIdentityId}:${status}`,
+      version.id,
+      `key:${claimIdentityId}:${status}`,
+      status,
+    );
+  }
+
+  it("reports the current assessment status for conflict decisions", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    setAssessment("claim:timeout", "refuted");
+    expect(store.currentAssessmentStatus("claim:timeout")).toBe("refuted");
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["intent_conflict"]);
+  });
+
+  it("accepts an amendment: a new anchor supersedes the old one and is satisfied", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const first = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    setAssessment("claim:timeout", "supported");
+    const amended = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      rationale: "longer sessions are intended",
+      scope: first.scope,
+      createdAt: 20,
+    });
+    expect(store.get(first.id)?.status).toBe("superseded");
+    expect(amended.statementFingerprint).toBe(fingerprint({ value: 3600 }));
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["satisfied"]);
   });
 });

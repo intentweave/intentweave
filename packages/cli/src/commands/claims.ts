@@ -3636,6 +3636,86 @@ export async function runClaimsCheck(options: {
   }
 }
 
+/**
+ * Resolve an `intent_conflict` (G5.4 slice 1 supports `accept_amendment` only). The
+ * current statement becomes the protected one, and the superseded anchor stays as
+ * history. The Claim must have an active anchor and a supported current assessment: a
+ * refuted Claim needs correction or retirement, not an amendment.
+ */
+export async function runClaimsConflictResolve(options: {
+  claim: string;
+  type?: string;
+  scope?: string;
+  decision: string;
+  actor: string;
+  rationale?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    if (options.decision !== "accept_amendment") {
+      throw new ClaimsBindingError(
+        "Conflict decision must be accept_amendment; reject_change and grant_exception are not implemented yet",
+      );
+    }
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      // A rebuilt index has no anchors until portable state is imported.
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableIntentAnchors(database, portable);
+      const claim = resolveSingleClaimIdentity(database, options);
+      const store = new IntentAnchorStore(database);
+      const active = store.active(claim.id);
+      if (active.length === 0) {
+        throw new ClaimsBindingError(
+          `Claim ${claim.id} has no active Intent Anchor to amend`,
+        );
+      }
+      const assessment = store.currentAssessmentStatus(claim.id);
+      if (assessment !== "supported") {
+        throw new ClaimsBindingError(
+          `Current assessment is ${assessment ?? "missing"}; amend only a supported Claim. Run claims check, then correct or retire a refuted Claim`,
+        );
+      }
+      const superseded = active[0]!;
+      const anchor = store.protect({
+        claimIdentityId: claim.id,
+        actor: options.actor,
+        rationale: options.rationale,
+        scope: superseded.scope,
+        createdAt: Date.now(),
+      });
+      persistPortableIntentAnchor(workspaceRoot, {
+        id: anchor.id,
+        claimIdentityId: anchor.claimIdentityId,
+        scope: anchor.scope,
+        statementFingerprint: anchor.statementFingerprint,
+        actor: anchor.actor,
+        ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+        createdAt: anchor.createdAt,
+      });
+      const output = {
+        claimIdentityId: claim.id,
+        decision: "accept_amendment",
+        supersededAnchorId: superseded.id,
+        anchor,
+      };
+      console.log(
+        options.format === "json"
+          ? JSON.stringify(output, null, 2)
+          : `Amendment accepted: ${anchor.id} supersedes ${superseded.id}`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exitCode = error instanceof ClaimsBindingError ? 64 : 1;
+  }
+}
+
 interface ClaimSelectorOptions {
   claim?: string;
   type?: string;
@@ -4198,6 +4278,10 @@ export async function runClaimsReview(options: {
         actor: options.actor,
         createdAt: decidedAt.getTime(),
       });
+      const portableAnchors = loadPortableClaimsState(workspaceRoot);
+      if (purpose === "protect" && portableAnchors) {
+        projectPortableIntentAnchors(database, portableAnchors);
+      }
       const anchor =
         purpose === "protect"
           ? new IntentAnchorStore(database).protect({
@@ -4833,6 +4917,34 @@ export const claimsCommand = new Command("claims")
       .option("--rationale <text>", "Reason for the review decision")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsReview),
+  )
+  .addCommand(
+    new Command("conflicts")
+      .description("Resolve an intent conflict on a protected Claim")
+      .addCommand(
+        new Command("resolve")
+          .description(
+            "Record a decision on an intent_conflict (supported: accept_amendment)",
+          )
+          .requiredOption(
+            "--claim <claimIdOrCandidateRefOrParameterKey>",
+            "Claim ID, promoted Candidate reference, or canonical parameter key",
+          )
+          .option(
+            "--type <claimType>",
+            "Claim type used to resolve a parameter",
+          )
+          .option("--scope <scope>", "Claim scope used to resolve a parameter")
+          .requiredOption("--decision <decision>", "Conflict decision")
+          .requiredOption("--actor <name>", "Decision actor")
+          .option("--rationale <text>", "Reason for the decision")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsConflictResolve),
+      ),
   )
   .addCommand(
     new Command("explain")

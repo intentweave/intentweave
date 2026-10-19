@@ -14,6 +14,9 @@ All notable changes to IntentWeave are documented in this file.
   contested assessment, or a retired Claim is `intent_conflict`, and an inconclusive
   assessment is `intent_unresolved`. Only `gate` changes exit codes. Claims without a
   protecting anchor keep today's behaviour.
+  `iw claims conflicts resolve --decision accept_amendment` protects the current
+  statement of a supported Claim and supersedes the old anchor. `reject_change` and
+  `grant_exception` are not implemented yet.
 - **Generalized repository Claims lifecycle** — schema versions 17-20 add
   durable Subjects, Subject continuity, append-only Claim Candidates,
   Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference

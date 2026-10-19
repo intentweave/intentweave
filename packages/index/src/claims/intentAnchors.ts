@@ -153,13 +153,14 @@ export class IntentAnchorStore {
       createdAt,
     }).slice(0, 24)}`;
     const protect = this.db.transaction(() => {
+      // The partial unique index allows one active anchor per Claim and scope, so the
+      // old anchor is retired before the new one is inserted, then linked to it.
       this.db
         .prepare(
-          `UPDATE intent_anchors
-             SET status = 'superseded', superseded_by_anchor_id = ?
+          `UPDATE intent_anchors SET status = 'superseded'
            WHERE claim_identity_id = ? AND scope = ? AND status = 'active'`,
         )
-        .run(id, input.claimIdentityId, scope);
+        .run(input.claimIdentityId, scope);
       this.db
         .prepare(
           `INSERT INTO intent_anchors (
@@ -177,6 +178,13 @@ export class IntentAnchorStore {
           input.rationale ?? null,
           createdAt,
         );
+      this.db
+        .prepare(
+          `UPDATE intent_anchors SET superseded_by_anchor_id = ?
+           WHERE claim_identity_id = ? AND scope = ? AND status = 'superseded'
+             AND superseded_by_anchor_id IS NULL AND id != ?`,
+        )
+        .run(id, input.claimIdentityId, scope, id);
     });
     protect();
     return this.get(id)!;
