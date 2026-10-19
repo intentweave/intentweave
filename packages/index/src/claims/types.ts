@@ -205,7 +205,8 @@ export interface RecordReviewInput {
   basisAssessmentId: string;
   decision: string;
   actor: string;
-  decisionOrigin?: "manual" | "portable";
+  /** `follow-up`: recorded from a declared, reviewed intent follow-up (G5.4). */
+  decisionOrigin?: "manual" | "portable" | "follow-up";
   createdAt?: number;
 }
 

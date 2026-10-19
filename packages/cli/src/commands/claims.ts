@@ -3528,37 +3528,6 @@ export async function runClaimsCheck(options: {
             }
           }
         }
-        const reviewRequired =
-          output.retiredClaims.some((claim) => claim.reviewReopened) ||
-          assessmentIds.some((assessmentId) => {
-            const row = database
-              .prepare(
-                `SELECT ca.epistemic_status,
-                  EXISTS(
-                    SELECT 1 FROM review_decisions rd
-                    WHERE rd.basis_assessment_id = ca.id AND rd.is_current = 1
-                  ) AS reviewed,
-                  EXISTS(
-                    SELECT 1 FROM review_decision_reopens reopen
-                    JOIN claim_versions cv ON cv.id = ca.claim_version_id
-                    WHERE reopen.claim_identity_id = cv.claim_identity_id
-                      AND reopen.status = 'open'
-                  ) AS open_reopen
-           FROM claim_assessments ca WHERE ca.id = ?`,
-              )
-              .get(assessmentId) as {
-              epistemic_status: string;
-              reviewed: number;
-              open_reopen: number;
-            };
-            return (
-              row.epistemic_status !== "inconclusive" &&
-              (row.reviewed === 0 || row.open_reopen === 1)
-            );
-          });
-        output.candidates.active = candidateStore.listCurrent({
-          state: "promoted",
-        }).length;
         const intentConfig = readIntentConfig(workspaceRoot);
         let intentConflict = false;
         let intentUnresolved = false;
@@ -3590,10 +3559,59 @@ export async function runClaimsCheck(options: {
           intentUnresolved = output.intentAnchors.some(
             (anchor) => anchor.outcome === "intent_unresolved",
           );
+          // A declared follow-up is reviewed by its declaration, so it records the
+          // review of the new statement. Recording is idempotent across checks.
+          const followUpStore = new IntentAnchorStore(database);
+          const reviewStore = new ClaimsReviewStore(database);
+          for (const evaluation of output.intentAnchors) {
+            if (!evaluation.followUp) continue;
+            const basis = followUpStore.currentAssessmentId(
+              evaluation.claimIdentityId,
+            );
+            if (!basis) continue;
+            reviewStore.record({
+              claimIdentityId: evaluation.claimIdentityId,
+              basisAssessmentId: basis,
+              decision: "accepted",
+              actor: "intent-follow-up",
+              decisionOrigin: "follow-up",
+            });
+          }
         }
         if (output.claims.length === 0 && output.scopes.length === 0) {
           output.gateStatus = "no_active_claims";
         }
+        const reviewRequired =
+          output.retiredClaims.some((claim) => claim.reviewReopened) ||
+          assessmentIds.some((assessmentId) => {
+            const row = database
+              .prepare(
+                `SELECT ca.epistemic_status,
+                  EXISTS(
+                    SELECT 1 FROM review_decisions rd
+                    WHERE rd.basis_assessment_id = ca.id AND rd.is_current = 1
+                  ) AS reviewed,
+                  EXISTS(
+                    SELECT 1 FROM review_decision_reopens reopen
+                    JOIN claim_versions cv ON cv.id = ca.claim_version_id
+                    WHERE reopen.claim_identity_id = cv.claim_identity_id
+                      AND reopen.status = 'open'
+                  ) AS open_reopen
+           FROM claim_assessments ca WHERE ca.id = ?`,
+              )
+              .get(assessmentId) as {
+              epistemic_status: string;
+              reviewed: number;
+              open_reopen: number;
+            };
+            return (
+              row.epistemic_status !== "inconclusive" &&
+              (row.reviewed === 0 || row.open_reopen === 1)
+            );
+          });
+        output.candidates.active = candidateStore.listCurrent({
+          state: "promoted",
+        }).length;
         return {
           output,
           exitCode: claimsExitCode({

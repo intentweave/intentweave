@@ -43,6 +43,8 @@ export interface ProtectInput {
 
 export interface IntentAnchorEvaluation {
   anchorId: string;
+  /** True when a declared follow-up made the statement change acceptable (G5.4). */
+  followUp?: boolean;
   claimIdentityId: string;
   outcome: IntentAnchorOutcome;
   reason: string;
@@ -304,6 +306,21 @@ export class IntentAnchorStore {
       .run(id);
   }
 
+  /** The id of the current assessment of a Claim identity, when one exists. */
+  currentAssessmentId(claimIdentityId: string): string | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT ca.id
+         FROM claim_assessments ca
+         JOIN claim_versions cv ON cv.id = ca.claim_version_id
+         WHERE cv.claim_identity_id = ? AND ca.is_current = 1
+         ORDER BY ca.created_at DESC
+         LIMIT 1`,
+      )
+      .get(claimIdentityId) as { id: string } | undefined;
+    return row?.id;
+  }
+
   /** The current assessment status of a Claim identity, when one exists. */
   currentAssessmentStatus(
     claimIdentityId: string,
@@ -390,6 +407,7 @@ export class IntentAnchorStore {
                 ...base,
                 ...current,
                 outcome: "satisfied",
+                followUp: true,
                 reason: "the statement change is a declared follow-up",
               }
             : {

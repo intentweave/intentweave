@@ -20,6 +20,9 @@ All notable changes to IntentWeave are documented in this file.
   A statement change is accepted automatically when `.iw/claims/intent.yaml` declares
   it as a `followUps` entry (Claim identity and exact new statement fingerprint) and
   the current assessment is supported. A declaration never lifts a refuted assessment.
+  An accepted follow-up records an accepted review of the new statement (origin
+  `follow-up`, actor `intent-follow-up`), so the protected Claim needs no separate
+  review. Unprotected Claims that change still need review, as before.
 - **Generalized repository Claims lifecycle** — schema versions 17-20 add
   durable Subjects, Subject continuity, append-only Claim Candidates,
   Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference
