@@ -4,10 +4,26 @@
 import { canonicalJson, fingerprint } from "./canonical.js";
 
 export const CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION = "1" as const;
-export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "2" as const;
+export const CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION = "2" as const;
+export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "3" as const;
 export type ClaimsPortableStateSchemaVersion =
   | typeof CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION
+  | typeof CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_SCHEMA_VERSION;
+
+/** A human Intent Anchor (G5.4). Keyed by anchor id; superseded anchors stay as history. */
+export interface PortableIntentAnchor {
+  claimIdentityId: string;
+  scope: string;
+  statementFingerprint: string;
+  mode: "protect";
+  authority: "human";
+  source: "review";
+  status: "active" | "superseded" | "retired";
+  actor: PortableClaimsActor;
+  decidedAt: string;
+  rationale?: string;
+}
 
 export type PortableJsonValue =
   | null
@@ -110,6 +126,8 @@ export interface PortableClaimsState {
   baselineAcceptances: Record<string, PortableBaselineAcceptance>;
   /** Effective ingress provenance; absent in legacy v1 files. */
   claimOrigins: Record<string, PortableClaimOrigin[]>;
+  /** Intent Anchors (G5.4); absent in v1 and v2 files. */
+  intentAnchors: Record<string, PortableIntentAnchor>;
 }
 
 export class ClaimsPortableStateError extends Error {
@@ -468,6 +486,46 @@ function parseSubjectBinding(
   };
 }
 
+function parseIntentAnchor(value: unknown, path: string): PortableIntentAnchor {
+  const anchor = requireRecord(value, path);
+  assertOnlyKeys(anchor, path, [
+    "claimIdentityId",
+    "scope",
+    "statementFingerprint",
+    "mode",
+    "authority",
+    "source",
+    "status",
+    "actor",
+    "decidedAt",
+    "rationale",
+  ]);
+  return {
+    claimIdentityId: requireString(
+      anchor.claimIdentityId,
+      `${path}.claimIdentityId`,
+    ),
+    scope: requireString(anchor.scope, `${path}.scope`),
+    statementFingerprint: requireFingerprint(
+      anchor.statementFingerprint,
+      `${path}.statementFingerprint`,
+    ),
+    mode: requireEnum(anchor.mode, `${path}.mode`, ["protect"]),
+    authority: requireEnum(anchor.authority, `${path}.authority`, ["human"]),
+    source: requireEnum(anchor.source, `${path}.source`, ["review"]),
+    status: requireEnum(anchor.status, `${path}.status`, [
+      "active",
+      "superseded",
+      "retired",
+    ]),
+    actor: parseActor(anchor.actor, `${path}.actor`),
+    decidedAt: requireTimestamp(anchor.decidedAt, `${path}.decidedAt`),
+    ...(anchor.rationale !== undefined
+      ? { rationale: requireString(anchor.rationale, `${path}.rationale`) }
+      : {}),
+  };
+}
+
 function parseAssessmentReview(
   value: unknown,
   path: string,
@@ -665,21 +723,32 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     "assessmentReviews",
     "baselineAcceptances",
     "claimOrigins",
+    "intentAnchors",
   ]);
   const schemaVersion = requireEnum(
     state.schemaVersion,
     "Claims portable state.schemaVersion",
     [
       CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
+      CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
     ],
   );
   if (
     schemaVersion !== CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION &&
+    schemaVersion !== CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION
   ) {
     throw new ClaimsPortableStateError(
-      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION} or ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION}, or ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+    );
+  }
+  if (
+    schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION &&
+    state.intentAnchors !== undefined
+  ) {
+    throw new ClaimsPortableStateError(
+      `intentAnchors requires schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
     );
   }
   if (schemaVersion === CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION) {
@@ -691,7 +760,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       const decision = requireRecord(value, `candidateDecisions.${key}`);
       if (decision.recommendationBasis !== undefined) {
         throw new ClaimsPortableStateError(
-          `candidateDecisions.${key}.recommendationBasis requires schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+          `candidateDecisions.${key}.recommendationBasis requires schemaVersion ${CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION} or later`,
         );
       }
     }
@@ -721,6 +790,11 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       parseBaselineAcceptance,
     ),
     claimOrigins: parseClaimOrigins(state.claimOrigins ?? {}, "claimOrigins"),
+    intentAnchors: parseMap(
+      state.intentAnchors ?? {},
+      "intentAnchors",
+      parseIntentAnchor,
+    ),
   };
   assertNoSubjectBindingConflicts(parsed.subjectBindings);
   assertNoBaselineConflicts(parsed.baselineAcceptances);
@@ -736,5 +810,6 @@ export function emptyPortableClaimsState(): PortableClaimsState {
     assessmentReviews: {},
     baselineAcceptances: {},
     claimOrigins: {},
+    intentAnchors: {},
   };
 }

@@ -6,6 +6,7 @@ import {
   ClaimsReviewStore,
   emptyPortableClaimsState,
   fingerprint,
+  IntentAnchorStore,
   type PortableAssessmentReview,
   type PortableClaimsActor,
   type PortableClaimsState,
@@ -288,4 +289,72 @@ export function persistPortableAssessmentReview(
   const filePath = writePortableClaimsState(workspaceRoot, state);
   persistPortableClaimOrigins(workspaceRoot, database, input.claimIdentityId);
   return filePath;
+}
+
+/**
+ * Persist a new Intent Anchor to portable state (G5.4). Earlier active anchors for the
+ * same Claim and scope become superseded, matching the index. Anchors survive an index
+ * rebuild only because this file holds them.
+ */
+export function persistPortableIntentAnchor(
+  workspaceRoot: string,
+  anchor: {
+    id: string;
+    claimIdentityId: string;
+    scope: string;
+    statementFingerprint: string;
+    actor: string;
+    rationale?: string;
+    createdAt: number;
+  },
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  for (const [id, existing] of Object.entries(state.intentAnchors)) {
+    if (
+      existing.claimIdentityId === anchor.claimIdentityId &&
+      existing.scope === anchor.scope &&
+      existing.status === "active"
+    ) {
+      state.intentAnchors[id] = { ...existing, status: "superseded" };
+    }
+  }
+  state.intentAnchors[anchor.id] = {
+    claimIdentityId: anchor.claimIdentityId,
+    scope: anchor.scope,
+    statementFingerprint: anchor.statementFingerprint,
+    mode: "protect",
+    authority: "human",
+    source: "review",
+    status: "active",
+    actor: { kind: "human", id: anchor.actor },
+    decidedAt: new Date(anchor.createdAt).toISOString(),
+    ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Import portable Intent Anchors into SQLite. Unknown or conflicting rows wait. */
+export function projectPortableIntentAnchors(
+  database: Database.Database,
+  state: PortableClaimsState,
+): { imported: number; skipped: number } {
+  const store = new IntentAnchorStore(database);
+  let imported = 0;
+  let skipped = 0;
+  for (const [id, anchor] of Object.entries(state.intentAnchors)) {
+    const outcome = store.importAnchor({
+      id,
+      claimIdentityId: anchor.claimIdentityId,
+      scope: anchor.scope,
+      statementFingerprint: anchor.statementFingerprint,
+      status: anchor.status,
+      actor: portableActorLabel(anchor.actor),
+      ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+      createdAt: Date.parse(anchor.decidedAt),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  return { imported, skipped };
 }

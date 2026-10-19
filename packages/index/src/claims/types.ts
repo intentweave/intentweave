@@ -234,6 +234,10 @@ export interface ClaimsExitInput {
   ruleStatuses: RuleResultStatus[];
   assessmentStatuses: ClaimAssessmentStatus[];
   reviewRequired: boolean;
+  /** Intent Anchor conflict, applied only in gate mode (G5.4). */
+  intentConflict?: boolean;
+  /** Intent Anchor unresolved, applied only in gate mode (G5.4). */
+  intentUnresolved?: boolean;
 }
 
 export interface NormalizedRuleResult {

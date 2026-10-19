@@ -43,7 +43,7 @@ describe("openIndex", () => {
       .get() as { name: string } | undefined;
     index.close();
 
-    expect(version.value).toBe("23");
+    expect(version.value).toBe("24");
     expect(table?.name).toBe("claim_assessment_references");
   });
 

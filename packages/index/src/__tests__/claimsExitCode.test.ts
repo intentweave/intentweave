@@ -55,4 +55,20 @@ describe("claimsExitCode", () => {
     );
     expect(claimsExitCode(base)).toBe(CLAIMS_EXIT_CODE.success);
   });
+
+  it("maps an intent conflict to failed and an unresolved anchor to inconclusive (G5.4)", () => {
+    expect(claimsExitCode({ ...base, intentConflict: true })).toBe(
+      CLAIMS_EXIT_CODE.failed,
+    );
+    expect(claimsExitCode({ ...base, intentUnresolved: true })).toBe(
+      CLAIMS_EXIT_CODE.inconclusive,
+    );
+    expect(
+      claimsExitCode({
+        ...base,
+        intentConflict: false,
+        intentUnresolved: false,
+      }),
+    ).toBe(CLAIMS_EXIT_CODE.success);
+  });
 });

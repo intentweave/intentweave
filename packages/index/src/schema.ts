@@ -392,7 +392,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "23";
+export const CURRENT_SCHEMA_VERSION = "24";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -1531,6 +1531,39 @@ export function migrateSchema22To23(db: Database.Database): void {
 }
 
 /**
+ * Intent Anchors (G5.4): a human decision that protects one Claim statement.
+ * Additive: one table, created in a transaction, with no data rewritten.
+ */
+export function migrateSchema23To24(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS intent_anchors (
+        id TEXT PRIMARY KEY,
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        claim_version_id TEXT NOT NULL REFERENCES claim_versions(id),
+        statement_fingerprint TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('observe', 'protect')),
+        authority TEXT NOT NULL CHECK (authority IN ('human', 'reviewed-policy')),
+        source TEXT NOT NULL CHECK (source IN ('review', 'adr', 'spec', 'declaration')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'superseded', 'retired')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        superseded_by_anchor_id TEXT REFERENCES intent_anchors(id),
+        created_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_anchors_active
+        ON intent_anchors(claim_identity_id, scope) WHERE status = 'active';
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '24')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
  * Remove the knowledge-graph tables. Nothing in IntentWeave writes them
  * any longer, and their readers are removed with them. The step is destructive, so
  * openMigratedDatabase keeps a durable backup of the version-21 index first.
@@ -1753,6 +1786,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1764,6 +1798,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1774,6 +1809,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "17") {
@@ -1783,6 +1819,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "18") {
@@ -1791,6 +1828,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "19") {
@@ -1798,21 +1836,29 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "20") {
     migrateSchema20To21(db);
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "21") {
     migrateSchema21To22(db);
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === "22") {
     migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    return;
+  }
+  if (schemaVersion === "23") {
+    migrateSchema23To24(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
@@ -1838,6 +1884,7 @@ function assertSupportedSchemaVersion(db: Database.Database): void {
     schemaVersion !== "20" &&
     schemaVersion !== "21" &&
     schemaVersion !== "22" &&
+    schemaVersion !== "23" &&
     schemaVersion !== CURRENT_SCHEMA_VERSION
   ) {
     throw new Error(

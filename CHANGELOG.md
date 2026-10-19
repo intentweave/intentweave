@@ -6,6 +6,14 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
+- **Intent Anchors (first slice)** — `iw claims review --purpose protect` records a
+  human decision that protects an accepted Claim's current statement. Schema 24 adds
+  `intent_anchors`, and portable state schema 3 keeps anchors across index rebuilds.
+  `iw claims check` evaluates anchors in `.iw/claims/intent.yaml`
+  (`mode: off | report | gate`, default `report`): a changed statement, a refuted or
+  contested assessment, or a retired Claim is `intent_conflict`, and an inconclusive
+  assessment is `intent_unresolved`. Only `gate` changes exit codes. Claims without a
+  protecting anchor keep today's behaviour.
 - **Generalized repository Claims lifecycle** — schema versions 17-20 add
   durable Subjects, Subject continuity, append-only Claim Candidates,
   Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference

@@ -75,6 +75,17 @@ export type {
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export {
+  DEFAULT_ANCHOR_SCOPE,
+  IntentAnchorStore,
+  type AnchorEvaluationInput,
+  type IntentAnchor,
+  type IntentAnchorEvaluation,
+  type IntentAnchorMode,
+  type IntentAnchorOutcome,
+  type IntentAnchorStatus,
+  type ProtectInput,
+} from "./claims/intentAnchors.js";
+export {
   CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
   CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
   CANDIDATE_TRIAGE_RECOMMENDATION_CONTRACT,
@@ -126,6 +137,7 @@ export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
 export {
   CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
   CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
+  type PortableIntentAnchor,
   ClaimsPortableStateError,
   emptyPortableClaimsState,
   parsePortableClaimsState,

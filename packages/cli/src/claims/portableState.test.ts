@@ -33,15 +33,18 @@ function stateWithPolicies(): PortableClaimsState {
 }
 
 describe("Claims portable-state YAML", () => {
-  it("migrates v1 input to canonical v2 and round-trips byte-identically", () => {
-    const v2 = serializePortableClaimsState(stateWithPolicies());
-    const v1 = v2.replace('schemaVersion: "2"', 'schemaVersion: "1"');
+  it("migrates v1 input to canonical v3 and round-trips byte-identically", () => {
+    const current = serializePortableClaimsState(stateWithPolicies());
+    // v1 predates intent anchors, so the input omits that section.
+    const v1 = current
+      .replace('schemaVersion: "3"', 'schemaVersion: "1"')
+      .replace(/^intentAnchors: \{\}\n/m, "");
     const migrated = serializePortableClaimsState(
       parsePortableClaimsStateYaml(v1),
     );
 
-    expect(migrated).toBe(v2);
-    expect(migrated).toContain('schemaVersion: "2"');
+    expect(migrated).toBe(current);
+    expect(migrated).toContain('schemaVersion: "3"');
   });
 
   it("round-trips byte-identically with canonical map ordering", () => {
@@ -105,13 +108,13 @@ baselineAcceptances: {}
 
     expect(() =>
       parsePortableClaimsStateYaml(`
-schemaVersion: "3"
+schemaVersion: "4"
 policies: {}
 candidateDecisions: {}
 subjectBindings: {}
 assessmentReviews: {}
 baselineAcceptances: {}
 `),
-    ).toThrow("must be one of: 1, 2");
+    ).toThrow("must be one of: 1, 2, 3");
   });
 });

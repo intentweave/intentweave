@@ -18,14 +18,16 @@ export function claimsExitCode(input: ClaimsExitInput): number {
   if (
     input.ruleStatuses.includes("failed") ||
     input.assessmentStatuses.includes("refuted") ||
-    input.assessmentStatuses.includes("contested")
+    input.assessmentStatuses.includes("contested") ||
+    input.intentConflict
   ) {
     return CLAIMS_EXIT_CODE.failed;
   }
   if (
     input.discoveryEmpty ||
     input.ruleStatuses.includes("inconclusive") ||
-    input.assessmentStatuses.includes("inconclusive")
+    input.assessmentStatuses.includes("inconclusive") ||
+    input.intentUnresolved
   ) {
     return CLAIMS_EXIT_CODE.inconclusive;
   }

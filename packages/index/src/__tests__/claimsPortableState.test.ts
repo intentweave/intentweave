@@ -93,20 +93,21 @@ describe("Claims portable state", () => {
       "zebra",
     ]);
     expect(emptyPortableClaimsState()).toEqual({
-      schemaVersion: "2",
+      schemaVersion: "3",
       policies: {},
       candidateDecisions: {},
       subjectBindings: {},
       assessmentReviews: {},
       baselineAcceptances: {},
       claimOrigins: {},
+      intentAnchors: {},
     });
   });
 
   it("fails closed for unsupported versions and unknown fields", () => {
     expect(() =>
-      parsePortableClaimsState({ ...validState(), schemaVersion: "3" }),
-    ).toThrow("must be one of: 1, 2");
+      parsePortableClaimsState({ ...validState(), schemaVersion: "4" }),
+    ).toThrow("must be one of: 1, 2, 3");
     expect(() =>
       parsePortableClaimsState({ ...validState(), providerPayloads: {} }),
     ).toThrow("providerPayloads is not supported");
@@ -159,7 +160,7 @@ describe("Claims portable state", () => {
     };
 
     const parsed = parsePortableClaimsState(state);
-    expect(parsed.schemaVersion).toBe("2");
+    expect(parsed.schemaVersion).toBe("3");
     expect(
       parsed.candidateDecisions["candidate:endpoint-admin-users"]
         .recommendationBasis,
@@ -171,6 +172,7 @@ describe("Claims portable state", () => {
 
   it("rejects recommendation basis data in legacy schema v1", () => {
     const state = validState();
+    state.schemaVersion = "1";
     const basisWithoutKey = {
       contractVersion: "candidate-triage-recommendation@1" as const,
       candidateObservationFingerprint: fingerprint("d"),
@@ -195,7 +197,7 @@ describe("Claims portable state", () => {
     };
 
     expect(() => parsePortableClaimsState(state)).toThrow(
-      "recommendationBasis requires schemaVersion 2",
+      "recommendationBasis requires schemaVersion 2 or later",
     );
   });
 

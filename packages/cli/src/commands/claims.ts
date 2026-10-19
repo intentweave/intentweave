@@ -18,6 +18,8 @@ import {
   ClaimsStore,
   claimsExitCode,
   fingerprint,
+  IntentAnchorStore,
+  type IntentAnchorEvaluation,
   materialFingerprint,
   openMigratedDatabase,
   portableRecommendationBasisKey,
@@ -104,6 +106,7 @@ import {
 } from "../claims/discovery.js";
 import { load as yamlLoad } from "js-yaml";
 import { ClaimsGit, ClaimsGitError } from "../claims/git.js";
+import { readIntentConfig, type IntentMode } from "../claims/intentConfig.js";
 import {
   captureObservationRun,
   checkObservations,
@@ -137,7 +140,9 @@ import {
 } from "../claims/origins.js";
 import {
   persistPortableAssessmentReview,
+  persistPortableIntentAnchor,
   projectPortableAssessmentReviews,
+  projectPortableIntentAnchors,
   type PortableReviewProjectionIssue,
 } from "../claims/portableReviewProjection.js";
 import {
@@ -398,6 +403,9 @@ export interface ClaimsCheckOutput {
     active: number;
     issues: unknown[];
   };
+  /** Intent Anchor mode in effect (G5.4). Absent when mode is off. */
+  intentMode?: IntentMode;
+  intentAnchors?: IntentAnchorEvaluation[];
 }
 
 export interface ClaimsCheckExecution {
@@ -408,7 +416,11 @@ export interface ClaimsCheckExecution {
 export function formatClaimsCheckText(
   result: Pick<
     ClaimsCheckOutput,
-    "claims" | "scopes" | "retiredClaims" | "portableStateIssues"
+    | "claims"
+    | "scopes"
+    | "retiredClaims"
+    | "portableStateIssues"
+    | "intentAnchors"
   >,
 ): string {
   const lines: string[] = [];
@@ -426,6 +438,11 @@ export function formatClaimsCheckText(
     lines.push(`  Rule results: ${scope.ruleStatuses.join(", ")}`);
     lines.push(
       `  Assessments: ${scope.assessmentStatuses.join(", ") || "none"}`,
+    );
+  }
+  for (const anchor of result.intentAnchors ?? []) {
+    lines.push(
+      `Intent anchor ${anchor.anchorId}: ${anchor.outcome} (${anchor.reason})`,
     );
   }
   for (const claim of result.retiredClaims) {
@@ -3473,6 +3490,7 @@ export async function runClaimsCheck(options: {
             database,
             portableState,
           );
+          projectPortableIntentAnchors(database, portableState);
           output.portableStateIssues.push(...projection.issues);
           allAssessmentStatuses.push(
             ...projection.issues.map(() => "inconclusive" as const),
@@ -3541,6 +3559,37 @@ export async function runClaimsCheck(options: {
         output.candidates.active = candidateStore.listCurrent({
           state: "promoted",
         }).length;
+        const intentConfig = readIntentConfig(workspaceRoot);
+        let intentConflict = false;
+        let intentUnresolved = false;
+        if (intentConfig.mode !== "off") {
+          const evaluatedClaimIds = new Set<string>();
+          for (const claim of output.claims) {
+            if (claim.claimIdentityId) {
+              evaluatedClaimIds.add(claim.claimIdentityId);
+            } else if (claim.parameterKey) {
+              for (const match of matchingClaimIdentities(database, {
+                claim: claim.parameterKey,
+                type: claim.claimType,
+              })) {
+                evaluatedClaimIds.add(match.id);
+              }
+            }
+          }
+          output.intentMode = intentConfig.mode;
+          output.intentAnchors = new IntentAnchorStore(database).evaluate({
+            evaluatedClaimIds,
+            retiredClaimIds: new Set(
+              output.retiredClaims.map((claim) => claim.claimIdentityId),
+            ),
+          });
+          intentConflict = output.intentAnchors.some(
+            (anchor) => anchor.outcome === "intent_conflict",
+          );
+          intentUnresolved = output.intentAnchors.some(
+            (anchor) => anchor.outcome === "intent_unresolved",
+          );
+        }
         if (output.claims.length === 0 && output.scopes.length === 0) {
           output.gateStatus = "no_active_claims";
         }
@@ -3552,6 +3601,9 @@ export async function runClaimsCheck(options: {
             ruleStatuses: allRuleStatuses,
             assessmentStatuses: allAssessmentStatuses,
             reviewRequired,
+            // Anchors affect the exit code only in gate mode (G5.4).
+            intentConflict: intentConfig.mode === "gate" && intentConflict,
+            intentUnresolved: intentConfig.mode === "gate" && intentUnresolved,
           }),
         };
       });
@@ -4075,6 +4127,7 @@ export async function runClaimsReview(options: {
   scope?: string;
   actor: string;
   decision: string;
+  purpose?: string;
   rationale?: string;
   format: string;
 }): Promise<void> {
@@ -4082,6 +4135,15 @@ export async function runClaimsReview(options: {
     if (options.decision !== "accepted" && options.decision !== "rejected") {
       throw new ClaimsBindingError(
         "Review decision must be accepted or rejected",
+      );
+    }
+    const purpose = options.purpose ?? "verify";
+    if (purpose !== "verify" && purpose !== "protect") {
+      throw new ClaimsBindingError("Review purpose must be verify or protect");
+    }
+    if (purpose === "protect" && options.decision !== "accepted") {
+      throw new ClaimsBindingError(
+        "Only an accepted review can protect a claim",
       );
     }
     const workspaceRoot = process.cwd();
@@ -4136,6 +4198,26 @@ export async function runClaimsReview(options: {
         actor: options.actor,
         createdAt: decidedAt.getTime(),
       });
+      const anchor =
+        purpose === "protect"
+          ? new IntentAnchorStore(database).protect({
+              claimIdentityId: claim.id,
+              actor: options.actor,
+              rationale: options.rationale,
+              createdAt: decidedAt.getTime(),
+            })
+          : undefined;
+      if (anchor) {
+        persistPortableIntentAnchor(workspaceRoot, {
+          id: anchor.id,
+          claimIdentityId: anchor.claimIdentityId,
+          scope: anchor.scope,
+          statementFingerprint: anchor.statementFingerprint,
+          actor: anchor.actor,
+          ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+          createdAt: anchor.createdAt,
+        });
+      }
       const output = {
         claimIdentityId: claim.id,
         parameterKey: claim.parameter_key,
@@ -4144,6 +4226,7 @@ export async function runClaimsReview(options: {
         assessmentId: basisAssessmentId,
         portableStatePath,
         ...result,
+        ...(anchor ? { anchor } : {}),
       };
       console.log(
         options.format === "json"
@@ -4742,6 +4825,11 @@ export const claimsCommand = new Command("claims")
       .option("--scope <scope>", "Claim scope used to resolve a parameter")
       .requiredOption("--actor <name>", "Review decision actor")
       .requiredOption("--decision <decision>", "Review disposition")
+      .option(
+        "--purpose <purpose>",
+        "verify (default) or protect; protect also creates an Intent Anchor",
+        "verify",
+      )
       .option("--rationale <text>", "Reason for the review decision")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsReview),
