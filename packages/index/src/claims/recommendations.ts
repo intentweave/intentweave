@@ -10,7 +10,7 @@ export const CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID =
   "candidate-triage-recommendation" as const;
 export const CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION =
   "1" as const;
-export const CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION = "1" as const;
+export const CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION = "2" as const;
 
 export type CandidateTriageRecommendationDecision =
   | "promote"

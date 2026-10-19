@@ -18,22 +18,83 @@ import {
  * local validator enforces. `uniqueItems` is the known case, so the provider
  * receives a copy without it. Local validation still uses the full schema.
  */
+/**
+ * The schema as a strict structured-output provider accepts it. Strict mode requires
+ * every property of an object to be listed in `required`, so an optional property is
+ * kept but allowed to be null. `dropOptionalNulls` removes those nulls again before
+ * the caller's own schema validates the output.
+ */
 export function providerResponseSchema(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
   const strip = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(strip);
     if (value && typeof value === "object") {
+      const node = value as Record<string, unknown>;
       const out: Record<string, unknown> = {};
-      for (const [key, child] of Object.entries(value)) {
+      for (const [key, child] of Object.entries(node)) {
         if (key === "uniqueItems") continue;
         out[key] = strip(child);
+      }
+      if (node.properties && typeof node.properties === "object") {
+        const required = new Set(
+          Array.isArray(node.required) ? (node.required as string[]) : [],
+        );
+        const properties: Record<string, unknown> = {};
+        for (const [key, child] of Object.entries(
+          node.properties as Record<string, Record<string, unknown>>,
+        )) {
+          const stripped = strip(child) as Record<string, unknown>;
+          properties[key] = required.has(key) ? stripped : nullable(stripped);
+        }
+        out.properties = properties;
+        out.required = Object.keys(properties);
       }
       return out;
     }
     return value;
   };
   return strip(schema) as Record<string, unknown>;
+}
+
+function nullable(schema: Record<string, unknown>): Record<string, unknown> {
+  if (Array.isArray(schema.enum)) {
+    return { ...schema, enum: [...schema.enum, null] };
+  }
+  if (typeof schema.type === "string") {
+    return { ...schema, type: [schema.type, "null"] };
+  }
+  return schema;
+}
+
+/**
+ * Remove null values for properties that the original schema did not require. Applied
+ * to the provider's output before the caller validates it.
+ */
+export function dropOptionalNulls(
+  schema: Record<string, unknown>,
+  value: unknown,
+): unknown {
+  if (Array.isArray(value)) {
+    const items = schema.items as Record<string, unknown> | undefined;
+    return items ? value.map((item) => dropOptionalNulls(items, item)) : value;
+  }
+  if (!value || typeof value !== "object") return value;
+  const properties = (schema.properties ?? {}) as Record<
+    string,
+    Record<string, unknown>
+  >;
+  const required = new Set(
+    Array.isArray(schema.required) ? (schema.required as string[]) : [],
+  );
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (child === null && !required.has(key)) continue;
+    out[key] = properties[key]
+      ? dropOptionalNulls(properties[key], child)
+      : child;
+  }
+  return out;
 }
 
 export interface StructuredInferenceRequest {
@@ -362,6 +423,7 @@ export class StructuredInferenceService {
         );
       }
     }
+    value = dropOptionalNulls(request.responseSchema, value);
     if (!validate(value)) {
       return failure(
         meta,

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "@intentweave/sqlite-compat";
 import {
+  CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
   CandidateInferenceStore,
   CandidateStore,
   ClaimsStore,
@@ -422,7 +423,7 @@ describe("G6a Candidate recommendation context", () => {
       contractVersion: "1",
       providerId: "openai",
       modelId: "provider-default",
-      promptVersion: "1",
+      promptVersion: CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
       inputFingerprint: context.contextFingerprint,
       normalizedOutput: { recommendation: "promote" },
       evidenceVersionIds: candidate.evidence.flatMap((evidence) =>

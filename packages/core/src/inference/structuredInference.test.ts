@@ -4,7 +4,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   StructuredInferenceService,
+  dropOptionalNulls,
   isReusableStructuredOutcome,
+  providerResponseSchema,
   type LLMProvider,
   type LLMProviderCapabilities,
   type LLMProviderV2,
@@ -293,5 +295,50 @@ describe("StructuredInferenceService", () => {
       ok: false,
       failure: { kind: "timeout", retryable: true },
     });
+  });
+});
+
+describe("strict provider schema with optional properties", () => {
+  const SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    required: ["candidate"],
+    properties: {
+      candidate: { type: "string" },
+      note: { type: "string", minLength: 1 },
+      kind: { type: "string", enum: ["a", "b"] },
+    },
+  };
+
+  it("lists every property as required, and makes the optional ones nullable", () => {
+    const strict = providerResponseSchema(SCHEMA) as {
+      required: string[];
+      properties: Record<string, { type?: unknown; enum?: unknown[] }>;
+    };
+    expect(strict.required).toEqual(["candidate", "note", "kind"]);
+    expect(strict.properties.candidate.type).toBe("string");
+    expect(strict.properties.note.type).toEqual(["string", "null"]);
+    expect(strict.properties.kind.enum).toEqual(["a", "b", null]);
+  });
+
+  it("removes optional nulls before the caller's validation and keeps required ones", () => {
+    expect(
+      dropOptionalNulls(SCHEMA, { candidate: "x", note: null, kind: null }),
+    ).toEqual({ candidate: "x" });
+    expect(dropOptionalNulls(SCHEMA, { candidate: null })).toEqual({
+      candidate: null,
+    });
+  });
+
+  it("accepts a provider reply that sets an optional property to null", async () => {
+    const provider = new StubV2Provider(
+      response({
+        content: JSON.stringify({ candidate: "x", note: null, kind: null }),
+      }),
+    );
+    const result = await new StructuredInferenceService(provider).infer<{
+      candidate: string;
+    }>({ ...request(), responseSchema: SCHEMA });
+    expect(result).toMatchObject({ ok: true, value: { candidate: "x" } });
   });
 });
