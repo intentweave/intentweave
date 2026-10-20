@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "@intentweave/sqlite-compat";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { initSchema } from "../schema.js";
@@ -72,7 +72,7 @@ describe("WAL safety", () => {
     const shmPath = `${sourcePath}-shm`;
     // After TRUNCATE checkpoint, WAL file should be empty or minimal
     if (existsSync(walPath)) {
-      const stats = require("node:fs").statSync(walPath);
+      const stats = statSync(walPath);
       expect(stats.size).toBeLessThan(4096); // Empty or near-empty
     }
 

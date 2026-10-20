@@ -184,13 +184,47 @@ function scopeHooks(calls: readonly ExtractedCall[]): ScopeHook[] {
     .filter((hook) => hook.expression !== "");
 }
 
+/**
+ * Receivers that are demonstrably not Fastify instances in this file: a local declared from a
+ * value that is not Fastify (`const cache = new Map()`), or a name imported from a module other
+ * than Fastify. Plugin parameters (`async function routes(fastify)`) are not excluded, because
+ * that is how Fastify code is written. A route call on an excluded receiver is not an endpoint.
+ */
+function nonFastifyReceivers(source: string): Set<string> {
+  const excluded = new Set<string>();
+  for (const match of source.matchAll(
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]*)/g,
+  )) {
+    if (!/\bFastify\w*\s*\(|\bfastify\w*\s*\(/i.test(match[2]!))
+      excluded.add(match[1]!);
+  }
+  for (const match of source.matchAll(
+    /\bimport\s+(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\}|\*\s+as\s+([A-Za-z_$][\w$]*))?\s*from\s*["']([^"']+)["']/g,
+  )) {
+    if (/^fastify/i.test(match[4]!)) continue;
+    if (match[1]) excluded.add(match[1]);
+    if (match[3]) excluded.add(match[3]);
+    for (const name of (match[2] ?? "").split(",")) {
+      const local = name
+        .split(/\s+as\s+/)
+        .pop()
+        ?.trim();
+      if (local) excluded.add(local);
+    }
+  }
+  return excluded;
+}
+
 function routeRegistrations(
   file: string,
+  source: string,
   calls: readonly ExtractedCall[],
 ): RouteRegistration[] {
   const registrations: RouteRegistration[] = [];
+  const excluded = nonFastifyReceivers(source);
   for (const call of calls) {
     if (!call.isMethod || !call.receiverName) continue;
+    if (excluded.has(call.receiverName)) continue;
     const method = ROUTE_METHODS.get(call.calleeName);
     if (!method) continue;
     const args = call.argumentTexts ?? [];
@@ -335,7 +369,7 @@ export function discoverFastifyObservations(
       }
     }
 
-    routes.push(...routeRegistrations(file, calls));
+    routes.push(...routeRegistrations(file, source, calls));
 
     scopeHooksByFile.set(file, scopeHooks(calls));
   }

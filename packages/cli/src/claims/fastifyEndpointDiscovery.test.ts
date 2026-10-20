@@ -54,6 +54,21 @@ describe("discoverFastifyObservations", () => {
     ]);
   });
 
+  it("does not treat a get call on a non-Fastify receiver as an endpoint", () => {
+    const observations = observationsFor({
+      "modules/cache.ts": `
+import { createClient } from "some-http-client";
+export function warm() {
+  const cache = new Map();
+  cache.get("/key", () => 1);
+  const client = createClient();
+  client.get("/status", () => 1);
+}
+`,
+    });
+    expect(observations).toEqual([]);
+  });
+
   it("ignores route registrations in test files", () => {
     const observations = observationsFor({
       "test/plugins/check-role.plugin.test.ts": USER_ROUTES,
