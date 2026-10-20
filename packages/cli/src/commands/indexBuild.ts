@@ -635,7 +635,6 @@ const indexBuildSubcommand = new Command("build")
         roots.length === 0 &&
         !opts.include &&
         !opts.exclude &&
-        !iwConfig?.indexAllFiles && // not yet supported by the native binary
         opts.native !== false; // Commander sets opts.native=false when --no-native is passed
       const nativeBinary = canUseNative ? resolveCariNativeBinary() : null;
 
@@ -711,7 +710,7 @@ const indexBuildSubcommand = new Command("build")
             workspaceRoot: cwd,
             include: opts.include,
             exclude: opts.exclude,
-            includeAllFiles: false,
+            includeAllFiles: iwConfig?.indexAllFiles ?? false,
             maxFileSize: parseInt(opts.maxFileSize, 10),
           });
           const annotationCount = await annotateBuiltIndex({

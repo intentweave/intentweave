@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS co_changes (
 CREATE TABLE IF NOT EXISTS files (
   path           TEXT PRIMARY KEY,
   last_modified  TEXT,
-  churn          INTEGER NOT NULL DEFAULT 0,
+  churn          INTEGER,
   is_hotspot     INTEGER NOT NULL DEFAULT 0,
   primary_owner  TEXT,
   bus_factor     INTEGER,

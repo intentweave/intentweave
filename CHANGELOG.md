@@ -12,6 +12,14 @@ All notable changes to IntentWeave are documented in this file.
   repository have the same identity, kind, container, export status and fields, and all 26,305
   annotation rows match. Covered: declarations nested in blocks, exported variables, nested
   type aliases, namespace bodies, and class members inheriting export from their class.
+- **Native build with `indexAllFiles`** — the native engine builds repositories that set
+  `indexAllFiles`. Their document list is discovered as the TypeScript build does, and the
+  annotations match it exactly (96,002 rows on this repository with the setting on).
+- **Files table matches TypeScript** — the native build writes every file that git history
+  knows about, the same git-derived columns (churn and last-modified only for hotspots,
+  owners for files with history), the same line counts, and the same content hashes.
+- **Brace renames** — the TypeScript history parser resolved `dir/{old => new}` renames to
+  `new}`, so a renamed file appeared under a wrong path. It now keeps the directory.
 - **Hybrid native index** — `index build` uses the native engine for symbols, imports, calls and
   file rows, and the TypeScript keyword stages write the annotations on top. On this
   repository the documentary, structural and behavioural intent rules give identical results on

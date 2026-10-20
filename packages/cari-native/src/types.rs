@@ -88,6 +88,9 @@ pub struct TcgResult {
     pub co_changes: Vec<CoChange>,
     /// Per-file git-derived stats (churn, hotspot, ownership, last-modified).
     pub file_stats: Vec<FileStat>,
+    /// Every path any commit touched, including deleted files and commits too large for the
+    /// co-change statistics. The files table lists them all.
+    pub tracked_paths: Vec<String>,
 }
 
 /// Output of the Annotate stage.

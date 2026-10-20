@@ -59,13 +59,14 @@ pub fn write(
         // Write AX code files, merging TCG stats.
         for f in &ax.files {
             let st = tcg_stat_map.get(f.path.as_str());
+            let (last_modified, churn, is_hot, owner, bus) = history_columns(st);
             stmt.execute(rusqlite::params![
                 f.path,
-                st.and_then(|s| s.last_modified.as_deref()).or(f.last_modified.as_deref()),
-                st.map(|s| s.churn).unwrap_or(f.churn),
-                st.map(|s| s.is_hotspot as i64).unwrap_or(f.is_hotspot as i64),
-                st.and_then(|s| s.primary_owner.as_deref()).or(f.primary_owner.as_deref()),
-                st.and_then(|s| s.bus_factor).or(f.bus_factor),
+                last_modified,
+                churn,
+                is_hot,
+                owner,
+                bus,
                 f.is_doc as i64,
                 f.content_hash.as_deref(),
                 f.doc_group.as_deref(),
@@ -84,20 +85,48 @@ pub fn write(
                 continue;
             }
             let st = tcg_stat_map.get(doc.path.as_str());
+            let (last_modified, churn, is_hot, owner, bus) = history_columns(st);
             stmt.execute(rusqlite::params![
                 doc.path,
-                st.and_then(|s| s.last_modified.as_deref()),
-                st.map(|s| s.churn).unwrap_or(0_i64),
-                st.map(|s| s.is_hotspot as i64).unwrap_or(0_i64),
-                st.and_then(|s| s.primary_owner.as_deref()),
-                st.and_then(|s| s.bus_factor),
+                last_modified,
+                churn,
+                is_hot,
+                owner,
+                bus,
                 1_i64, // is_doc = true
                 None::<&str>,
                 doc.doc_group.as_deref(),
                 1_i64, // indexed
                 None::<&str>,
-                None::<i64>,
-                None::<i64>,
+                0_i64,
+                0_i64,
+            ])?;
+            counts.files += 1;
+        }
+
+        // Paths that only git history knows about (non-code, non-document files, deleted files).
+        let doc_paths: HashSet<&str> = kwx.doc_files.iter().map(|d| d.path.as_str()).collect();
+        for path_str in &tcg.tracked_paths {
+            if ax_paths.contains(path_str.as_str()) || doc_paths.contains(path_str.as_str()) {
+                continue;
+            }
+            let st = tcg_stat_map.get(path_str.as_str());
+            let (last_modified, churn, is_hot, owner, bus) = history_columns(st);
+            let is_doc = is_doc_path(path_str);
+            stmt.execute(rusqlite::params![
+                path_str,
+                last_modified,
+                churn,
+                is_hot,
+                owner,
+                bus,
+                is_doc as i64,
+                None::<&str>,
+                if is_doc { Some(crate::kwx::classify_doc_group(path_str)) } else { None },
+                1_i64,
+                None::<&str>,
+                0_i64,
+                0_i64,
             ])?;
             counts.files += 1;
         }
@@ -333,4 +362,30 @@ fn resolve_target_file(resolved: &str, known: &HashSet<&str>) -> String {
         }
     }
     resolved.to_string()
+}
+
+/// Document extensions, as the TypeScript index classifies them.
+fn is_doc_path(path: &str) -> bool {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    matches!(ext.as_str(), "md" | "mdx" | "rst" | "txt" | "adoc")
+}
+
+/// Git-derived file columns, as the TypeScript index writes them: churn and the last-modified
+/// date only for hotspots, the owner and bus factor for any file with history, and the
+/// hotspot flag.
+fn history_columns(
+    st: Option<&&crate::types::FileStat>,
+) -> (Option<String>, Option<i64>, i64, Option<String>, Option<i64>) {
+    let hot = st.map(|s| s.is_hotspot).unwrap_or(false);
+    (
+        if hot { st.and_then(|s| s.last_modified.clone()) } else { None },
+        if hot { st.map(|s| s.churn) } else { None },
+        hot as i64,
+        st.and_then(|s| s.primary_owner.clone()),
+        st.and_then(|s| s.bus_factor),
+    )
 }

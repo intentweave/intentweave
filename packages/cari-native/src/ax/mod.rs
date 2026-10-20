@@ -12,8 +12,8 @@ use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Expression,
     BindingPattern, ClassElement, Declaration, ExportDefaultDeclarationKind,
-    ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement,
-    TSAccessibility, TSModuleDeclarationName, TSSignature,
+    ImportDeclarationSpecifier, PropertyKey, Statement,
+    TSAccessibility, TSSignature,
 };
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -136,30 +136,6 @@ fn resolve_import(root: &Path, source_file: &str, specifier: &str) -> Option<Str
     None
 }
 
-fn resolve_specifier(source_file: &str, specifier: &str) -> (String, bool) {
-    if specifier.starts_with('.') {
-        let dir = Path::new(source_file)
-            .parent()
-            .unwrap_or(Path::new(""));
-        let joined = dir.join(specifier);
-        let mut parts: Vec<String> = Vec::new();
-        for component in joined.components() {
-            match component {
-                std::path::Component::ParentDir => {
-                    parts.pop();
-                }
-                std::path::Component::CurDir => {}
-                std::path::Component::Normal(s) => {
-                    parts.push(s.to_string_lossy().to_string())
-                }
-                _ => {}
-            }
-        }
-        (parts.join("/"), true)
-    } else {
-        (specifier.to_string(), false)
-    }
-}
 
 fn property_key_name<'a>(key: &'a PropertyKey<'_>) -> Option<&'a str> {
     match key {
@@ -602,10 +578,6 @@ impl<'s> FileExtractor<'s> {
             } else if let ClassElement::PropertyDefinition(prop) = elem {
                 if !prop.computed {
                     if let Some(prop_name) = property_key_name(&prop.key) {
-                        let is_public = !matches!(
-                            prop.accessibility,
-                            Some(TSAccessibility::Private) | Some(TSAccessibility::Protected)
-                        );
                         {
                             let start = prop.span.start;
                             let end = prop.span.end;
@@ -749,7 +721,7 @@ impl<'s> FileExtractor<'s> {
     fn visit_variable_decl(
         &mut self,
         var_decl: &oxc_ast::ast::VariableDeclaration<'_>,
-        exported: bool,
+        _exported: bool,
         parent: Option<&str>,
     ) {
         for decl in var_decl.declarations.iter() {
@@ -1301,7 +1273,13 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
         .unwrap_or(path)
         .to_string_lossy()
         .to_string();
-    let code_lines = content.lines().count() as i64;
+    // Only Analysis-visited files get counts and a hash; oversized files get an empty hash.
+    let in_scope_for_counts = ax_extracts_symbols(&rel_path) && content.len() <= AX_MAX_FILE_SIZE;
+    let (comment_lines, code_lines) = if in_scope_for_counts {
+        count_comment_and_code_lines(&content)
+    } else {
+        (0, 0)
+    };
     let (todos, rationale) = extract_todos_rationale(&content, &rel_path);
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(path).unwrap_or_default();
@@ -1326,9 +1304,13 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
     apply_source_fingerprints(&mut extractor.symbols, &content);
     extractor.calls = collector.calls;
     // SHA-256 truncated to 16 hex digits, as the TypeScript index stores it.
-    let content_hash = {
+    let content_hash: Option<String> = if content.len() > AX_MAX_FILE_SIZE {
+        Some(String::new())
+    } else if ax_extracts_symbols(&rel_path) {
         use sha2::{Digest, Sha256};
-        format!("{:x}", Sha256::digest(content.as_bytes()))[..16].to_string()
+        Some(format!("{:x}", Sha256::digest(content.as_bytes()))[..16].to_string())
+    } else {
+        None
     };
     // Files outside AX discovery keep their file row, but contribute no symbols or edges.
     // Files above the AX size limit are skipped the same way and recorded as unindexed.
@@ -1348,7 +1330,7 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
             primary_owner: None,
             bus_factor: None,
             is_doc: false,
-            content_hash: Some(content_hash),
+            content_hash,
             doc_group: None,
             indexed: !too_large,
             skip_reason: too_large.then(|| {
@@ -1358,7 +1340,7 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
                     AX_MAX_FILE_SIZE
                 )
             }),
-            comment_lines: None,
+            comment_lines: Some(comment_lines),
             code_lines: Some(code_lines),
         },
     })
@@ -1488,19 +1470,7 @@ mod tests {
         assert!(!is_source_file(Path::new("data.json")));
     }
 
-    #[test]
-    fn resolve_relative_import() {
-        let (target, is_rel) = resolve_specifier("src/auth/service.ts", "./utils");
-        assert!(is_rel);
-        assert_eq!(target, "src/auth/utils");
-    }
 
-    #[test]
-    fn resolve_external_import() {
-        let (target, is_rel) = resolve_specifier("src/auth.ts", "express");
-        assert!(!is_rel);
-        assert_eq!(target, "express");
-    }
 }
 
 #[cfg(test)]
@@ -1557,5 +1527,54 @@ mod string_literal_tests {
         assert_eq!(replace_string_literals(r#"a = "x"; b = 'y\'z';"#), r#"a = "S"; b = "S";"#);
         assert_eq!(replace_string_literals("c = `t`"), r#"c = "S""#);
         assert_eq!(replace_string_literals("open 'never"), "open 'never");
+    }
+}
+
+/// Comment and code line counts, as the TypeScript AX stage counts them: blank lines are
+/// neither; a line starting with a comment marker is a comment, as is every line of an open
+/// block comment; any other line is code.
+fn count_comment_and_code_lines(content: &str) -> (i64, i64) {
+    let mut comments = 0i64;
+    let mut code = 0i64;
+    let mut in_block = false;
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if in_block {
+            comments += 1;
+            if line.contains("*/") {
+                in_block = false;
+            }
+        } else if line.starts_with("//") || line.starts_with('*') || line.starts_with('#') {
+            comments += 1;
+        } else if line.starts_with("/*") || line.starts_with("\"\"\"") || line.starts_with("'''") {
+            comments += 1;
+            let (after, close) = if line.starts_with("/*") {
+                (&line[2..], "*/")
+            } else if line.starts_with("\"\"\"") {
+                (&line[3..], "\"\"\"")
+            } else {
+                (&line[3..], "'''")
+            };
+            if !after.contains(close) {
+                in_block = true;
+            }
+        } else {
+            code += 1;
+        }
+    }
+    (comments, code)
+}
+
+#[cfg(test)]
+mod line_count_tests {
+    use super::count_comment_and_code_lines;
+
+    #[test]
+    fn counts_comments_blank_lines_and_code() {
+        let src = "// one\n\nconst a = 1;\n/* open\n still comment\n*/\n/* one line */\nreturn a;\n";
+        assert_eq!(count_comment_and_code_lines(src), (5, 2));
     }
 }
