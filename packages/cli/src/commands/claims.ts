@@ -3805,6 +3805,9 @@ export async function runClaimsConflictResolve(options: {
           id: anchor.id,
           claimIdentityId: anchor.claimIdentityId,
           scope: anchor.scope,
+          // reviewed-policy anchors are not created and are not portable yet.
+          authority:
+            anchor.authority === "ai-proposed" ? "ai-proposed" : "human",
           statementFingerprint: anchor.statementFingerprint,
           actor: anchor.actor,
           ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
@@ -4471,6 +4474,9 @@ export async function runClaimsReview(options: {
           id: anchor.id,
           claimIdentityId: anchor.claimIdentityId,
           scope: anchor.scope,
+          // reviewed-policy anchors are not created and are not portable yet.
+          authority:
+            anchor.authority === "ai-proposed" ? "ai-proposed" : "human",
           statementFingerprint: anchor.statementFingerprint,
           actor: anchor.actor,
           ...(anchor.rationale ? { rationale: anchor.rationale } : {}),

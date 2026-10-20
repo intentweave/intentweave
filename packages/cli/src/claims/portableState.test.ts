@@ -118,4 +118,36 @@ baselineAcceptances: {}
 `),
     ).toThrow("must be one of: 1, 2, 3, 4");
   });
+
+  it("round-trips an AI-proposed Intent Anchor and rejects an unknown authority", () => {
+    const anchor = {
+      claimIdentityId: "claim:timeout",
+      scope: "claim",
+      statementFingerprint: "a".repeat(64),
+      mode: "protect" as const,
+      source: "review" as const,
+      status: "active" as const,
+      actor: { kind: "human" as const, id: "reviewer" },
+      decidedAt: "2026-10-20T00:00:00.000Z",
+    };
+    const state = {
+      ...stateWithPolicies(),
+      intentAnchors: {
+        "anchor:proposed": { ...anchor, authority: "ai-proposed" as const },
+      },
+    } as PortableClaimsState;
+
+    const serialized = serializePortableClaimsState(state);
+    const parsed = parsePortableClaimsStateYaml(serialized);
+    expect(parsed.intentAnchors["anchor:proposed"]?.authority).toBe(
+      "ai-proposed",
+    );
+    expect(serializePortableClaimsState(parsed)).toBe(serialized);
+
+    const unknown = serialized.replace(
+      "authority: ai-proposed",
+      "authority: bogus",
+    );
+    expect(() => parsePortableClaimsStateYaml(unknown)).toThrow(/authority/);
+  });
 });

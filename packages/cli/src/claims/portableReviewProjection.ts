@@ -305,6 +305,7 @@ export function persistPortableIntentAnchor(
     claimIdentityId: string;
     scope: string;
     statementFingerprint: string;
+    authority?: "human" | "ai-proposed";
     actor: string;
     rationale?: string;
     createdAt: number;
@@ -326,7 +327,7 @@ export function persistPortableIntentAnchor(
     scope: anchor.scope,
     statementFingerprint: anchor.statementFingerprint,
     mode: "protect",
-    authority: "human",
+    authority: anchor.authority ?? "human",
     source: "review",
     status: "active",
     actor: { kind: "human", id: anchor.actor },
@@ -365,6 +366,7 @@ export function projectPortableIntentAnchors(
       scope: anchor.scope,
       statementFingerprint: anchor.statementFingerprint,
       status: anchor.status,
+      authority: anchor.authority,
       actor: portableActorLabel(anchor.actor),
       ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
       createdAt: Date.parse(anchor.decidedAt),

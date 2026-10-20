@@ -51,6 +51,9 @@ All notable changes to IntentWeave are documented in this file.
   and must be rebuilt before the default native path matches.
 - **Anchors whose Claim is missing are reported** — `claims check` reports an active
   anchor whose Claim is not in the index as `intent_unresolved`, instead of dropping it.
+- **Intent Anchor authority (schema 26)** — the anchor authority can be `ai-proposed` in
+  the database and in portable state. Nothing creates such an anchor yet, and a conflict on
+  one is still decided by a person.
 - **Declared follow-ups are scoped to their change set** — a declaration in
   `.iw/claims/intent.yaml` accepts a statement change only when it is new relative to the
   merge base given by `--since`. Without `--since`, declarations authorize nothing, and the

@@ -2588,8 +2588,16 @@ Prioritized open items:
    Still open: re-evaluating the origin Claim at head as a second authorization source.
    It depends on the deterministic document extractor in G5.5 step 1, because an ADR's
    value cannot be re-read deterministically without it.
-5. **Authority and portability for AI anchors**: the `authority` field, portable
-   state, and a round-trip test.
+5. **Authority and portability for AI anchors.** Status: the data model is in place.
+   Schema 26 rebuilds `intent_anchors` so that `authority` accepts `ai-proposed`
+   (SQLite cannot change a CHECK in place). The store can record such an anchor, the
+   import and projection carry the value through instead of hardcoding `human`, and
+   portable state accepts it. A test shows that the store never resolves an
+   AI-proposed conflict on its own. No CLI path creates an AI-proposed anchor yet,
+   because the replay measure is still missing. Compatibility: portable state stays at
+   schema 4, so a CLI built before this change rejects a state file that contains an
+   `ai-proposed` anchor. That needs a version bump before any real anchor is written
+   with this value.
 6. **Later, not blockers:** Claim Relations, abstract anchors, observation-path bridge.
 
 Purpose. Separate two things that a Review currently treats as one. An epistemic

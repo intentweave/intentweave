@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Database from "@intentweave/sqlite-compat";
 import { fingerprint } from "../claims/canonical.js";
 import { IntentAnchorStore } from "../claims/intentAnchors.js";
-import { initSchema } from "../schema.js";
+import { initSchema, migrateSchema25To26 } from "../schema.js";
 
 describe("IntentAnchorStore", () => {
   let db: Database.Database;
@@ -283,5 +283,74 @@ describe("IntentAnchorStore", () => {
         })
         .map((r) => r.outcome),
     ).toEqual(["intent_conflict"]);
+  });
+
+  it("records an AI-proposed anchor, and its conflict is not resolved by the store", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const proposed = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "model-proposal",
+      authority: "ai-proposed",
+      createdAt: 10,
+    });
+    expect(proposed.authority).toBe("ai-proposed");
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    // Without a recorded person's decision the conflict stays open.
+    expect(results.map((r) => r.outcome)).toEqual(["intent_conflict"]);
+  });
+
+  it("keeps anchors, their supersession, and the single active anchor through the schema 26 rebuild", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const first = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    const second = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      amendment: true,
+      createdAt: 20,
+    });
+    migrateSchema25To26(db);
+    expect(store.get(first.id)?.status).toBe("superseded");
+    expect(
+      db
+        .prepare(
+          `SELECT superseded_by_anchor_id AS link FROM intent_anchors WHERE id = ?`,
+        )
+        .get(first.id),
+    ).toEqual({ link: second.id });
+    expect(store.active("claim:timeout").map((a) => a.id)).toEqual([second.id]);
+    // The rebuilt table still holds one active anchor per Claim and scope.
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO intent_anchors (id, claim_identity_id, claim_version_id, statement_fingerprint, scope, mode, authority, source, status, actor, created_at)
+           VALUES ('anchor:dup', 'claim:timeout', 'claim:timeout:v2', 'x', 'claim', 'protect', 'human', 'review', 'active', 'r', 0)`,
+        )
+        .run(),
+    ).toThrow();
+    // The rebuilt table accepts the new authority and still rejects unknown values.
+    expect(() =>
+      db
+        .prepare(
+          `UPDATE intent_anchors SET authority = 'ai-proposed' WHERE id = ?`,
+        )
+        .run(second.id),
+    ).not.toThrow();
+    expect(() =>
+      db
+        .prepare(`UPDATE intent_anchors SET authority = 'bogus' WHERE id = ?`)
+        .run(second.id),
+    ).toThrow();
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "26" });
   });
 });

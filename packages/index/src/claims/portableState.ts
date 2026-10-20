@@ -31,7 +31,7 @@ export interface PortableIntentAnchor {
   scope: string;
   statementFingerprint: string;
   mode: "protect";
-  authority: "human";
+  authority: "human" | "ai-proposed";
   source: "review";
   status: "active" | "superseded" | "retired";
   actor: PortableClaimsActor;
@@ -567,7 +567,10 @@ function parseIntentAnchor(value: unknown, path: string): PortableIntentAnchor {
       `${path}.statementFingerprint`,
     ),
     mode: requireEnum(anchor.mode, `${path}.mode`, ["protect"]),
-    authority: requireEnum(anchor.authority, `${path}.authority`, ["human"]),
+    authority: requireEnum(anchor.authority, `${path}.authority`, [
+      "human",
+      "ai-proposed",
+    ]),
     source: requireEnum(anchor.source, `${path}.source`, ["review"]),
     status: requireEnum(anchor.status, `${path}.status`, [
       "active",

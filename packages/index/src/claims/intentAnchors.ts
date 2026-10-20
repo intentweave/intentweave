@@ -39,7 +39,7 @@ export interface IntentAnchor {
   statementFingerprint: string;
   scope: string;
   mode: IntentAnchorMode;
-  authority: "human" | "reviewed-policy";
+  authority: IntentAnchorAuthority;
   source: "review" | "adr" | "spec" | "declaration";
   status: IntentAnchorStatus;
   actor: string;
@@ -47,9 +47,18 @@ export interface IntentAnchor {
   createdAt: number;
 }
 
+/**
+ * Who decided the anchor. `human` is a reviewed decision. `ai-proposed` is an anchor a model
+ * proposed and the system activated on creation (G5.4). Its conflicts are still decided by a
+ * person, and nothing resolves them automatically.
+ */
+export type IntentAnchorAuthority = "human" | "reviewed-policy" | "ai-proposed";
+
 export interface ProtectInput {
   claimIdentityId: string;
   actor: string;
+  /** Defaults to `human`. `ai-proposed` is recorded for an anchor a model proposed. */
+  authority?: "human" | "ai-proposed";
   rationale?: string;
   scope?: string;
   createdAt?: number;
@@ -102,7 +111,7 @@ interface AnchorRow {
   statement_fingerprint: string;
   scope: string;
   mode: IntentAnchorMode;
-  authority: "human" | "reviewed-policy";
+  authority: IntentAnchorAuthority;
   source: "review" | "adr" | "spec" | "declaration";
   status: IntentAnchorStatus;
   actor: string;
@@ -213,7 +222,7 @@ export class IntentAnchorStore {
           `INSERT INTO intent_anchors (
              id, claim_identity_id, claim_version_id, statement_fingerprint, scope,
              mode, authority, source, status, actor, rationale, created_at
-           ) VALUES (?, ?, ?, ?, ?, 'protect', 'human', 'review', 'active', ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, 'protect', ?, 'review', 'active', ?, ?, ?)`,
         )
         .run(
           id,
@@ -221,6 +230,7 @@ export class IntentAnchorStore {
           latest.id,
           latest.statementFingerprint,
           scope,
+          input.authority ?? "human",
           input.actor,
           input.rationale ?? null,
           createdAt,
@@ -248,6 +258,7 @@ export class IntentAnchorStore {
     scope: string;
     statementFingerprint: string;
     status: IntentAnchorStatus;
+    authority: "human" | "ai-proposed";
     actor: string;
     rationale?: string;
     createdAt: number;
@@ -287,7 +298,7 @@ export class IntentAnchorStore {
         `INSERT INTO intent_anchors (
            id, claim_identity_id, claim_version_id, statement_fingerprint, scope,
            mode, authority, source, status, actor, rationale, created_at
-         ) VALUES (?, ?, ?, ?, ?, 'protect', 'human', 'review', ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, 'protect', ?, 'review', ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -295,6 +306,7 @@ export class IntentAnchorStore {
         matching.id,
         input.statementFingerprint,
         input.scope,
+        input.authority,
         input.status,
         input.actor,
         input.rationale ?? null,

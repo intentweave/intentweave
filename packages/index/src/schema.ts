@@ -392,7 +392,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "25";
+export const CURRENT_SCHEMA_VERSION = "26";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -1535,6 +1535,57 @@ export function migrateSchema22To23(db: Database.Database): void {
  * intent conflict. Keyed to the anchor and the exact statement fingerprint decided.
  * Additive: one table, created in a transaction, with no data rewritten.
  */
+/**
+ * Schema 25 -> 26 (G5.4 authority). An AI-proposed Intent Anchor is active on creation and
+ * is marked `ai-proposed`. SQLite cannot change a CHECK constraint in place, so the table is
+ * rebuilt with the wider constraint. Rows, identities, and supersession links are copied as
+ * they are. Foreign keys are off during the rebuild, because intent_conflict_decisions
+ * references intent_anchors.
+ */
+export function migrateSchema25To26(db: Database.Database): void {
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE intent_anchors_v26 (
+          id TEXT PRIMARY KEY,
+          claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+          claim_version_id TEXT NOT NULL REFERENCES claim_versions(id),
+          statement_fingerprint TEXT NOT NULL,
+          scope TEXT NOT NULL,
+          mode TEXT NOT NULL CHECK (mode IN ('observe', 'protect')),
+          authority TEXT NOT NULL CHECK (authority IN ('human', 'reviewed-policy', 'ai-proposed')),
+          source TEXT NOT NULL CHECK (source IN ('review', 'adr', 'spec', 'declaration')),
+          status TEXT NOT NULL CHECK (status IN ('active', 'superseded', 'retired')),
+          actor TEXT NOT NULL,
+          rationale TEXT,
+          superseded_by_anchor_id TEXT REFERENCES intent_anchors(id),
+          created_at INTEGER NOT NULL
+        );
+        INSERT INTO intent_anchors_v26
+          SELECT id, claim_identity_id, claim_version_id, statement_fingerprint, scope,
+                 mode, authority, source, status, actor, rationale,
+                 superseded_by_anchor_id, created_at
+          FROM intent_anchors;
+        DROP TABLE intent_anchors;
+        ALTER TABLE intent_anchors_v26 RENAME TO intent_anchors;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_anchors_active
+          ON intent_anchors(claim_identity_id, scope) WHERE status = 'active';
+      `);
+      const violations = db.prepare("PRAGMA foreign_key_check").all();
+      if (violations.length > 0) {
+        throw new Error("Schema 26 migration left foreign key violations");
+      }
+      db.prepare(
+        `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '26')`,
+      ).run();
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
 export function migrateSchema24To25(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
   const migrate = db.transaction(() => {
@@ -1818,6 +1869,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1831,6 +1883,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1843,6 +1896,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "17") {
@@ -1854,6 +1908,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "18") {
@@ -1864,6 +1919,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "19") {
@@ -1873,6 +1929,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "20") {
@@ -1881,6 +1938,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "21") {
@@ -1888,17 +1946,20 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "22") {
     migrateSchema22To23(db);
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === "23") {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
+    migrateSchema25To26(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {
