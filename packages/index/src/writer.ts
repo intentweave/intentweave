@@ -248,7 +248,7 @@ function writeSymbols(db: Database.Database, ax: AxOutput): number {
 // Annotations
 // =============================================================================
 
-function writeAnnotations(
+export function writeAnnotations(
   db: Database.Database,
   annotations: Annotation[],
 ): number {

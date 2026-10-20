@@ -8,6 +8,13 @@ All notable changes to IntentWeave are documented in this file.
 
 - **Native build failures are errors** — `index build` fails when the native binary fails,
   and names the opt-in. `CARI_ALLOW_TS_FALLBACK=1` runs the TypeScript pipeline instead.
+- **Hybrid native index** — `index build` uses the native engine for symbols, imports, calls and
+  file rows, and the TypeScript keyword stages write the annotations on top. On this
+  repository the documentary, structural and behavioural intent rules give identical results on
+  both engines, and a full native build takes about 5 s instead of about 12 s.
+- **Claim evidence cache** — parsed claim evidence is cached under `.iw/cache/claim-evidence`,
+  keyed by file content and the extractor's build. A second `claims check` is faster with the
+  same output.
 - **Native symbol parity** — the native symbol set matches the TypeScript index for 7,688 of
   7,700 symbols on this repository. Variables are symbols only when they hold a function,
   nested function declarations and promoted variables are extracted under the same rules,

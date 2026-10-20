@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS annotations (
   confidence REAL NOT NULL DEFAULT 1.0,
   source     TEXT NOT NULL,
   qualifier  TEXT,
-  idf_score  REAL NOT NULL DEFAULT 1.0,
+  idf_score  REAL,
   char_start INTEGER,
   char_end   INTEGER
 );

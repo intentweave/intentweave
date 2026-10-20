@@ -579,6 +579,28 @@ async function discoverFilesRecursive(
   return [...new Set(files)].sort();
 }
 
+/**
+ * Document files a build reads for annotations, discovered the way the facade does in
+ * single-root mode (exclude defaults plus `.iwignore`). Shared with the hybrid path.
+ */
+export async function discoverBuildDocumentFiles(opts: {
+  paths: string[];
+  workspaceRoot: string;
+  include?: string[];
+  exclude?: string[];
+  includeAllFiles?: boolean;
+  maxFileSize?: number;
+}): Promise<string[]> {
+  const iwIgnorePatterns = await loadIwIgnore(opts.workspaceRoot);
+  const excludePatterns = buildExcludeList(opts.exclude ?? [], iwIgnorePatterns);
+  return discoverFiles(opts.paths, opts.workspaceRoot, {
+    include: opts.include,
+    exclude: excludePatterns,
+    includeAllFiles: opts.includeAllFiles ?? false,
+    maxFileSize: opts.maxFileSize ?? 262144,
+  });
+}
+
 function toArtifactId(filePath: string, cwd: string): string {
   const rel = path.relative(cwd, filePath);
   return rel.replace(/[/\\]/g, ".").replace(/\.[^.]+$/, "");
@@ -591,7 +613,7 @@ function toArtifactId(filePath: string, cwd: string): string {
  * Handles single-line slash comments, block slash-star comments,
  * and Python/shell hash comments.
  */
-function extractSourceCommentContent(content: string): string {
+export function extractSourceCommentContent(content: string): string {
   const lines = content.split("\n");
   const result: string[] = [];
   let inBlock = false;

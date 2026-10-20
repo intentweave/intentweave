@@ -1,9 +1,20 @@
 // Copyright 2025-2026 Benjamin Becker
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { extractClaimEvidence } from "@intentweave/ast-extractor";
+import {
+  extractClaimEvidence,
+  type ClaimEvidenceExtraction,
+} from "@intentweave/ast-extractor";
 import { load as yamlLoad } from "js-yaml";
 
 export type DocumentationTarget = "default" | "effective";
@@ -481,6 +492,56 @@ export function extractDocumentationAssertions(
   return observations;
 }
 
+/**
+ * Bump when the cached record shape or the claim-evidence rules change in a way the
+ * extractor's own file identity does not capture.
+ */
+const CLAIM_EVIDENCE_CACHE_VERSION = "1";
+
+/**
+ * Claim evidence for a file, cached under `.iw/cache/claim-evidence` by content. Parsing is
+ * the dominant cost of discovery, and most files do not change between runs. The key covers
+ * the file's path and content, the cache version, and the extractor's entry file (its size
+ * and modification time), so a rebuilt extractor never serves a stale record.
+ */
+function cachedClaimEvidence(
+  content: string,
+  filePath: string,
+): ClaimEvidenceExtraction {
+  let extractorIdentity = "unknown";
+  try {
+    const entry = createRequire(import.meta.url).resolve(
+      "@intentweave/ast-extractor",
+    );
+    const stat = statSync(entry);
+    extractorIdentity = `${entry}:${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    // Not resolvable (unusual install): the cache is keyed without the extractor identity.
+  }
+  const key = createHash("sha256")
+    .update(
+      `${CLAIM_EVIDENCE_CACHE_VERSION}\0${extractorIdentity}\0${filePath}\0${content}`,
+    )
+    .digest("hex");
+  const dir = path.join(process.cwd(), ".iw", "cache", "claim-evidence");
+  const file = path.join(dir, `${key}.json`);
+  try {
+    if (existsSync(file)) {
+      return JSON.parse(readFileSync(file, "utf-8")) as ClaimEvidenceExtraction;
+    }
+  } catch {
+    // An unreadable cache entry is recomputed below.
+  }
+  const extraction = extractClaimEvidence(content, filePath);
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(file, JSON.stringify(extraction));
+  } catch {
+    // The cache is an optimisation; a write failure must not change the result.
+  }
+  return extraction;
+}
+
 /** Extract R1 evidence only from code files explicitly listed in the bindings. */
 export function extractBoundCodeEvidence(
   bindings: ClaimsBindings,
@@ -491,7 +552,7 @@ export function extractBoundCodeEvidence(
     for (const binding of parameter.codeDefaults) {
       const bindingName = binding.export ?? binding.option;
       if (!bindingName) continue;
-      const evidence = extractClaimEvidence(
+      const evidence = cachedClaimEvidence(
         readCode(binding.file),
         binding.file,
       );
@@ -563,7 +624,7 @@ export function extractDiscoveredCodeEvidence(
   const observations: CodeEvidenceObservation[] = [];
   const extractedFiles = [...filePaths].sort().map((filePath) => ({
     filePath,
-    evidence: extractClaimEvidence(readCode(filePath), filePath),
+    evidence: cachedClaimEvidence(readCode(filePath), filePath),
   }));
   const stableKeyCounts = new Map<string, number>();
   for (const { evidence } of extractedFiles) {

@@ -227,6 +227,11 @@ export {
   snapshotConformance,
 } from "./writer.js";
 export { annotate, toSlug, tokenize } from "./annotator.js";
+export {
+  annotateBuiltIndex,
+  type HybridAnnotationOptions,
+} from "./hybridAnnotations.js";
+export { discoverBuildDocumentFiles } from "./facade.js";
 export type { AnnotateOptions } from "./annotator.js";
 export { computeIdf } from "./idf.js";
 

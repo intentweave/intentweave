@@ -314,29 +314,13 @@ impl<'s> FileExtractor<'s> {
                 self.visit_interface_body(&iface.body, name);
             }
             Declaration::TSModuleDeclaration(module) => {
-                let name = match &module.id {
-                    TSModuleDeclarationName::Identifier(id) => id.name.as_str().to_string(),
-                    TSModuleDeclarationName::StringLiteral(s) => s.value.as_str().to_string(),
-                };
-                self.push_symbol(Symbol {
-                    name: name.clone(),
-                    kind: "namespace".to_string(),
-                    container: parent.map(String::from),
-                    signature: None,
-                    file_path: self.rel_path.clone(),
-                    line: Some(self.line(module.span.start)),
-                    end_line: Some(self.line(module.span.end)),
-                    export: exported,
-                    doc_summary: None,
-                    body_hash: None,
-                    body_lines: None,
-                    structure_hash: None,
-                    implements: None,
-                    deprecated: false,
-                    deprecated_note: None,
-                    is_internal: false,
-                    decorators: None,
-                });
+                // A namespace is not a symbol in the TypeScript index, but its declarations
+                // are: they are extracted without a container, as top-level ones are.
+                if let Some(oxc_ast::ast::TSModuleDeclarationBody::TSModuleBlock(block)) = &module.body {
+                    for stmt in block.body.iter() {
+                        self.visit_statement(stmt, None, false);
+                    }
+                }
             }
             Declaration::TSTypeAliasDeclaration(alias) => {
                 let name = alias.id.name.as_str();
@@ -493,29 +477,12 @@ impl<'s> FileExtractor<'s> {
                 self.visit_interface_body(&iface.body, name);
             }
             Statement::TSModuleDeclaration(module) => {
-                let name = match &module.id {
-                    TSModuleDeclarationName::Identifier(id) => id.name.as_str().to_string(),
-                    TSModuleDeclarationName::StringLiteral(s) => s.value.as_str().to_string(),
-                };
-                self.push_symbol(Symbol {
-                    name: name.clone(),
-                    kind: "namespace".to_string(),
-                    container: parent.map(String::from),
-                    signature: None,
-                    file_path: self.rel_path.clone(),
-                    line: Some(self.line(module.span.start)),
-                    end_line: Some(self.line(module.span.end)),
-                    export: exported,
-                    doc_summary: None,
-                    body_hash: None,
-                    body_lines: None,
-                    structure_hash: None,
-                    implements: None,
-                    deprecated: false,
-                    deprecated_note: None,
-                    is_internal: false,
-                    decorators: None,
-                });
+                // Namespaces are not symbols in the TypeScript index; their declarations are.
+                if let Some(oxc_ast::ast::TSModuleDeclarationBody::TSModuleBlock(block)) = &module.body {
+                    for inner in block.body.iter() {
+                        self.visit_statement(inner, None, false);
+                    }
+                }
             }
             Statement::TSTypeAliasDeclaration(alias) => {
                 let name = alias.id.name.as_str();

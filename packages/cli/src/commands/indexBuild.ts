@@ -64,6 +64,10 @@ import {
 } from "@intentweave/index";
 import { detectChanges, applyChanges, hashFile } from "@intentweave/index";
 import {
+  annotateBuiltIndex,
+  discoverBuildDocumentFiles,
+} from "@intentweave/index";
+import {
   runCypherQueryFromDb,
   CARI_GRAPH_SCHEMA,
   CARI_QUERY_TEMPLATES,
@@ -700,6 +704,29 @@ const indexBuildSubcommand = new Command("build")
             // Snapshot failure must not fail the build
           }
 
+          // Annotations come from the TypeScript keyword stages on the native symbols. They
+          // are cheap (a fraction of a second), and they keep rule results identical.
+          const docFiles = await discoverBuildDocumentFiles({
+            paths,
+            workspaceRoot: cwd,
+            include: opts.include,
+            exclude: opts.exclude,
+            includeAllFiles: false,
+            maxFileSize: parseInt(opts.maxFileSize, 10),
+          });
+          const annotationCount = await annotateBuiltIndex({
+            dbPath: temporaryDbPath,
+            workspaceRoot: cwd,
+            docFiles,
+            depth: opts.depth as "structured" | "full",
+          });
+          if (verbose) {
+            console.log(
+              chalk.gray(
+                `  ▸ annotations: ${annotationCount} (TypeScript keyword stages)\n`,
+              ),
+            );
+          }
           replaceDatabaseAtomically(temporaryDbPath, dbPath);
           const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
           console.log(
