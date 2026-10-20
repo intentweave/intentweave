@@ -1476,6 +1476,7 @@ re-run in this review.
 | Communication track                                      | Not verified                   | —                                                                                                                                                                 | Publication checkpoints depend on the evidence above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | G5.3 Generalized observation and change layer            | Accepted for O0–O4             | Migration 21; `ObservationStore`; `iw claims observations capture` / `check`; O2 gaps listed in Phase G5.3                                                        | O0 persistence contract acceptance; then O1–O4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | G5.4 Intent Anchors, Claim Relations, conflict semantics | Partly implemented             | Section G5.4; no implementation                                                                                                                                   |
+| G5.5 Deterministic document discovery                    | Proposed (after G5.4)          | Section G5.5; no implementation                                                                                                                                   |
 
 Verification on 2026-10-16: the full CI sequence passed build (exit 0), typecheck
 (exit 0), tests (1,227 passed, 4 skipped, 97 files), and lint (exit 0).
@@ -2675,6 +2676,75 @@ Open decisions:
 - Whether the minimal Claim Relation ships in G5.4, or after the first slice.
 - Whether `reviewed-policy` authority may create anchors, and under which Policy.
 - The format of an explicit follow-up declaration.
+
+### Phase G5.5: Deterministic Document Discovery (Proposed)
+
+Purpose. Documents already state intent: ADR decisions, parameter values in
+tables, and Mermaid diagrams. Today Claims can receive that intent only as a
+declared Origin (`source: adr | spec`) or through semantic discovery, which
+proposes and never decides. G5.5 adds a deterministic extractor for a narrow,
+explicit document convention. Its output is evidence traced to a file, line, and
+content hash, and it becomes a Candidate that a person promotes. No model is
+called, and nothing is promoted automatically.
+
+Principles. This phase follows the design rules in `CONTRIBUTING.md`:
+deterministic verification (extraction and matching are repeatable from the
+document text alone), LLMs propose and do not decide (no model in this path),
+evidence over assertion (every Candidate names its document location), and
+versioned contracts (the extractor has an id and contract version, as the
+existing discovery adapters do). Claim identity is not changed. An ADR-declared
+Origin and a code-reconstructed Origin converge on one Claim when family,
+Subjects, Scope, and identity contract are equal (Section 4, `ClaimOrigin`).
+
+Scope of slice 1. Only a documented parameter table in an ADR or spec, where
+each row is an explicit key and value. Example:
+
+```markdown
+| Parameter       | Value | Scope      |
+| --------------- | ----- | ---------- |
+| session.timeout | 1800  | production |
+```
+
+Out of scope for slice 1: prose interpretation, free-text decisions, Mermaid
+diagrams, and abstract anchors. Those stay semantic or move to later slices.
+
+Steps.
+
+0. **Decide the convention (needs your decision).** Options: a parameter table
+   in the ADR body (above), a fenced YAML block, or front matter. The table is
+   the most readable in review and needs no new syntax. The YAML block is the
+   most precise. Recommendation: the table, with a fail-closed rule for any row
+   that does not match the exact header and key/value shape.
+1. **Pure extractor.** A function from Markdown text and a file path to
+   `{ key, value, scope, line, contentHash }[]`, plus diagnostics for rejected
+   rows. Tests use fixtures for valid tables, malformed rows, duplicate keys in
+   one file, and tables inside code fences (ignored). Check that ADR-001 yields
+   no false rows.
+2. **Candidate persistence.** Emit Candidates through the existing deterministic
+   discovery mode with `source: adr` and a versioned adapter identity. Reuse the
+   existing candidate governance. Nothing is promoted by the extractor.
+3. **Convergence test.** A fixture where the ADR table and the code agree
+   produces one Claim with two Origins. A fixture where they disagree produces
+   a Candidate and a Claim that a check can fail. This is the test of whether
+   the extraction is useful.
+4. **Document reuse.** Check whether the Intent Engine's Markdown and diagram
+   code (`packages/cli/src/commands/indexScanDiagrams.ts`) can be shared rather
+   than duplicated. Diagrams are slice 2.
+5. **Measure.** Run the extractor on this repository's `docs/`. Report the number
+   of rows found, the number rejected with reasons, and a hand review of every
+   accepted row. Precision matters more than recall here: a missed row is a
+   silent gap, but a wrong row produces a false Candidate.
+6. **Docs and changelog.** Update `docs/CLI-USAGE.md`, the Copilot reference, and
+   the changelog, as for G5.4.
+
+Decisions for you. (a) The convention in step 0. (b) Whether accepted rows should
+create Candidates only, as proposed, or can also become declared Origins without
+review. Candidates only keeps promotion under human control. (c) Whether slice 1
+covers parameter Claims only, as proposed, or also documented public symbols.
+
+Verification. Unit tests for the extractor, the convergence test in step 3, the
+measure in step 5 recorded in the plan, and the standard
+`pnpm build && pnpm typecheck && pnpm test && pnpm format:check` before a PR.
 
 ### Phase G6: AI-Assisted Candidate Curation and Correlation
 
