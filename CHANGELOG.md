@@ -6,10 +6,15 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
+- **Untracked native binary** — `packages/cari-native-darwin-arm64/bin/` is no longer
+  committed. Release CI builds `cari-build` and places it in the package before publishing.
+  A stale committed binary had taken precedence over fresh development builds.
+- **Removed Claim subjects are conflicts** — a protected Claim that is absent from the
+  index after a rebuild reports `intent_conflict`, because its promoted subject is gone.
 - **Native CARI parity for Claims** — the Rust `cari-build` now writes the same symbol
   identities, signatures, doc summaries, body and structure hashes, export status,
-  deprecation flags, and `implements` lists as the TypeScript AX stage, and it applies
-  the same file-discovery rules. A replay of 49 commits and a base check of 100
+  deprecation flags, `implements` lists, import targets, and the file-size and
+  file-discovery rules of the TypeScript AX stage. A replay of 49 commits and a base check of 100
   protected Claims give identical outcomes on both engines. Symbol sets still differ
   for some function and variable declarations (365 TypeScript-only and 245 native-only
   symbols in this repository). The shipped `cari-build` binary predates these changes

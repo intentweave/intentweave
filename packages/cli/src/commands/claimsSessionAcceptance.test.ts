@@ -398,4 +398,27 @@ describe("session acceptance: intent anchors on a parameter Claim", () => {
     expect(after.output.intentAnchors?.[0]?.outcome).toBe("intent_conflict");
     expect(after.output.intentAnchors?.[0]?.reason).toContain("expired");
   });
+
+  it("treats a protected Claim whose subject disappears as a conflict", async () => {
+    const workspace = newWorkspace("structured", "structured");
+    setGateMode(workspace, "gate");
+    await protectDefault();
+    // Remove the code that declares the default. Its Claim cannot come back on rebuild.
+    rmSync(
+      path.join(
+        workspace,
+        "packages",
+        "cli",
+        "src",
+        "commands",
+        "indexBuild.ts",
+      ),
+    );
+    discardIndex(workspace);
+    const gone = await check();
+    const outcome = gone.output.intentAnchors?.[0];
+    expect(outcome?.outcome).toBe("intent_conflict");
+    expect(outcome?.reason).toContain("no longer present");
+    expect(gone.exitCode).toBe(1);
+  });
 });

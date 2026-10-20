@@ -38,3 +38,6 @@ npm-debug.log*
 
 # Rust build artifacts
 packages/cari-native/target/
+
+# Native binaries are built by scripts/package-native.sh in release CI, not committed
+packages/cari-native-*/bin/

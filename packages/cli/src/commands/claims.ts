@@ -3567,15 +3567,18 @@ export async function runClaimsCheck(options: {
               output.retiredClaims.map((claim) => claim.claimIdentityId),
             ),
           });
-          // An anchor whose Claim is absent from this index cannot be decided: report it.
+          // An anchor whose Claim is absent from this index means its subject was removed.
           const anchorReports: IntentAnchorEvaluation[] = [
             ...evaluated,
             ...missingAnchorClaims.map((missing) => ({
               anchorId: missing.anchorId,
               claimIdentityId: missing.claimIdentityId,
               anchoredStatementFingerprint: missing.statementFingerprint,
-              outcome: "intent_unresolved" as const,
-              reason: "the anchored Claim is not present in this index",
+              // Claims come back from promoted Candidates on every rebuild, so a Claim that
+              // is absent here has lost its subject: the protected intent is violated.
+              outcome: "intent_conflict" as const,
+              reason:
+                "the anchored Claim's subject is no longer present in the index",
             })),
           ];
           output.intentAnchors = anchorReports;

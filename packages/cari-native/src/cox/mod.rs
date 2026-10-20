@@ -62,7 +62,9 @@ pub fn run(ax: &AxResult, kwx: &KwxResult) -> Result<CoxResult> {
     let import_pairs: Vec<(String, String)> = {
         let mut by_source: HashMap<&str, Vec<&str>> = HashMap::new();
         for imp in &ax.imports {
-            by_source.entry(&imp.source_file).or_default().push(&imp.target_file);
+            if let Some(target) = imp.target_file.as_deref() {
+                by_source.entry(&imp.source_file).or_default().push(target);
+            }
         }
         let mut pairs = Vec::new();
         for targets in by_source.values() {

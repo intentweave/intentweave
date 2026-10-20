@@ -33,6 +33,9 @@ fn is_source_file(path: &Path) -> bool {
     )
 }
 
+/// Largest source file AX reads, in bytes (TypeScript `maxFileSize`).
+const AX_MAX_FILE_SIZE: usize = 262_144;
+
 /// Whether AX extracts symbols from a file. The TypeScript stage's discovery covers
 /// `.ts/.tsx/.js/.jsx`, ignores `node_modules` and `dist`, `*.d.ts`, `*.test.ts`,
 /// `*.spec.ts`, and does not follow dot-directories (tinyglobby defaults).
@@ -72,6 +75,61 @@ fn hash_text(text: &str) -> String {
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect()
+}
+
+/// TypeScript treats a specifier starting with `.` or `/` as relative.
+fn is_relative_specifier(specifier: &str) -> bool {
+    specifier.starts_with('.') || specifier.starts_with('/')
+}
+
+/// Port of `resolveImportPath` (TypeScript AX stage): a relative specifier resolves to
+/// `<base>.ts|.tsx|.js|.jsx` or `<base>/index.(ts|tsx|js|jsx)` on disk, with a trailing
+/// JavaScript-style extension removed first. Anything else resolves to nothing.
+fn resolve_import(root: &Path, source_file: &str, specifier: &str) -> Option<String> {
+    if !is_relative_specifier(specifier) {
+        return None;
+    }
+    let mut stripped = specifier;
+    for ext in [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"] {
+        if let Some(rest) = stripped.strip_suffix(ext) {
+            stripped = rest;
+            break;
+        }
+    }
+    let dir = Path::new(source_file).parent().unwrap_or(Path::new(""));
+    let mut parts: Vec<String> = dir
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => Some(s.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .collect();
+    for component in Path::new(stripped).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                parts.pop();
+            }
+            std::path::Component::Normal(s) => parts.push(s.to_string_lossy().to_string()),
+            _ => {}
+        }
+    }
+    let base = parts.join("/");
+    let extensions = [".ts", ".tsx", ".js", ".jsx"];
+    for ext in extensions {
+        if root.join(format!("{base}{ext}")).exists() {
+            return Some(format!("{base}{ext}"));
+        }
+    }
+    for ext in extensions {
+        if root.join(&base).join(format!("index{ext}")).exists() {
+            return Some(if base.is_empty() {
+                format!("index{ext}")
+            } else {
+                format!("{base}/index{ext}")
+            });
+        }
+    }
+    None
 }
 
 fn resolve_specifier(source_file: &str, specifier: &str) -> (String, bool) {
@@ -168,6 +226,7 @@ fn params_string(params: &oxc_ast::ast::FormalParameters<'_>) -> String {
 struct FileExtractor<'s> {
     content: &'s str,
     rel_path: String,
+    root: PathBuf,
     line_idx: Vec<usize>,
     pub symbols: Vec<Symbol>,
     pub imports: Vec<Import>,
@@ -175,10 +234,11 @@ struct FileExtractor<'s> {
 }
 
 impl<'s> FileExtractor<'s> {
-    fn new(content: &'s str, rel_path: &str) -> Self {
+    fn new(content: &'s str, rel_path: &str, root: &Path) -> Self {
         Self {
             content,
             rel_path: rel_path.to_string(),
+            root: root.to_path_buf(),
             line_idx: build_line_index(content),
             symbols: Vec::new(),
             imports: Vec::new(),
@@ -360,18 +420,7 @@ impl<'s> FileExtractor<'s> {
                 if let Some(decl) = &export.declaration {
                     self.visit_decl(decl, true, parent);
                 }
-                if let Some(src) = &export.source {
-                    let (target, is_rel) =
-                        resolve_specifier(&self.rel_path, src.value.as_str());
-                    self.imports.push(Import {
-                        source_file: self.rel_path.clone(),
-                        target_file: target,
-                        module_specifier: src.value.as_str().to_string(),
-                        line: Some(self.line(export.span.start)),
-                        is_relative: is_rel,
-                        imported_names: None,
-                    });
-                }
+                // Re-exports (`export … from`) are not recorded as imports, as in TypeScript.
             }
             Statement::ExportDefaultDeclaration(export) => {
                 match &export.declaration {
@@ -762,7 +811,7 @@ impl<'s> FileExtractor<'s> {
 
     fn visit_import(&mut self, decl: &oxc_ast::ast::ImportDeclaration<'_>) {
         let specifier = decl.source.value.as_str();
-        let (target, is_rel) = resolve_specifier(&self.rel_path, specifier);
+        // TypeScript records the imported name (not an alias), `default`, or `*`.
         let imported_names: Vec<String> = decl
             .specifiers
             .as_ref()
@@ -771,13 +820,13 @@ impl<'s> FileExtractor<'s> {
                     .iter()
                     .map(|s| match s {
                         ImportDeclarationSpecifier::ImportSpecifier(spec) => {
-                            spec.local.name.as_str().to_string()
+                            spec.imported.name().as_str().to_string()
                         }
-                        ImportDeclarationSpecifier::ImportDefaultSpecifier(spec) => {
-                            spec.local.name.as_str().to_string()
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
+                            "default".to_string()
                         }
-                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(spec) => {
-                            format!("* as {}", spec.local.name.as_str())
+                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {
+                            "*".to_string()
                         }
                     })
                     .collect()
@@ -785,14 +834,14 @@ impl<'s> FileExtractor<'s> {
             .unwrap_or_default();
         self.imports.push(Import {
             source_file: self.rel_path.clone(),
-            target_file: target,
+            target_file: resolve_import(&self.root, &self.rel_path, specifier),
             module_specifier: specifier.to_string(),
             line: Some(self.line(decl.span.start)),
-            is_relative: is_rel,
+            is_relative: is_relative_specifier(specifier),
             imported_names: if imported_names.is_empty() {
                 None
             } else {
-                Some(imported_names.join(", "))
+                Some(serde_json::to_string(&imported_names).unwrap_or_default())
             },
         });
     }
@@ -1228,19 +1277,21 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(path).unwrap_or_default();
     let ret = Parser::new(&allocator, &content, source_type).parse();
-    let mut extractor = FileExtractor::new(&content, &rel_path);
+    let mut extractor = FileExtractor::new(&content, &rel_path, workspace_root);
     for stmt in ret.program.body.iter() {
         extractor.visit_statement(stmt, None, false);
     }
     apply_declaration_headers(&mut extractor.symbols, &content);
     apply_source_fingerprints(&mut extractor.symbols, &content);
-    let content_hash = blake3::hash(content.as_bytes())
-        .as_bytes()[..8]
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    // SHA-256 truncated to 16 hex digits, as the TypeScript index stores it.
+    let content_hash = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(content.as_bytes()))[..16].to_string()
+    };
     // Files outside AX discovery keep their file row, but contribute no symbols or edges.
-    let in_scope = ax_extracts_symbols(&rel_path);
+    // Files above the AX size limit are skipped the same way and recorded as unindexed.
+    let too_large = content.len() > AX_MAX_FILE_SIZE;
+    let in_scope = ax_extracts_symbols(&rel_path) && !too_large;
     Some(ProcessedFile {
         symbols: if in_scope { extractor.symbols } else { Vec::new() },
         imports: if in_scope { extractor.imports } else { Vec::new() },
@@ -1257,8 +1308,14 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
             is_doc: false,
             content_hash: Some(content_hash),
             doc_group: None,
-            indexed: true,
-            skip_reason: None,
+            indexed: !too_large,
+            skip_reason: too_large.then(|| {
+                format!(
+                    "file too large ({} bytes > {} bytes)",
+                    content.len(),
+                    AX_MAX_FILE_SIZE
+                )
+            }),
             comment_lines: None,
             code_lines: Some(code_lines),
         },
@@ -1325,7 +1382,7 @@ mod tests {
         let allocator: &'static Allocator = Box::leak(Box::new(Allocator::default()));
         let source_type = SourceType::from_path(Path::new(path)).unwrap_or_default();
         let ret = Parser::new(allocator, content, source_type).parse();
-        let mut ex = FileExtractor::new(content, path);
+        let mut ex = FileExtractor::new(content, path, Path::new("."));
         for stmt in ret.program.body.iter() {
             ex.visit_statement(stmt, None, false);
         }

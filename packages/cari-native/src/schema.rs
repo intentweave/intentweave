@@ -110,7 +110,7 @@ CREATE INDEX IF NOT EXISTS idx_files_hotspot   ON files(is_hotspot);
 CREATE TABLE IF NOT EXISTS imports (
   id               TEXT PRIMARY KEY,
   source_file      TEXT NOT NULL,
-  target_file      TEXT NOT NULL,
+  target_file      TEXT,
   module_specifier TEXT NOT NULL,
   line             INTEGER,
   is_relative      INTEGER NOT NULL DEFAULT 0,

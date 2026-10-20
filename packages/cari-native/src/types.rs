@@ -140,7 +140,9 @@ pub struct Symbol {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Import {
     pub source_file: String,
-    pub target_file: String,
+    /// Resolved target for relative imports that exist on disk; `None` for packages and
+    /// unresolved specifiers (TypeScript stores NULL).
+    pub target_file: Option<String>,
     pub module_specifier: String,
     pub line: Option<i64>,
     pub is_relative: bool,

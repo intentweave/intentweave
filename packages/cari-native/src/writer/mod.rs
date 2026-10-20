@@ -144,10 +144,19 @@ pub fn write(
              (id, source_file, target_file, module_specifier, line, is_relative, imported_names)
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
         )?;
+        let known: HashSet<&str> = ax.files.iter().map(|f| f.path.as_str()).collect();
         for imp in &ax.imports {
-            let id = util::make_id(&format!("imp:{}:{}:{}", imp.source_file, imp.target_file, imp.module_specifier));
+            let target = imp.target_file.as_deref().map(|r| resolve_target_file(r, &known));
+            // The line keeps two imports of one module in one file (type and value) apart.
+            let id = util::make_id(&format!(
+                "imp:{}:{}:{}:{}",
+                imp.source_file,
+                target.as_deref().unwrap_or(""),
+                imp.module_specifier,
+                imp.line.unwrap_or(0)
+            ));
             stmt.execute(rusqlite::params![
-                id, imp.source_file, imp.target_file, imp.module_specifier,
+                id, imp.source_file, target, imp.module_specifier,
                 imp.line, imp.is_relative as i64, imp.imported_names,
             ])?;
             counts.imports += 1;
@@ -288,4 +297,31 @@ mod symbol_identity_tests {
         let b = symbol("name", "property", Some("PrescriptiveLayerNode"), None);
         assert_ne!(symbol_identity(&a), symbol_identity(&b));
     }
+}
+
+/// Port of `resolveTargetFile` (TypeScript index writer): a resolved path that is not a
+/// known file is retried with the extensions that TypeScript source may use instead.
+fn resolve_target_file(resolved: &str, known: &HashSet<&str>) -> String {
+    if known.contains(resolved) {
+        return resolved.to_string();
+    }
+    let swaps: &[&str] = match std::path::Path::new(resolved)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
+        Some("js") => &[".ts", ".tsx", ".js"],
+        Some("jsx") => &[".tsx", ".jsx"],
+        Some("mjs") => &[".mts", ".mjs"],
+        Some("cjs") => &[".cts", ".cjs"],
+        _ => return resolved.to_string(),
+    };
+    let ext_len = resolved.len() - resolved.rfind('.').unwrap_or(resolved.len());
+    let base = &resolved[..resolved.len() - ext_len];
+    for swap in swaps {
+        let candidate = format!("{base}{swap}");
+        if known.contains(candidate.as_str()) {
+            return candidate;
+        }
+    }
+    resolved.to_string()
 }
