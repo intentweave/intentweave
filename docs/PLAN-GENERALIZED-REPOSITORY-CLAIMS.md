@@ -2555,11 +2555,19 @@ follow-ups in `intent.yaml`. Slice 2 (Claim Relations): `realizes` and `refines`
 with cycle and duplicate checks (schema 27), realizer aggregation for anchored targets
 (a supported realizer holds; refuted or contested is a conflict; undecided is unresolved),
 `constrains` and `warrants` recorded only, portable state schema 6, and the
-`claims relations` commands. Not yet implemented: abstract anchors, which need a Claim
-identity without a statement of its own (a schema decision), and per-family aggregation
-rules beyond the common rule above. Not yet implemented: deterministic re-evaluation of
-the origin Claim as a follow-up source, the scenario and replay measures in
-Evaluation, Claim Relations, abstract anchors, and the observation-path bridge.
+`claims relations` commands. Abstract anchors (schema 28, portable state 7): an intent
+with no statement of its own is protected by its realizer set. The set is recorded by a
+person; a changed set is `intent_conflict` and needs an amendment; a refuted, contested,
+or retired realizer is a conflict; an undecided realizer is unresolved. Abstract
+realizations are their own records, not Claim Relations. Not yet implemented: per-family
+aggregation rules beyond the common rule above, deterministic re-evaluation of the origin
+Claim as a follow-up source, the scenario and replay measures in Evaluation, and the
+observation-path bridge.
+
+Relation links are not decided mechanically in general. Explicit declarations and clear
+code structure can be checked deterministically. A design link such as "this handler
+realizes the default" needs a judgement, so a model may propose it, and only a person can
+activate it. The implementation records relations only through the CLI, with an actor.
 
 Authority decision (G5.4 gap 9, revised). The first slice allowed only `human`
 anchors. The owner now proposes that an AI-proposed anchor becomes active on

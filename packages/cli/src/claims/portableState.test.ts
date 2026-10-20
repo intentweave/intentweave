@@ -37,16 +37,18 @@ describe("Claims portable-state YAML", () => {
     const current = serializePortableClaimsState(stateWithPolicies());
     // v1 predates intent anchors, conflict decisions, and claim relations, so the input omits them.
     const v1 = current
-      .replace('schemaVersion: "6"', 'schemaVersion: "1"')
+      .replace('schemaVersion: "7"', 'schemaVersion: "1"')
       .replace(/^intentAnchors: \{\}\n/m, "")
       .replace(/^conflictDecisions: \{\}\n/m, "")
-      .replace(/^claimRelations: \{\}\n/m, "");
+      .replace(/^claimRelations: \{\}\n/m, "")
+      .replace(/^abstractRealizations: \{\}\n/m, "")
+      .replace(/^abstractAnchors: \{\}\n/m, "");
     const migrated = serializePortableClaimsState(
       parsePortableClaimsStateYaml(v1),
     );
 
     expect(migrated).toBe(current);
-    expect(migrated).toContain('schemaVersion: "6"');
+    expect(migrated).toContain('schemaVersion: "7"');
   });
 
   it("round-trips byte-identically with canonical map ordering", () => {
@@ -110,14 +112,14 @@ baselineAcceptances: {}
 
     expect(() =>
       parsePortableClaimsStateYaml(`
-schemaVersion: "7"
+schemaVersion: "8"
 policies: {}
 candidateDecisions: {}
 subjectBindings: {}
 assessmentReviews: {}
 baselineAcceptances: {}
 `),
-    ).toThrow("must be one of: 1, 2, 3, 4, 5, 6");
+    ).toThrow("must be one of: 1, 2, 3, 4, 5, 6, 7");
   });
 
   it("round-trips an AI-proposed Intent Anchor and rejects an unknown authority", () => {

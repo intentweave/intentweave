@@ -11,9 +11,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Database from "@intentweave/sqlite-compat";
-import { ClaimRelationStore, initSchema } from "@intentweave/index";
 import {
+  AbstractIntentStore,
+  ClaimRelationStore,
+  initSchema,
+} from "@intentweave/index";
+import {
+  persistPortableAbstractAnchor,
+  persistPortableAbstractRealization,
   persistPortableClaimRelation,
+  projectPortableAbstractIntents,
   projectPortableClaimRelations,
 } from "../claims/portableReviewProjection.js";
 import { loadPortableClaimsState } from "../claims/portableState.js";
@@ -96,5 +103,53 @@ describe("Claim Relations in portable state", () => {
     await runClaimsRelationList({ format: "json" });
     expect(process.exitCode).toBe(64);
     expect(String(errors.mock.calls[0]?.[0])).toContain("Index not found");
+  });
+
+  it("restores an abstract intent's realizers and anchor into a rebuilt index", () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "intentweave-abstract-"));
+    workspaces.push(workspace);
+    mkdirSync(path.join(workspace, ".iw", "claims"), { recursive: true });
+    const first = new Database(":memory:");
+    initSchema(first);
+    seedClaims(first);
+    const store = new AbstractIntentStore(first);
+    for (const id of ["claim:design", "claim:impl"]) {
+      persistPortableAbstractRealization(
+        workspace,
+        store.realize({
+          intentKey: "index-is-configurable",
+          claimIdentityId: id,
+          actor: "reviewer",
+          createdAt: 1,
+        }),
+      );
+    }
+    persistPortableAbstractAnchor(
+      workspace,
+      store.protect({
+        intentKey: "index-is-configurable",
+        actor: "reviewer",
+        createdAt: 2,
+      }),
+    );
+    first.close();
+
+    const rebuilt = new Database(":memory:");
+    initSchema(rebuilt);
+    seedClaims(rebuilt);
+    const state = loadPortableClaimsState(workspace);
+    expect(projectPortableAbstractIntents(rebuilt, state!)).toEqual({
+      imported: 3,
+      skipped: 0,
+    });
+    const restored = new AbstractIntentStore(rebuilt);
+    expect(restored.activeRealizers("index-is-configurable")).toEqual([
+      "claim:design",
+      "claim:impl",
+    ]);
+    expect(restored.active().map((a) => a.intentKey)).toEqual([
+      "index-is-configurable",
+    ]);
+    rebuilt.close();
   });
 });

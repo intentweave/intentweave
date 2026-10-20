@@ -27,6 +27,9 @@ import {
   ClaimRelationError,
   ClaimRelationStore,
   type ClaimRelationKind,
+  AbstractIntentError,
+  AbstractIntentStore,
+  type AbstractAnchorEvaluation,
 } from "@intentweave/index";
 import type {
   CandidateDetails,
@@ -158,6 +161,9 @@ import {
   type PortableReviewProjectionIssue,
   persistPortableClaimRelation,
   projectPortableClaimRelations,
+  persistPortableAbstractAnchor,
+  persistPortableAbstractRealization,
+  projectPortableAbstractIntents,
 } from "../claims/portableReviewProjection.js";
 import {
   candidateDisplayLines,
@@ -423,6 +429,7 @@ export interface ClaimsCheckOutput {
   /** How declared follow-ups were judged: against the change set, or not at all. */
   intentFollowUpBasis?: "change-set" | "unavailable";
   intentFollowUpNote?: string;
+  abstractIntentAnchors?: AbstractAnchorEvaluation[];
 }
 
 export interface ClaimsCheckExecution {
@@ -3514,6 +3521,7 @@ export async function runClaimsCheck(options: {
             portableState,
           );
           projectPortableClaimRelations(database, portableState);
+          projectPortableAbstractIntents(database, portableState);
           const anchorProjection = projectPortableIntentAnchors(
             database,
             portableState,
@@ -3623,6 +3631,19 @@ export async function runClaimsCheck(options: {
           );
           intentUnresolved = anchorReports.some(
             (anchor) => anchor.outcome === "intent_unresolved",
+          );
+          // Abstract intents (G5.4 slice 2) are judged from the database alone.
+          const abstractReports = new AbstractIntentStore(database).evaluate({
+            retiredClaimIds: new Set(
+              output.retiredClaims.map((claim) => claim.claimIdentityId),
+            ),
+          });
+          output.abstractIntentAnchors = abstractReports;
+          intentConflict ||= abstractReports.some(
+            (report) => report.outcome === "intent_conflict",
+          );
+          intentUnresolved ||= abstractReports.some(
+            (report) => report.outcome === "intent_unresolved",
           );
           // A declared follow-up is reviewed by its declaration, so it records the
           // review of the new statement. Recording is idempotent across checks.
@@ -3870,6 +3891,150 @@ export async function runClaimsRelationList(options: {
     }
   } catch (error) {
     reportRelationError(error);
+  }
+}
+
+function abstractIntentError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(message);
+  process.exitCode =
+    error instanceof ClaimsBindingError || error instanceof AbstractIntentError
+      ? 64
+      : 1;
+}
+
+export async function runClaimsIntentRealize(options: {
+  intent: string;
+  claim: string;
+  actor: string;
+  type?: string;
+  scope?: string;
+  rationale?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableAbstractIntents(database, portable);
+      const claim = resolveSingleClaimIdentity(database, {
+        claim: options.claim,
+        type: options.type,
+        scope: options.scope,
+      });
+      const realization = new AbstractIntentStore(database).realize({
+        intentKey: options.intent,
+        claimIdentityId: claim.id,
+        actor: options.actor,
+        ...(options.rationale ? { rationale: options.rationale } : {}),
+      });
+      persistPortableAbstractRealization(workspaceRoot, realization);
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ realization }, null, 2)
+          : `${realization.id}: ${claim.id} realizes ${options.intent}`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    abstractIntentError(error);
+  }
+}
+
+export async function runClaimsIntentUnrealize(options: {
+  id: string;
+  format: string;
+}): Promise<void> {
+  try {
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableAbstractIntents(database, portable);
+      const store = new AbstractIntentStore(database);
+      const retired = store.unrealize(options.id, Date.now());
+      persistPortableAbstractRealization(workspaceRoot, retired);
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ realization: retired }, null, 2)
+          : `retired ${retired.id}`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    abstractIntentError(error);
+  }
+}
+
+export async function runClaimsIntentProtect(options: {
+  intent: string;
+  actor: string;
+  scope?: string;
+  amendment?: boolean;
+  rationale?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableAbstractIntents(database, portable);
+      const anchor = new AbstractIntentStore(database).protect({
+        intentKey: options.intent,
+        actor: options.actor,
+        ...(options.scope ? { scope: options.scope } : {}),
+        ...(options.amendment ? { amendment: true } : {}),
+        ...(options.rationale ? { rationale: options.rationale } : {}),
+        createdAt: Date.now(),
+      });
+      persistPortableAbstractAnchor(workspaceRoot, anchor);
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ anchor }, null, 2)
+          : `${anchor.id}: protects ${options.intent} with ${anchor.realizers.length} realizers`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    abstractIntentError(error);
+  }
+}
+
+export async function runClaimsIntentList(options: {
+  format: string;
+}): Promise<void> {
+  try {
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableAbstractIntents(database, portable);
+      const store = new AbstractIntentStore(database);
+      const anchors = store.active();
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ anchors }, null, 2)
+          : anchors
+              .map(
+                (anchor) =>
+                  `${anchor.id}: ${anchor.intentKey} (${anchor.realizers.length} realizers)`,
+              )
+              .join("\n"),
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    abstractIntentError(error);
   }
 }
 
@@ -5298,6 +5463,75 @@ export const claimsCommand = new Command("claims")
             "text",
           )
           .action(runClaimsRelationList),
+      ),
+  )
+  .addCommand(
+    new Command("intents")
+      .description(
+        "Abstract intents: a set of realizing Claims, protected as one (G5.4 slice 2)",
+      )
+      .addCommand(
+        new Command("realize")
+          .description("Record that a Claim realizes an abstract intent")
+          .requiredOption("--intent <key>", "Intent key")
+          .requiredOption(
+            "--claim <claim>",
+            "Claim (ID, candidate ref, or parameter key)",
+          )
+          .requiredOption("--actor <name>", "Decision actor")
+          .option(
+            "--type <claimType>",
+            "Claim type used to resolve a parameter",
+          )
+          .option("--scope <scope>", "Claim scope used to resolve a parameter")
+          .option("--rationale <text>", "Reason for the realization")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsIntentRealize),
+      )
+      .addCommand(
+        new Command("unrealize")
+          .description(
+            "Retire a realization of an abstract intent (kept as history)",
+          )
+          .requiredOption("--id <realizationId>", "Realization id")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsIntentUnrealize),
+      )
+      .addCommand(
+        new Command("protect")
+          .description("Protect the current realizer set of an abstract intent")
+          .requiredOption("--intent <key>", "Intent key")
+          .requiredOption("--actor <name>", "Decision actor")
+          .option("--scope <scope>", "Anchor scope (default: intent)")
+          .option(
+            "--amendment",
+            "Replace the active anchor with a decided new set",
+          )
+          .option("--rationale <text>", "Reason for the anchor")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsIntentProtect),
+      )
+      .addCommand(
+        new Command("list")
+          .description("List active abstract Intent Anchors")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsIntentList),
       ),
   )
   .addCommand(

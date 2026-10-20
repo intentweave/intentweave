@@ -378,6 +378,7 @@ iw claims check --as-of <isoDate>                 # judge intent exceptions at a
 iw claims review                                  # record a human decision on an Assessment
 iw claims review --purpose protect ...              # also protect the Claim with an Intent Anchor
 iw claims relations add|list|retire                 # Claim Relations: realizes, refines, constrains, warrants
+iw claims intents realize|unrealize|protect|list    # abstract intents: a realizer set, protected as one
 iw claims conflicts resolve --decision accept_amendment|reject_change|grant_exception
                                                   # decide an intent_conflict (exceptions need --expires)
 iw claims explain                                 # current Claims, dependencies, and reopens

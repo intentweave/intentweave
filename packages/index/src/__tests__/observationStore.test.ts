@@ -65,7 +65,7 @@ function run(
 describe("observation store (migration 21)", () => {
   it("creates the observation tables on a fresh database at the current schema version", () => {
     const { db } = fresh();
-    expect(CURRENT_SCHEMA_VERSION).toBe("27");
+    expect(CURRENT_SCHEMA_VERSION).toBe("28");
     const tables = (
       db
         .prepare(
@@ -443,7 +443,7 @@ describe("migration 21 from schema 20", () => {
     const version = db
       .prepare("SELECT value FROM _meta WHERE key = 'schema_version'")
       .get() as { value: string };
-    expect(version.value).toBe("27");
+    expect(version.value).toBe("28");
     const tables = db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'observation_runs'",

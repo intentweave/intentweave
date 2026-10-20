@@ -3,11 +3,14 @@
 
 import type Database from "@intentweave/sqlite-compat";
 import {
+  AbstractIntentStore,
   ClaimRelationStore,
   ClaimsReviewStore,
   emptyPortableClaimsState,
   fingerprint,
   IntentAnchorStore,
+  type AbstractIntentAnchor,
+  type AbstractRealization,
   type ClaimRelation,
   type ConflictDecision,
   type PortableConflictDecision,
@@ -480,6 +483,101 @@ export function projectPortableConflictDecisions(
       ...(decision.expiresAt
         ? { expiresAt: Date.parse(decision.expiresAt) }
         : {}),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  return { imported, skipped };
+}
+
+/** Write one abstract realization (created or retired) into portable state. */
+export function persistPortableAbstractRealization(
+  workspaceRoot: string,
+  realization: AbstractRealization,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  state.abstractRealizations[realization.id] = {
+    intentKey: realization.intentKey,
+    claimIdentityId: realization.claimIdentityId,
+    status: realization.status,
+    actor: { kind: "human", id: realization.actor },
+    createdAt: new Date(realization.createdAt).toISOString(),
+    ...(realization.retiredAt !== undefined
+      ? { retiredAt: new Date(realization.retiredAt).toISOString() }
+      : {}),
+    ...(realization.rationale ? { rationale: realization.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Write an abstract anchor into portable state, superseding the previous active one. */
+export function persistPortableAbstractAnchor(
+  workspaceRoot: string,
+  anchor: AbstractIntentAnchor,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  for (const [id, existing] of Object.entries(state.abstractAnchors)) {
+    if (
+      id !== anchor.id &&
+      existing.status === "active" &&
+      existing.intentKey === anchor.intentKey &&
+      existing.scope === anchor.scope
+    ) {
+      state.abstractAnchors[id] = { ...existing, status: "superseded" };
+    }
+  }
+  state.abstractAnchors[anchor.id] = {
+    intentKey: anchor.intentKey,
+    scope: anchor.scope,
+    realizerSetFingerprint: anchor.realizerSetFingerprint,
+    realizers: anchor.realizers,
+    authority: anchor.authority,
+    status: anchor.status,
+    actor: { kind: "human", id: anchor.actor },
+    createdAt: new Date(anchor.createdAt).toISOString(),
+    ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Import portable abstract realizations, then anchors, into SQLite. */
+export function projectPortableAbstractIntents(
+  database: Database.Database,
+  state: PortableClaimsState,
+): { imported: number; skipped: number } {
+  const store = new AbstractIntentStore(database);
+  let imported = 0;
+  let skipped = 0;
+  for (const [id, realization] of Object.entries(state.abstractRealizations)) {
+    const outcome = store.importRealization({
+      id,
+      intentKey: realization.intentKey,
+      claimIdentityId: realization.claimIdentityId,
+      status: realization.status,
+      actor: portableActorLabel(realization.actor),
+      ...(realization.rationale ? { rationale: realization.rationale } : {}),
+      createdAt: Date.parse(realization.createdAt),
+      ...(realization.retiredAt
+        ? { retiredAt: Date.parse(realization.retiredAt) }
+        : {}),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  for (const [id, anchor] of Object.entries(state.abstractAnchors)) {
+    const outcome = store.importAnchor({
+      id,
+      intentKey: anchor.intentKey,
+      scope: anchor.scope,
+      realizerSetFingerprint: anchor.realizerSetFingerprint,
+      realizers: anchor.realizers,
+      authority: anchor.authority,
+      status: anchor.status,
+      actor: portableActorLabel(anchor.actor),
+      ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+      createdAt: Date.parse(anchor.createdAt),
     });
     if (outcome === "imported") imported += 1;
     else skipped += 1;

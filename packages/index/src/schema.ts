@@ -392,7 +392,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "27";
+export const CURRENT_SCHEMA_VERSION = "28";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -1536,6 +1536,51 @@ export function migrateSchema22To23(db: Database.Database): void {
  * Additive: one table, created in a transaction, with no data rewritten.
  */
 /**
+ * Schema 27 -> 28 (G5.4 slice 2, abstract anchors). An abstract intent has no statement of
+ * its own: it is realized by a set of Claims, and an abstract anchor protects that set.
+ * Additive; no rows move.
+ */
+export function migrateSchema27To28(db: Database.Database): void {
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS abstract_intent_realizations (
+        id TEXT PRIMARY KEY,
+        intent_key TEXT NOT NULL,
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        status TEXT NOT NULL CHECK (status IN ('active', 'retired')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        created_at INTEGER NOT NULL,
+        retired_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_abstract_realizations_active
+        ON abstract_intent_realizations(intent_key, claim_identity_id)
+        WHERE status = 'active';
+      CREATE TABLE IF NOT EXISTS abstract_intent_anchors (
+        id TEXT PRIMARY KEY,
+        intent_key TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        realizer_set_fingerprint TEXT NOT NULL,
+        realizers_json TEXT NOT NULL,
+        authority TEXT NOT NULL CHECK (authority IN ('human', 'ai-proposed')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'superseded')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        superseded_by_anchor_id TEXT REFERENCES abstract_intent_anchors(id),
+        created_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_abstract_anchors_active
+        ON abstract_intent_anchors(intent_key, scope)
+        WHERE status = 'active';
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '28')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
  * Schema 26 -> 27 (G5.4 slice 2). Claim Relations: a versioned edge between two Claim
  * identities, used to aggregate realizations for Intent Anchors. Additive; no rows move.
  */
@@ -1901,6 +1946,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1916,6 +1962,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1930,6 +1977,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "17") {
@@ -1943,6 +1991,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "18") {
@@ -1955,6 +2004,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "19") {
@@ -1966,6 +2016,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "20") {
@@ -1976,6 +2027,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "21") {
@@ -1985,6 +2037,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "22") {
@@ -1993,6 +2046,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === "23") {
@@ -2000,6 +2054,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema24To25(db);
     migrateSchema25To26(db);
     migrateSchema26To27(db);
+    migrateSchema27To28(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {

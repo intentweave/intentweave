@@ -584,8 +584,33 @@ Rules:
 - Relations are reviewed state in `.iw/claims/state.yaml` (schema 6). They survive an
   index rebuild.
 
-Abstract anchors, which protect an intent with no statement of their own, are not
-implemented yet. An anchor still protects a concrete Claim.
+### Abstract Intents
+
+An abstract intent has no statement of its own. It is realized by a set of Claims, and
+an abstract anchor protects that set. A person records the realizers. Nothing infers them,
+and no model is called.
+
+```bash
+iw claims intents realize --intent index-is-configurable --claim config.json --actor alice
+iw claims intents realize --intent index-is-configurable --claim config.yaml --actor alice
+iw claims intents protect --intent index-is-configurable --actor alice --rationale "the index stays configurable"
+iw claims check                      # satisfied while the set is unchanged and each realizer is supported
+iw claims intents protect --intent index-is-configurable --actor alice --amendment
+iw claims intents unrealize --id realization:<id>
+iw claims intents list --format json
+```
+
+Outcomes:
+
+- `satisfied`: the realizer set is unchanged, and every realizer is supported.
+- `intent_conflict`: the set changed (a realizer was added or removed), or a realizer is
+  refuted, contested, or retired. A changed set is replaced only by `--amendment`.
+- `intent_unresolved`: the intent has no realizers, or a realizer has no decided
+  assessment.
+
+Abstract intents use their own realization records, not Claim Relations, because a
+Claim Relation links two Claims. Both are reviewed state in `.iw/claims/state.yaml`
+(schema 7).
 
 ### Intent Anchors
 
