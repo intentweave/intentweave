@@ -249,7 +249,9 @@ function parseNumstatLine(line: string): CommitFileChange | null {
   // Detect rename: "old/path => new/path" or "{old => new}/rest"
   // Brace renames ("dir/{old => new}") are handled below; checking them here first would
   // take the text after "=>" up to the end of the line and keep the closing brace.
-  const renameMatch = pathStr.includes("{") ? null : pathStr.match(/^(.+?)\s*=>\s*(.+)$/);
+  const renameMatch = pathStr.includes("{")
+    ? null
+    : pathStr.match(/^(.+?)\s*=>\s*(.+)$/);
   if (renameMatch) {
     const oldPath = renameMatch[1].trim();
     const newPath = renameMatch[2].trim();

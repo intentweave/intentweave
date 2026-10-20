@@ -592,7 +592,10 @@ export async function discoverBuildDocumentFiles(opts: {
   maxFileSize?: number;
 }): Promise<string[]> {
   const iwIgnorePatterns = await loadIwIgnore(opts.workspaceRoot);
-  const excludePatterns = buildExcludeList(opts.exclude ?? [], iwIgnorePatterns);
+  const excludePatterns = buildExcludeList(
+    opts.exclude ?? [],
+    iwIgnorePatterns,
+  );
   return discoverFiles(opts.paths, opts.workspaceRoot, {
     include: opts.include,
     exclude: excludePatterns,

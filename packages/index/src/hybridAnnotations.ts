@@ -18,7 +18,17 @@ import { writeAnnotations } from "./writer.js";
 import { extractSourceCommentContent } from "./facade.js";
 
 /** Source files whose comments are annotated (the TypeScript build's SOURCE_COMMENT_EXTS). */
-const SOURCE_COMMENT_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".swift", ".go", ".java", ".cs"]);
+const SOURCE_COMMENT_EXTS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".swift",
+  ".go",
+  ".java",
+  ".cs",
+]);
 
 /**
  * Files the Analysis stage visits (its discovery excludes declaration, test and spec files,
@@ -26,9 +36,17 @@ const SOURCE_COMMENT_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".swif
  */
 function analysisVisits(relPath: string): boolean {
   const parts = relPath.split("/");
-  if (parts.some((p) => p === "node_modules" || p === "dist" || p.startsWith("."))) return false;
+  if (
+    parts.some((p) => p === "node_modules" || p === "dist" || p.startsWith("."))
+  )
+    return false;
   const name = parts[parts.length - 1] ?? "";
-  if (name.endsWith(".d.ts") || name.endsWith(".test.ts") || name.endsWith(".spec.ts")) return false;
+  if (
+    name.endsWith(".d.ts") ||
+    name.endsWith(".test.ts") ||
+    name.endsWith(".spec.ts")
+  )
+    return false;
   return /\.(ts|tsx|js|jsx)$/.test(name);
 }
 
@@ -52,7 +70,12 @@ function symbolsFromIndex(db: Database.Database): AxOutput {
     .prepare(
       `SELECT id, name, file_path, export FROM symbols ORDER BY file_path, line, rowid`,
     )
-    .all() as Array<{ id: string; name: string; file_path: string; export: string }>;
+    .all() as Array<{
+    id: string;
+    name: string;
+    file_path: string;
+    export: string;
+  }>;
   const files = new Map<string, { filePath: string; symbols: unknown[] }>();
   for (const row of rows) {
     let file = files.get(row.file_path);
@@ -70,7 +93,9 @@ function symbolsFromIndex(db: Database.Database): AxOutput {
 }
 
 /** Replace the annotation rows of a native-built index. Returns the number written. */
-export async function annotateBuiltIndex(options: HybridAnnotationOptions): Promise<number> {
+export async function annotateBuiltIndex(
+  options: HybridAnnotationOptions,
+): Promise<number> {
   const db = new Database(options.dbPath);
   try {
     const ax = symbolsFromIndex(db);
@@ -89,8 +114,12 @@ export async function annotateBuiltIndex(options: HybridAnnotationOptions): Prom
     const symbolDictionary =
       options.depth === "full"
         ? new Set(
-            (ax as unknown as { files: Array<{ symbols: Array<{ name: string }> }> }).files.flatMap(
-              (file) => file.symbols.map((symbol) => symbol.name.toLowerCase()),
+            (
+              ax as unknown as {
+                files: Array<{ symbols: Array<{ name: string }> }>;
+              }
+            ).files.flatMap((file) =>
+              file.symbols.map((symbol) => symbol.name.toLowerCase()),
             ),
           )
         : undefined;
@@ -100,7 +129,11 @@ export async function annotateBuiltIndex(options: HybridAnnotationOptions): Prom
       const relPath = path.relative(options.workspaceRoot, filePath);
       const content = await fs.promises.readFile(filePath, "utf-8");
       const inOutput = await analyzer.runInStage(
-        { artifactId: toArtifactId(filePath, options.workspaceRoot), filePath: relPath, content },
+        {
+          artifactId: toArtifactId(filePath, options.workspaceRoot),
+          filePath: relPath,
+          content,
+        },
         ctx as Parameters<typeof analyzer.runInStage>[1],
       );
       kwxOutputs.push(
@@ -113,12 +146,16 @@ export async function annotateBuiltIndex(options: HybridAnnotationOptions): Prom
 
     // Comments of source files, as the TypeScript build annotates them (full depth).
     const sourceFiles = (
-      db
-        .prepare("SELECT path FROM files WHERE is_doc = 0")
-        .all() as Array<{ path: string }>
+      db.prepare("SELECT path FROM files WHERE is_doc = 0").all() as Array<{
+        path: string;
+      }>
     )
       .map((row) => row.path)
-      .filter((rel) => SOURCE_COMMENT_EXTS.has(path.extname(rel).toLowerCase()) && analysisVisits(rel))
+      .filter(
+        (rel) =>
+          SOURCE_COMMENT_EXTS.has(path.extname(rel).toLowerCase()) &&
+          analysisVisits(rel),
+      )
       .sort();
     for (const relPath of sourceFiles) {
       const absPath = path.join(options.workspaceRoot, relPath);
@@ -148,7 +185,8 @@ export async function annotateBuiltIndex(options: HybridAnnotationOptions): Prom
       );
     }
 
-    const idfScores = options.depth === "full" ? computeIdf(kwxOutputs) : undefined;
+    const idfScores =
+      options.depth === "full" ? computeIdf(kwxOutputs) : undefined;
     const annotations = annotate(ax, kwxOutputs, {
       idfScores,
       applyIdfPenalty: options.depth === "full",

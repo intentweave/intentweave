@@ -85,7 +85,7 @@ describe.skipIf(!nativeBinary)(
       workspaces.push(workspace);
       mkdirSync(path.join(workspace, "src"));
       writeFileSync(path.join(workspace, "src", "api.ts"), FIXTURE);
-    writeFileSync(path.join(workspace, "README.md"), "# Parity\n");
+      writeFileSync(path.join(workspace, "README.md"), "# Parity\n");
       execFileSync("git", ["init", "-q"], { cwd: workspace });
 
       const ts = buildSymbols(workspace, "ts");
