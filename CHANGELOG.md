@@ -8,6 +8,10 @@ All notable changes to IntentWeave are documented in this file.
 
 - **Native build failures are errors** — `index build` fails when the native binary fails,
   and names the opt-in. `CARI_ALLOW_TS_FALLBACK=1` runs the TypeScript pipeline instead.
+- **Native symbols and annotations match TypeScript exactly** — all 7,700 symbols on this
+  repository have the same identity, kind, container, export status and fields, and all 26,305
+  annotation rows match. Covered: declarations nested in blocks, exported variables, nested
+  type aliases, namespace bodies, and class members inheriting export from their class.
 - **Hybrid native index** — `index build` uses the native engine for symbols, imports, calls and
   file rows, and the TypeScript keyword stages write the annotations on top. On this
   repository the documentary, structural and behavioural intent rules give identical results on

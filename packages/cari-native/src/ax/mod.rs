@@ -1158,12 +1158,51 @@ impl<'a, 's> Visit<'a> for NestedVariableCollector<'s> {
         self.depth -= 1;
     }
 
+    fn visit_block_statement(&mut self, block: &oxc_ast::ast::BlockStatement<'a>) {
+        // Statements in any block are dispatched by the TypeScript extractor.
+        self.depth += 1;
+        oxc_ast_visit::walk::walk_block_statement(self, block);
+        self.depth -= 1;
+    }
+
+    fn visit_ts_type_alias_declaration(&mut self, alias: &oxc_ast::ast::TSTypeAliasDeclaration<'a>) {
+        if self.depth > 0 && !self.in_export {
+            let line = byte_to_line(self.line_index, alias.span.start as usize);
+            let end = byte_to_line(self.line_index, alias.span.end as usize);
+            let name = alias.id.name.as_str().to_string();
+            self.symbols.push(Symbol {
+                name: name.clone(),
+                kind: "type".to_string(),
+                container: None,
+                signature: None,
+                file_path: self.file.to_string(),
+                line: Some(line),
+                end_line: Some(end),
+                export: false,
+                doc_summary: None,
+                body_hash: None,
+                body_lines: None,
+                structure_hash: None,
+                implements: None,
+                deprecated: false,
+                deprecated_note: None,
+                is_internal: name.starts_with('_'),
+                decorators: None,
+            });
+        }
+    }
+
     fn visit_statement(&mut self, stmt: &oxc_ast::ast::Statement<'a>) {
-        let exported = matches!(
-            stmt,
-            oxc_ast::ast::Statement::ExportNamedDeclaration(_)
-                | oxc_ast::ast::Statement::ExportDefaultDeclaration(_)
-        );
+        // Only exported functions and classes hide their nested declarations; an exported
+        // variable is searched like any other.
+        let exported = match stmt {
+            oxc_ast::ast::Statement::ExportNamedDeclaration(export) => !matches!(
+                export.declaration,
+                Some(oxc_ast::ast::Declaration::VariableDeclaration(_))
+            ),
+            oxc_ast::ast::Statement::ExportDefaultDeclaration(_) => true,
+            _ => false,
+        };
         let outer = self.in_export;
         self.in_export = exported || outer;
         oxc_ast_visit::walk::walk_statement(self, stmt);

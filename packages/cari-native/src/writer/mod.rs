@@ -113,12 +113,16 @@ pub fn write(
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
         )?;
         // Top-level export status per (file, name). Members inherit their container's.
-        let top_export: std::collections::HashMap<(&str, &str), bool> = ax
-            .symbols
-            .iter()
-            .filter(|s| s.container.is_none())
-            .map(|s| ((s.file_path.as_str(), s.name.as_str()), s.export))
-            .collect();
+        // A class and a namespace-merged interface can share a name; members belong to the
+        // class, so the class takes precedence.
+        let mut top_export: std::collections::HashMap<(&str, &str), bool> =
+            std::collections::HashMap::new();
+        for s in ax.symbols.iter().filter(|s| s.container.is_none() && s.kind == "class") {
+            top_export.insert((s.file_path.as_str(), s.name.as_str()), s.export);
+        }
+        for s in ax.symbols.iter().filter(|s| s.container.is_none() && s.kind != "class") {
+            top_export.entry((s.file_path.as_str(), s.name.as_str())).or_insert(s.export);
+        }
         // Namespaces are not symbols in the TypeScript index.
         for s in ax.symbols.iter().filter(|s| s.kind != "namespace") {
             let id = util::symbol_identity(s);
