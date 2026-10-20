@@ -2713,6 +2713,10 @@ Slice (acceptance). A single `session.timeout` example covers five cases:
    A separate `grant_exception` covers a time-limited case, and its expiry reactivates
    the conflict.
 
+Release and branch structure (owner, 2026-10-20). The Claims work stays a larger
+future branch. The CARI fixes and speed work ship as a separate PR, merged to main for
+0.18. This branch is then rebased on top of main. Claims are not part of 0.18.
+
 Dependencies and order. G5.4 comes before G6d. Automation must respect anchors, and
 G6d must not promote, reject, or accept a change that an anchor governs. G6b's quality
 gate is independent of G5.4.
@@ -2720,6 +2724,8 @@ gate is independent of G5.4.
 Open decisions:
 
 - Whether the minimal Claim Relation ships in G5.4, or after the first slice.
+  Decided (owner, 2026-10-20): Claim Relations and abstract anchors are G5.4 slice 2,
+  and they come before G5.5.
 - Whether `reviewed-policy` authority may create anchors, and under which Policy.
 - The format of an explicit follow-up declaration.
 
@@ -2783,10 +2789,10 @@ Steps.
 6. **Docs and changelog.** Update `docs/CLI-USAGE.md`, the Copilot reference, and
    the changelog, as for G5.4.
 
-Decisions for you. (a) The convention in step 0. (b) Whether accepted rows should
-create Candidates only, as proposed, or can also become declared Origins without
-review. Candidates only keeps promotion under human control. (c) Whether slice 1
-covers parameter Claims only, as proposed, or also documented public symbols.
+Decided (owner, 2026-10-20). (a) The convention is the parameter table in the ADR
+body, as recommended. (b) Accepted rows create Candidates only, so promotion stays
+with a person. (c) Slice 1 covers parameter Claims only. Sequencing: G5.4 slice 2
+(Claim Relations and abstract anchors) comes before G5.5, so G5.5 starts after that.
 
 Verification. Unit tests for the extractor, the convergence test in step 3, the
 measure in step 5 recorded in the plan, and the standard
