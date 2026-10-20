@@ -584,6 +584,25 @@ Rules:
 - Relations are reviewed state in `.iw/claims/state.yaml` (schema 6). They survive an
   index rebuild.
 
+### Observed changes against anchors
+
+`iw claims observations anchors --since <ref>` judges observed changes against the
+active Intent Anchors. It does not change `iw claims check`, which never reads
+observation state.
+
+- An observed change reaches a Claim through its Subjects: the Claim's Subject
+  (`claim_subjects`) is bound to an observed identity (`subject_observations`).
+- A Claim whose observed subject was removed is `intent_conflict`.
+- A Claim whose continuity is unclear is `intent_unresolved`.
+- A Claim that has not been re-assessed at HEAD is `intent_unresolved`, with the reason
+  "run claims check". This check never re-assesses a Claim.
+- Otherwise the anchor is judged by the rules of `claims check`.
+- In `gate` mode, a conflict exits 1 and an unresolved anchor exits 2. In `report` mode
+  the exit code is 0.
+
+Only direct anchors are judged here. Realizer-based outcomes and declared follow-ups stay
+in `claims check`.
+
 ### Abstract Intents
 
 An abstract intent has no statement of its own. It is realized by a set of Claims, and

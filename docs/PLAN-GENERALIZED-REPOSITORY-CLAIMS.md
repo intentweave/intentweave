@@ -2561,8 +2561,15 @@ person; a changed set is `intent_conflict` and needs an amendment; a refuted, co
 or retired realizer is a conflict; an undecided realizer is unresolved. Abstract
 realizations are their own records, not Claim Relations. Not yet implemented: per-family
 aggregation rules beyond the common rule above, deterministic re-evaluation of the origin
-Claim as a follow-up source, the scenario and replay measures in Evaluation, and the
-observation-path bridge.
+Claim as a follow-up source, the scenario and replay measures in Evaluation.
+
+Observation-path bridge (decided by the owner, 2026-10-20): `claims observations anchors`
+judges observed changes against anchors through the Subject bridge. An impacted Claim
+is judged only after `claims check` re-assesses it at HEAD; until then it is
+`intent_unresolved`. The check never re-assesses, and `claims check` does not read
+observation state (decision C). Limits: direct anchors only, no declared follow-ups for
+observed changes, and observation runs stay local (not portable), so the result depends
+on the local observation history.
 
 Relation links are not decided mechanically in general. Explicit declarations and clear
 code structure can be checked deterministically. A design link such as "this handler

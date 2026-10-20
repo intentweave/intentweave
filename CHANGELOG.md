@@ -51,6 +51,10 @@ All notable changes to IntentWeave are documented in this file.
   and must be rebuilt before the default native path matches.
 - **Anchors whose Claim is missing are reported** — `claims check` reports an active
   anchor whose Claim is not in the index as `intent_unresolved`, instead of dropping it.
+- **Observed changes against anchors** — `iw claims observations anchors --since <ref>` judges
+  observed changes against Intent Anchors through the Subject bridge. A Claim re-assessed at
+  HEAD is judged by the usual rules. An impact that has not been re-assessed is unresolved
+  until `claims check` runs. `claims check` is unchanged.
 - **Abstract Intent Anchors (schema 28, portable state 7)** — `iw claims intents
 realize|unrealize|protect|list` protects an intent with no statement of its own. The
   intent holds while its realizer set is unchanged and every realizer is supported. A changed

@@ -328,6 +328,57 @@ export function readObservationConfig(
   return parseObservationConfig(text);
 }
 
+/**
+ * The ChangeSet between a range's merge base and HEAD, opened for the caller, who must close
+ * `db`. Used by the anchor impact check (G5.4 bridge). `checkObservations` keeps its own steps.
+ */
+export function observationChangeSet(
+  workspaceRoot: string,
+  since: string,
+): {
+  base: string;
+  head: string;
+  changeSetId: string;
+  items: ReturnType<ObservationStore["changeItems"]>;
+  db: Database.Database;
+  store: ObservationStore;
+} {
+  const git = new ClaimsGit(workspaceRoot);
+  const head = git.head();
+  const base = git.mergeBase(since);
+  const config = readObservationConfig(workspaceRoot);
+  const baseRun = captureObservationRun(workspaceRoot, base, config);
+  const headRun = captureObservationRun(workspaceRoot, head, config);
+  const { db, store } = openStore(workspaceRoot);
+  try {
+    const contractFingerprint = fingerprint({
+      adapterId: OBSERVATION_ADAPTER_ID,
+      contract: OBSERVATION_CONTRACT_VERSION,
+      kinds: ["file", "module", "symbol", "dependency", "call-site"],
+    });
+    const renames = new Map(
+      git.renames(base, head).map((rename) => [rename.fromPath, rename.toPath]),
+    );
+    const changeSetId = store.computeChangeSet({
+      baseRunId: baseRun.runId,
+      headRunId: headRun.runId,
+      contractFingerprint,
+      renames,
+    });
+    return {
+      base,
+      head,
+      changeSetId,
+      items: store.changeItems(changeSetId),
+      db,
+      store,
+    };
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
+
 export interface CheckSummary {
   base: string;
   head: string;

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { checkObservationAnchors } from "../observation/observationAnchors.js";
 import {
   runClaimsConflictResolve,
   runClaimsCandidateReview,
@@ -305,6 +306,39 @@ describe("Intent Anchors through claims check", () => {
     ]);
     expect(refuted.abstractIntentAnchors?.[0]?.reason).toContain("is refuted");
     expect(process.exitCode).toBe(1);
+  });
+
+  it("judges observed changes against anchors: unresolved until claims check reassesses at HEAD, then a conflict", async () => {
+    const { workspace } = await protectedWorkspace();
+    const base = git(workspace, "rev-parse", "HEAD");
+    setIntentMode(workspace, "gate");
+    changeStatement(workspace);
+
+    const before = checkObservationAnchors(workspace, base);
+    expect(before.impacts.length).toBeGreaterThan(0);
+    expect(before.impacts.every((impact) => !impact.reassessedAtHead)).toBe(
+      true,
+    );
+    expect(before.anchors.map((a) => a.outcome)).toEqual(["intent_unresolved"]);
+    expect(before.exitCode).toBe(2);
+
+    // claims check reassesses the Claim at HEAD; only then can the observed change be judged.
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+    const after = checkObservationAnchors(workspace, base);
+    expect(after.impacts.some((impact) => impact.reassessedAtHead)).toBe(true);
+    expect(after.anchors.map((a) => a.outcome)).toEqual(["intent_conflict"]);
+    expect(after.exitCode).toBe(1);
+  });
+
+  it("does nothing when intent anchors are off", async () => {
+    const { workspace } = await protectedWorkspace();
+    const base = git(workspace, "rev-parse", "HEAD");
+    setIntentMode(workspace, "off");
+    changeStatement(workspace);
+    const report = checkObservationAnchors(workspace, base);
+    expect(report.anchors).toEqual([]);
+    expect(report.exitCode).toBe(0);
   });
 
   it("refuses a second protect without recording a review or replacing the anchor", async () => {

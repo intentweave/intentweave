@@ -124,6 +124,7 @@ import {
   captureObservationRun,
   checkObservations,
 } from "../observation/observationCommands.js";
+import { checkObservationAnchors } from "../observation/observationAnchors.js";
 import type { GitRename } from "../claims/git.js";
 import {
   CLAIMS_PORTABLE_STATE_RELATIVE_PATH,
@@ -5321,6 +5322,40 @@ const claimsObservationsCommand = new Command("observations")
               `Gate ${result.gate.mode}: ${result.gate.gated.length} blocking, ` +
                 `${result.gate.reported.length} reported.`,
             );
+          }
+          process.exitCode = result.exitCode;
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exitCode = 64;
+        }
+      }),
+  )
+  .addCommand(
+    new Command("anchors")
+      .description(
+        "Judge observed changes against Intent Anchors (does not change claims check)",
+      )
+      .requiredOption(
+        "--since <ref>",
+        "Reference to compare against through its merge base",
+      )
+      .option("-f, --format <format>", "Output format: text or json", "text")
+      .action(async (opts: { since: string; format: string }) => {
+        try {
+          const result = checkObservationAnchors(process.cwd(), opts.since);
+          if (opts.format === "json") {
+            console.log(JSON.stringify(result, null, 2));
+          } else if (result.mode === "off") {
+            console.log("Intent anchors are off (intent.yaml mode off).");
+          } else {
+            console.log(
+              `Impacted Claims: ${result.impacts.length}; anchors judged: ${result.anchors.length}`,
+            );
+            for (const anchor of result.anchors) {
+              console.log(
+                `  ${anchor.outcome}: ${anchor.claimIdentityId} — ${anchor.reason}`,
+              );
+            }
           }
           process.exitCode = result.exitCode;
         } catch (error) {
