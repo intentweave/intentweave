@@ -3,10 +3,12 @@
 
 import type Database from "@intentweave/sqlite-compat";
 import {
+  ClaimRelationStore,
   ClaimsReviewStore,
   emptyPortableClaimsState,
   fingerprint,
   IntentAnchorStore,
+  type ClaimRelation,
   type ConflictDecision,
   type PortableConflictDecision,
   type PortableAssessmentReview,
@@ -405,6 +407,56 @@ export function persistPortableConflictDecision(
   };
   state.conflictDecisions[decision.id] = record;
   return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Write one Claim Relation (created or retired) into portable state. */
+export function persistPortableClaimRelation(
+  workspaceRoot: string,
+  relation: ClaimRelation,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  state.claimRelations[relation.id] = {
+    sourceClaimIdentityId: relation.sourceClaimIdentityId,
+    targetClaimIdentityId: relation.targetClaimIdentityId,
+    relation: relation.relation,
+    status: relation.status,
+    actor: { kind: "human", id: relation.actor },
+    createdAt: new Date(relation.createdAt).toISOString(),
+    ...(relation.retiredAt !== undefined
+      ? { retiredAt: new Date(relation.retiredAt).toISOString() }
+      : {}),
+    ...(relation.rationale ? { rationale: relation.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Import portable Claim Relations into SQLite. Unknown Claims wait. */
+export function projectPortableClaimRelations(
+  database: Database.Database,
+  state: PortableClaimsState,
+): { imported: number; skipped: number } {
+  const store = new ClaimRelationStore(database);
+  let imported = 0;
+  let skipped = 0;
+  for (const [id, relation] of Object.entries(state.claimRelations)) {
+    const outcome = store.importRelation({
+      id,
+      sourceClaimIdentityId: relation.sourceClaimIdentityId,
+      targetClaimIdentityId: relation.targetClaimIdentityId,
+      relation: relation.relation,
+      status: relation.status,
+      actor: portableActorLabel(relation.actor),
+      ...(relation.rationale ? { rationale: relation.rationale } : {}),
+      createdAt: Date.parse(relation.createdAt),
+      ...(relation.retiredAt
+        ? { retiredAt: Date.parse(relation.retiredAt) }
+        : {}),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  return { imported, skipped };
 }
 
 /** Import portable conflict decisions whose anchors exist in SQLite. */

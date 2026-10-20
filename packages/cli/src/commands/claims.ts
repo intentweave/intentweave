@@ -24,6 +24,9 @@ import {
   materialFingerprint,
   openMigratedDatabase,
   portableRecommendationBasisKey,
+  ClaimRelationError,
+  ClaimRelationStore,
+  type ClaimRelationKind,
 } from "@intentweave/index";
 import type {
   CandidateDetails,
@@ -153,6 +156,8 @@ import {
   projectPortableConflictDecisions,
   projectPortableIntentAnchors,
   type PortableReviewProjectionIssue,
+  persistPortableClaimRelation,
+  projectPortableClaimRelations,
 } from "../claims/portableReviewProjection.js";
 import {
   candidateDisplayLines,
@@ -3508,6 +3513,7 @@ export async function runClaimsCheck(options: {
             database,
             portableState,
           );
+          projectPortableClaimRelations(database, portableState);
           const anchorProjection = projectPortableIntentAnchors(
             database,
             portableState,
@@ -3736,6 +3742,137 @@ export async function runClaimsCheck(options: {
  * - `grant_exception`: a time-limited exception for the current change. It needs a
  *   reason and an expiry. After expiry the conflict is active again.
  */
+const RELATION_KINDS = [
+  "realizes",
+  "refines",
+  "constrains",
+  "warrants",
+] as const;
+
+/** Map a relation-command error to the Claims exit code: refusals are binding errors (64). */
+function reportRelationError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(message);
+  process.exitCode =
+    error instanceof ClaimsBindingError || error instanceof ClaimRelationError
+      ? 64
+      : 1;
+}
+
+export async function runClaimsRelationAdd(options: {
+  source: string;
+  target: string;
+  relation: string;
+  actor: string;
+  type?: string;
+  scope?: string;
+  rationale?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    if (!(RELATION_KINDS as readonly string[]).includes(options.relation)) {
+      throw new ClaimsBindingError(
+        "relation must be realizes, refines, constrains, or warrants",
+      );
+    }
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableClaimRelations(database, portable);
+      const selector = { type: options.type, scope: options.scope };
+      const source = resolveSingleClaimIdentity(database, {
+        ...selector,
+        claim: options.source,
+      });
+      const target = resolveSingleClaimIdentity(database, {
+        ...selector,
+        claim: options.target,
+      });
+      const relation = new ClaimRelationStore(database).add({
+        sourceClaimIdentityId: source.id,
+        targetClaimIdentityId: target.id,
+        relation: options.relation as ClaimRelationKind,
+        actor: options.actor,
+        ...(options.rationale ? { rationale: options.rationale } : {}),
+      });
+      persistPortableClaimRelation(workspaceRoot, relation);
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ relation }, null, 2)
+          : `${relation.id}: ${source.id} ${relation.relation} ${target.id}`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    reportRelationError(error);
+  }
+}
+
+export async function runClaimsRelationRetire(options: {
+  id: string;
+  actor: string;
+  rationale?: string;
+  format: string;
+}): Promise<void> {
+  try {
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableClaimRelations(database, portable);
+      const store = new ClaimRelationStore(database);
+      const existing = store.get(options.id);
+      if (!existing) {
+        throw new ClaimsBindingError(`Unknown Claim relation ${options.id}`);
+      }
+      const retired = store.retire(options.id, Date.now());
+      persistPortableClaimRelation(workspaceRoot, retired);
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ relation: retired }, null, 2)
+          : `retired ${retired.id}`,
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    reportRelationError(error);
+  }
+}
+
+export async function runClaimsRelationList(options: {
+  format: string;
+}): Promise<void> {
+  try {
+    const workspaceRoot = process.cwd();
+    const database = claimsDatabase(workspaceRoot);
+    try {
+      const portable = loadPortableClaimsState(workspaceRoot);
+      if (portable) projectPortableClaimRelations(database, portable);
+      const relations = new ClaimRelationStore(database).active();
+      console.log(
+        options.format === "json"
+          ? JSON.stringify({ relations }, null, 2)
+          : relations
+              .map(
+                (relation) =>
+                  `${relation.id}: ${relation.sourceClaimIdentityId} ${relation.relation} ${relation.targetClaimIdentityId}`,
+              )
+              .join("\n"),
+      );
+      process.exitCode = 0;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    reportRelationError(error);
+  }
+}
+
 export async function runClaimsConflictResolve(options: {
   claim: string;
   type?: string;
@@ -5102,6 +5239,66 @@ export const claimsCommand = new Command("claims")
       .option("--rationale <text>", "Reason for the review decision")
       .option("-f, --format <format>", "Output format: text or json", "text")
       .action(runClaimsReview),
+  )
+  .addCommand(
+    new Command("relations")
+      .description(
+        "Record and review Claim Relations (realizes, refines, constrains, warrants)",
+      )
+      .addCommand(
+        new Command("add")
+          .description(
+            "Record a Claim Relation from a source Claim to a target Claim",
+          )
+          .requiredOption(
+            "--source <claim>",
+            "Source Claim (ID, candidate ref, or parameter key)",
+          )
+          .requiredOption(
+            "--target <claim>",
+            "Target Claim (ID, candidate ref, or parameter key)",
+          )
+          .requiredOption(
+            "--relation <kind>",
+            "realizes, refines, constrains, or warrants",
+          )
+          .requiredOption("--actor <name>", "Decision actor")
+          .option(
+            "--type <claimType>",
+            "Claim type used to resolve a parameter",
+          )
+          .option("--scope <scope>", "Claim scope used to resolve a parameter")
+          .option("--rationale <text>", "Reason for the relation")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsRelationAdd),
+      )
+      .addCommand(
+        new Command("retire")
+          .description("Retire an active Claim Relation (kept as history)")
+          .requiredOption("--id <relationId>", "Relation id")
+          .requiredOption("--actor <name>", "Decision actor")
+          .option("--rationale <text>", "Reason for retiring the relation")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsRelationRetire),
+      )
+      .addCommand(
+        new Command("list")
+          .description("List active Claim Relations")
+          .option(
+            "-f, --format <format>",
+            "Output format: text or json",
+            "text",
+          )
+          .action(runClaimsRelationList),
+      ),
   )
   .addCommand(
     new Command("conflicts")

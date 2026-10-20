@@ -3,6 +3,7 @@
 
 import type Database from "@intentweave/sqlite-compat";
 import { fingerprint } from "./canonical.js";
+import { ClaimRelationStore } from "./claimRelations.js";
 
 /**
  * Intent Anchors (Phase G5.4). An anchor is a human decision that protects one Claim
@@ -569,6 +570,41 @@ export class IntentAnchorStore {
     });
   }
 
+  /**
+   * An anchor on a Claim also holds through its realizers: each must be supported. A
+   * refuted, contested, or retired realizer is a conflict, and a realizer without a decided
+   * assessment is unresolved. Returns undefined when every realizer holds.
+   */
+  private realizationOutcome(
+    realizers: readonly string[],
+    input: AnchorEvaluationInput,
+  ):
+    | { outcome: "intent_conflict" | "intent_unresolved"; reason: string }
+    | undefined {
+    for (const realizer of realizers) {
+      if (input.retiredClaimIds.has(realizer)) {
+        return {
+          outcome: "intent_conflict",
+          reason: `realizer ${realizer} was retired`,
+        };
+      }
+      const status = this.currentAssessmentStatus(realizer);
+      if (status === "refuted" || status === "contested") {
+        return {
+          outcome: "intent_conflict",
+          reason: `realizer ${realizer} is ${status}`,
+        };
+      }
+      if (status === undefined || status === "inconclusive") {
+        return {
+          outcome: "intent_unresolved",
+          reason: `realizer ${realizer} has no decided assessment`,
+        };
+      }
+    }
+    return undefined;
+  }
+
   private evaluateAnchors(
     input: AnchorEvaluationInput,
   ): IntentAnchorEvaluation[] {
@@ -588,7 +624,14 @@ export class IntentAnchorStore {
         });
         continue;
       }
-      if (!input.evaluatedClaimIds.has(anchor.claimIdentityId)) {
+      // An anchor on a Claim is also evaluated when one of its realizers changed (G5.4 slice 2).
+      const realizers = new ClaimRelationStore(this.db).realizersOf(
+        anchor.claimIdentityId,
+      );
+      const reached =
+        input.evaluatedClaimIds.has(anchor.claimIdentityId) ||
+        realizers.some((id) => input.evaluatedClaimIds.has(id));
+      if (!reached) {
         results.push({
           ...base,
           outcome: "intent_unresolved",
@@ -649,11 +692,14 @@ export class IntentAnchorStore {
           reason: "the current assessment is inconclusive",
         });
       } else {
+        const realized = this.realizationOutcome(realizers, input);
         results.push({
           ...base,
           ...current,
-          outcome: "satisfied",
-          reason: "the anchored statement is unchanged and supported",
+          outcome: realized?.outcome ?? "satisfied",
+          reason:
+            realized?.reason ??
+            "the anchored statement is unchanged and supported",
         });
       }
     }

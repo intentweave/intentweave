@@ -51,6 +51,10 @@ All notable changes to IntentWeave are documented in this file.
   and must be rebuilt before the default native path matches.
 - **Anchors whose Claim is missing are reported** — `claims check` reports an active
   anchor whose Claim is not in the index as `intent_unresolved`, instead of dropping it.
+- **Claim Relations (schema 27, portable state 6)** — `iw claims relations add|list|retire`
+  records `realizes`, `refines`, `constrains`, or `warrants` edges between Claims. A protected
+  Claim holds only while its realizers are supported. Self-edges, duplicate active edges, and
+  realization cycles are refused. Abstract anchors are not included yet.
 - **Intent Anchor authority (schema 26)** — the anchor authority can be `ai-proposed` in
   the database and in portable state. Nothing creates such an anchor yet, and a conflict on
   one is still decided by a person.

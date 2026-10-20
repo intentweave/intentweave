@@ -392,7 +392,7 @@ const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
   (table) => table !== "claim_assessment_references",
 );
 
-export const CURRENT_SCHEMA_VERSION = "26";
+export const CURRENT_SCHEMA_VERSION = "27";
 
 function readSchemaVersion(db: Database.Database): string | undefined {
   try {
@@ -1536,6 +1536,36 @@ export function migrateSchema22To23(db: Database.Database): void {
  * Additive: one table, created in a transaction, with no data rewritten.
  */
 /**
+ * Schema 26 -> 27 (G5.4 slice 2). Claim Relations: a versioned edge between two Claim
+ * identities, used to aggregate realizations for Intent Anchors. Additive; no rows move.
+ */
+export function migrateSchema26To27(db: Database.Database): void {
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS claim_relations (
+        id TEXT PRIMARY KEY,
+        source_claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        target_claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        relation TEXT NOT NULL CHECK (relation IN ('realizes', 'refines', 'constrains', 'warrants')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'retired')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        created_at INTEGER NOT NULL,
+        retired_at INTEGER,
+        CHECK (source_claim_identity_id <> target_claim_identity_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_claim_relations_active
+        ON claim_relations(source_claim_identity_id, target_claim_identity_id, relation)
+        WHERE status = 'active';
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '27')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
  * Schema 25 -> 26 (G5.4 authority). An AI-proposed Intent Anchor is active on creation and
  * is marked `ai-proposed`. SQLite cannot change a CHECK constraint in place, so the table is
  * rebuilt with the wider constraint. Rows, identities, and supersession links are copied as
@@ -1870,6 +1900,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "15") {
@@ -1884,6 +1915,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "16") {
@@ -1897,6 +1929,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "17") {
@@ -1909,6 +1942,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "18") {
@@ -1920,6 +1954,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "19") {
@@ -1930,6 +1965,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "20") {
@@ -1939,6 +1975,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "21") {
@@ -1947,6 +1984,7 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "22") {
@@ -1954,12 +1992,14 @@ export function migrateSchemaToCurrent(db: Database.Database): void {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === "23") {
     migrateSchema23To24(db);
     migrateSchema24To25(db);
     migrateSchema25To26(db);
+    migrateSchema26To27(db);
     return;
   }
   if (schemaVersion === CURRENT_SCHEMA_VERSION) {

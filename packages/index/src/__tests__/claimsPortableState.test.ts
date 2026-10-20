@@ -93,7 +93,7 @@ describe("Claims portable state", () => {
       "zebra",
     ]);
     expect(emptyPortableClaimsState()).toEqual({
-      schemaVersion: "5",
+      schemaVersion: "6",
       policies: {},
       candidateDecisions: {},
       subjectBindings: {},
@@ -102,13 +102,14 @@ describe("Claims portable state", () => {
       claimOrigins: {},
       intentAnchors: {},
       conflictDecisions: {},
+      claimRelations: {},
     });
   });
 
   it("fails closed for unsupported versions and unknown fields", () => {
     expect(() =>
-      parsePortableClaimsState({ ...validState(), schemaVersion: "6" }),
-    ).toThrow("must be one of: 1, 2, 3, 4");
+      parsePortableClaimsState({ ...validState(), schemaVersion: "7" }),
+    ).toThrow("must be one of: 1, 2, 3, 4, 5, 6");
     expect(() =>
       parsePortableClaimsState({ ...validState(), providerPayloads: {} }),
     ).toThrow("providerPayloads is not supported");
@@ -161,7 +162,7 @@ describe("Claims portable state", () => {
     };
 
     const parsed = parsePortableClaimsState(state);
-    expect(parsed.schemaVersion).toBe("5");
+    expect(parsed.schemaVersion).toBe("6");
     expect(
       parsed.candidateDecisions["candidate:endpoint-admin-users"]
         .recommendationBasis,
@@ -261,7 +262,7 @@ describe("Claims portable state", () => {
         intentAnchors: { "anchor:one": anchor },
         conflictDecisions: {},
       });
-      expect(parsed.schemaVersion).toBe("5");
+      expect(parsed.schemaVersion).toBe("6");
       expect(Object.keys(parsed.intentAnchors)).toEqual(["anchor:one"]);
     });
 
@@ -302,5 +303,29 @@ describe("Claims portable state", () => {
         }).intentAnchors["anchor:one"]?.authority,
       ).toBe("ai-proposed");
     });
+  });
+  it("gates claim relations to schema version 6", () => {
+    const relation = {
+      sourceClaimIdentityId: "claim:impl",
+      targetClaimIdentityId: "claim:design",
+      relation: "realizes",
+      status: "active",
+      actor: { kind: "human", id: "reviewer" },
+      createdAt: "2026-10-20T00:00:00.000Z",
+    };
+    expect(() =>
+      parsePortableClaimsState({
+        ...validState(),
+        schemaVersion: "5",
+        claimRelations: { "relation:one": relation },
+      }),
+    ).toThrow(/claimRelations require schemaVersion 6/);
+    expect(
+      parsePortableClaimsState({
+        ...validState(),
+        schemaVersion: "6",
+        claimRelations: { "relation:one": relation },
+      }).claimRelations["relation:one"]?.relation,
+    ).toBe("realizes");
   });
 });

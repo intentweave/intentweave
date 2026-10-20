@@ -558,6 +558,35 @@ iw claims check --scope production --since origin/main
 iw claims check --refresh
 ```
 
+### Claim Relations
+
+A Claim Relation is an edge from one Claim to another. It is not a hierarchy. Only
+`realizes` and `refines` take part in intent evaluation: an Intent Anchor on a
+target holds only while each of its realizers is supported.
+
+```bash
+iw claims relations add --source impl.timeout --target session.timeout \
+  --relation realizes --actor alice --rationale "the handler implements the default"
+iw claims relations list --format json
+iw claims relations retire --id relation:<id> --actor alice --rationale "superseded"
+```
+
+Rules:
+
+- A relation may not point at itself, repeat an active relation of the same kind, or
+  close a realization cycle. A cycle is refused at the time of the call.
+- A target anchored by an intent is `satisfied` only while every realizer is supported.
+  A refuted, contested, or retired realizer is `intent_conflict`. A realizer without a
+  decided assessment is `intent_unresolved`.
+- A change in a realizer alone makes the anchored target count as evaluated.
+- `constrains` and `warrants` are recorded and listed, but they do not change any
+  outcome. Each family's Assessment Policy decides how they would aggregate later.
+- Relations are reviewed state in `.iw/claims/state.yaml` (schema 6). They survive an
+  index rebuild.
+
+Abstract anchors, which protect an intent with no statement of their own, are not
+implemented yet. An anchor still protects a concrete Claim.
+
 ### Intent Anchors
 
 An Intent Anchor protects a promoted Claim's current statement. When that

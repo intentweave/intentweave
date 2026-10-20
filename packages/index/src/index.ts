@@ -75,6 +75,14 @@ export type {
 export { ClaimsEngine } from "./claims/engine.js";
 export { ClaimsReviewStore } from "./claims/review.js";
 export {
+  ClaimRelationError,
+  ClaimRelationStore,
+  REALIZATION_KINDS,
+  type AddClaimRelationInput,
+  type ClaimRelation,
+  type ClaimRelationKind,
+} from "./claims/claimRelations.js";
+export {
   DEFAULT_ANCHOR_SCOPE,
   IntentAnchorStore,
   type AnchorEvaluationInput,
@@ -139,6 +147,7 @@ export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
 export {
   CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
   CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
+  type PortableClaimRelation,
   type PortableConflictDecision,
   type PortableIntentAnchor,
   ClaimsPortableStateError,

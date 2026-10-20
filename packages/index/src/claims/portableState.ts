@@ -11,12 +11,15 @@ export const CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION = "4" as const;
  * Version 5 allows an `ai-proposed` Intent Anchor authority (G5.4). Versions 1 to 4 are
  * still read, and they reject that authority, because an older reader cannot judge it.
  */
-export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "5" as const;
+export const CLAIMS_PORTABLE_STATE_V5_SCHEMA_VERSION = "5" as const;
+/** Version 6 adds Claim Relations (G5.4 slice 2). */
+export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "6" as const;
 export type ClaimsPortableStateSchemaVersion =
   | typeof CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION
+  | typeof CLAIMS_PORTABLE_STATE_V5_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_SCHEMA_VERSION;
 
 /** A recorded conflict decision (G5.4), keyed by its decision id. */
@@ -29,6 +32,18 @@ export interface PortableConflictDecision {
   decidedAt: string;
   rationale?: string;
   expiresAt?: string;
+}
+
+/** A Claim Relation (G5.4 slice 2), keyed by relation id. Retired relations stay as history. */
+export interface PortableClaimRelation {
+  sourceClaimIdentityId: string;
+  targetClaimIdentityId: string;
+  relation: "realizes" | "refines" | "constrains" | "warrants";
+  status: "active" | "retired";
+  actor: PortableClaimsActor;
+  createdAt: string;
+  retiredAt?: string;
+  rationale?: string;
 }
 
 /** A human Intent Anchor (G5.4). Keyed by anchor id; superseded anchors stay as history. */
@@ -150,6 +165,7 @@ export interface PortableClaimsState {
   intentAnchors: Record<string, PortableIntentAnchor>;
   /** Conflict decisions (G5.4); absent before schema 4. */
   conflictDecisions: Record<string, PortableConflictDecision>;
+  claimRelations: Record<string, PortableClaimRelation>;
 }
 
 export class ClaimsPortableStateError extends Error {
@@ -508,6 +524,48 @@ function parseSubjectBinding(
   };
 }
 
+function parseClaimRelation(
+  value: unknown,
+  path: string,
+): PortableClaimRelation {
+  const record = requireRecord(value, path);
+  assertOnlyKeys(record, path, [
+    "sourceClaimIdentityId",
+    "targetClaimIdentityId",
+    "relation",
+    "status",
+    "actor",
+    "createdAt",
+    "retiredAt",
+    "rationale",
+  ]);
+  return {
+    sourceClaimIdentityId: requireString(
+      record.sourceClaimIdentityId,
+      `${path}.sourceClaimIdentityId`,
+    ),
+    targetClaimIdentityId: requireString(
+      record.targetClaimIdentityId,
+      `${path}.targetClaimIdentityId`,
+    ),
+    relation: requireEnum(record.relation, `${path}.relation`, [
+      "realizes",
+      "refines",
+      "constrains",
+      "warrants",
+    ]),
+    status: requireEnum(record.status, `${path}.status`, ["active", "retired"]),
+    actor: parseActor(record.actor, `${path}.actor`),
+    createdAt: requireTimestamp(record.createdAt, `${path}.createdAt`),
+    ...(record.retiredAt !== undefined
+      ? { retiredAt: requireTimestamp(record.retiredAt, `${path}.retiredAt`) }
+      : {}),
+    ...(record.rationale !== undefined
+      ? { rationale: requireString(record.rationale, `${path}.rationale`) }
+      : {}),
+  };
+}
+
 function parseConflictDecision(
   value: unknown,
   path: string,
@@ -790,6 +848,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     "claimOrigins",
     "intentAnchors",
     "conflictDecisions",
+    "claimRelations",
   ]);
   const schemaVersion = requireEnum(
     state.schemaVersion,
@@ -799,6 +858,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION,
+      CLAIMS_PORTABLE_STATE_V5_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
     ],
   );
@@ -807,6 +867,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     schemaVersion !== CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION &&
+    schemaVersion !== CLAIMS_PORTABLE_STATE_V5_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION
   ) {
     throw new ClaimsPortableStateError(
@@ -824,12 +885,21 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     );
   }
   if (
-    schemaVersion !== CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION &&
-    schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION &&
+    (schemaVersion === CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION ||
+      schemaVersion === CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION ||
+      schemaVersion === CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION) &&
     state.conflictDecisions !== undefined
   ) {
     throw new ClaimsPortableStateError(
       `conflictDecisions require schemaVersion ${CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION} or later`,
+    );
+  }
+  if (
+    schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION &&
+    state.claimRelations !== undefined
+  ) {
+    throw new ClaimsPortableStateError(
+      `claimRelations require schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
     );
   }
   if (schemaVersion === CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION) {
@@ -881,12 +951,20 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       "conflictDecisions",
       parseConflictDecision,
     ),
+    claimRelations: parseMap(
+      state.claimRelations ?? {},
+      "claimRelations",
+      parseClaimRelation,
+    ),
   };
-  if (schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION) {
+  if (
+    schemaVersion !== CLAIMS_PORTABLE_STATE_V5_SCHEMA_VERSION &&
+    schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION
+  ) {
     for (const [id, anchor] of Object.entries(parsed.intentAnchors)) {
       if (anchor.authority === "ai-proposed") {
         throw new ClaimsPortableStateError(
-          `intentAnchors.${id}.authority ai-proposed requires schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+          `intentAnchors.${id}.authority ai-proposed requires schemaVersion ${CLAIMS_PORTABLE_STATE_V5_SCHEMA_VERSION} or later`,
         );
       }
     }
@@ -907,5 +985,6 @@ export function emptyPortableClaimsState(): PortableClaimsState {
     claimOrigins: {},
     intentAnchors: {},
     conflictDecisions: {},
+    claimRelations: {},
   };
 }
