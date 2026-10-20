@@ -80,6 +80,8 @@ export {
   communitiesFromDb,
   communityLabelsFromDb,
 } from "./communities.js";
+export { enrichmentScore, enrichmentScoreFromDb } from "./enrichmentScore.js";
+export type { EnrichmentScoreOptions } from "./enrichmentScore.js";
 export { surprises, surprisesFromDb } from "./surprises.js";
 export { rationale, rationaleFromDb } from "./rationale.js";
 export {
@@ -106,16 +108,10 @@ export { focus, focusFromDb } from "./focus.js";
 export { impact, impactFromDb, formatCariImpact } from "./impact.js";
 export { archReport, archReportFromDb } from "./archReport.js";
 export type { ArchReportOptions } from "./archReport.js";
-export { enrichmentScore, enrichmentScoreFromDb } from "./enrichmentScore.js";
-export type { EnrichmentScoreOptions } from "./enrichmentScore.js";
-export { verify, verifyFromDb } from "./verify.js";
-export { consistency, consistencyFromDb } from "./consistency.js";
 export {
   archCheck,
   archCheckFromDb,
   parseArchitectureYaml,
-  inferArchConfigFromKg,
-  inferArchConfigFromKgDb,
   enrichArchConfigWithFiles,
 } from "./archCheck.js";
 export {

@@ -44,6 +44,7 @@ const HALF_LIFE_SECS: f64 = 90.0 * 24.0 * 3600.0;
 pub(crate) struct CommitRecord {
     hash: String,
     author_name: String,
+    author_email: String,
     date: Option<DateTime<FixedOffset>>,
     /// ISO-8601 date string (raw from git).
     date_str: String,
@@ -95,7 +96,7 @@ pub fn parse_git_log_output(raw: &str) -> Vec<CommitRecord> {
 
         let hash = lines.get(i + 1).map(|s| s.trim()).unwrap_or("").to_string();
         let author_name = lines.get(i + 2).map(|s| s.trim()).unwrap_or("").to_string();
-        // i+3 is author email — skip it
+        let author_email = lines.get(i + 3).map(|s| s.trim()).unwrap_or("").to_string();
         let date_str = lines.get(i + 4).map(|s| s.trim()).unwrap_or("").to_string();
 
         // Advance past the header to COMMIT_END
@@ -121,7 +122,7 @@ pub fn parse_git_log_output(raw: &str) -> Vec<CommitRecord> {
         }
 
         if !hash.is_empty() {
-            commits.push(CommitRecord { hash, author_name, date, date_str, files });
+            commits.push(CommitRecord { hash, author_name, author_email, date, date_str, files });
         }
     }
 
@@ -242,6 +243,91 @@ fn compute_co_changes(
 // File stats computation
 // =============================================================================
 
+/// Per-file history statistics with the TypeScript history stages' rules. Every commit counts,
+/// including large ones. Authors are keyed by email, and the name is the newest commit's.
+/// A hotspot has a commit count at least two standard deviations above the mean over all
+/// files. A primary owner needs more than half of the commits. Bus factor counts authors with
+/// at least 10% of the commits.
+fn history_file_stats(commits: &[CommitRecord]) -> Vec<FileStat> {
+    struct Acc {
+        commit_count: usize,
+        churn: i64,
+        last_modified: String,
+        /// (email, name, commit count, last touch) in first-seen order.
+        authors: Vec<(String, String, usize, String)>,
+    }
+    let mut files: HashMap<String, Acc> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for commit in commits {
+        for (path, added, removed) in &commit.files {
+            let acc = files.entry(path.clone()).or_insert_with(|| {
+                order.push(path.clone());
+                Acc {
+                    commit_count: 0,
+                    churn: 0,
+                    last_modified: String::new(),
+                    authors: Vec::new(),
+                }
+            });
+            acc.commit_count += 1;
+            acc.churn += added + removed;
+            if acc.last_modified.is_empty() || commit.date_str > acc.last_modified {
+                acc.last_modified = commit.date_str.clone();
+            }
+            match acc.authors.iter_mut().find(|a| a.0 == commit.author_email) {
+                Some(entry) => {
+                    entry.2 += 1;
+                    if commit.date_str > entry.3 {
+                        entry.3 = commit.date_str.clone();
+                        entry.1 = commit.author_name.clone();
+                    }
+                }
+                None => acc.authors.push((
+                    commit.author_email.clone(),
+                    commit.author_name.clone(),
+                    1,
+                    commit.date_str.clone(),
+                )),
+            }
+        }
+    }
+
+    let n = files.len() as f64;
+    let counts: Vec<f64> = files.values().map(|a| a.commit_count as f64).collect();
+    let mean = if n > 0.0 { counts.iter().sum::<f64>() / n } else { 0.0 };
+    let std_dev = if n > 0.0 {
+        (counts.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n).sqrt()
+    } else {
+        0.0
+    };
+
+    order
+        .into_iter()
+        .map(|path| {
+            let acc = &files[&path];
+            let z = if std_dev > 0.0 { (acc.commit_count as f64 - mean) / std_dev } else { 0.0 };
+            let total: usize = acc.authors.iter().map(|a| a.2).sum();
+            let mut ranked: Vec<&(String, String, usize, String)> = acc.authors.iter().collect();
+            ranked.sort_by(|a, b| b.2.cmp(&a.2));
+            let percent = |count: usize| ((count as f64 / total as f64) * 10000.0).round() / 100.0;
+            let primary_owner = ranked
+                .first()
+                .filter(|top| percent(top.2) > 50.0)
+                .map(|top| top.1.clone());
+            let bus_factor = acc.authors.iter().filter(|a| percent(a.2) >= 10.0).count() as i64;
+            FileStat {
+                path,
+                churn: acc.churn,
+                is_hotspot: z >= Z_SCORE_THRESHOLD,
+                primary_owner,
+                bus_factor: Some(bus_factor),
+                last_modified: Some(acc.last_modified.clone()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn compute_file_stats(
     file_commits: &HashMap<String, HashSet<usize>>,
     file_churn: &HashMap<String, i64>,
@@ -344,6 +430,12 @@ pub fn run(opts: &BuildOpts) -> Result<TcgResult> {
     let mut file_last_modified: HashMap<String, String> = HashMap::new();
     // file → (author_name → commit count)
     let mut file_authors: HashMap<String, HashMap<String, usize>> = HashMap::new();
+    let tracked_paths: Vec<String> = commits
+        .iter()
+        .flat_map(|c| c.files.iter().map(|(p, _, _)| p.clone()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
 
     for (commit_idx, commit) in commits.iter().enumerate() {
         let paths: Vec<&str> = commit.files.iter().map(|(p, _, _)| p.as_str()).collect();
@@ -383,9 +475,9 @@ pub fn run(opts: &BuildOpts) -> Result<TcgResult> {
     }
 
     let co_changes = compute_co_changes(&commits, &file_commits, &pair_commits);
-    let file_stats = compute_file_stats(&file_commits, &file_churn, &file_last_modified, &file_authors);
+    let file_stats = history_file_stats(&commits);
 
-    Ok(TcgResult { co_changes, file_stats })
+    Ok(TcgResult { co_changes, file_stats, tracked_paths })
 }
 
 // =============================================================================
@@ -499,6 +591,7 @@ alice@example.com
             .map(|i| CommitRecord {
                 hash: format!("h{}", i),
                 author_name: "Dev".to_string(),
+                author_email: "dev@example.test".to_string(),
                 date: None,
                 date_str: String::new(),
                 files: vec![],
@@ -525,6 +618,7 @@ alice@example.com
             .map(|i| CommitRecord {
                 hash: format!("h{}", i),
                 author_name: "Dev".to_string(),
+                author_email: "dev@example.test".to_string(),
                 date: None,
                 date_str: String::new(),
                 files: vec![],

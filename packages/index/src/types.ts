@@ -5,8 +5,10 @@
  * CARI (Code-Aware Retrieval Index) Types
  *
  * Lightweight types for the SQLite-based retrieval index.
- * Consumed by agents, CI, and editors — no Neo4j required.
+ * Consumed by agents, CI, and editors.
  */
+
+import type { SqliteMetrics } from "@intentweave/sqlite-compat";
 
 // =============================================================================
 // Annotation (doc span → code symbol)
@@ -176,6 +178,9 @@ export interface IndexBuildOptions {
   /** Output path for the SQLite database */
   outputPath?: string;
 
+  /** Collect measurement-only synchronous SQLite writer metrics. */
+  measureSinkMetrics?: boolean;
+
   /** Logging callback */
   log?: (msg: string) => void;
 
@@ -214,6 +219,23 @@ export interface IndexBuildResult {
 
   /** Build duration in ms */
   durationMs: number;
+
+  /** Optional measurement-only SQLite writer metrics. */
+  sinkMetrics?: SinkWriterMetrics;
+}
+
+export interface SinkTableWriteMeasurement {
+  readonly table: string;
+  readonly rowCount: number;
+  readonly durationMs: number;
+  readonly rowsPerSecond: number | null;
+}
+
+export interface SinkWriterMetrics {
+  readonly writerDurationMs: number;
+  readonly tableWrites: readonly SinkTableWriteMeasurement[];
+  readonly sqlite: SqliteMetrics;
+  readonly timingNote: string;
 }
 
 // =============================================================================
@@ -1619,7 +1641,7 @@ export interface ApiSurfaceResult {
 }
 
 // =============================================================================
-// Selective Semantic Enrichment (11.8)
+// CARI enrichment candidate ranking (11.8 — signals only, no knowledge graph)
 // =============================================================================
 
 /** Weights for the enrichment impact scoring formula. */
@@ -1645,8 +1667,6 @@ export interface EnrichmentCandidate {
     coverageGap: number;
     driftSeverity: number;
   };
-  /** Whether this file was already enriched (content hash matched). */
-  alreadyEnriched: boolean;
 }
 
 /** Result of scoring files for enrichment candidacy. */
@@ -1655,30 +1675,6 @@ export interface EnrichmentScoreResult {
   candidates: EnrichmentCandidate[];
   /** Total files evaluated. */
   totalEvaluated: number;
-}
-
-/** Options for the enrich command. */
-export interface EnrichOptions {
-  /** Max number of LLM calls (files to enrich). Default: 20. */
-  budget?: number;
-  /** Minimum impact score to qualify. Default: 0.1. */
-  threshold?: number;
-  /** Restrict to files under this directory prefix. */
-  focus?: string;
-  /** LLM provider name: "openai" or "smart-mock". */
-  provider?: string;
-  /** LLM model name. */
-  model?: string;
-  /** OpenAI API key override. */
-  apiKey?: string;
-  /** Skip files whose content hash hasn't changed since last enrichment. */
-  incremental?: boolean;
-  /** Only show what would be enriched, don't run LLM. */
-  dryRun?: boolean;
-  /** Verbose output. */
-  verbose?: boolean;
-  /** Custom weights for impact scoring. */
-  weights?: Partial<EnrichmentWeights>;
 }
 
 // =============================================================================
@@ -1748,162 +1744,12 @@ export interface SemanticCapsule {
   updatedAt: string;
 }
 
-/** Result of running semantic enrichment. */
-export interface EnrichResult {
-  /** Files that were enriched. */
-  enriched: Array<{
-    filePath: string;
-    impactScore: number;
-    entityCount: number;
-    tripleCount: number;
-    tokensUsed?: number;
-  }>;
-  /** Files skipped (already enriched / below threshold). */
-  skipped: Array<{
-    filePath: string;
-    reason: "already-enriched" | "below-threshold" | "outside-focus";
-  }>;
-  /** Total entities written to kg_entities. */
-  totalEntities: number;
-  /** Total relationships written to kg_relationships. */
-  totalRelationships: number;
-  /** Total entities bridged into CARI via registerEntities(). */
-  totalBridged: number;
-  /** Token usage summary. */
-  tokenUsage?: { prompt: number; completion: number; costUsd?: number };
-}
-
-// =============================================================================
-// Spec-to-Code Verification (12.1)
-// =============================================================================
-
-/** Grounding status for a single KG entity. */
-export type GroundingStatus =
-  | "grounded"
-  | "ungrounded"
-  | "partial"
-  | "untested";
-
-/** A single entity verification finding. */
-export interface VerifyEntityResult {
-  /** Canonical entity ID from kg_entities. */
-  canonId: string;
-  /** Entity display name. */
-  name: string;
-  /** Entity type (decision, requirement, component, etc.). */
-  entityType: string;
-  /** Source doc file the entity was extracted from. */
-  sourceFile: string;
-  /** Grounding status. */
-  status: GroundingStatus;
-  /** Code symbols that ground this entity (empty if ungrounded). */
-  groundedIn: Array<{
-    symbolId: string;
-    symbolName: string;
-    filePath: string;
-    kind: string;
-    confidence: number;
-  }>;
-  /** Whether the grounded symbols have test coverage. */
-  hasCoverage: boolean;
-  /** Human-readable summary of the finding. */
-  message: string;
-}
-
-/** Parameters for the verify query. */
-export interface VerifyParams {
-  /** Restrict verification to entities from these source files. */
-  files?: string[];
-  /** Only verify entities of these types. */
-  types?: string[];
-  /** Minimum annotation confidence to count as grounded. */
-  minConfidence?: number;
-  /** Check test coverage for grounded entities. */
-  checkTests?: boolean;
-}
-
-/** Result of spec-to-code verification. */
-export interface VerifyResult {
-  /** All entity verification findings. */
-  entities: VerifyEntityResult[];
-  /** Summary statistics. */
-  summary: {
-    total: number;
-    grounded: number;
-    ungrounded: number;
-    partial: number;
-    untested: number;
-    coveragePercent: number;
-  };
-  /** Per-source-file breakdown. */
-  byFile: Array<{
-    file: string;
-    total: number;
-    grounded: number;
-    ungrounded: number;
-    coveragePercent: number;
-  }>;
-}
-
-// =============================================================================
-// Query: consistency (12.2 — Constraint Consistency Check)
-// =============================================================================
-
-/** Severity of a constraint conflict. */
-export type ConflictSeverity = "error" | "warning";
-
-/** A single detected constraint conflict between two relationships. */
-export interface ConstraintConflict {
-  /** Entity on the "from" side of both relationships. */
-  entityA: { canonId: string; name: string };
-  /** Entity on the "to" side of both relationships. */
-  entityB: { canonId: string; name: string };
-  /** Predicate in the first relationship. */
-  predicateA: string;
-  /** Predicate in the second (contradicting) relationship. */
-  predicateB: string;
-  /** Source file of the first relationship. */
-  sourceFileA: string;
-  /** Source file of the second relationship. */
-  sourceFileB: string;
-  /** Error = hard contradiction, warning = potential conflict. */
-  severity: ConflictSeverity;
-  /** Human-readable conflict description. */
-  message: string;
-}
-
-/** Parameters for the consistency check. */
-export interface ConsistencyParams {
-  /** Restrict check to relationships from these source files. */
-  files?: string[];
-  /** Only check relationships involving entities of these types. */
-  types?: string[];
-  /** Minimum relationship confidence to include. */
-  minConfidence?: number;
-}
-
-/** Result of constraint consistency check. */
-export interface ConsistencyResult {
-  /** All detected conflicts. */
-  conflicts: ConstraintConflict[];
-  /** Summary statistics. */
-  summary: {
-    totalRelationships: number;
-    totalConflicts: number;
-    errors: number;
-    warnings: number;
-    consistencyPercent: number;
-  };
-}
-
 // =============================================================================
 // Query: livingScore (12.3 — Living Documentation Score)
 // =============================================================================
 
 /** Parameters for computing the living documentation score. */
 export interface LivingScoreParams {
-  /** Minimum annotation confidence to count as grounded (default: 0.5). */
-  minConfidence?: number;
   /** Allow skipping layer-order violations in layer check (default: false). */
   allowSkipLayer?: boolean;
 }
@@ -1930,10 +1776,6 @@ export interface LivingScoreResult {
   score: number;
   /** Grade: A (≥90), B (≥75), C (≥60), D (≥45), F (<45). */
   grade: "A" | "B" | "C" | "D" | "F";
-  /** Spec coverage (12.1): % of KG entities grounded in code. */
-  specCoverage: LivingScoreDimension;
-  /** Constraint consistency (12.2): % of constraints without contradictions. */
-  constraintConsistency: LivingScoreDimension;
   /** Documentation freshness: % of docs not stale (from report). */
   docFreshness: LivingScoreDimension;
   /** Architecture conformance: % of layer imports without violations. */

@@ -9,10 +9,7 @@
         "--session",
         "intentweave",
         "--verbose"
-      ],
-      "env": {
-        "NEO4J_PASSWORD": "intentweave"
-      }
+      ]
     }
   }
 }

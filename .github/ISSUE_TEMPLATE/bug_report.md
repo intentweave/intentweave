@@ -30,7 +30,6 @@ What actually happened. Include error messages, stack traces, or log output.
 - IntentWeave version: [e.g., 0.1.0]
 - Node.js version: [e.g., 20.14.0]
 - OS: [e.g., macOS 15, Ubuntu 24.04]
-- Neo4j version: [e.g., 5.24.0]
 - LLM provider: [e.g., openai, smart-mock]
 
 ## Additional context

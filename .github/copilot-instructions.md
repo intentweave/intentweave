@@ -5,11 +5,11 @@
 IntentWeave is a **semantic knowledge extraction platform** that provides two complementary systems:
 
 1. **CARI (Code-Aware Retrieval Index)** — Lightweight SQLite index built from AST, keywords, and
-   git history. No LLM, no Neo4j, $0 cost. Powers ranked retrieval, connection discovery, and
+   git history. No LLM, $0 cost. Powers ranked retrieval, connection discovery, and
    CI drift detection.
 
-2. **Knowledge Graph (KG)** — LLM-powered entity/relationship extraction from documents. Persists
-   to Neo4j for semantic queries, impact analysis, and documentation health checks.
+2. **Knowledge graph (optional)** — graph storage behind the `kg_*` MCP tools. `plugin-kg-lite`
+   provides it in SQLite. IntentWeave no longer fills the graph with LLM extraction.
 
 ### Monorepo Structure
 
@@ -38,8 +38,8 @@ intentweave/
 > `@intentweave/server-open`) and the `ui/` frontend have been removed from the
 > monorepo. Supported integration surfaces are the CLI, MCP tools, and the
 > `@intentweave/index` programmatic API. The `@intentweave/plugin-kg` /
-> `plugin-kg-lite` packages (Neo4j / SQLite persistence, installed via
-> `iw plugin add kg`) live outside this monorepo.
+> `plugin-kg-lite` package (SQLite persistence, installed via `iw plugin add kg-lite`)
+> lives outside this monorepo.
 
 ## Build & Test
 
@@ -72,7 +72,7 @@ _Also referred to as CARI Evidence Engine. `iw index _` is the canonical power A
 
 ```bash
 # Build the index
-iw index build                        # structured depth (default)
+iw index build                        # full depth (default)
 iw index build --depth full           # + body text with IDF filtering
 
 # Query the index
@@ -356,6 +356,62 @@ See `docs/LIBRARY-API.md` for full documentation.
 5. **Annotate** — Match mentions → symbols, apply IDF penalties
 6. **Write** — Persist to SQLite
 
+## Claims (Repository Claim Lifecycle)
+
+Claims are evidence-backed statements about a repository, such as a parameter's
+value, a public Symbol's documentation, an Endpoint's authentication, or an
+Architecture import rule. Discovery produces Candidates; a human or an explicit
+Policy promotes them to Claims; `claims check` assesses promoted Claims against
+the current index.
+
+### CLI Commands
+
+```bash
+iw claims discover                                # persist Candidates; activates nothing
+iw claims discover --semantic                     # opt in to grounded semantic correlation
+iw claims candidates list                         # Candidate inbox
+iw claims candidates triage                       # move correlated Candidates into the inbox
+iw claims candidates review --decision ...        # record a human Candidate decision
+iw claims check                                   # assess promoted Claims (no model call)
+iw claims check --since <ref>                     # assess against a merge-base anchor
+iw claims check --as-of <isoDate>                 # judge intent exceptions at a fixed instant
+iw claims review                                  # record a human decision on an Assessment
+iw claims review --purpose protect ...              # also protect the Claim with an Intent Anchor
+iw claims relations add|list|retire                 # Claim Relations: realizes, refines, constrains, warrants
+iw claims observations anchors --since <ref>  # observed changes against anchors (claims check unchanged)
+iw claims intents realize|unrealize|protect|list    # abstract intents: a realizer set, protected as one
+iw claims conflicts resolve --decision accept_amendment|reject_change|grant_exception
+                                                  # decide an intent_conflict (exceptions need --expires)
+iw claims explain                                 # current Claims, dependencies, and reopens
+iw claims candidates recommend --semantic --preview   # show exact outbound context; no call
+iw claims candidates recommend --semantic --candidate <ref>
+iw claims candidates recommend --semantic --batch     # bounded batch from config v2
+iw claims candidates evaluate --labels <file>     # score recommendations against labels
+```
+
+### Rules
+
+- `claims check` and `iw intent check` never call a model. Promoted Claims are
+  evaluated deterministically from frozen Evidence.
+- Semantic output (`--semantic`) is opt-in, grounded to existing Candidate,
+  Subject, and Evidence identities, limited to `probable` confidence, and never
+  promotes a Candidate on its own.
+- Remote providers are opt-in through `.iw/claims/inference.yaml`. Sensitive
+  paths and secret patterns are redacted before any request is built.
+- Effective decisions are portable in `.iw/claims/state.yaml`. SQLite is the
+  local projection and is rebuilt from that file in a fresh checkout.
+
+### Key Files
+
+| File                                         | Purpose                                              |
+| -------------------------------------------- | ---------------------------------------------------- |
+| `packages/cli/src/commands/claims.ts`        | `iw claims` command tree                             |
+| `packages/cli/src/claims/`                   | Discovery, correlation, governance, recommendations  |
+| `packages/index/src/claims/engine.ts`        | Claim evaluation runtime                             |
+| `packages/index/src/claims/candidates.ts`    | Candidate store and lifecycle                        |
+| `packages/index/src/claims/portableState.ts` | `.iw/claims/state.yaml` import and export            |
+| `packages/core/src/interfaces.ts`            | `LLMProvider` and `LLMProviderV2` transport contract |
+
 ## Knowledge Graph (KG)
 
 ### CLI Commands
@@ -363,7 +419,6 @@ See `docs/LIBRARY-API.md` for full documentation.
 ```bash
 iw doc-health                                               # Living Documentation (documentary domain, CARI default)
 iw intent living                                            # Living Documentation (alias)
-iw doc-health --neo4j -s my-project                         # Living Documentation (full KG mode, requires Neo4j)
 iw verify --score                                           # Living Documentation Score (12.3): composite 0-100/A-F
 iw intent score                                             # Living Documentation Score (alias)
 iw verify --score -f json                                   # JSON output for CI integration
@@ -387,18 +442,17 @@ All CARI query functions are also available as CLI subcommands
 (e.g., `iw index clones`, `iw index todos`) and via the `@intentweave/index`
 programmatic API.
 
-### KG Tools (require Neo4j)
+### KG Tools (require a graph plugin, `plugin-kg-lite`)
 
-| Tool            | Purpose                         | Key Parameters                  |
-| --------------- | ------------------------------- | ------------------------------- |
-| `kg_query`      | NL or Cypher query              | `question`, `cypher?`, `limit?` |
-| `kg_context`    | Build RAG context               | `topic?`, `entity?`, `hops?`    |
-| `kg_entities`   | List/search entities            | `type?`, `search?`, `limit?`    |
-| `kg_impact`     | Semantic impact analysis        | `files`, `hops?`                |
-| `kg_doc_health` | Documentation freshness (Neo4j) | `files?`                        |
-| `kg_schema`     | Graph schema                    | _(none)_                        |
+| Tool            | Purpose                 | Key Parameters                  |
+| --------------- | ----------------------- | ------------------------------- |
+| `kg_query`      | NL or Cypher query      | `question`, `cypher?`, `limit?` |
+| `kg_context`    | Build RAG context       | `topic?`, `entity?`, `hops?`    |
+| `kg_entities`   | List/search entities    | `type?`, `search?`, `limit?`    |
+| `kg_doc_health` | Documentation freshness | `files?`                        |
+| `kg_schema`     | Graph schema            | _(none)_                        |
 
-### CARI Tools (local SQLite, no Neo4j; most need no LLM)
+### CARI Tools (local SQLite; most need no LLM)
 
 | Tool                          | Purpose                                                    | Key Parameters                                                       |
 | ----------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -448,8 +502,6 @@ programmatic API.
 | `cari_rules_trend`            | ADR conformance trend over git history                     | `limit?`                                                             |
 | `cari_layers_from_decorators` | Layer assignment from class decorators                     | _(none)_                                                             |
 | `cari_layers_name`            | LLM-generated layer & directory names                      | `provider`, `model?`, `api_key?`                                     |
-| `cari_verify`                 | Spec-to-code grounding verification                        | _(none)_                                                             |
-| `cari_consistency`            | Constraint consistency check                               | _(none)_                                                             |
 | `cari_arch_check`             | Validate diagrams against import evidence                  | `paths?`, `provider?`                                                |
 | `cari_cypher`                 | Custom graph queries via CypherLite                        | `query`, `limit?`                                                    |
 | `cari_graph_schema`           | CARI graph schema — node/rel types, query templates        | _(none)_                                                             |
@@ -459,35 +511,35 @@ programmatic API.
 
 All CARI query functions are available as direct API calls, MCP tools, and CLI subcommands:
 
-| Function                     | CLI Command                    | Purpose                                                                                  |
-| ---------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
-| `clones()`                   | `iw index clones`              | Exact clone detection (identical body hash)                                              |
-| `structuralClones()`         | `iw index structural-clones`   | Type 2 clones (same control flow, different identifiers)                                 |
-| `circularImports()`          | `iw index circular-imports`    | Import cycle detection                                                                   |
-| `unusedExports()`            | `iw index unused-exports`      | Exported symbols never imported                                                          |
-| `hotspotPriority()`          | `iw index hotspot-priority`    | High-churn low-doc files ranked by urgency                                               |
-| `todos()`                    | `iw index todos`               | TODO/FIXME/HACK/XXX inventory                                                            |
-| `moduleCoverage()`           | `iw index module-coverage`     | Documentation coverage % per directory                                                   |
-| `orphanedSections()`         | `iw index orphaned-sections`   | Doc sections with all-ungrounded mentions                                                |
-| `docCompleteness()`          | `iw index doc-completeness`    | Per-doc completeness vs. referenced exports                                              |
-| `crossGroupDrift()`          | `iw index cross-group-drift`   | Entity coverage conflicts across doc groups                                              |
-| `mentionsOf()`               | `iw index mentions-of`         | Find doc mentions of a code or external entity                                           |
-| `annotationsForFile()`       | `iw index annotations-for`     | List all annotations for a documentation file                                            |
-| `testCoverage()`             | `iw index test-coverage`       | Map test files to source files, find untested exports                                    |
-| `hubs()`                     | `iw index hubs`                | Degree centrality across all edge types (god-node)                                       |
-| `communities()`              | `iw index communities`         | Label-propagation community detection                                                    |
-| `surprises()`                | `iw index surprises`           | Surprising connection ranking (composite score)                                          |
-| `rationale()`                | `iw index rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                                            |
-| `terminologyInconsistency()` | `iw index terminology`         | Detect different doc names for the same code symbol                                      |
-| `dependencyDepth()`          | `iw index dep-depth`           | Transitive import depth + fan-in/fan-out risk                                            |
-| `boundaryViolations()`       | `iw index boundary-violations` | Cross-package internal import detection                                                  |
-| `layersInfer()`              | `iw index layers-infer`        | Auto-infer architectural layers from import graph                                        |
-| `layersCheck()`              | `iw index layers-check`        | Validate imports against layer configuration                                             |
-| `focus()`                    | `iw index focus`               | Focused architecture view around a target entity                                         |
-| `livingScore()`              | `iw verify --score`            | Composite living documentation score (spec + consistency + freshness + arch conformance) |
-| `calls()`                    | `iw index calls`               | Query symbol_calls call graph (Phase 4)                                                  |
-| `trace()`                    | `iw index trace`               | BFS call-path tracing from entry-point file (Phase 4)                                    |
-| `ruleCoverage()`             | `iw index rule-coverage`       | Flag packages with zero behavioral rules (Phase 4)                                       |
+| Function                     | CLI Command                    | Purpose                                                                 |
+| ---------------------------- | ------------------------------ | ----------------------------------------------------------------------- |
+| `clones()`                   | `iw index clones`              | Exact clone detection (identical body hash)                             |
+| `structuralClones()`         | `iw index structural-clones`   | Type 2 clones (same control flow, different identifiers)                |
+| `circularImports()`          | `iw index circular-imports`    | Import cycle detection                                                  |
+| `unusedExports()`            | `iw index unused-exports`      | Exported symbols never imported                                         |
+| `hotspotPriority()`          | `iw index hotspot-priority`    | High-churn low-doc files ranked by urgency                              |
+| `todos()`                    | `iw index todos`               | TODO/FIXME/HACK/XXX inventory                                           |
+| `moduleCoverage()`           | `iw index module-coverage`     | Documentation coverage % per directory                                  |
+| `orphanedSections()`         | `iw index orphaned-sections`   | Doc sections with all-ungrounded mentions                               |
+| `docCompleteness()`          | `iw index doc-completeness`    | Per-doc completeness vs. referenced exports                             |
+| `crossGroupDrift()`          | `iw index cross-group-drift`   | Entity coverage conflicts across doc groups                             |
+| `mentionsOf()`               | `iw index mentions-of`         | Find doc mentions of a code or external entity                          |
+| `annotationsForFile()`       | `iw index annotations-for`     | List all annotations for a documentation file                           |
+| `testCoverage()`             | `iw index test-coverage`       | Map test files to source files, find untested exports                   |
+| `hubs()`                     | `iw index hubs`                | Degree centrality across all edge types (god-node)                      |
+| `communities()`              | `iw index communities`         | Label-propagation community detection                                   |
+| `surprises()`                | `iw index surprises`           | Surprising connection ranking (composite score)                         |
+| `rationale()`                | `iw index rationale`           | WHY/NOTE/IMPORTANT/DESIGN rationale inventory                           |
+| `terminologyInconsistency()` | `iw index terminology`         | Detect different doc names for the same code symbol                     |
+| `dependencyDepth()`          | `iw index dep-depth`           | Transitive import depth + fan-in/fan-out risk                           |
+| `boundaryViolations()`       | `iw index boundary-violations` | Cross-package internal import detection                                 |
+| `layersInfer()`              | `iw index layers-infer`        | Auto-infer architectural layers from import graph                       |
+| `layersCheck()`              | `iw index layers-check`        | Validate imports against layer configuration                            |
+| `focus()`                    | `iw index focus`               | Focused architecture view around a target entity                        |
+| `livingScore()`              | `iw verify --score`            | Composite living documentation score (doc freshness + arch conformance) |
+| `calls()`                    | `iw index calls`               | Query symbol_calls call graph (Phase 4)                                 |
+| `trace()`                    | `iw index trace`               | BFS call-path tracing from entry-point file (Phase 4)                   |
+| `ruleCoverage()`             | `iw index rule-coverage`       | Flag packages with zero behavioral rules (Phase 4)                      |
 
 ### Entity Bridge
 

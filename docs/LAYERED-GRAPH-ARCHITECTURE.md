@@ -1,5 +1,10 @@
 # Layered Graph Architecture
 
+> **Superseded.** The Neo4j-based knowledge graph described here was removed. The
+> SQLite knowledge-graph tables were dropped in schema 22, and the Neo4j persistence code
+> and `--neo4j` modes were removed afterwards. The CARI index and the optional
+> `plugin-kg-lite` graph store are current. This document is kept as design history.
+
 > **Version:** 0.2  
 > **Status:** Draft / Proposal  
 > **Date:** 2025-07-14  

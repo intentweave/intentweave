@@ -39,7 +39,7 @@ pluginCommand
       console.log(chalk.dim("\nAvailable plugins:"));
       console.log(
         chalk.dim(
-          "  iw plugin add kg      — Knowledge graph extraction + Neo4j",
+          "  iw plugin add kg-lite — SQLite knowledge graph (zero config)",
         ),
       );
       console.log(

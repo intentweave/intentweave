@@ -42,7 +42,7 @@ export interface LlmCapability {
 /**
  * Persistence Capability — store and query entities in a graph database.
  *
- * Provided by the KG plugin. Core never imports neo4j-driver directly.
+ * Provided by a KG plugin (plugin-kg-lite in this repository). Core has no database driver dependency.
  */
 export interface PersistenceCapability {
   readonly name: "persistence";
@@ -164,7 +164,7 @@ export interface PluginContext {
  * const plugin: IWPlugin = {
  *   name: "kg",
  *   version: "0.8.0",
- *   description: "Knowledge graph extraction and Neo4j persistence",
+ *   description: "Knowledge graph persistence (SQLite, zero config)",
  *   capabilities: ["llm", "persistence"],
  *   registerCommands(host, ctx) { ... },
  *   registerMcpTools(host, ctx) { ... },

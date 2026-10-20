@@ -17,10 +17,9 @@ export const mcpCommand = new Command("mcp")
     "Start the MCP server (stdio transport) for knowledge graph tools",
   )
   .requiredOption("-s, --session <id>", "Session ID to scope all queries")
-  .option("--neo4j-uri <uri>", "Neo4j connection URI")
   .option("-v, --verbose", "Log activity to stderr")
   .action(async (options) => {
-    const { session: sessionId, neo4jUri, verbose } = options;
+    const { session: sessionId, verbose } = options;
 
     try {
       // Dynamic import to avoid loading MCP SDK unless needed
@@ -28,7 +27,6 @@ export const mcpCommand = new Command("mcp")
 
       await startMcpServer({
         sessionId,
-        neo4jUri,
         verbose,
       });
     } catch (err) {

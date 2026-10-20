@@ -34,7 +34,6 @@ This policy covers:
 Out of scope:
 
 - Third-party dependencies (report to their maintainers directly)
-- The Neo4j database itself
 
 ## Supported Versions
 

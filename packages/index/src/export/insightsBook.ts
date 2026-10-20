@@ -4681,12 +4681,6 @@ function insightsBookClientScript() {
     const ls = (data as any).livingScore as {
       score: number;
       grade: string;
-      specCoverage: { score: number; available: boolean; detail: string };
-      constraintConsistency: {
-        score: number;
-        available: boolean;
-        detail: string;
-      };
       docFreshness: { score: number; available: boolean; detail: string };
       archConformance: { score: number; available: boolean; detail: string };
     };
@@ -4711,20 +4705,6 @@ function insightsBookClientScript() {
               ? "#ffedd5"
               : "#fee2e2";
     const dims = [
-      {
-        key: "specCoverage",
-        label: "Spec Coverage",
-        icon: "📋",
-        chapter: "chapter-coverage",
-        dim: ls.specCoverage,
-      },
-      {
-        key: "constraintConsistency",
-        label: "Constraint Consistency",
-        icon: "🔒",
-        chapter: "chapter-violations",
-        dim: ls.constraintConsistency,
-      },
       {
         key: "docFreshness",
         label: "Documentation Freshness",
@@ -5900,12 +5880,6 @@ function insightsBookClientScript() {
       | {
           score: number;
           grade: string;
-          specCoverage: { score: number; available: boolean; detail: string };
-          constraintConsistency: {
-            score: number;
-            available: boolean;
-            detail: string;
-          };
           docFreshness: { score: number; available: boolean; detail: string };
           archConformance: {
             score: number;
@@ -6035,12 +6009,6 @@ function insightsBookClientScript() {
     // ── Living Score card ─────────────────────────────────────────────────
     if (ls) {
       const dims = [
-        { label: "Spec Coverage", icon: "📋", dim: ls.specCoverage },
-        {
-          label: "Constraint Consistency",
-          icon: "🔒",
-          dim: ls.constraintConsistency,
-        },
         { label: "Documentation Freshness", icon: "📅", dim: ls.docFreshness },
         {
           label: "Architecture Conformance",

@@ -171,7 +171,7 @@ export interface DriftEvidence {
 
 /**
  * Unified drift report combining all four detectors.
- * This is the input to both CLI rendering and Neo4j persistence.
+ * This is the input to CLI rendering.
  */
 export interface UnifiedDriftReport {
   /** Schema identifier */
@@ -259,13 +259,13 @@ export interface KwgMentionForDrift {
 
 /**
  * Input for the doc↔code drift detector (C1).
- * Requires KWG entities (from Neo4j or in-memory) + AX output.
+ * Requires KWG entities + AX output.
  *
  * Note: `axOutput` typed as `unknown` here — detector imports `AxOutput`
  * from `@intentweave/analyzer` directly (core cannot depend on analyzer).
  */
 export interface DocCodeDriftInput {
-  /** KWG entities (from Neo4j or in-memory KWG pipeline output) */
+  /** KWG entities (from the in-memory KWG pipeline output) */
   kwgEntities: KwgEntityForDrift[];
 
   /** KWG mentions for context (for signature matching) */
@@ -294,7 +294,7 @@ export interface DocCodeDriftInput {
  * Requires in-memory TCG pipeline output.
  */
 export interface TemporalDriftInput {
-  /** TCG pipeline output (or loaded from Neo4j) */
+  /** TCG pipeline output */
   tcgOutput: TcgPipelineOutput;
 
   /** KWG entities (for entity-level temporal analysis) */

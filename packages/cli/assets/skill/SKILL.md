@@ -97,7 +97,7 @@ the user has a provider configured and explicitly wants rules generated from a w
 ### 5. Answer a question the built-in queries don't cover: run an ad-hoc graph query
 
 If retrieval/connections don't surface what's needed, query the CARI graph projection
-directly with CypherLite (no Neo4j, no LLM):
+directly with CypherLite (no LLM):
 
 ```bash
 iw index schema                                  # node labels, relationships, built-in templates

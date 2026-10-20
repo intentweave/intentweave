@@ -88,6 +88,9 @@ pub struct TcgResult {
     pub co_changes: Vec<CoChange>,
     /// Per-file git-derived stats (churn, hotspot, ownership, last-modified).
     pub file_stats: Vec<FileStat>,
+    /// Every path any commit touched, including deleted files and commits too large for the
+    /// co-change statistics. The files table lists them all.
+    pub tracked_paths: Vec<String>,
 }
 
 /// Output of the Annotate stage.
@@ -140,7 +143,9 @@ pub struct Symbol {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Import {
     pub source_file: String,
-    pub target_file: String,
+    /// Resolved target for relative imports that exist on disk; `None` for packages and
+    /// unresolved specifiers (TypeScript stores NULL).
+    pub target_file: Option<String>,
     pub module_specifier: String,
     pub line: Option<i64>,
     pub is_relative: bool,
@@ -151,7 +156,7 @@ pub struct Import {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolCall {
     pub caller_file: String,
-    pub caller_name: String,
+    pub caller_name: Option<String>,
     pub caller_line: i64,
     pub callee_name: String,
     pub callee_id: Option<String>,

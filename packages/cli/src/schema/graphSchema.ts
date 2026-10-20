@@ -17,7 +17,7 @@
 // =============================================================================
 
 export const MULTI_LAYER_SCHEMA = `
-## Neo4j Knowledge-Graph Schema — Multi-Layer
+## Knowledge-Graph Schema — Multi-Layer
 
 IntentWeave stores a **6-layer graph**. Each layer is produced by a different
 pipeline stage. Cross-layer edges connect them.
@@ -196,7 +196,7 @@ Produced by: \`iw xlink\` / \`iw build full\`
 // =============================================================================
 
 export const COMPACT_SCHEMA = `
-Neo4j Multi-Layer Graph Schema:
+Multi-Layer Graph Schema:
 
 Layer 1 — KWG (Keywords):
   :KWEntity (name, mentionCount, session_id)

@@ -5,11 +5,228 @@
  * @intentweave/index — Code-Aware Retrieval Index (CARI)
  *
  * Lightweight SQLite-based index for agents, CI, and editors.
- * Zero-infrastructure alternative to the full Neo4j knowledge graph.
+ * Zero-infrastructure alternative to a full graph database.
  */
 
 // Phase 1: Core index
-export { initSchema } from "./schema.js";
+export {
+  CLAIMS_COMPANION_TABLES,
+  discardClaimsHistory,
+  discardDatabaseFiles,
+  initSchema,
+  migrateSchema14To15,
+  migrateSchema15To16,
+  migrateSchema16To17,
+  migrateSchema17To18,
+  migrateSchema18To19,
+  migrateSchema19To20,
+  migrateSchemaToCurrent,
+  openMigratedDatabase,
+  replaceDatabaseAtomically,
+  restoreClaimsHistory,
+  snapshotClaimsHistory,
+  schemaMigrationBackupPath,
+  temporaryDatabasePath,
+} from "./schema.js";
+export {
+  assessmentKey,
+  canonicalJson,
+  fingerprint,
+  materialFingerprint,
+  ruleResultFingerprint,
+} from "./claims/canonical.js";
+export { ClaimsStore } from "./claims/store.js";
+export {
+  ObservationStore,
+  type RecordRunInput,
+  type RunCoverageInput,
+  type RunRecordInput,
+  type ChangeKind,
+  type ChangeItem,
+} from "./observation/observationStore.js";
+export { CandidateStore } from "./claims/candidates.js";
+export { CandidateInferenceStore } from "./claims/inferences.js";
+export type {
+  CandidateConfidence,
+  CandidateDetails,
+  CandidateDiscoveryMode,
+  CandidateEvidence,
+  CandidateEvidenceInput,
+  CandidateInferenceAttachmentInput,
+  CandidateListFilter,
+  CandidatePolicyDecisionInput,
+  CandidateRecommendationRecord,
+  CandidateReviewDecision,
+  CandidateReviewEffect,
+  CandidateReviewInput,
+  CandidateState,
+  CandidateSubject,
+  CandidateSubjectInput,
+  PersistClaimCandidateInput,
+  PersistedCandidate,
+  PersistedCandidateReview,
+} from "./claims/candidates.js";
+export type {
+  CandidateInferenceCacheKey,
+  CandidateInferenceConfidence,
+  CandidateInferenceDetails,
+  PersistCandidateInferenceInput,
+} from "./claims/inferences.js";
+export { ClaimsEngine } from "./claims/engine.js";
+export { ClaimsReviewStore } from "./claims/review.js";
+export {
+  AbstractIntentError,
+  AbstractIntentStore,
+  DEFAULT_ABSTRACT_SCOPE,
+  realizerSetFingerprint,
+  type AbstractAnchorEvaluation,
+  type AbstractIntentAnchor,
+  type AbstractRealization,
+} from "./claims/abstractIntents.js";
+export {
+  ClaimRelationError,
+  ClaimRelationStore,
+  REALIZATION_KINDS,
+  type AddClaimRelationInput,
+  type ClaimRelation,
+  type ClaimRelationKind,
+} from "./claims/claimRelations.js";
+export {
+  DEFAULT_ANCHOR_SCOPE,
+  IntentAnchorStore,
+  type AnchorEvaluationInput,
+  type ConflictDecision,
+  type DeclaredFollowUp,
+  type IntentAnchor,
+  type IntentAnchorEvaluation,
+  type IntentAnchorMode,
+  type IntentAnchorOutcome,
+  type IntentAnchorStatus,
+  type ProtectInput,
+} from "./claims/intentAnchors.js";
+export {
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_CONTRACT_VERSION,
+  CANDIDATE_TRIAGE_RECOMMENDATION_ADAPTER_ID,
+  CANDIDATE_TRIAGE_RECOMMENDATION_CONTRACT,
+  CANDIDATE_TRIAGE_RECOMMENDATION_PROMPT_VERSION,
+  CANDIDATE_TRIAGE_RECOMMENDATION_SCHEMA,
+  CandidateRecommendationValidationError,
+  candidateRecommendationKey,
+  candidateRecommendationOutputFingerprint,
+  createCandidateTriageRecommendationSchema,
+  createCandidateTriageRecommendation,
+  validateCandidateTriageRecommendation,
+  validateCandidateTriageRecommendationOutput,
+} from "./claims/recommendations.js";
+export type {
+  CandidateTriageRecommendationConfidence,
+  CandidateTriageRecommendationDecision,
+  CandidateTriageRecommendationOutputV1,
+  CandidateTriageRecommendationPriority,
+  CandidateTriageRecommendationSubjectBinding,
+  CandidateTriageRecommendationV1,
+  RecommendationGroundingContext,
+  RecommendationGroundingSubject,
+} from "./claims/recommendations.js";
+export {
+  CLAIM_ORIGIN_CONTRACT_VERSION,
+  claimOriginFingerprint,
+  normalizeClaimOrigins,
+  parseClaimOrigin,
+} from "./claims/origin.js";
+export type {
+  ClaimOrigin,
+  ClaimOriginKind,
+  ClaimOriginSource,
+} from "./claims/origin.js";
+export {
+  SUBJECT_IDENTITY_CONTRACT_VERSION,
+  affectedCurrentAssessmentsForSubject,
+  affectedCurrentAssessmentsForSubjectAlias,
+  affectedCurrentAssessmentsForSubjectContinuity,
+  parameterSubjectIdentity,
+  subjectIdentity,
+} from "./claims/subjects.js";
+export type {
+  SubjectIdentityV1,
+  SubjectImpactAssessment,
+  SubjectKind,
+} from "./claims/subjects.js";
+export { CLAIMS_EXIT_CODE, claimsExitCode } from "./claims/exitCode.js";
+export {
+  CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
+  CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
+  type PortableAbstractAnchor,
+  type PortableAbstractRealization,
+  type PortableClaimRelation,
+  type PortableConflictDecision,
+  type PortableIntentAnchor,
+  ClaimsPortableStateError,
+  emptyPortableClaimsState,
+  parsePortableClaimsState,
+  portableRecommendationBasisKey,
+} from "./claims/portableState.js";
+export { assessClaimPolicy, assessRuleResults } from "./claims/policies.js";
+export {
+  r1LiteralBinding,
+  r3ConfigResolution,
+  r3DocumentationConformance,
+  r7ScopeOverride,
+} from "./claims/rules.js";
+export type {
+  AssessmentResult,
+  AssessmentRuleInput,
+  AssessmentEffect,
+  ClaimAssessmentDependencyInput,
+  ClaimAssessmentStatus,
+  ClaimSubjectInput,
+  ClaimPolicyDependencyInput,
+  ClaimsExitInput,
+  ClaimsContractVersions,
+  ClaimsScopeEvaluation,
+  ClaimsScopeEvaluationInput,
+  ClaimDependencyKind,
+  ClaimScalar,
+  EpistemicRole,
+  EvidenceSubjectInput,
+  MaterialFingerprintInput,
+  NormalizedRuleResult,
+  PersistEvidenceInput,
+  PersistGenericEvidenceInput,
+  PersistGenericClaimAssessmentInput,
+  PersistSubjectAliasInput,
+  PersistSubjectContinuityInput,
+  PersistedVersion,
+  PersistRuleResultInput,
+  PersistClaimAssessmentInput,
+  PersistedAssessment,
+  PersistedSubjectContinuity,
+  PersistedReopen,
+  PersistedReviewDecision,
+  RecordReviewInput,
+  ReopenReason,
+  ReopenReviewInput,
+  ReviewDependencyKind,
+  RuleApplicability,
+  RuleResultFingerprintInput,
+  RuleResultStatus,
+  WarrantPolarity,
+  VersionedClaimValue,
+  VersionedClaimContract,
+  VersionedScopeEvidence,
+} from "./claims/types.js";
+export type {
+  PortableAssessmentReview,
+  PortableBaselineAcceptance,
+  PortableCandidateDecision,
+  PortableClaimOrigin,
+  PortableRecommendationBasisV1,
+  PortableClaimsActor,
+  PortableClaimsPolicy,
+  PortableClaimsState,
+  PortableJsonValue,
+  PortableSubjectBinding,
+} from "./claims/portableState.js";
 
 // CypherLite CARI graph projection + query runner
 export {
@@ -30,16 +247,17 @@ export {
   snapshotConformance,
 } from "./writer.js";
 export { annotate, toSlug, tokenize } from "./annotator.js";
+export {
+  annotateBuiltIndex,
+  type HybridAnnotationOptions,
+} from "./hybridAnnotations.js";
+export { discoverBuildDocumentFiles } from "./facade.js";
 export type { AnnotateOptions } from "./annotator.js";
 export { computeIdf } from "./idf.js";
 
 // Opt-in local session log (.iw/sessions/) — never transmitted anywhere
 export { logSessionEvent } from "./sessionLog.js";
 export type { SessionLogEntry, LogSessionEventInput } from "./sessionLog.js";
-
-// KG writer (Selective Semantic Enrichment — 11.8)
-export { writeKgResults, bridgeKgEntities } from "./kgWriter.js";
-export type { KgWriteInput, KgWriteResult } from "./kgWriter.js";
 
 // Phase 4: Incremental updates
 export { detectChanges, applyChanges, hashFile } from "./incremental.js";
@@ -157,22 +375,16 @@ export {
   formatCariImpact,
   archReport,
   archReportFromDb,
-  enrichmentScore,
-  enrichmentScoreFromDb,
-  verify,
-  verifyFromDb,
-  consistency,
-  consistencyFromDb,
   archCheck,
   archCheckFromDb,
   parseArchitectureYaml,
-  inferArchConfigFromKg,
-  inferArchConfigFromKgDb,
   enrichArchConfigWithFiles,
   diagramEntityCheck,
   diagramEntityCheckFromDb,
   resolveComponent,
   resolveComponentFromDb,
+  enrichmentScore,
+  enrichmentScoreFromDb,
   livingScore,
   livingScoreFromDb,
   documentaryCheckFromDb,
@@ -220,7 +432,6 @@ export type {
   ReportOptions,
   ArchReportOptions,
   DeadFeatureOptions,
-  EnrichmentScoreOptions,
   RulesCheckOptions,
   DeprecatedCallersOptions,
   InternalViolationsOptions,
@@ -231,6 +442,7 @@ export type {
   CallEdge as CallEdgeQuery,
   RuleCoverageOptions as RuleCoverageQueryOptions,
   PackageCoverage as PackageCoverageQuery,
+  EnrichmentScoreOptions,
 } from "./queries/index.js";
 
 export type { NamingViolationsOptions } from "./queries/namingViolations.js";
@@ -327,22 +539,10 @@ export type {
   CariImpactResult,
   CariImpactFile,
   CariImpactDoc,
-  // Enrichment types (11.8)
+  // Enrichment candidate ranking (CARI signals)
   EnrichmentWeights,
   EnrichmentCandidate,
   EnrichmentScoreResult,
-  EnrichOptions,
-  EnrichResult,
-  // Verification types (12.1)
-  GroundingStatus,
-  VerifyEntityResult,
-  VerifyParams,
-  VerifyResult,
-  // Consistency types (12.2)
-  ConflictSeverity,
-  ConstraintConflict,
-  ConsistencyParams,
-  ConsistencyResult,
   // Architecture check types (5.8)
   ArchComponent,
   ArchFlow,

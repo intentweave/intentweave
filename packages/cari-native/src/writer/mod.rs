@@ -59,13 +59,14 @@ pub fn write(
         // Write AX code files, merging TCG stats.
         for f in &ax.files {
             let st = tcg_stat_map.get(f.path.as_str());
+            let (last_modified, churn, is_hot, owner, bus) = history_columns(st);
             stmt.execute(rusqlite::params![
                 f.path,
-                st.and_then(|s| s.last_modified.as_deref()).or(f.last_modified.as_deref()),
-                st.map(|s| s.churn).unwrap_or(f.churn),
-                st.map(|s| s.is_hotspot as i64).unwrap_or(f.is_hotspot as i64),
-                st.and_then(|s| s.primary_owner.as_deref()).or(f.primary_owner.as_deref()),
-                st.and_then(|s| s.bus_factor).or(f.bus_factor),
+                last_modified,
+                churn,
+                is_hot,
+                owner,
+                bus,
                 f.is_doc as i64,
                 f.content_hash.as_deref(),
                 f.doc_group.as_deref(),
@@ -84,20 +85,48 @@ pub fn write(
                 continue;
             }
             let st = tcg_stat_map.get(doc.path.as_str());
+            let (last_modified, churn, is_hot, owner, bus) = history_columns(st);
             stmt.execute(rusqlite::params![
                 doc.path,
-                st.and_then(|s| s.last_modified.as_deref()),
-                st.map(|s| s.churn).unwrap_or(0_i64),
-                st.map(|s| s.is_hotspot as i64).unwrap_or(0_i64),
-                st.and_then(|s| s.primary_owner.as_deref()),
-                st.and_then(|s| s.bus_factor),
+                last_modified,
+                churn,
+                is_hot,
+                owner,
+                bus,
                 1_i64, // is_doc = true
                 None::<&str>,
                 doc.doc_group.as_deref(),
                 1_i64, // indexed
                 None::<&str>,
-                None::<i64>,
-                None::<i64>,
+                0_i64,
+                0_i64,
+            ])?;
+            counts.files += 1;
+        }
+
+        // Paths that only git history knows about (non-code, non-document files, deleted files).
+        let doc_paths: HashSet<&str> = kwx.doc_files.iter().map(|d| d.path.as_str()).collect();
+        for path_str in &tcg.tracked_paths {
+            if ax_paths.contains(path_str.as_str()) || doc_paths.contains(path_str.as_str()) {
+                continue;
+            }
+            let st = tcg_stat_map.get(path_str.as_str());
+            let (last_modified, churn, is_hot, owner, bus) = history_columns(st);
+            let is_doc = is_doc_path(path_str);
+            stmt.execute(rusqlite::params![
+                path_str,
+                last_modified,
+                churn,
+                is_hot,
+                owner,
+                bus,
+                is_doc as i64,
+                None::<&str>,
+                if is_doc { Some(crate::kwx::classify_doc_group(path_str)) } else { None },
+                1_i64,
+                None::<&str>,
+                0_i64,
+                0_i64,
             ])?;
             counts.files += 1;
         }
@@ -112,12 +141,29 @@ pub fn write(
               implements, deprecated, deprecated_note, is_internal, decorators)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
         )?;
-        for s in &ax.symbols {
-            let id = util::make_id(&format!("sym:{}:{}", s.file_path, s.name));
+        // Top-level export status per (file, name). Members inherit their container's.
+        // A class and a namespace-merged interface can share a name; members belong to the
+        // class, so the class takes precedence.
+        let mut top_export: std::collections::HashMap<(&str, &str), bool> =
+            std::collections::HashMap::new();
+        for s in ax.symbols.iter().filter(|s| s.container.is_none() && s.kind == "class") {
+            top_export.insert((s.file_path.as_str(), s.name.as_str()), s.export);
+        }
+        for s in ax.symbols.iter().filter(|s| s.container.is_none() && s.kind != "class") {
+            top_export.entry((s.file_path.as_str(), s.name.as_str())).or_insert(s.export);
+        }
+        // Namespaces are not symbols in the TypeScript index.
+        for s in ax.symbols.iter().filter(|s| s.kind != "namespace") {
+            let id = util::symbol_identity(s);
+            let exported = match s.container.as_deref() {
+                Some(c) => top_export.get(&(s.file_path.as_str(), c)).copied().unwrap_or(false),
+                None => s.export,
+            };
+            let export_text = if exported { "exported" } else { "internal" };
             stmt.execute(rusqlite::params![
                 id, s.name, s.kind, s.container, s.signature,
                 s.file_path, s.line, s.end_line,
-                s.export as i64, s.doc_summary, s.body_hash, s.body_lines,
+                export_text, s.doc_summary, s.body_hash, s.body_lines,
                 s.structure_hash, s.implements, s.deprecated as i64,
                 s.deprecated_note, s.is_internal as i64, s.decorators,
             ])?;
@@ -132,10 +178,19 @@ pub fn write(
              (id, source_file, target_file, module_specifier, line, is_relative, imported_names)
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
         )?;
+        let known: HashSet<&str> = ax.files.iter().map(|f| f.path.as_str()).collect();
         for imp in &ax.imports {
-            let id = util::make_id(&format!("imp:{}:{}:{}", imp.source_file, imp.target_file, imp.module_specifier));
+            let target = imp.target_file.as_deref().map(|r| resolve_target_file(r, &known));
+            // The line keeps two imports of one module in one file (type and value) apart.
+            let id = util::make_id(&format!(
+                "imp:{}:{}:{}:{}",
+                imp.source_file,
+                target.as_deref().unwrap_or(""),
+                imp.module_specifier,
+                imp.line.unwrap_or(0)
+            ));
             stmt.execute(rusqlite::params![
-                id, imp.source_file, imp.target_file, imp.module_specifier,
+                id, imp.source_file, target, imp.module_specifier,
                 imp.line, imp.is_relative as i64, imp.imported_names,
             ])?;
             counts.imports += 1;
@@ -175,8 +230,12 @@ pub fn write(
              (id, caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
         )?;
-        for c in &ax.calls {
-            let id = util::make_id(&format!("call:{}:{}:{}:{}", c.caller_file, c.caller_name, c.caller_line, c.callee_name));
+        for (seq, c) in ax.calls.iter().enumerate() {
+            // Sequence within the build keeps two identical calls on one line apart.
+            let id = util::make_id(&format!(
+                "call:{}:{}:{}:{}:{}",
+                c.caller_file, c.caller_name.as_deref().unwrap_or(""), c.caller_line, c.callee_name, seq
+            ));
             stmt.execute(rusqlite::params![
                 id, c.caller_file, c.caller_name, c.caller_line,
                 c.callee_name, c.callee_id, c.is_method as i64,
@@ -253,3 +312,80 @@ pub fn write(
 }
 
 
+#[cfg(test)]
+mod symbol_identity_tests {
+    use crate::util::symbol_identity;
+
+    fn symbol(name: &str, kind: &str, container: Option<&str>, signature: Option<&str>) -> crate::types::Symbol {
+        crate::ax::test_symbol(name, kind, container, signature, None)
+    }
+
+    #[test]
+    fn identity_matches_the_typescript_scheme() {
+        // sha256("interface Extractor")[..8] = 4f65b0c2, as in the TypeScript index.
+        let s = symbol("Extractor", "interface", None, Some("interface Extractor"));
+        assert_eq!(symbol_identity(&s), "impl:src/a.ts#interface:Extractor(4f65b0c2)");
+        let p = symbol("name", "property", Some("Extractor"), None);
+        assert_eq!(symbol_identity(&p), "impl:src/a.ts#property:Extractor.name");
+    }
+
+    #[test]
+    fn same_name_members_in_one_file_keep_distinct_identities() {
+        let a = symbol("name", "property", Some("PrescriptiveElementNode"), None);
+        let b = symbol("name", "property", Some("PrescriptiveLayerNode"), None);
+        assert_ne!(symbol_identity(&a), symbol_identity(&b));
+    }
+}
+
+/// Port of `resolveTargetFile` (TypeScript index writer): a resolved path that is not a
+/// known file is retried with the extensions that TypeScript source may use instead.
+fn resolve_target_file(resolved: &str, known: &HashSet<&str>) -> String {
+    if known.contains(resolved) {
+        return resolved.to_string();
+    }
+    let swaps: &[&str] = match std::path::Path::new(resolved)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
+        Some("js") => &[".ts", ".tsx", ".js"],
+        Some("jsx") => &[".tsx", ".jsx"],
+        Some("mjs") => &[".mts", ".mjs"],
+        Some("cjs") => &[".cts", ".cjs"],
+        _ => return resolved.to_string(),
+    };
+    let ext_len = resolved.len() - resolved.rfind('.').unwrap_or(resolved.len());
+    let base = &resolved[..resolved.len() - ext_len];
+    for swap in swaps {
+        let candidate = format!("{base}{swap}");
+        if known.contains(candidate.as_str()) {
+            return candidate;
+        }
+    }
+    resolved.to_string()
+}
+
+/// Document extensions, as the TypeScript index classifies them.
+fn is_doc_path(path: &str) -> bool {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    matches!(ext.as_str(), "md" | "mdx" | "rst" | "txt" | "adoc")
+}
+
+/// Git-derived file columns, as the TypeScript index writes them: churn and the last-modified
+/// date only for hotspots, the owner and bus factor for any file with history, and the
+/// hotspot flag.
+fn history_columns(
+    st: Option<&&crate::types::FileStat>,
+) -> (Option<String>, Option<i64>, i64, Option<String>, Option<i64>) {
+    let hot = st.map(|s| s.is_hotspot).unwrap_or(false);
+    (
+        if hot { st.and_then(|s| s.last_modified.clone()) } else { None },
+        if hot { st.map(|s| s.churn) } else { None },
+        hot as i64,
+        st.and_then(|s| s.primary_owner.clone()),
+        st.and_then(|s| s.bus_factor),
+    )
+}

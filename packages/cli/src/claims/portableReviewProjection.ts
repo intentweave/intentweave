@@ -1,0 +1,586 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
+import type Database from "@intentweave/sqlite-compat";
+import {
+  AbstractIntentStore,
+  ClaimRelationStore,
+  ClaimsReviewStore,
+  emptyPortableClaimsState,
+  fingerprint,
+  IntentAnchorStore,
+  type AbstractIntentAnchor,
+  type AbstractRealization,
+  type ClaimRelation,
+  type ConflictDecision,
+  type PortableConflictDecision,
+  type PortableAssessmentReview,
+  type PortableClaimsActor,
+  type PortableClaimsState,
+} from "@intentweave/index";
+import {
+  loadPortableClaimsState,
+  writePortableClaimsState,
+} from "./portableState.js";
+import { persistPortableClaimOrigins } from "./origins.js";
+
+interface AssessmentBasis {
+  id: string;
+  epistemic_status: string;
+  normalized_statement_json: string;
+  assessment_policy_id: string;
+  assessment_policy_version: string;
+  materiality_contract_id: string | null;
+  materiality_contract_version: string | null;
+}
+
+interface AssessmentDependencyBasis {
+  dependency_kind: string;
+  epistemic_role: string;
+  warrant_polarity: string | null;
+  assessment_effect: string;
+  source_kind: string | null;
+  material_fingerprint: string | null;
+  rule_identity_key: string | null;
+  applicability: string | null;
+  normalized_status: string | null;
+  normalized_output_json: string | null;
+  normalized_reasons_json: string | null;
+  rule_contract_version: string | null;
+}
+
+export interface PortableReviewProjectionIssue {
+  claimIdentityId: string;
+  kind: "missing_claim" | "stale_assessment" | "unreviewable";
+  message: string;
+  expectedAssessmentFingerprint?: string;
+  actualAssessmentFingerprint?: string;
+}
+
+export interface PortableReviewProjectionResult {
+  imported: number;
+  skipped: number;
+  issues: PortableReviewProjectionIssue[];
+}
+
+function portableAssessmentFingerprint(
+  database: Database.Database,
+  claimIdentityId: string,
+  basis: AssessmentBasis,
+): string {
+  const dependencies = database
+    .prepare(
+      `SELECT dependency.dependency_kind, dependency.epistemic_role,
+              dependency.warrant_polarity, dependency.assessment_effect,
+              evidence_identity.source_kind, evidence.material_fingerprint,
+              result_identity.identity_key AS rule_identity_key,
+              result.applicability, result.normalized_status,
+              result.normalized_output_json, result.normalized_reasons_json,
+              result.rule_contract_version
+       FROM claim_assessment_dependencies dependency
+       LEFT JOIN evidence_versions evidence
+         ON dependency.dependency_kind = 'evidence_version'
+        AND evidence.id = dependency.dependency_version_id
+       LEFT JOIN evidence_identities evidence_identity
+         ON evidence_identity.id = evidence.evidence_identity_id
+       LEFT JOIN rule_result_versions result
+         ON dependency.dependency_kind = 'rule_result_version'
+        AND result.id = dependency.dependency_version_id
+       LEFT JOIN rule_result_identities result_identity
+         ON result_identity.id = result.rule_result_identity_id
+       WHERE dependency.claim_assessment_id = ?`,
+    )
+    .all(basis.id) as AssessmentDependencyBasis[];
+  const normalizedDependencies = dependencies
+    .map((dependency) => ({
+      dependencyKind: dependency.dependency_kind,
+      epistemicRole: dependency.epistemic_role,
+      warrantPolarity: dependency.warrant_polarity,
+      assessmentEffect: dependency.assessment_effect,
+      semanticBasis:
+        dependency.dependency_kind === "evidence_version"
+          ? {
+              sourceKind: dependency.source_kind,
+              materialFingerprint: dependency.material_fingerprint,
+            }
+          : {
+              identityKey: dependency.rule_identity_key,
+              applicability: dependency.applicability,
+              normalizedStatus: dependency.normalized_status,
+              normalizedOutput: JSON.parse(
+                dependency.normalized_output_json ?? "null",
+              ),
+              normalizedReasons: JSON.parse(
+                dependency.normalized_reasons_json ?? "[]",
+              ),
+              ruleContractVersion: dependency.rule_contract_version,
+            },
+    }))
+    .sort((left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right)),
+    );
+  const materialityContract =
+    basis.materiality_contract_id && basis.materiality_contract_version
+      ? {
+          id: basis.materiality_contract_id,
+          version: basis.materiality_contract_version,
+        }
+      : undefined;
+  return fingerprint({
+    claimIdentityId,
+    normalizedStatement: JSON.parse(basis.normalized_statement_json),
+    epistemicStatus: basis.epistemic_status,
+    assessmentPolicyId: basis.assessment_policy_id,
+    assessmentPolicyVersion: basis.assessment_policy_version,
+    ...(materialityContract ? { materialityContract } : {}),
+    dependencies: normalizedDependencies,
+  });
+}
+
+function portableActorLabel(actor: PortableClaimsActor): string {
+  return actor.kind === "human"
+    ? actor.id
+    : `policy:${actor.id}@${actor.version}`;
+}
+
+function assessmentBasis(
+  database: Database.Database,
+  claimIdentityId: string,
+  assessmentId?: string,
+): AssessmentBasis | undefined {
+  return database
+    .prepare(
+      `SELECT ca.id, ca.epistemic_status, cv.normalized_statement_json,
+              cv.assessment_policy_id, cv.assessment_policy_version,
+              cv.materiality_contract_id, cv.materiality_contract_version
+       FROM claim_assessments ca
+       JOIN claim_versions cv ON cv.id = ca.claim_version_id
+       WHERE cv.claim_identity_id = ?
+         AND ((? IS NULL AND ca.is_current = 1) OR ca.id = ?)`,
+    )
+    .get(claimIdentityId, assessmentId ?? null, assessmentId ?? null) as
+    | AssessmentBasis
+    | undefined;
+}
+
+/** Project portable reviews only when SQLite has no effective review yet. */
+export function projectPortableAssessmentReviews(
+  database: Database.Database,
+  state: PortableClaimsState,
+): PortableReviewProjectionResult {
+  const result: PortableReviewProjectionResult = {
+    imported: 0,
+    skipped: 0,
+    issues: [],
+  };
+  const reviews = new ClaimsReviewStore(database);
+
+  for (const [claimIdentityId, review] of Object.entries(
+    state.assessmentReviews,
+  )) {
+    const existingReview = database
+      .prepare(
+        `SELECT 1 AS present
+         FROM review_decisions
+         WHERE claim_identity_id = ?
+         LIMIT 1`,
+      )
+      .get(claimIdentityId) as { present: number } | undefined;
+    if (existingReview) {
+      result.skipped += 1;
+      continue;
+    }
+
+    const basis = assessmentBasis(database, claimIdentityId);
+    if (!basis) {
+      const knownClaim = database
+        .prepare(`SELECT 1 AS present FROM claim_identities WHERE id = ?`)
+        .get(claimIdentityId) as { present: number } | undefined;
+      if (knownClaim) {
+        // Retired claims remain in history but have no effective review target.
+        result.skipped += 1;
+        continue;
+      }
+      result.issues.push({
+        claimIdentityId,
+        kind: "missing_claim",
+        message: `Portable review references unknown claim ${claimIdentityId}`,
+        expectedAssessmentFingerprint: review.assessmentFingerprint,
+      });
+      continue;
+    }
+
+    const actualFingerprint = portableAssessmentFingerprint(
+      database,
+      claimIdentityId,
+      basis,
+    );
+    if (
+      actualFingerprint !== review.assessmentFingerprint ||
+      basis.assessment_policy_id !== review.assessmentPolicyId ||
+      basis.assessment_policy_version !== review.assessmentPolicyVersion
+    ) {
+      result.issues.push({
+        claimIdentityId,
+        kind: "stale_assessment",
+        message: `Portable review basis does not match the current assessment for ${claimIdentityId}`,
+        expectedAssessmentFingerprint: review.assessmentFingerprint,
+        actualAssessmentFingerprint: actualFingerprint,
+      });
+      continue;
+    }
+    if (basis.epistemic_status === "inconclusive") {
+      result.issues.push({
+        claimIdentityId,
+        kind: "unreviewable",
+        message: `Portable review references an inconclusive assessment for ${claimIdentityId}`,
+        expectedAssessmentFingerprint: review.assessmentFingerprint,
+        actualAssessmentFingerprint: actualFingerprint,
+      });
+      continue;
+    }
+
+    reviews.record({
+      claimIdentityId,
+      basisAssessmentId: basis.id,
+      decision: review.decision,
+      actor: portableActorLabel(review.actor),
+      decisionOrigin: "portable",
+      createdAt: Date.parse(review.decidedAt),
+    });
+    result.imported += 1;
+  }
+
+  return result;
+}
+
+export function persistPortableAssessmentReview(
+  workspaceRoot: string,
+  database: Database.Database,
+  input: {
+    claimIdentityId: string;
+    basisAssessmentId: string;
+    decision: PortableAssessmentReview["decision"];
+    actor: string;
+    rationale: string;
+    decidedAt: string;
+  },
+): string {
+  const basis = assessmentBasis(
+    database,
+    input.claimIdentityId,
+    input.basisAssessmentId,
+  );
+  if (!basis) {
+    throw new Error("Assessment does not belong to the claim identity");
+  }
+  if (basis.epistemic_status === "inconclusive") {
+    throw new Error("Inconclusive assessments are not reviewable");
+  }
+
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  state.assessmentReviews[input.claimIdentityId] = {
+    decision: input.decision,
+    assessmentFingerprint: portableAssessmentFingerprint(
+      database,
+      input.claimIdentityId,
+      basis,
+    ),
+    assessmentPolicyId: basis.assessment_policy_id,
+    assessmentPolicyVersion: basis.assessment_policy_version,
+    actor: { kind: "human", id: input.actor },
+    decidedAt: input.decidedAt,
+    rationale: input.rationale,
+  };
+  const filePath = writePortableClaimsState(workspaceRoot, state);
+  persistPortableClaimOrigins(workspaceRoot, database, input.claimIdentityId);
+  return filePath;
+}
+
+/**
+ * Persist a new Intent Anchor to portable state (G5.4). Earlier active anchors for the
+ * same Claim and scope become superseded, matching the index. Anchors survive an index
+ * rebuild only because this file holds them.
+ */
+export function persistPortableIntentAnchor(
+  workspaceRoot: string,
+  anchor: {
+    id: string;
+    claimIdentityId: string;
+    scope: string;
+    statementFingerprint: string;
+    authority?: "human" | "ai-proposed";
+    actor: string;
+    rationale?: string;
+    createdAt: number;
+  },
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  for (const [id, existing] of Object.entries(state.intentAnchors)) {
+    if (
+      existing.claimIdentityId === anchor.claimIdentityId &&
+      existing.scope === anchor.scope &&
+      existing.status === "active"
+    ) {
+      state.intentAnchors[id] = { ...existing, status: "superseded" };
+    }
+  }
+  state.intentAnchors[anchor.id] = {
+    claimIdentityId: anchor.claimIdentityId,
+    scope: anchor.scope,
+    statementFingerprint: anchor.statementFingerprint,
+    mode: "protect",
+    authority: anchor.authority ?? "human",
+    source: "review",
+    status: "active",
+    actor: { kind: "human", id: anchor.actor },
+    decidedAt: new Date(anchor.createdAt).toISOString(),
+    ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Import portable Intent Anchors into SQLite. Unknown or conflicting rows wait. */
+export function projectPortableIntentAnchors(
+  database: Database.Database,
+  state: PortableClaimsState,
+): {
+  imported: number;
+  skipped: number;
+  /** Anchors whose Claim is not in this index: they must be reported, not dropped. */
+  missingClaims: Array<{
+    anchorId: string;
+    claimIdentityId: string;
+    statementFingerprint: string;
+  }>;
+} {
+  const store = new IntentAnchorStore(database);
+  let imported = 0;
+  let skipped = 0;
+  const missingClaims: Array<{
+    anchorId: string;
+    claimIdentityId: string;
+    statementFingerprint: string;
+  }> = [];
+  for (const [id, anchor] of Object.entries(state.intentAnchors)) {
+    const outcome = store.importAnchor({
+      id,
+      claimIdentityId: anchor.claimIdentityId,
+      scope: anchor.scope,
+      statementFingerprint: anchor.statementFingerprint,
+      status: anchor.status,
+      authority: anchor.authority,
+      actor: portableActorLabel(anchor.actor),
+      ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+      createdAt: Date.parse(anchor.decidedAt),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+    if (outcome === "unknown_claim" && anchor.status === "active") {
+      missingClaims.push({
+        anchorId: id,
+        claimIdentityId: anchor.claimIdentityId,
+        statementFingerprint: anchor.statementFingerprint,
+      });
+    }
+  }
+  return { imported, skipped, missingClaims };
+}
+
+/** Persist a conflict decision (G5.4) to portable state. Decisions are append-only. */
+export function persistPortableConflictDecision(
+  workspaceRoot: string,
+  decision: ConflictDecision,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  const record: PortableConflictDecision = {
+    anchorId: decision.anchorId,
+    claimIdentityId: decision.claimIdentityId,
+    statementFingerprint: decision.statementFingerprint,
+    decision: decision.decision,
+    actor: { kind: "human", id: decision.actor },
+    decidedAt: new Date(decision.decidedAt).toISOString(),
+    ...(decision.rationale ? { rationale: decision.rationale } : {}),
+    ...(decision.expiresAt !== undefined
+      ? { expiresAt: new Date(decision.expiresAt).toISOString() }
+      : {}),
+  };
+  state.conflictDecisions[decision.id] = record;
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Write one Claim Relation (created or retired) into portable state. */
+export function persistPortableClaimRelation(
+  workspaceRoot: string,
+  relation: ClaimRelation,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  state.claimRelations[relation.id] = {
+    sourceClaimIdentityId: relation.sourceClaimIdentityId,
+    targetClaimIdentityId: relation.targetClaimIdentityId,
+    relation: relation.relation,
+    status: relation.status,
+    actor: { kind: "human", id: relation.actor },
+    createdAt: new Date(relation.createdAt).toISOString(),
+    ...(relation.retiredAt !== undefined
+      ? { retiredAt: new Date(relation.retiredAt).toISOString() }
+      : {}),
+    ...(relation.rationale ? { rationale: relation.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Import portable Claim Relations into SQLite. Unknown Claims wait. */
+export function projectPortableClaimRelations(
+  database: Database.Database,
+  state: PortableClaimsState,
+): { imported: number; skipped: number } {
+  const store = new ClaimRelationStore(database);
+  let imported = 0;
+  let skipped = 0;
+  for (const [id, relation] of Object.entries(state.claimRelations)) {
+    const outcome = store.importRelation({
+      id,
+      sourceClaimIdentityId: relation.sourceClaimIdentityId,
+      targetClaimIdentityId: relation.targetClaimIdentityId,
+      relation: relation.relation,
+      status: relation.status,
+      actor: portableActorLabel(relation.actor),
+      ...(relation.rationale ? { rationale: relation.rationale } : {}),
+      createdAt: Date.parse(relation.createdAt),
+      ...(relation.retiredAt
+        ? { retiredAt: Date.parse(relation.retiredAt) }
+        : {}),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  return { imported, skipped };
+}
+
+/** Import portable conflict decisions whose anchors exist in SQLite. */
+export function projectPortableConflictDecisions(
+  database: Database.Database,
+  state: PortableClaimsState,
+): { imported: number; skipped: number } {
+  const store = new IntentAnchorStore(database);
+  let imported = 0;
+  let skipped = 0;
+  for (const [id, decision] of Object.entries(state.conflictDecisions)) {
+    const outcome = store.importConflictDecision({
+      id,
+      anchorId: decision.anchorId,
+      claimIdentityId: decision.claimIdentityId,
+      statementFingerprint: decision.statementFingerprint,
+      decision: decision.decision,
+      actor: portableActorLabel(decision.actor),
+      ...(decision.rationale ? { rationale: decision.rationale } : {}),
+      decidedAt: Date.parse(decision.decidedAt),
+      ...(decision.expiresAt
+        ? { expiresAt: Date.parse(decision.expiresAt) }
+        : {}),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  return { imported, skipped };
+}
+
+/** Write one abstract realization (created or retired) into portable state. */
+export function persistPortableAbstractRealization(
+  workspaceRoot: string,
+  realization: AbstractRealization,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  state.abstractRealizations[realization.id] = {
+    intentKey: realization.intentKey,
+    claimIdentityId: realization.claimIdentityId,
+    status: realization.status,
+    actor: { kind: "human", id: realization.actor },
+    createdAt: new Date(realization.createdAt).toISOString(),
+    ...(realization.retiredAt !== undefined
+      ? { retiredAt: new Date(realization.retiredAt).toISOString() }
+      : {}),
+    ...(realization.rationale ? { rationale: realization.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Write an abstract anchor into portable state, superseding the previous active one. */
+export function persistPortableAbstractAnchor(
+  workspaceRoot: string,
+  anchor: AbstractIntentAnchor,
+): string {
+  const state =
+    loadPortableClaimsState(workspaceRoot) ?? emptyPortableClaimsState();
+  for (const [id, existing] of Object.entries(state.abstractAnchors)) {
+    if (
+      id !== anchor.id &&
+      existing.status === "active" &&
+      existing.intentKey === anchor.intentKey &&
+      existing.scope === anchor.scope
+    ) {
+      state.abstractAnchors[id] = { ...existing, status: "superseded" };
+    }
+  }
+  state.abstractAnchors[anchor.id] = {
+    intentKey: anchor.intentKey,
+    scope: anchor.scope,
+    realizerSetFingerprint: anchor.realizerSetFingerprint,
+    realizers: anchor.realizers,
+    authority: anchor.authority,
+    status: anchor.status,
+    actor: { kind: "human", id: anchor.actor },
+    createdAt: new Date(anchor.createdAt).toISOString(),
+    ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+  };
+  return writePortableClaimsState(workspaceRoot, state);
+}
+
+/** Import portable abstract realizations, then anchors, into SQLite. */
+export function projectPortableAbstractIntents(
+  database: Database.Database,
+  state: PortableClaimsState,
+): { imported: number; skipped: number } {
+  const store = new AbstractIntentStore(database);
+  let imported = 0;
+  let skipped = 0;
+  for (const [id, realization] of Object.entries(state.abstractRealizations)) {
+    const outcome = store.importRealization({
+      id,
+      intentKey: realization.intentKey,
+      claimIdentityId: realization.claimIdentityId,
+      status: realization.status,
+      actor: portableActorLabel(realization.actor),
+      ...(realization.rationale ? { rationale: realization.rationale } : {}),
+      createdAt: Date.parse(realization.createdAt),
+      ...(realization.retiredAt
+        ? { retiredAt: Date.parse(realization.retiredAt) }
+        : {}),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  for (const [id, anchor] of Object.entries(state.abstractAnchors)) {
+    const outcome = store.importAnchor({
+      id,
+      intentKey: anchor.intentKey,
+      scope: anchor.scope,
+      realizerSetFingerprint: anchor.realizerSetFingerprint,
+      realizers: anchor.realizers,
+      authority: anchor.authority,
+      status: anchor.status,
+      actor: portableActorLabel(anchor.actor),
+      ...(anchor.rationale ? { rationale: anchor.rationale } : {}),
+      createdAt: Date.parse(anchor.createdAt),
+    });
+    if (outcome === "imported") imported += 1;
+    else skipped += 1;
+  }
+  return { imported, skipped };
+}

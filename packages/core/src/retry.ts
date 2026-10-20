@@ -5,7 +5,7 @@
  * Retry with Exponential Backoff
  *
  * Generic retry utility for transient failures (rate limits, network blips).
- * Used by LLM providers and Neo4j connections.
+ * Used by LLM providers and other remote calls.
  */
 
 import { LLMError } from "./errors.js";

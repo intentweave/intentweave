@@ -47,7 +47,7 @@ impl SymbolIndex {
         let mut by_slug: HashMap<String, String> = HashMap::new();
 
         for sym in symbols {
-            let sym_id = util::make_id(&format!("sym:{}:{}", sym.file_path, sym.name));
+            let sym_id = util::symbol_identity(sym);
             let lower = sym.name.to_lowercase();
 
             // Prefer exported symbols — same semantics as annotator.ts:

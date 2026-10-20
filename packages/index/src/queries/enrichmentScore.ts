@@ -42,8 +42,6 @@ export interface EnrichmentScoreOptions {
   focus?: string;
   /** Custom weights. */
   weights?: Partial<EnrichmentWeights>;
-  /** Skip files already enriched (check enrichment_meta). */
-  incremental?: boolean;
 }
 
 /**
@@ -71,17 +69,6 @@ export function enrichmentScoreFromDb(
 ): EnrichmentScoreResult {
   const w: EnrichmentWeights = { ...DEFAULT_WEIGHTS, ...opts?.weights };
   const focus = opts?.focus;
-
-  // Collect enrichment_meta for incremental checks
-  const enrichedFiles = new Map<string, string>();
-  try {
-    const rows = db
-      .prepare(`SELECT file_path, content_hash FROM enrichment_meta`)
-      .all() as Array<{ file_path: string; content_hash: string }>;
-    for (const r of rows) enrichedFiles.set(r.file_path, r.content_hash);
-  } catch {
-    // Table may not exist yet on older schemas — treat as empty
-  }
 
   // Collect current content hashes from files table
   const fileHashes = new Map<string, string>();
@@ -197,20 +184,10 @@ export function enrichmentScoreFromDb(
       w.coverage * signals.coverageGap +
       w.drift * signals.driftSeverity;
 
-    // Check if already enriched with same content
-    let alreadyEnriched = false;
-    if (opts?.incremental && enrichedFiles.has(filePath)) {
-      const currentHash = fileHashes.get(filePath);
-      if (currentHash && currentHash === enrichedFiles.get(filePath)) {
-        alreadyEnriched = true;
-      }
-    }
-
     candidates.push({
       filePath,
       impactScore: Math.round(impactScore * 1000) / 1000,
       signals,
-      alreadyEnriched,
     });
   }
 

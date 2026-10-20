@@ -1,6 +1,6 @@
 ---
 name: iw-drift-detection
-description: "Documentation and architecture drift detection with CARI and KG. Use when: checking if docs are stale, finding which docs reference changed code, running doc-health, using cari_check MCP tool, detecting annotation drift, cross-group inconsistency, orphaned sections, or temporal staleness."
+description: "Documentation and architecture drift detection with CARI. Use when: checking if docs are stale, finding which docs reference changed code, running doc-health, using cari_check MCP tool, detecting annotation drift, cross-group inconsistency, orphaned sections, or temporal staleness."
 ---
 
 # IntentWeave Drift Detection
@@ -246,15 +246,15 @@ jobs:
   drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .iw
           key: iw-index-${{ hashFiles('**/*.ts', '**/*.md') }}

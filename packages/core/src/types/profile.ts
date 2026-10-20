@@ -41,7 +41,7 @@ export interface ProfileIdentity {
  * ProfileRuntime - boundary contract between server/CLI and core stages.
  *
  * This interface defines what core stages receive. Implementation details
- * (ProfilePack YAML, Neo4j storage, etc.) are hidden behind this interface.
+ * (ProfilePack YAML, graph storage, etc.) are hidden behind this interface.
  *
  * Key principles:
  * - Profiles define what the extractor MAY emit (kinds, predicates, shapes)

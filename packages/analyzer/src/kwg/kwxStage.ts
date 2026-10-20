@@ -22,67 +22,13 @@ import type {
   KwxStageOutput,
   MentionRecord,
   KwgEntityRecord,
-  KeywordMatch,
   SignalQualifier,
-  SemanticChunk,
 } from "@intentweave/core";
 import { KWG_SCHEMAS, CURRENT_SCHEMA_VERSION } from "@intentweave/core";
-import { HeuristicKeywordExtractor } from "./heuristicExtractor.js";
-import { RegexQualifierDetector } from "./regexQualifier.js";
+import { KwxChunkProcessor } from "./kwxChunkProcessor.js";
+import type { KwxChunkProcessorOptions } from "./kwxChunkProcessor.js";
+import type { KwxChunkWorkerPool } from "./kwxChunkWorkerPool.js";
 import type { PipelineLogger } from "../pipeline/context.js";
-
-// =============================================================================
-// Sentence Extraction
-// =============================================================================
-
-/**
- * Extract the sentence surrounding a character offset in a text.
- *
- * Splits on sentence-ending punctuation (., !, ?) followed by whitespace or EOL.
- * Falls back to returning a window of ±120 chars if no sentence boundary is found.
- */
-function extractSentence(text: string, offset: number): string {
-  // Simple sentence splitting: look for sentence boundaries
-  const sentenceBreakRe = /[.!?]\s+|\n\n/g;
-  let sentenceStart = 0;
-  let sentenceEnd = text.length;
-
-  let match: RegExpExecArray | null;
-  let prevEnd = 0;
-
-  while ((match = sentenceBreakRe.exec(text)) !== null) {
-    const breakEnd = match.index + match[0].length;
-    if (breakEnd <= offset) {
-      sentenceStart = breakEnd;
-    }
-    if (match.index >= offset && sentenceEnd === text.length) {
-      sentenceEnd = match.index + 1; // Include the period
-      break;
-    }
-    prevEnd = breakEnd;
-  }
-
-  // Fallback: window of ±120 chars
-  if (sentenceEnd - sentenceStart > 300) {
-    sentenceStart = Math.max(0, offset - 120);
-    sentenceEnd = Math.min(text.length, offset + 120);
-  }
-
-  return text.slice(sentenceStart, sentenceEnd).trim();
-}
-
-/**
- * Find the current heading context for a chunk.
- * Returns the title if the chunk is a heading/section, or the heading
- * from the chunk's metadata otherwise.
- */
-function getHeadingContext(chunk: SemanticChunk): string | undefined {
-  if (chunk.type === "heading" || chunk.type === "section") {
-    return chunk.title;
-  }
-  // chunk.metadata may contain heading context set during IN stage
-  return chunk.metadata?.heading as string | undefined;
-}
 
 // =============================================================================
 // Entity Aggregation
@@ -153,6 +99,9 @@ export interface KwxStageOptions {
 
   /** External dictionary of known terms for body-text matching (depth=full) */
   dictionary?: Set<string>;
+
+  /** Reusable opt-in chunk worker pool for an experimental parallel run */
+  workerPool?: KwxChunkWorkerPool;
 }
 
 /**
@@ -176,45 +125,24 @@ export async function runKwxStage(
     chunks: inOutput.chunks.length,
   });
 
-  const extractor = new HeuristicKeywordExtractor({
+  const processorOptions: KwxChunkProcessorOptions = {
     minLength: options?.minLength,
     depth: options?.depth,
     dictionary: options?.dictionary,
-  });
-  const qualifierDetector = new RegexQualifierDetector();
+  };
 
   const mentions: MentionRecord[] = [];
-
-  for (const chunk of inOutput.chunks) {
-    const heading = getHeadingContext(chunk);
-
-    // Extract keywords from chunk content
-    const kwMatches: KeywordMatch[] = extractor.extract(chunk.content, heading);
-
-    for (const kw of kwMatches) {
-      // Extract sentence context around the keyword
-      const sentence = extractSentence(chunk.content, kw.offset);
-
-      // Detect signal qualifiers
-      const qualifiers = qualifierDetector.detect(kw, sentence);
-
-      // Build mention record
-      const mention: MentionRecord = {
-        entityName: kw.name,
-        text: sentence,
-        heading,
-        filePath: inOutput.filePath,
-        startLine: chunk.startLine,
-        endLine: chunk.endLine,
-        startChar: kw.offset,
-        endChar: kw.offset + kw.length,
-        qualifiers,
-        source: kw.source,
-        chunkId: chunk.id,
-        chunkType: chunk.type,
-      };
-
-      mentions.push(mention);
+  if (options?.workerPool) {
+    const chunkMentions = await options.workerPool.processChunks(
+      inOutput.filePath,
+      inOutput.chunks,
+      processorOptions,
+    );
+    for (const chunkResult of chunkMentions) mentions.push(...chunkResult);
+  } else {
+    const processor = new KwxChunkProcessor(processorOptions);
+    for (const chunk of inOutput.chunks) {
+      mentions.push(...processor.process(inOutput.filePath, chunk));
     }
   }
 

@@ -12,7 +12,7 @@
  *   - under-commented: ratio < average * 0.3
  *   - over-commented:  ratio > average * 3.0  (and > 0.5 absolute)
  *
- * No LLM or Neo4j needed — reads comment_lines / code_lines columns
+ * No LLM needed — reads comment_lines / code_lines columns
  * written to the files table during AX extraction.
  */
 

@@ -9,7 +9,7 @@
  * 2. ExtractionProvider = RX-stage service (uses LLMProvider, owns extraction logic)
  *
  * Other providers:
- * - Database providers (Neo4j, SQLite, in-memory)
+ * - Database providers (SQLite, in-memory)
  * - Parser providers (TreeSitter, TypeScript, custom)
  */
 
@@ -31,6 +31,9 @@ import type {
  * Does NOT own extraction logic - that's ExtractionProvider's job.
  */
 export interface LLMProvider {
+  /** Absent means the legacy v1 transport contract. */
+  readonly contractVersion?: 1 | 2;
+
   /** Provider name for logging/debugging */
   readonly name: string;
 
@@ -48,6 +51,38 @@ export interface LLMProvider {
 
   /** Provider capabilities at the transport level */
   readonly capabilities: LLMProviderCapabilities;
+
+  /** Resolve capabilities for a per-request model (required by v2). */
+  capabilitiesFor?(model?: string): LLMProviderCapabilities;
+
+  /** Optional versioned provider quote; repository-local prices may override it. */
+  priceQuoteFor?(model?: string): LLMPriceQuote | undefined;
+}
+
+export interface LLMPriceQuote {
+  providerId: string;
+  requestedModelId: string;
+  version: string;
+  effectiveDate: string;
+  inputPerMillionUsd: number;
+  cachedInputPerMillionUsd: number;
+  outputPerMillionUsd: number;
+  reasoningPerMillionUsd: number;
+}
+
+/** Claims-grade transport contract that preserves terminal provider outcomes. */
+export interface LLMProviderV2 extends LLMProvider {
+  readonly contractVersion: 2;
+  capabilitiesFor(model?: string): LLMProviderCapabilities;
+}
+
+export function isLLMProviderV2(
+  provider: LLMProvider,
+): provider is LLMProviderV2 {
+  return (
+    provider.contractVersion === 2 &&
+    typeof provider.capabilitiesFor === "function"
+  );
 }
 
 /**
@@ -63,6 +98,9 @@ export interface LLMRequest {
   /** JSON schema for structured output (if supported) */
   responseSchema?: Record<string, unknown>;
 
+  /** Stable schema name used by providers with native structured output. */
+  responseSchemaName?: string;
+
   /** Temperature (0-1) */
   temperature?: number;
 
@@ -74,6 +112,9 @@ export interface LLMRequest {
 
   /** Per-request timeout in milliseconds (overrides provider default) */
   timeoutMs?: number;
+
+  /** Caller-controlled cancellation, distinct from timeout. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -98,7 +139,12 @@ export interface LLMResponse {
   tokensUsed: {
     prompt: number;
     completion: number;
+    reasoning?: number;
+    cachedPrompt?: number;
   };
+
+  /** True when the provider returned authoritative token usage for this response. */
+  usageReported?: boolean;
 
   /** Latency in milliseconds */
   latencyMs: number;
@@ -106,12 +152,45 @@ export interface LLMResponse {
   /** Model used */
   model: string;
 
+  /** Provider request ID, when exposed by the transport. */
+  requestId?: string;
+
+  /** Provider model revision or system fingerprint. */
+  modelRevision?: string;
+
   /** Finish reason */
-  finishReason: "stop" | "length" | "tool_calls" | "error";
+  finishReason: LLMFinishReason;
+
+  /** Provider refusal detail, when present. */
+  refusal?: string;
 
   /** Error message if finishReason is 'error' */
   error?: string;
+
+  /** Typed v2 transport failure classification. */
+  errorKind?: LLMTransportErrorKind;
+
+  /** HTTP status from the provider, when applicable. */
+  statusCode?: number;
 }
+
+export type LLMFinishReason =
+  | "stop"
+  | "length"
+  | "tool_calls"
+  | "refusal"
+  | "content_filter"
+  | "error"
+  | "other";
+
+export type LLMTransportErrorKind =
+  | "rate_limit"
+  | "timeout"
+  | "cancelled"
+  | "transport"
+  | "provider";
+
+export type LLMStructuredOutputMode = "strict" | "json" | "text";
 
 /**
  * LLM Provider Capabilities
@@ -131,6 +210,12 @@ export interface LLMProviderCapabilities {
 
   /** Supports embeddings */
   supportsEmbeddings: boolean;
+
+  /** Ordered structured-output modes supported for this effective model. */
+  structuredOutputModes?: readonly LLMStructuredOutputMode[];
+
+  /** The provider enforces LLMRequest.maxTokens for every completion. */
+  enforcesCompletionTokenLimit?: boolean;
 }
 
 // =============================================================================
@@ -659,7 +744,7 @@ export interface LedgerWriteResult {
  *
  * Defines the contract for persisting StagingSnapshots to an append-only ledger.
  * This is the boundary between the core pipeline (@intentweave/analyzer) and
- * the server's persistence layer (Neo4j, SQLite, etc.).
+ * the server's persistence layer (SQLite, etc.).
  *
  * Design principles:
  * 1. Append-only: Never mutate existing assertions, create new versions
@@ -668,7 +753,6 @@ export interface LedgerWriteResult {
  * 4. Evidence linking: Connect assertions to source chunks
  *
  * Implementations:
- * - Neo4jLedgerWriter (server): Writes to Neo4j graph database
  * - NoopLedgerWriter (CLI): Does nothing (pure file-based output)
  * - MockLedgerWriter (tests): In-memory for assertions
  */

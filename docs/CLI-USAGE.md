@@ -3,7 +3,7 @@
 IntentWeave is a **semantic knowledge extraction platform** with two complementary products:
 
 - **CARI Evidence Engine** — lightweight SQLite index built from AST, keywords, and git history.
-  $0 cost, no LLM, no Neo4j. Powers ranked retrieval, architecture enforcement, and CI drift detection.
+  $0 cost, no LLM. Powers ranked retrieval, architecture enforcement, and CI drift detection.
 - **Intent Engine** — rule checking across three domains (structural / behavioral / documentary)
   backed by CARI. Express architectural intent in `rules.yaml`; enforce it in CI.
 
@@ -50,7 +50,6 @@ iw --help
 | ------------------ | ------- | ----------------------------------------------------------------- |
 | **Node.js**        | ≥ 22.15 | `node -v` — requires Node.js built-in SQLite                      |
 | **Git**            | any     | For co-change analysis (TCG stage)                                |
-| **Neo4j**          | 5.x     | _Optional_ — only for MCP `kg_*` tools / `iw doc-health --neo4j`  |
 | **OpenAI API key** | —       | _Optional_ — only for `--provider openai` and `iw intent extract` |
 
 CARINative uses no native C++ compilation. `npm install` works everywhere Node.js does.
@@ -99,7 +98,7 @@ Runs the full CARI pipeline: AST extraction → keyword extraction → co-occurr
 git analysis → annotation → SQLite write.
 
 ```bash
-iw index build                    # structured depth (default)
+iw index build                    # full depth (default)
 iw index build --depth full       # + body text with IDF filtering (+72% annotations)
 iw index build --verbose          # show per-stage timing
 iw index build --include "src/**" # only index specific directories
@@ -214,7 +213,7 @@ iw index rule-coverage                          # packages with zero behavioral 
 
 A second layer on top of the 30+ built-in queries: run your own read-only graph
 queries directly against the CARI SQLite projection using CypherLite (a
-zero-dependency Cypher-subset → SQL transpiler). No Neo4j, no LLM.
+zero-dependency Cypher-subset → SQL transpiler). No LLM.
 
 ```bash
 # See the full node/relationship schema + built-in query templates
@@ -238,8 +237,8 @@ types: `IMPORTS`, `DEFINES`, `CALLS`, `ANNOTATED_BY`, `HAS_TODO`, `HAS_RATIONALE
 `SUMMARIZED_BY`, `CO_OCCURS`, `CO_CHANGES`. Run `iw index schema` for the full property
 reference and the current list of built-in templates (`callers-of`, `callees-of`,
 `docs-for-callees`, `co-changed-with`, `undocumented-hubs`, `symbol-docs`, `import-chain`).
-This queries the local CARI SQLite projection only — no Neo4j, no LLM. For the
-separate LLM-powered Knowledge Graph (Neo4j), use the `kg_query` MCP tool instead.
+This queries the local CARI SQLite projection only — no LLM. For a graph stored by a
+persistence plugin (`plugin-kg-lite`), use the `kg_query` MCP tool instead.
 
 | Option                | Default        | Description                                                |
 | --------------------- | -------------- | ---------------------------------------------------------- |
@@ -342,7 +341,8 @@ iw intent extract docs/ --provider openai       # batch: all markdown in directo
 
 ### `iw intent score` / `iw verify --score`
 
-Composite living documentation score (A–F) across four dimensions.
+Composite living documentation score (A–F) across two dimensions: documentation
+freshness and architecture conformance.
 
 ```bash
 iw intent score
@@ -405,8 +405,7 @@ automatic runtime adaptation.
 
 Covered on both the CLI and MCP surfaces: `iw index retrieve` / `cari_retrieve`,
 `iw index connections` / `cari_connections`, `iw index check` / `cari_check`,
-`iw index arch-check` / `cari_arch_diff`, `iw verify` / `cari_verify`,
-`iw verify --consistency` / `cari_consistency`, `iw verify --score` /
+`iw index arch-check` / `cari_arch_diff`, `iw verify --score` /
 `cari_living_score`.
 
 Each line looks like:
@@ -453,6 +452,250 @@ Note: the Rust native build acceleration (`cari-build`) does not yet support
 `indexAllFiles` — when enabled, `iw index build` automatically falls back to
 the TypeScript pipeline (same fallback behavior as `--include`/`--exclude`).
 
+### Claims discovery and optional bindings
+
+`iw claims discover` persists possible repository statements as Candidates
+without activating them as governed Claims. Deterministic adapters currently
+cover TypeScript/JavaScript scalar bindings, public Symbol documentation,
+bounded NestJS Endpoint authentication, and supported Architecture import
+Rules. Unpromoted Candidates remain outside `iw claims check` and CI.
+
+The scalar adapter inspects syntactically strong bindings such as exported
+literals, top-level constants, parameter/destructuring defaults, and directly
+annotated defaults. Ordinary local variables, loop counters, accumulators,
+tests, fixtures, generated output, dependencies, and build directories are
+excluded from the default scan.
+
+Explicit defaults become `CLM-DEFAULT`; other exported or top-level constants
+become `CLM-LITERAL`. A directly attached JSDoc default is captured as separate
+corroborating or contradicting evidence.
+
+No binding manifest or scope registry is required for unscoped Candidate
+Discovery. Inspect and curate the inbox explicitly:
+
+```bash
+iw index build
+iw claims discover
+iw claims discover --all --verbose
+iw claims candidates list --verbose
+iw claims candidates triage --candidate 'candidate:<hash>@<version>'
+iw claims candidates review \
+  --candidate 'candidate:<hash>@<version>' \
+  --actor alice \
+  --decision promote \
+  --rationale 'This statement should be governed'
+```
+
+`promote`, `reject`, `suppress`, and `defer` are explicit Candidate decisions.
+Only promotion creates an active Claim and enters Assessment, Review, reopen,
+and CI. Candidate confidence describes grounding quality; it is not a human
+approval. Automatically discovered code Candidates use provisional code-based
+Parameter Subjects and `r1-discovery` provenance. IntentWeave does not guess
+that similarly named code, configuration, and prose values represent the same
+domain Parameter.
+
+Semantic Correlation is opt-in authoring behavior:
+
+```bash
+export OPENAI_API_KEY=...
+iw claims discover --semantic --all --verbose
+iw claims candidates list --state correlated --verbose
+iw claims explain --claim 'candidate:<hash>@<version>'
+```
+
+The initial model-backed adapter is deliberately narrow: it resolves one
+documentation reference that could refer to multiple same-named public Symbols.
+It cites existing Candidate and EvidenceVersion IDs, persists a cached
+append-only inference, and can assign at most `probable` confidence. If no such
+ambiguous group exists, Semantic Discovery reports `not_applicable` and makes no
+provider call. It does not review the relevance of all Candidates, promote a
+Candidate, or run during `iw claims check` or `iw intent check`.
+
+Add `intentweave.bindings.yaml` when you want to correlate and promote a
+Candidate through the versioned `explicit-binding` Policy with a canonical
+Parameter key, documentation assertion, or scoped configuration. Scoped checks
+additionally require `config/environments.yaml` and the corresponding
+`config/<scope>.yaml` files.
+
+```yaml
+# intentweave.bindings.yaml
+parameters:
+  session.timeout:
+    configKeys: [session.timeout]
+    codeDefaults:
+      - file: src/session.ts
+        export: SESSION_TIMEOUT
+    documentation:
+      - file: docs/session-timeout.md
+        assertions:
+          - id: production-override
+            target: effective
+            scope: production
+            pattern: '^The production override is (?<value>\d+) seconds\.$'
+```
+
+```yaml
+# config/environments.yaml
+environments:
+  - name: production
+    capabilities: [session-runtime]
+```
+
+```yaml
+# config/production.yaml
+session:
+  timeout: 3600
+```
+
+With an explicit binding or a manually promoted Candidate in place, evaluate
+the active Claim inventory and inspect the Evidence chain:
+
+```bash
+iw claims check --scope production
+iw claims explain
+iw claims explain --claim session.timeout --type CLM-DEFAULT
+iw claims check --scope production --since origin/main
+iw claims check --refresh
+```
+
+### Claim Relations
+
+A Claim Relation is an edge from one Claim to another. It is not a hierarchy. Only
+`realizes` and `refines` take part in intent evaluation: an Intent Anchor on a
+target holds only while each of its realizers is supported.
+
+```bash
+iw claims relations add --source impl.timeout --target session.timeout \
+  --relation realizes --actor alice --rationale "the handler implements the default"
+iw claims relations list --format json
+iw claims relations retire --id relation:<id> --actor alice --rationale "superseded"
+```
+
+Rules:
+
+- A relation may not point at itself, repeat an active relation of the same kind, or
+  close a realization cycle. A cycle is refused at the time of the call.
+- A target anchored by an intent is `satisfied` only while every realizer is supported.
+  A refuted, contested, or retired realizer is `intent_conflict`. A realizer without a
+  decided assessment is `intent_unresolved`.
+- A change in a realizer alone makes the anchored target count as evaluated.
+- `constrains` and `warrants` are recorded and listed, but they do not change any
+  outcome. Each family's Assessment Policy decides how they would aggregate later.
+- Relations are reviewed state in `.iw/claims/state.yaml` (schema 6). They survive an
+  index rebuild.
+
+### Observed changes against anchors
+
+`iw claims observations anchors --since <ref>` judges observed changes against the
+active Intent Anchors. It does not change `iw claims check`, which never reads
+observation state.
+
+- An observed change reaches a Claim through its Subjects: the Claim's Subject
+  (`claim_subjects`) is bound to an observed identity (`subject_observations`).
+- A Claim whose observed subject was removed is `intent_conflict`.
+- A Claim whose continuity is unclear is `intent_unresolved`.
+- A Claim that has not been re-assessed at HEAD is `intent_unresolved`, with the reason
+  "run claims check". This check never re-assesses a Claim.
+- Otherwise the anchor is judged by the rules of `claims check`.
+- In `gate` mode, a conflict exits 1 and an unresolved anchor exits 2. In `report` mode
+  the exit code is 0.
+
+Only direct anchors are judged here. Realizer-based outcomes and declared follow-ups stay
+in `claims check`.
+
+### Abstract Intents
+
+An abstract intent has no statement of its own. It is realized by a set of Claims, and
+an abstract anchor protects that set. A person records the realizers. Nothing infers them,
+and no model is called.
+
+```bash
+iw claims intents realize --intent index-is-configurable --claim config.json --actor alice
+iw claims intents realize --intent index-is-configurable --claim config.yaml --actor alice
+iw claims intents protect --intent index-is-configurable --actor alice --rationale "the index stays configurable"
+iw claims check                      # satisfied while the set is unchanged and each realizer is supported
+iw claims intents protect --intent index-is-configurable --actor alice --amendment
+iw claims intents unrealize --id realization:<id>
+iw claims intents list --format json
+```
+
+Outcomes:
+
+- `satisfied`: the realizer set is unchanged, and every realizer is supported.
+- `intent_conflict`: the set changed (a realizer was added or removed), or a realizer is
+  refuted, contested, or retired. A changed set is replaced only by `--amendment`.
+- `intent_unresolved`: the intent has no realizers, or a realizer has no decided
+  assessment.
+
+Abstract intents use their own realization records, not Claim Relations, because a
+Claim Relation links two Claims. Both are reviewed state in `.iw/claims/state.yaml`
+(schema 7).
+
+### Intent Anchors
+
+An Intent Anchor protects a promoted Claim's current statement. When that
+statement later changes, `iw claims check` reports `intent_conflict` instead of
+treating the change as ordinary re-review. Anchors are created by a person and
+never by a model.
+
+```bash
+iw claims review --claim session.timeout --type CLM-DEFAULT \
+  --actor alice --decision supported --purpose protect --rationale "timeouts are policy"
+iw claims check                                   # report or gate, per intent.yaml
+iw claims conflicts resolve --claim session.timeout --type CLM-DEFAULT \
+  --actor alice --decision accept_amendment --rationale "longer sessions are intended"
+iw claims conflicts resolve --claim session.timeout --type CLM-DEFAULT \
+  --actor alice --decision grant_exception --rationale "temporary" --expires 2027-01-01
+iw claims check --as-of 2026-10-20                # judge exceptions at a fixed instant
+```
+
+Outcomes for each anchored Claim:
+
+| Outcome             | Meaning                                                              |
+| ------------------- | -------------------------------------------------------------------- |
+| `satisfied`         | The protected statement still holds, or a declared follow-up matches |
+| `intent_conflict`   | The statement changed, the Claim was retired, or its subject is gone |
+| `intent_unresolved` | The Claim was not evaluated, so the anchor cannot be judged          |
+| `intent_excepted`   | A `grant_exception` covers the conflict until its expiry             |
+
+`.iw/claims/intent.yaml` controls the behaviour. It is reviewed repository
+state, and it holds the mode and any declared follow-ups:
+
+```yaml
+schemaVersion: "1"
+mode: report # off | report | gate
+followUps:
+  - claimIdentityId: claim:<sha256>
+    statementFingerprint: <64 hex characters>
+```
+
+- `off` skips anchors.
+- `report` (default) shows anchor outcomes and leaves exit codes unchanged.
+- `gate` makes `intent_conflict` fail the check and makes `intent_unresolved`
+  inconclusive.
+
+A declared follow-up accepts a statement change only when the change set introduces
+it: the declaration is in `intent.yaml` at head and absent at the merge base of
+`--since`. A declaration already in place before the change, or any run without
+`--since`, does not authorize it. The check then reports `intentFollowUpNote`
+explaining why. Accepting a change permanently is an `accept_amendment` decision,
+because a check never changes anchors.
+
+Expiry is compared with the head commit date, so CI results do not depend on
+the clock. `--as-of` overrides that instant for tests and replays.
+
+`--claim` accepts a stable `claim:<sha256>` identity, a promoted or unpromoted
+`candidate:<sha256>@<version>` reference, or a canonical Parameter key. An
+unpromoted Candidate explanation shows its current Evidence, Subjects, and any
+semantic inference. A Parameter can have several Claims, so use `--type` and,
+for scoped Claims, `--scope` when selecting exactly one active Claim for Review.
+
+`--refresh` reconciles the current automatic discovery result with previously
+current provisional `code:*` claims. Claims that no longer pass discovery are
+retired from the current assessment lifecycle without deleting their history.
+An existing review is reopened with `continuity-broken`; explicitly bound
+parameter claims are not retired by this cleanup.
+
 ### `.iw/rules.yaml`
 
 Architectural rules for `iw intent check`. Created by `iw intent extract` or manually.
@@ -475,14 +718,10 @@ See the [Semantic Rules guide](https://intentweave.org/docs/cari/semantic-rules/
 
 ## Environment Variables
 
-| Variable         | Default                 | Description                                |
-| ---------------- | ----------------------- | ------------------------------------------ |
-| `NEO4J_URI`      | `bolt://localhost:7687` | Neo4j bolt URI (optional, for KG commands) |
-| `NEO4J_USERNAME` | `neo4j`                 | Neo4j username                             |
-| `NEO4J_PASSWORD` | _(required for KG)_     | Neo4j password                             |
-| `NEO4J_DATABASE` | `neo4j`                 | Neo4j database name                        |
-| `OPENAI_API_KEY` | _(optional)_            | Required for `--provider openai`           |
-| `IW_SESSION`     | `default`               | Default session ID                         |
+| Variable         | Default      | Description                      |
+| ---------------- | ------------ | -------------------------------- |
+| `OPENAI_API_KEY` | _(optional)_ | Required for `--provider openai` |
+| `IW_SESSION`     | `default`    | Default session ID               |
 
 ---
 
@@ -607,30 +846,22 @@ Uses tree-sitter AST parsing for precise code symbol extraction:
 
 ---
 
-## Optional: Knowledge Graph (Neo4j, via MCP tools)
+## Optional: Knowledge Graph (SQLite, via MCP tools)
 
-Deep semantic extraction, NL queries over the knowledge graph, and impact analysis require
-Neo4j and an LLM API key. These are optional and complementary to the CARI Evidence Engine.
-There is no longer a dedicated `iw run` / `iw query` / `iw persist` CLI — this functionality
-is exposed exclusively through MCP tools (for GitHub Copilot / other MCP clients) plus one
-CLI flag on `doc-health`:
+The `kg_*` MCP tools read a graph stored by a persistence plugin. `plugin-kg-lite` is
+the bundled option: SQLite, zero configuration, graph stored in `.iw/kg.db`.
 
 ```bash
-export NEO4J_URI=neo4j://localhost:7687
-export NEO4J_PASSWORD=intentweave
-export OPENAI_API_KEY=sk-...
+iw plugin add kg-lite
 
-# Start the MCP server (stdio transport) — exposes kg_query, kg_context, kg_entities,
-# kg_impact, kg_doc_health, kg_schema (6 KG tools) alongside the 52 CARI tools
-iw mcp --neo4j-uri neo4j://localhost:7687
-
-# The only KG-aware CLI entry point: full Neo4j-backed doc health (vs. the CARI-only default)
-iw doc-health --neo4j -s my-project
+# Start the MCP server (stdio transport). It exposes kg_query, kg_context,
+# kg_entities, kg_doc_health, and kg_schema alongside the CARI tools.
+iw mcp --session my-project
 ```
 
 Once the MCP server is running, ask your AI agent things like "What are the main components?"
-(`kg_query`), "Build context about authentication" (`kg_context`), or "What's the impact of
-changing src/auth.ts?" (`kg_impact`) — see the MCP Tools reference in the project README.
+(`kg_query`) or "Build context about authentication" (`kg_context`). See the MCP Tools
+reference in the project README.
 
 ---
 
@@ -647,15 +878,6 @@ index so the LLM sees real file paths.
 If cross-package rules show false positives for path aliases (e.g. `@app/`, `@site/`), check
 that your `tsconfig.json` has `compilerOptions.paths` defined — CARI auto-detects these.
 For non-tsconfig aliases (Docusaurus, Webpack), add them to `.iw/config.yaml` under `aliases:`.
-
-### "Neo4j password required"
-
-This only affects the optional KG features (`iw doc-health --neo4j`, `iw mcp` KG tools).
-For CARI-only usage no Neo4j is needed.
-
-```bash
-export NEO4J_PASSWORD=intentweave
-```
 
 ### MCP tools not visible in Copilot
 

@@ -78,7 +78,7 @@ export interface ContextBundle {
  * Context provider interface
  *
  * Returns a ContextBundle with all available context for an artifact.
- * Server implements with session/Neo4j access; CLI returns empty bundle.
+ * Server implements with session and graph access; CLI returns empty bundle.
  */
 export interface ContextProvider {
   /** Get context bundle for an artifact */

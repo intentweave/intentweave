@@ -1,25 +1,25 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# IntentWeave REST API — Removed
+# Integration surfaces
 
-> **Removed.** The standalone Fastify REST API server (`apps/server`,
-> `@intentweave/server-core`, `@intentweave/server-open`) has been removed from
-> the codebase to simplify and scope the product. Those packages no longer
-> exist, and none of the endpoints formerly documented here (`/api/query`,
-> `/api/context`, `/api/entities`, `/api/impact`, `/api/doc-health`,
-> `/api/xlink`, `/api/run`, `/api/persist`, `/api/schema`) are exposed by
-> anything IntentWeave currently ships.
->
-> IntentWeave's supported integration surfaces today are:
->
-> - **CLI** — see [`docs/CLI-USAGE.md`](CLI-USAGE.md)
-> - **MCP tools** — 58+ tools for GitHub Copilot / any MCP client, see
->   `packages/cli/src/mcp/server.ts`
-> - **Programmatic API** — `@intentweave/index`'s `CariIndex` facade, see
->   [`docs/LIBRARY-API.md`](LIBRARY-API.md)
->
-> For Neo4j-backed knowledge graph querying, install the KG plugin
-> (`iw plugin add kg`) and use the `kg_query` / `kg_context` / `kg_impact` /
-> `kg_entities` / `kg_doc_health` / `kg_schema` MCP tools against an existing,
-> already-populated Neo4j instance. IntentWeave does not currently provide a
-> CLI command to ingest data into Neo4j from scratch.
+IntentWeave has no REST API. The standalone Fastify server (`apps/server`,
+`@intentweave/server-core`, `@intentweave/server-open`) was removed, and the
+endpoints it served (`/api/query`, `/api/context`, `/api/entities`, `/api/impact`,
+`/api/doc-health`, `/api/xlink`, `/api/run`, `/api/persist`, `/api/schema`) are gone.
+
+These are the supported integration surfaces:
+
+- **CLI**: the `iw` command, documented in [`CLI-USAGE.md`](CLI-USAGE.md). Commands
+  support `--format json` where machine-readable output applies.
+- **MCP server**: `iw mcp` starts a stdio MCP server with the `cari_*` tools for
+  GitHub Copilot and other MCP clients. The tool list is defined in
+  `packages/cli/src/mcp/server.ts`.
+- **Programmatic API**: the `CariIndex` facade and query functions exported by
+  `@intentweave/index`, documented in [`LIBRARY-API.md`](LIBRARY-API.md).
+
+## Graph tools that need a plugin
+
+The `kg_*` MCP tools (`kg_query`, `kg_context`, `kg_entities`, `kg_doc_health`, `kg_schema`)
+read a graph through the `persistence` plugin capability. `@intentweave/plugin-kg-lite`
+provides it with SQLite and needs no configuration. Without a persistence plugin the tools
+return "No persistence plugin available".

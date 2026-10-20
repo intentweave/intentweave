@@ -8,7 +8,11 @@
  * code-aware retrieval index. Called once when creating a new index.db.
  */
 
-import type Database from "@intentweave/sqlite-compat";
+import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import Database from "@intentweave/sqlite-compat";
+import { parameterSubjectIdentity } from "./claims/subjects.js";
 
 /**
  * SQL statements executed in order to create the CARI schema.
@@ -259,54 +263,6 @@ CREATE TABLE IF NOT EXISTS external_entities (
 CREATE INDEX IF NOT EXISTS idx_external_entities_name ON external_entities(name);
 CREATE INDEX IF NOT EXISTS idx_external_entities_type ON external_entities(type);
 
--- KG tables (Selective Semantic Enrichment — 11.8)
-
-CREATE TABLE IF NOT EXISTS kg_entities (
-  id          INTEGER PRIMARY KEY,
-  canon_id    TEXT NOT NULL,
-  name        TEXT NOT NULL,
-  type        TEXT NOT NULL,
-  aliases     TEXT,
-  confidence  REAL DEFAULT 1.0,
-  artifact_id TEXT,
-  source_file TEXT,
-  created_at  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS kg_relationships (
-  id          INTEGER PRIMARY KEY,
-  from_id     INTEGER NOT NULL REFERENCES kg_entities(id),
-  to_id       INTEGER NOT NULL REFERENCES kg_entities(id),
-  predicate   TEXT NOT NULL,
-  confidence  REAL DEFAULT 1.0,
-  raw_predicate TEXT,
-  artifact_id TEXT,
-  source_file TEXT
-);
-
-CREATE TABLE IF NOT EXISTS kg_raw_triples (
-  id               INTEGER PRIMARY KEY,
-  subject          TEXT,
-  predicate        TEXT,
-  object           TEXT,
-  subject_kind     TEXT,
-  object_kind      TEXT,
-  confidence       REAL,
-  source_file      TEXT,
-  artifact_id      TEXT,
-  subject_canon_id TEXT,
-  object_canon_id  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS enrichment_meta (
-  file_path    TEXT PRIMARY KEY,
-  content_hash TEXT NOT NULL,
-  enriched_at  TEXT NOT NULL,
-  entity_count INTEGER NOT NULL DEFAULT 0,
-  triple_count INTEGER NOT NULL DEFAULT 0,
-  impact_score REAL
-);
-
 -- Semantic Capsule Layer (14.0)
 -- Stores LLM-derived, evidence-grounded interpretations of symbols, call edges,
 -- call paths, and component subgraphs.  Conceptually separate from raw CARI
@@ -347,14 +303,6 @@ CREATE INDEX IF NOT EXISTS idx_capsules_target ON semantic_capsules(target_id);
 CREATE INDEX IF NOT EXISTS idx_capsules_kind   ON semantic_capsules(capsule_kind);
 CREATE INDEX IF NOT EXISTS idx_capsules_status ON semantic_capsules(status);
 
-CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(type);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_canon_id ON kg_entities(canon_id);
-CREATE INDEX IF NOT EXISTS idx_kg_entities_source ON kg_entities(source_file);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_from ON kg_relationships(from_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_to ON kg_relationships(to_id);
-CREATE INDEX IF NOT EXISTS idx_kg_rels_predicate ON kg_relationships(predicate);
-CREATE INDEX IF NOT EXISTS idx_kg_raw_source ON kg_raw_triples(source_file);
 
 -- Metadata table for schema version tracking
 
@@ -364,11 +312,1792 @@ CREATE TABLE IF NOT EXISTS _meta (
 );
 `;
 
+const SCHEMA_18_CLAIMS_COMPANION_TABLES = [
+  "subject_identities",
+  "subject_aliases",
+  "subject_continuity",
+  "parameter_identities",
+  "parameter_evidence_bindings",
+  "evidence_identities",
+  "evidence_versions",
+  "evidence_continuity",
+  "evidence_subjects",
+  "rule_result_identities",
+  "rule_result_versions",
+  "rule_result_evidence",
+  "claim_identities",
+  "claim_subjects",
+  "claim_versions",
+  "claim_assessments",
+  "claim_assessment_dependencies",
+  "review_decisions",
+  "review_decision_reopens",
+  "claim_assessment_references",
+] as const;
+
+export const CLAIMS_COMPANION_TABLES = [
+  ...SCHEMA_18_CLAIMS_COMPANION_TABLES,
+  "candidate_inferences",
+  "claim_candidates",
+  "candidate_evidence",
+  "candidate_subjects",
+  "candidate_reviews",
+  "candidate_policy_decisions",
+] as const;
+
+/**
+ * Observation history (migration 21). Runs, observed identities, bridges, and change
+ * impacts are durable records, so a rebuild restores them with the Claims tables.
+ * Listed parents first. Snapshots without these tables restore nothing here.
+ */
+export const OBSERVATION_COMPANION_TABLES = [
+  "observation_runs",
+  "observed_identities",
+  "observed_versions",
+  "observation_run_coverage",
+  "observation_run_items",
+  "observed_relations",
+  "observed_continuity_links",
+  "observed_evidence_projection",
+  "subject_observations",
+  "observed_changesets",
+  "observed_change_items",
+  "change_impacts",
+] as const;
+
+const SCHEMA_17_CLAIMS_COMPANION_TABLES =
+  SCHEMA_18_CLAIMS_COMPANION_TABLES.filter(
+    (table) => table !== "subject_continuity",
+  );
+
+const SCHEMA_16_CLAIMS_COMPANION_TABLES = [
+  "parameter_identities",
+  "parameter_evidence_bindings",
+  "evidence_identities",
+  "evidence_versions",
+  "evidence_continuity",
+  "rule_result_identities",
+  "rule_result_versions",
+  "rule_result_evidence",
+  "claim_identities",
+  "claim_versions",
+  "claim_assessments",
+  "claim_assessment_dependencies",
+  "review_decisions",
+  "review_decision_reopens",
+  "claim_assessment_references",
+] as const;
+
+const LEGACY_CLAIMS_COMPANION_TABLES = SCHEMA_16_CLAIMS_COMPANION_TABLES.filter(
+  (table) => table !== "claim_assessment_references",
+);
+
+export const CURRENT_SCHEMA_VERSION = "28";
+
+function readSchemaVersion(db: Database.Database): string | undefined {
+  try {
+    const row = db
+      .prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+      .get() as { value: string } | undefined;
+    return row?.value;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("_meta")) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function sqliteStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function claimsCompanionTablesInSchema(
+  db: Database.Database,
+  schema = "main",
+): readonly string[] | undefined {
+  const tables = new Set(
+    (
+      db
+        .prepare(
+          `SELECT name FROM ${schema}.sqlite_master WHERE type = 'table'`,
+        )
+        .all() as Array<{ name: string }>
+    ).map((row) => row.name),
+  );
+  if (CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return CLAIMS_COMPANION_TABLES;
+  }
+  if (SCHEMA_18_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return SCHEMA_18_CLAIMS_COMPANION_TABLES;
+  }
+  if (SCHEMA_17_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return SCHEMA_17_CLAIMS_COMPANION_TABLES;
+  }
+  if (SCHEMA_16_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return SCHEMA_16_CLAIMS_COMPANION_TABLES;
+  }
+  if (LEGACY_CLAIMS_COMPANION_TABLES.every((table) => tables.has(table))) {
+    return LEGACY_CLAIMS_COMPANION_TABLES;
+  }
+  return undefined;
+}
+
+/**
+ * Capture the Claims companion layer before a full CARI rebuild replaces the
+ * index database. `VACUUM INTO` includes committed WAL content atomically.
+ */
+export function snapshotClaimsHistory(dbPath: string): string | undefined {
+  if (!fs.existsSync(dbPath)) return undefined;
+  const db = new Database(dbPath);
+  try {
+    if (!claimsCompanionTablesInSchema(db)) return undefined;
+    const snapshotPath = path.join(
+      path.dirname(dbPath),
+      `.claims-history-${randomUUID()}.db`,
+    );
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    db.exec(`VACUUM INTO ${sqliteStringLiteral(snapshotPath)}`);
+    return snapshotPath;
+  } finally {
+    db.close();
+  }
+}
+
+/** Return a unique temporary database path beside the final index. */
+export function temporaryDatabasePath(dbPath: string): string {
+  return path.join(
+    path.dirname(dbPath),
+    `.${path.basename(dbPath)}.${randomUUID()}.tmp`,
+  );
+}
+
+/** Remove a SQLite database and its WAL sidecars. */
+export function discardDatabaseFiles(dbPath: string): void {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    fs.rmSync(`${dbPath}${suffix}`, { force: true });
+  }
+}
+
+/** Atomically replace a completed database build with its temporary output. */
+export function replaceDatabaseAtomically(
+  sourcePath: string,
+  targetPath: string,
+): void {
+  for (const suffix of ["-wal", "-shm"]) {
+    fs.rmSync(`${targetPath}${suffix}`, { force: true });
+  }
+  fs.renameSync(sourcePath, targetPath);
+  for (const suffix of ["-wal", "-shm"]) {
+    fs.rmSync(`${sourcePath}${suffix}`, { force: true });
+  }
+}
+
+/** Restore a prior Claims companion snapshot into an otherwise fresh index. */
+export function restoreClaimsHistory(
+  db: Database.Database,
+  snapshotPath: string | undefined,
+): void {
+  if (!snapshotPath || !fs.existsSync(snapshotPath)) return;
+  db.exec(
+    `ATTACH DATABASE ${sqliteStringLiteral(snapshotPath)} AS claims_history`,
+  );
+  try {
+    const sourceTables = claimsCompanionTablesInSchema(db, "claims_history");
+    if (!sourceTables) return;
+    const restore = db.transaction(() => {
+      db.exec("PRAGMA defer_foreign_keys = ON");
+      for (const table of [...CLAIMS_COMPANION_TABLES].reverse()) {
+        db.exec(`DELETE FROM ${table}`);
+      }
+      for (const table of sourceTables) {
+        const sourceColumns = new Set(
+          (
+            db
+              .prepare(`PRAGMA claims_history.table_info(${table})`)
+              .all() as Array<{
+              name: string;
+            }>
+          ).map((column) => column.name),
+        );
+        const commonColumns = (
+          db.prepare(`PRAGMA main.table_info(${table})`).all() as Array<{
+            name: string;
+          }>
+        )
+          .map((column) => column.name)
+          .filter((column) => sourceColumns.has(column));
+        const columns = commonColumns.join(", ");
+        db.exec(
+          `INSERT INTO ${table} (${columns})
+           SELECT ${columns} FROM claims_history.${table}`,
+        );
+      }
+      const sourceObservationTables = new Set(
+        (
+          db
+            .prepare(
+              `SELECT name FROM claims_history.sqlite_master WHERE type = 'table'`,
+            )
+            .all() as Array<{ name: string }>
+        ).map((row) => row.name),
+      );
+      for (const table of [...OBSERVATION_COMPANION_TABLES].reverse()) {
+        db.exec(`DELETE FROM ${table}`);
+      }
+      for (const table of OBSERVATION_COMPANION_TABLES) {
+        if (!sourceObservationTables.has(table)) continue;
+        const sourceColumns = new Set(
+          (
+            db
+              .prepare(`PRAGMA claims_history.table_info(${table})`)
+              .all() as Array<{ name: string }>
+          ).map((column) => column.name),
+        );
+        const columns = (
+          db.prepare(`PRAGMA main.table_info(${table})`).all() as Array<{
+            name: string;
+          }>
+        )
+          .map((column) => column.name)
+          .filter((column) => sourceColumns.has(column))
+          .join(", ");
+        db.exec(
+          `INSERT INTO ${table} (${columns})
+           SELECT ${columns} FROM claims_history.${table}`,
+        );
+      }
+      // Legacy snapshots (schema v15) do not have this table.
+      db.exec(`
+        INSERT OR IGNORE INTO claim_assessment_references (
+          claim_identity_id, repository_revision, assessment_id, created_at
+        )
+        SELECT cv.claim_identity_id, ca.repository_revision, ca.id, ca.created_at
+        FROM claim_assessments ca
+        JOIN claim_versions cv ON cv.id = ca.claim_version_id
+        WHERE ca.reference_key IS NOT NULL
+      `);
+      backfillParameterSubjects(db);
+    });
+    restore();
+  } finally {
+    db.exec("DETACH DATABASE claims_history");
+  }
+}
+
+/** Delete a temporary Claims snapshot after a rebuild has completed. */
+export function discardClaimsHistory(snapshotPath: string | undefined): void {
+  if (snapshotPath) fs.rmSync(snapshotPath, { force: true });
+}
+
+export function schemaMigrationBackupPath(
+  dbPath: string,
+  schemaVersion: string,
+): string {
+  return `${dbPath}.schema-${schemaVersion}.backup`;
+}
+
+function createDurableMigrationBackup(
+  db: Database.Database,
+  dbPath: string,
+  schemaVersion: string,
+): string {
+  const backupPath = schemaMigrationBackupPath(dbPath, schemaVersion);
+  if (fs.existsSync(backupPath)) return backupPath;
+  const temporaryPath = `${backupPath}.${randomUUID()}.tmp`;
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  try {
+    db.exec(`VACUUM INTO ${sqliteStringLiteral(temporaryPath)}`);
+    fs.renameSync(temporaryPath, backupPath);
+  } catch (error) {
+    fs.rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+  return backupPath;
+}
+
+function restoreMigrationBackup(backupPath: string, dbPath: string): void {
+  const temporaryPath = `${dbPath}.${randomUUID()}.restore`;
+  fs.copyFileSync(backupPath, temporaryPath);
+  try {
+    for (const suffix of ["-wal", "-shm"]) {
+      fs.rmSync(`${dbPath}${suffix}`, { force: true });
+    }
+    fs.renameSync(temporaryPath, dbPath);
+  } catch (error) {
+    fs.rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+/**
+ * Open and migrate an on-disk index while retaining a durable backup for each
+ * in-place G1 schema step. The optional migration callbacks exist for
+ * failure-path verification only.
+ */
+export function openMigratedDatabase(
+  dbPath: string,
+  migrateG1a: (db: Database.Database) => void = migrateSchema16To17,
+  migrateG1b: (db: Database.Database) => void = migrateSchema17To18,
+  migrateG2: (db: Database.Database) => void = migrateSchema18To19,
+  migrateG6b: (db: Database.Database) => void = migrateSchema19To20,
+): Database.Database {
+  let database = new Database(dbPath);
+  let closed = false;
+  const closeOnce = (): void => {
+    if (!closed) {
+      database.close();
+      closed = true;
+    }
+  };
+  try {
+    const initialVersion = readSchemaVersion(database);
+    if (!initialVersion || initialVersion === "14") {
+      migrateSchema14To15(database);
+      migrateSchema15To16(database);
+    } else if (initialVersion === "15") {
+      migrateSchema15To16(database);
+    }
+    const g1Steps: Array<{
+      fromVersion: string;
+      migrate: (db: Database.Database) => void;
+    }> = [
+      { fromVersion: "16", migrate: migrateG1a },
+      { fromVersion: "17", migrate: migrateG1b },
+    ];
+    for (const step of g1Steps) {
+      if (readSchemaVersion(database) !== step.fromVersion) continue;
+      const backupPath = createDurableMigrationBackup(
+        database,
+        dbPath,
+        step.fromVersion,
+      );
+      try {
+        step.migrate(database);
+      } catch (error) {
+        closeOnce();
+        restoreMigrationBackup(backupPath, dbPath);
+        throw error;
+      }
+    }
+    if (readSchemaVersion(database) === "18") {
+      // G2 is additive and transactionally rolls back without a restore snapshot.
+      migrateG2(database);
+    }
+    if (readSchemaVersion(database) === "19") {
+      // G6b rebuilds candidate_reviews atomically and preserves all history.
+      migrateG6b(database);
+    }
+    if (readSchemaVersion(database) === "21") {
+      // Destructive: the knowledge-graph tables are dropped, so keep a backup.
+      const backupPath = createDurableMigrationBackup(database, dbPath, "21");
+      try {
+        migrateSchema21To22(database);
+      } catch (error) {
+        closeOnce();
+        restoreMigrationBackup(backupPath, dbPath);
+        throw error;
+      }
+    }
+    migrateSchemaToCurrent(database);
+    return database;
+  } catch (error) {
+    closeOnce();
+    throw error;
+  }
+}
+
+/**
+ * Claims companion schema added in version 15.
+ *
+ * This is deliberately kept separate from `SCHEMA_SQL`: released native
+ * builders can still produce a version-14 core index, which the CLI upgrades
+ * with `migrateSchema14To15()` before opening it through query helpers.
+ */
+const CLAIMS_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS parameter_identities (
+  id TEXT PRIMARY KEY,
+  canonical_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence_identities (
+  id TEXT PRIMARY KEY,
+  parameter_identity_id TEXT REFERENCES parameter_identities(id),
+  source_kind TEXT NOT NULL,
+  identity_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence_versions (
+  id TEXT PRIMARY KEY,
+  evidence_identity_id TEXT NOT NULL REFERENCES evidence_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  material_fingerprint TEXT NOT NULL,
+  normalized_value TEXT,
+  semantic_location TEXT NOT NULL,
+  file_path TEXT,
+  symbol_id TEXT,
+  span_start_line INTEGER,
+  span_end_line INTEGER,
+  repository_revision TEXT,
+  provenance_json TEXT NOT NULL,
+  observed_at INTEGER NOT NULL,
+  UNIQUE (evidence_identity_id, version_ordinal),
+  UNIQUE (evidence_identity_id, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS parameter_evidence_bindings (
+  id TEXT PRIMARY KEY,
+  parameter_identity_id TEXT NOT NULL REFERENCES parameter_identities(id),
+  evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  predecessor_binding_id TEXT REFERENCES parameter_evidence_bindings(id),
+  created_at INTEGER NOT NULL,
+  UNIQUE (parameter_identity_id, evidence_version_id)
+);
+
+CREATE TABLE IF NOT EXISTS evidence_continuity (
+  id TEXT PRIMARY KEY,
+  from_evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  to_evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (from_evidence_version_id, to_evidence_version_id)
+);
+
+CREATE TABLE IF NOT EXISTS rule_result_identities (
+  id TEXT PRIMARY KEY,
+  rule_id TEXT NOT NULL,
+  scope TEXT,
+  identity_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rule_result_versions (
+  id TEXT PRIMARY KEY,
+  rule_result_identity_id TEXT NOT NULL REFERENCES rule_result_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  applicability TEXT NOT NULL,
+  normalized_status TEXT NOT NULL,
+  normalized_output_json TEXT NOT NULL,
+  normalized_reasons_json TEXT NOT NULL,
+  rule_contract_version TEXT NOT NULL,
+  implementation_fingerprint TEXT NOT NULL,
+  observed_at INTEGER NOT NULL,
+  UNIQUE (rule_result_identity_id, version_ordinal),
+  UNIQUE (rule_result_identity_id, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS rule_result_evidence (
+  rule_result_version_id TEXT NOT NULL REFERENCES rule_result_versions(id),
+  evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  PRIMARY KEY (rule_result_version_id, evidence_version_id)
+);
+
+CREATE TABLE IF NOT EXISTS claim_identities (
+  id TEXT PRIMARY KEY,
+  parameter_identity_id TEXT NOT NULL REFERENCES parameter_identities(id),
+  claim_type TEXT NOT NULL,
+  scope TEXT,
+  identity_key TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claim_versions (
+  id TEXT PRIMARY KEY,
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  normalized_statement_json TEXT NOT NULL,
+  assessment_policy_id TEXT NOT NULL,
+  assessment_policy_version TEXT NOT NULL,
+  repository_revision TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (claim_identity_id, version_ordinal)
+);
+
+CREATE TABLE IF NOT EXISTS claim_assessments (
+  id TEXT PRIMARY KEY,
+  claim_version_id TEXT NOT NULL REFERENCES claim_versions(id),
+  assessment_key TEXT NOT NULL UNIQUE,
+  epistemic_status TEXT NOT NULL,
+  repository_revision TEXT NOT NULL,
+  reference_key TEXT UNIQUE,
+  is_current INTEGER NOT NULL DEFAULT 1,
+  superseded_by_assessment_id TEXT REFERENCES claim_assessments(id),
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claim_assessment_references (
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  repository_revision TEXT NOT NULL,
+  assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (claim_identity_id, repository_revision)
+);
+
+CREATE TABLE IF NOT EXISTS claim_assessment_dependencies (
+  claim_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  dependency_kind TEXT NOT NULL,
+  dependency_version_id TEXT NOT NULL,
+  epistemic_role TEXT NOT NULL,
+  warrant_polarity TEXT,
+  assessment_effect TEXT NOT NULL,
+  PRIMARY KEY (
+    claim_assessment_id,
+    dependency_kind,
+    dependency_version_id,
+    epistemic_role,
+    warrant_polarity,
+    assessment_effect
+  )
+);
+
+CREATE TABLE IF NOT EXISTS review_decisions (
+  id TEXT PRIMARY KEY,
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  basis_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  decision TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  decision_origin TEXT NOT NULL,
+  carried_forward_from_decision_id TEXT REFERENCES review_decisions(id),
+  superseded_by_decision_id TEXT REFERENCES review_decisions(id),
+  invalidated_by_reopen_id TEXT,
+  is_current INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_decision_reopens (
+  id TEXT PRIMARY KEY,
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  previous_review_decision_id TEXT REFERENCES review_decisions(id),
+  basis_assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+  dependency_kind TEXT NOT NULL,
+  dependency_version_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  secondary_provenance_json TEXT,
+  status TEXT NOT NULL,
+  resolved_by_decision_id TEXT REFERENCES review_decisions(id),
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_versions_identity_ordinal
+  ON evidence_versions(evidence_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_rule_result_versions_identity_ordinal
+  ON rule_result_versions(rule_result_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_rule_result_evidence_evidence
+  ON rule_result_evidence(evidence_version_id);
+CREATE INDEX IF NOT EXISTS idx_claim_versions_identity_ordinal
+  ON claim_versions(claim_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_assessments_claim_current
+  ON claim_assessments(claim_version_id, is_current);
+CREATE INDEX IF NOT EXISTS idx_assessment_dependencies_dependency
+  ON claim_assessment_dependencies(dependency_kind, dependency_version_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_review_decisions_current_claim
+  ON review_decisions(claim_identity_id) WHERE is_current = 1;
+CREATE INDEX IF NOT EXISTS idx_review_reopens_claim_status
+  ON review_decision_reopens(claim_identity_id, status);
+`;
+
+const SUBJECT_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS subject_identities (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  identity_key TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  lifecycle_state TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subject_aliases (
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  alias_kind TEXT NOT NULL,
+  alias_key TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (subject_identity_id, alias_kind, alias_key),
+  UNIQUE (alias_kind, alias_key)
+);
+
+CREATE TABLE IF NOT EXISTS claim_subjects (
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  subject_role TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (claim_identity_id, subject_identity_id, subject_role)
+);
+
+CREATE TABLE IF NOT EXISTS evidence_subjects (
+  evidence_identity_id TEXT NOT NULL REFERENCES evidence_identities(id),
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  subject_role TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (evidence_identity_id, subject_identity_id, subject_role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subject_aliases_subject
+  ON subject_aliases(subject_identity_id);
+CREATE INDEX IF NOT EXISTS idx_claim_subjects_subject
+  ON claim_subjects(subject_identity_id, subject_role);
+CREATE INDEX IF NOT EXISTS idx_evidence_subjects_subject
+  ON evidence_subjects(subject_identity_id, subject_role);
+`;
+
+const G1B_SUBJECT_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS subject_continuity (
+  id TEXT PRIMARY KEY,
+  continuity_identity_key TEXT NOT NULL,
+  version_ordinal INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  from_subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  to_subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (continuity_identity_key, version_ordinal),
+  UNIQUE (continuity_identity_key, fingerprint),
+  CHECK (from_subject_identity_id != to_subject_identity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subject_continuity_from
+  ON subject_continuity(from_subject_identity_id, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_subject_continuity_to
+  ON subject_continuity(to_subject_identity_id, version_ordinal DESC);
+`;
+
+const CANDIDATE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS candidate_inferences (
+  id TEXT PRIMARY KEY,
+  inference_identity_key TEXT NOT NULL,
+  version_ordinal INTEGER NOT NULL,
+  adapter_id TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  input_fingerprint TEXT NOT NULL,
+  output_fingerprint TEXT NOT NULL,
+  evidence_version_ids_json TEXT NOT NULL,
+  proposed_subject_bindings_json TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (inference_identity_key, version_ordinal),
+  UNIQUE (inference_identity_key, output_fingerprint),
+  CHECK (mode = 'model'),
+  CHECK (confidence IN ('probable', 'ambiguous'))
+);
+
+CREATE TABLE IF NOT EXISTS claim_candidates (
+  id TEXT PRIMARY KEY,
+  identity_key TEXT NOT NULL,
+  version_ordinal INTEGER NOT NULL,
+  candidate_kind TEXT NOT NULL,
+  proposed_claim_type TEXT NOT NULL,
+  discovery_mode TEXT NOT NULL,
+  discovery_adapter_id TEXT NOT NULL,
+  discovery_contract_version TEXT NOT NULL,
+  inference_id TEXT REFERENCES candidate_inferences(id),
+  confidence TEXT NOT NULL,
+  state TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  observation_fingerprint TEXT NOT NULL,
+  normalized_statement_json TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (identity_key, version_ordinal),
+  UNIQUE (identity_key, fingerprint),
+  CHECK (discovery_mode IN ('deterministic', 'semantic', 'manual')),
+  CHECK (confidence IN ('certain', 'probable', 'ambiguous')),
+  CHECK (state IN (
+    'discovered', 'correlated', 'triaged', 'promoted',
+    'rejected', 'suppressed', 'superseded'
+  ))
+);
+
+CREATE TABLE IF NOT EXISTS candidate_evidence (
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  evidence_key TEXT NOT NULL,
+  evidence_version_id TEXT REFERENCES evidence_versions(id),
+  source_kind TEXT NOT NULL,
+  evidence_role TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (candidate_id, evidence_key, evidence_role)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_subjects (
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  subject_role TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (candidate_id, subject_identity_id, subject_role)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_reviews (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  promoted_claim_identity_id TEXT REFERENCES claim_identities(id),
+  actor_kind TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  effect TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK (actor_kind IN ('human', 'ai', 'policy')),
+  CHECK (decision IN ('promote', 'reject', 'suppress', 'defer')),
+  CHECK (effect IN ('recommendation', 'effective'))
+);
+
+CREATE TABLE IF NOT EXISTS candidate_policy_decisions (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+  promoted_claim_identity_id TEXT REFERENCES claim_identities(id),
+  policy_id TEXT NOT NULL,
+  policy_version TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (candidate_id, policy_id, policy_version),
+  CHECK (decision IN ('promote', 'reject', 'suppress', 'defer'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_inferences_identity_ordinal
+  ON candidate_inferences(inference_identity_key, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_claim_candidates_identity_ordinal
+  ON claim_candidates(identity_key, version_ordinal DESC);
+CREATE INDEX IF NOT EXISTS idx_claim_candidates_state
+  ON claim_candidates(state, candidate_kind, proposed_claim_type);
+CREATE INDEX IF NOT EXISTS idx_candidate_evidence_version
+  ON candidate_evidence(evidence_version_id);
+CREATE INDEX IF NOT EXISTS idx_candidate_subjects_subject
+  ON candidate_subjects(subject_identity_id, subject_role);
+CREATE INDEX IF NOT EXISTS idx_candidate_reviews_candidate
+  ON candidate_reviews(candidate_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_candidate_policy_candidate
+  ON candidate_policy_decisions(candidate_id, policy_id, policy_version);
+`;
+
+function backfillParameterSubjects(db: Database.Database): void {
+  const parameters = db
+    .prepare(`SELECT id, canonical_key, created_at FROM parameter_identities`)
+    .all() as Array<{ id: string; canonical_key: string; created_at: number }>;
+  for (const parameter of parameters) {
+    const subject = parameterSubjectIdentity(parameter.canonical_key);
+    db.prepare(
+      `INSERT OR IGNORE INTO subject_identities (
+         id, kind, identity_key, display_name, lifecycle_state,
+         contract_version, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      subject.id,
+      subject.kind,
+      subject.identityKey,
+      subject.displayName,
+      subject.lifecycleState,
+      subject.contractVersion,
+      parameter.created_at,
+    );
+    db.prepare(
+      `INSERT OR IGNORE INTO subject_aliases (
+         subject_identity_id, alias_kind, alias_key, created_at
+       ) VALUES (?, 'parameter-key', ?, ?)`,
+    ).run(subject.id, parameter.canonical_key, parameter.created_at);
+    db.prepare(
+      `UPDATE parameter_identities
+       SET subject_identity_id = ? WHERE id = ?`,
+    ).run(subject.id, parameter.id);
+    db.prepare(
+      `INSERT OR IGNORE INTO claim_subjects (
+         claim_identity_id, subject_identity_id, subject_role, created_at
+       ) SELECT id, ?, 'subject', created_at
+         FROM claim_identities WHERE parameter_identity_id = ?`,
+    ).run(subject.id, parameter.id);
+    db.prepare(
+      `INSERT OR IGNORE INTO evidence_subjects (
+         evidence_identity_id, subject_identity_id, subject_role,
+         basis, confidence, created_at
+       ) SELECT id, ?, 'subject', 'parameter-compatibility', 'certain', created_at
+         FROM evidence_identities WHERE parameter_identity_id = ?`,
+    ).run(subject.id, parameter.id);
+  }
+}
+
+/** Upgrade a core schema-14 database with the additive claims companion schema. */
+export function migrateSchema14To15(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(CLAIMS_SCHEMA_SQL);
+    db.exec(`
+      INSERT OR IGNORE INTO claim_assessment_references (
+        claim_identity_id, repository_revision, assessment_id, created_at
+      )
+      SELECT cv.claim_identity_id, ca.repository_revision, ca.id, ca.created_at
+      FROM claim_assessments ca
+      JOIN claim_versions cv ON cv.id = ca.claim_version_id
+      WHERE ca.reference_key IS NOT NULL
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '15')`,
+    ).run();
+  });
+  migrate();
+}
+
+/** Upgrade schema-15 indexes with claim_assessment_references and version 16 metadata. */
+export function migrateSchema15To16(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS claim_assessment_references (
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        repository_revision TEXT NOT NULL,
+        assessment_id TEXT NOT NULL REFERENCES claim_assessments(id),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (claim_identity_id, repository_revision)
+      )
+    `);
+    db.exec(`
+      INSERT OR IGNORE INTO claim_assessment_references (
+        claim_identity_id, repository_revision, assessment_id, created_at
+      )
+      SELECT cv.claim_identity_id, ca.repository_revision, ca.id, ca.created_at
+      FROM claim_assessments ca
+      JOIN claim_versions cv ON cv.id = ca.claim_version_id
+      WHERE ca.reference_key IS NOT NULL
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)`,
+    ).run("16");
+  });
+  migrate();
+}
+
+/** Add G1a Subject storage and backfill every legacy Parameter relationship. */
+export function migrateSchema16To17(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(SUBJECT_SCHEMA_SQL);
+    const columns = db
+      .prepare(`PRAGMA table_info(parameter_identities)`)
+      .all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((column) => column.name === "subject_identity_id")) {
+      db.exec(
+        `ALTER TABLE parameter_identities
+         ADD COLUMN subject_identity_id TEXT REFERENCES subject_identities(id)`,
+      );
+    }
+    backfillParameterSubjects(db);
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_parameter_subject_identity
+       ON parameter_identities(subject_identity_id)`,
+    );
+    const missing = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM parameter_identities
+         WHERE subject_identity_id IS NULL`,
+      )
+      .get() as { count: number };
+    if (missing.count !== 0) {
+      throw new Error("Subject backfill left Parameter identities unlinked");
+    }
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '17')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * G1b: rebuild Claim identity storage so `parameter_identity_id` becomes a
+ * nullable legacy compatibility link and `claim_subjects` becomes the
+ * authoritative Subject relationship for generic Claims. Existing Parameter
+ * rows retain their foreign key and IDs; no synthetic Parameters are created.
+ */
+export function migrateSchema17To18(db: Database.Database): void {
+  const columns = db
+    .prepare(`PRAGMA table_info(claim_identities)`)
+    .all() as Array<{ name: string; notnull: number }>;
+  const parameterColumn = columns.find(
+    (column) => column.name === "parameter_identity_id",
+  );
+  if (!parameterColumn) {
+    throw new Error(
+      "Schema 17 database is missing claim_identities.parameter_identity_id",
+    );
+  }
+  // PRAGMA foreign_keys is a no-op inside a transaction, so toggle it outside.
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      db.exec(G1B_SUBJECT_SCHEMA_SQL);
+      if (parameterColumn.notnull !== 0) {
+        db.exec(`
+          CREATE TABLE claim_identities_g1b (
+            id TEXT PRIMARY KEY,
+            parameter_identity_id TEXT REFERENCES parameter_identities(id),
+            claim_type TEXT NOT NULL,
+            scope TEXT,
+            identity_key TEXT NOT NULL UNIQUE,
+            identity_contract_id TEXT,
+            identity_contract_version TEXT,
+            created_at INTEGER NOT NULL
+          );
+          INSERT INTO claim_identities_g1b (
+            id, parameter_identity_id, claim_type, scope, identity_key,
+            identity_contract_id, identity_contract_version, created_at
+          )
+          SELECT id, parameter_identity_id, claim_type, scope, identity_key,
+                 NULL, NULL, created_at
+          FROM claim_identities;
+          DROP TABLE claim_identities;
+          ALTER TABLE claim_identities_g1b RENAME TO claim_identities;
+        `);
+      } else {
+        const identityColumns = new Set(columns.map((column) => column.name));
+        if (!identityColumns.has("identity_contract_id")) {
+          db.exec(
+            `ALTER TABLE claim_identities ADD COLUMN identity_contract_id TEXT`,
+          );
+        }
+        if (!identityColumns.has("identity_contract_version")) {
+          db.exec(
+            `ALTER TABLE claim_identities ADD COLUMN identity_contract_version TEXT`,
+          );
+        }
+      }
+      const versionColumns = new Set(
+        (
+          db.prepare(`PRAGMA table_info(claim_versions)`).all() as Array<{
+            name: string;
+          }>
+        ).map((column) => column.name),
+      );
+      if (!versionColumns.has("materiality_contract_id")) {
+        db.exec(
+          `ALTER TABLE claim_versions ADD COLUMN materiality_contract_id TEXT`,
+        );
+      }
+      if (!versionColumns.has("materiality_contract_version")) {
+        db.exec(
+          `ALTER TABLE claim_versions ADD COLUMN materiality_contract_version TEXT`,
+        );
+      }
+      db.prepare(
+        `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '18')`,
+      ).run();
+      const violations = db
+        .prepare(`PRAGMA foreign_key_check`)
+        .all() as unknown[];
+      if (violations.length > 0) {
+        throw new Error(
+          "Schema 18 migration left foreign key violations in claim_identities",
+        );
+      }
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
+/** Add the append-only Candidate persistence layer used by G2 discovery. */
+export function migrateSchema18To19(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(CANDIDATE_SCHEMA_SQL);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '19')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * Upgrade schema 19 Candidate Reviews with recommendation provenance links.
+ * Existing rows retain their IDs and timestamps. Historical AI recommendations
+ * are backfilled from the Candidate version's single inference_id; malformed
+ * rows fail before the old table is replaced.
+ */
+/**
+ * Observation layer tables (Phase G5.3, migration 21). Created additively. Identity,
+ * version, membership, ChangeSet, bridge, projection, and impact rules follow
+ * docs/OBSERVATION-MIGRATION-21-DRAFT.md.
+ */
+const OBSERVATION_SCHEMA_SQL = `
+-- Runs: one per (adapter, contract, scope, repository revision).
+CREATE TABLE IF NOT EXISTS observation_runs (
+  id TEXT PRIMARY KEY,
+  adapter_id TEXT NOT NULL,
+  adapter_contract_version TEXT NOT NULL,
+  scope_fingerprint TEXT NOT NULL,
+  scope_descriptor_json TEXT NOT NULL,
+  repository_revision TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running', 'finished', 'failed')),
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  fingerprint TEXT NOT NULL,
+  UNIQUE (adapter_id, adapter_contract_version, scope_fingerprint, repository_revision)
+);
+
+-- Coverage: completeness per kind within a run.
+CREATE TABLE IF NOT EXISTS observation_run_coverage (
+  run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  kind TEXT NOT NULL,
+  coverage_status TEXT NOT NULL CHECK (coverage_status IN ('complete', 'partial', 'not_observed', 'unsupported')),
+  reason TEXT,
+  object_count INTEGER NOT NULL,
+  PRIMARY KEY (run_id, kind),
+  CHECK (coverage_status = 'complete' OR reason IS NOT NULL)
+);
+
+-- Inventory identities: store-local, never exported.
+CREATE TABLE IF NOT EXISTS observed_identities (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  identity_key TEXT NOT NULL UNIQUE,
+  creation_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  created_at INTEGER NOT NULL
+);
+
+-- Versions: one per payload change, not one per run.
+CREATE TABLE IF NOT EXISTS observed_versions (
+  id TEXT PRIMARY KEY,
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  version_ordinal INTEGER NOT NULL,
+  locator_json TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  payload_fingerprint TEXT NOT NULL,
+  cari_id TEXT,
+  first_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  UNIQUE (observed_identity_id, version_ordinal),
+  UNIQUE (id, observed_identity_id)
+);
+
+-- Membership: which identities a run saw, and with which version.
+CREATE TABLE IF NOT EXISTS observation_run_items (
+  run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  effective_version_id TEXT NOT NULL,
+  PRIMARY KEY (run_id, observed_identity_id),
+  FOREIGN KEY (effective_version_id, observed_identity_id)
+    REFERENCES observed_versions(id, observed_identity_id)
+);
+
+-- Relations between observed versions.
+CREATE TABLE IF NOT EXISTS observed_relations (
+  id TEXT PRIMARY KEY,
+  observed_version_id TEXT NOT NULL REFERENCES observed_versions(id),
+  relation_kind TEXT NOT NULL,
+  target_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  target_version_id TEXT REFERENCES observed_versions(id),
+  basis TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  UNIQUE (observed_version_id, relation_kind, target_identity_id)
+);
+
+-- Inventory continuity only. Subject continuity stays in subject_continuity.
+CREATE TABLE IF NOT EXISTS observed_continuity_links (
+  id TEXT PRIMARY KEY,
+  from_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  to_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  basis TEXT NOT NULL CHECK (basis IN ('git_rename', 'unique_merge_base', 'structural_match', 'reviewed')),
+  decided_by TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK (from_identity_id != to_identity_id),
+  UNIQUE (from_identity_id, to_identity_id)
+);
+
+-- Subject bridge: written only through a versioned rule or a Review.
+CREATE TABLE IF NOT EXISTS subject_observations (
+  subject_identity_id TEXT NOT NULL REFERENCES subject_identities(id),
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  role TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  contract_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  retired_run_id TEXT REFERENCES observation_runs(id),
+  PRIMARY KEY (subject_identity_id, observed_identity_id, role),
+  UNIQUE (observed_identity_id, role, retired_run_id)
+);
+
+-- Projection to ordinary evidence, so existing dependencies reach observations.
+CREATE TABLE IF NOT EXISTS observed_evidence_projection (
+  observed_version_id TEXT NOT NULL REFERENCES observed_versions(id),
+  evidence_identity_id TEXT NOT NULL REFERENCES evidence_identities(id),
+  evidence_version_id TEXT NOT NULL REFERENCES evidence_versions(id),
+  projection_contract_version TEXT NOT NULL,
+  PRIMARY KEY (observed_version_id, evidence_identity_id, projection_contract_version)
+);
+
+-- ChangeSets: a pure function of the base run, head run, and contract.
+-- Per-file coverage (decision 1a): in-scope files a run did not observe.
+CREATE TABLE IF NOT EXISTS observation_run_unobserved_files (
+  run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  file_path TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (run_id, file_path)
+);
+
+CREATE TABLE IF NOT EXISTS observed_changesets (
+  id TEXT PRIMARY KEY,
+  base_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  head_run_id TEXT NOT NULL REFERENCES observation_runs(id),
+  adapter_contract_fingerprint TEXT NOT NULL,
+  changeset_fingerprint TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  CHECK (base_run_id != head_run_id),
+  UNIQUE (base_run_id, head_run_id, adapter_contract_fingerprint)
+);
+
+-- Change items: generic facts, no materiality.
+CREATE TABLE IF NOT EXISTS observed_change_items (
+  id TEXT PRIMARY KEY,
+  changeset_id TEXT NOT NULL REFERENCES observed_changesets(id),
+  change_kind TEXT NOT NULL CHECK (change_kind IN (
+    'added', 'removed', 'moved', 'renamed', 'property-changed',
+    'relation-changed', 'continuity-unclear', 'not_comparable')),
+  observed_identity_id TEXT NOT NULL REFERENCES observed_identities(id),
+  base_version_id TEXT REFERENCES observed_versions(id),
+  head_version_id TEXT REFERENCES observed_versions(id),
+  successor_identity_id TEXT REFERENCES observed_identities(id),
+  basis TEXT NOT NULL,
+  changed_properties_json TEXT,
+  CHECK (change_kind NOT IN ('moved', 'renamed') OR successor_identity_id IS NOT NULL),
+  UNIQUE (changeset_id, observed_identity_id, change_kind)
+);
+
+-- Materiality: derived by the Claim family's contract, recomputable.
+CREATE TABLE IF NOT EXISTS change_impacts (
+  id TEXT PRIMARY KEY,
+  change_item_id TEXT NOT NULL REFERENCES observed_change_items(id),
+  claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+  materiality_contract_version TEXT NOT NULL,
+  result TEXT NOT NULL CHECK (result IN ('material', 'immaterial', 'not_applicable')),
+  decided_at INTEGER NOT NULL,
+  UNIQUE (change_item_id, claim_identity_id, materiality_contract_version)
+);
+`;
+
+export function migrateSchema20To21(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(OBSERVATION_SCHEMA_SQL);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '21')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * Per-file observation coverage (decision 1a). Additive: one table, created in a
+ * transaction, with no data rewritten.
+ */
+export function migrateSchema22To23(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS observation_run_unobserved_files (
+        run_id TEXT NOT NULL REFERENCES observation_runs(id),
+        file_path TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (run_id, file_path)
+      );
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '23')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * Conflict decisions (G5.4): a rejected change, or a time-limited exception to an
+ * intent conflict. Keyed to the anchor and the exact statement fingerprint decided.
+ * Additive: one table, created in a transaction, with no data rewritten.
+ */
+/**
+ * Schema 27 -> 28 (G5.4 slice 2, abstract anchors). An abstract intent has no statement of
+ * its own: it is realized by a set of Claims, and an abstract anchor protects that set.
+ * Additive; no rows move.
+ */
+export function migrateSchema27To28(db: Database.Database): void {
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS abstract_intent_realizations (
+        id TEXT PRIMARY KEY,
+        intent_key TEXT NOT NULL,
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        status TEXT NOT NULL CHECK (status IN ('active', 'retired')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        created_at INTEGER NOT NULL,
+        retired_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_abstract_realizations_active
+        ON abstract_intent_realizations(intent_key, claim_identity_id)
+        WHERE status = 'active';
+      CREATE TABLE IF NOT EXISTS abstract_intent_anchors (
+        id TEXT PRIMARY KEY,
+        intent_key TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        realizer_set_fingerprint TEXT NOT NULL,
+        realizers_json TEXT NOT NULL,
+        authority TEXT NOT NULL CHECK (authority IN ('human', 'ai-proposed')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'superseded')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        superseded_by_anchor_id TEXT REFERENCES abstract_intent_anchors(id),
+        created_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_abstract_anchors_active
+        ON abstract_intent_anchors(intent_key, scope)
+        WHERE status = 'active';
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '28')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * Schema 26 -> 27 (G5.4 slice 2). Claim Relations: a versioned edge between two Claim
+ * identities, used to aggregate realizations for Intent Anchors. Additive; no rows move.
+ */
+export function migrateSchema26To27(db: Database.Database): void {
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS claim_relations (
+        id TEXT PRIMARY KEY,
+        source_claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        target_claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        relation TEXT NOT NULL CHECK (relation IN ('realizes', 'refines', 'constrains', 'warrants')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'retired')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        created_at INTEGER NOT NULL,
+        retired_at INTEGER,
+        CHECK (source_claim_identity_id <> target_claim_identity_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_claim_relations_active
+        ON claim_relations(source_claim_identity_id, target_claim_identity_id, relation)
+        WHERE status = 'active';
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '27')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * Schema 25 -> 26 (G5.4 authority). An AI-proposed Intent Anchor is active on creation and
+ * is marked `ai-proposed`. SQLite cannot change a CHECK constraint in place, so the table is
+ * rebuilt with the wider constraint. Rows, identities, and supersession links are copied as
+ * they are. Foreign keys are off during the rebuild, because intent_conflict_decisions
+ * references intent_anchors.
+ */
+export function migrateSchema25To26(db: Database.Database): void {
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE intent_anchors_v26 (
+          id TEXT PRIMARY KEY,
+          claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+          claim_version_id TEXT NOT NULL REFERENCES claim_versions(id),
+          statement_fingerprint TEXT NOT NULL,
+          scope TEXT NOT NULL,
+          mode TEXT NOT NULL CHECK (mode IN ('observe', 'protect')),
+          authority TEXT NOT NULL CHECK (authority IN ('human', 'reviewed-policy', 'ai-proposed')),
+          source TEXT NOT NULL CHECK (source IN ('review', 'adr', 'spec', 'declaration')),
+          status TEXT NOT NULL CHECK (status IN ('active', 'superseded', 'retired')),
+          actor TEXT NOT NULL,
+          rationale TEXT,
+          superseded_by_anchor_id TEXT REFERENCES intent_anchors(id),
+          created_at INTEGER NOT NULL
+        );
+        INSERT INTO intent_anchors_v26
+          SELECT id, claim_identity_id, claim_version_id, statement_fingerprint, scope,
+                 mode, authority, source, status, actor, rationale,
+                 superseded_by_anchor_id, created_at
+          FROM intent_anchors;
+        DROP TABLE intent_anchors;
+        ALTER TABLE intent_anchors_v26 RENAME TO intent_anchors;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_anchors_active
+          ON intent_anchors(claim_identity_id, scope) WHERE status = 'active';
+      `);
+      const violations = db.prepare("PRAGMA foreign_key_check").all();
+      if (violations.length > 0) {
+        throw new Error("Schema 26 migration left foreign key violations");
+      }
+      db.prepare(
+        `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '26')`,
+      ).run();
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
+export function migrateSchema24To25(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS intent_conflict_decisions (
+        id TEXT PRIMARY KEY,
+        anchor_id TEXT NOT NULL REFERENCES intent_anchors(id),
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        statement_fingerprint TEXT NOT NULL,
+        decision TEXT NOT NULL CHECK (decision IN ('rejected', 'excepted')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        decided_at INTEGER NOT NULL,
+        expires_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_intent_conflict_decisions_anchor
+        ON intent_conflict_decisions(anchor_id, statement_fingerprint);
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '25')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * Intent Anchors (G5.4): a human decision that protects one Claim statement.
+ * Additive: one table, created in a transaction, with no data rewritten.
+ */
+export function migrateSchema23To24(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS intent_anchors (
+        id TEXT PRIMARY KEY,
+        claim_identity_id TEXT NOT NULL REFERENCES claim_identities(id),
+        claim_version_id TEXT NOT NULL REFERENCES claim_versions(id),
+        statement_fingerprint TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('observe', 'protect')),
+        authority TEXT NOT NULL CHECK (authority IN ('human', 'reviewed-policy')),
+        source TEXT NOT NULL CHECK (source IN ('review', 'adr', 'spec', 'declaration')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'superseded', 'retired')),
+        actor TEXT NOT NULL,
+        rationale TEXT,
+        superseded_by_anchor_id TEXT REFERENCES intent_anchors(id),
+        created_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_anchors_active
+        ON intent_anchors(claim_identity_id, scope) WHERE status = 'active';
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '24')`,
+    ).run();
+  });
+  migrate();
+}
+
+/**
+ * Remove the knowledge-graph tables. Nothing in IntentWeave writes them
+ * any longer, and their readers are removed with them. The step is destructive, so
+ * openMigratedDatabase keeps a durable backup of the version-21 index first.
+ */
+export function migrateSchema21To22(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  const migrate = db.transaction(() => {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_kg_rels_predicate;
+      DROP INDEX IF EXISTS idx_kg_rels_to;
+      DROP INDEX IF EXISTS idx_kg_rels_from;
+      DROP INDEX IF EXISTS idx_kg_raw_source;
+      DROP INDEX IF EXISTS idx_kg_entities_source;
+      DROP INDEX IF EXISTS idx_kg_entities_canon_id;
+      DROP INDEX IF EXISTS idx_kg_entities_type;
+      DROP INDEX IF EXISTS idx_kg_entities_name;
+      DROP TABLE IF EXISTS kg_relationships;
+      DROP TABLE IF EXISTS kg_raw_triples;
+      DROP TABLE IF EXISTS kg_entities;
+      DROP TABLE IF EXISTS enrichment_meta;
+    `);
+    db.prepare(
+      `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '22')`,
+    ).run();
+  });
+  migrate();
+}
+
+export function migrateSchema19To20(db: Database.Database): void {
+  const columns = db
+    .prepare(`PRAGMA table_info(candidate_reviews)`)
+    .all() as Array<{ name: string }>;
+  const requiredColumns = [
+    "id",
+    "candidate_id",
+    "promoted_claim_identity_id",
+    "actor_kind",
+    "actor_id",
+    "decision",
+    "effect",
+    "rationale",
+    "provenance_json",
+    "created_at",
+  ];
+  if (
+    requiredColumns.some(
+      (name) => !columns.some((column) => column.name === name),
+    )
+  ) {
+    throw new Error(
+      "Schema 19 database has malformed candidate_reviews; expected the schema-19 review columns",
+    );
+  }
+
+  db.pragma("foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      const rows = db
+        .prepare(
+          `SELECT id, candidate_id, promoted_claim_identity_id, actor_kind,
+                  actor_id, decision, effect, rationale, provenance_json, created_at
+           FROM candidate_reviews ORDER BY created_at, id`,
+        )
+        .all() as Array<{
+        id: string;
+        candidate_id: string;
+        promoted_claim_identity_id: string | null;
+        actor_kind: string;
+        actor_id: string;
+        decision: string;
+        effect: string;
+        rationale: string;
+        provenance_json: string;
+        created_at: number;
+      }>;
+
+      const migrated = rows.map((row) => {
+        if (row.actor_kind === "ai") {
+          if (
+            row.effect !== "recommendation" ||
+            row.promoted_claim_identity_id !== null
+          ) {
+            throw new Error(
+              `Schema 19 candidate review ${row.id} is an invalid AI recommendation`,
+            );
+          }
+          const candidate = db
+            .prepare(`SELECT inference_id FROM claim_candidates WHERE id = ?`)
+            .get(row.candidate_id) as
+            | { inference_id: string | null }
+            | undefined;
+          if (!candidate) {
+            throw new Error(
+              `Schema 19 candidate review ${row.id} references missing Candidate ${row.candidate_id}`,
+            );
+          }
+          if (!candidate.inference_id) {
+            throw new Error(
+              `Schema 19 AI recommendation ${row.id} has no unique Candidate inference to backfill`,
+            );
+          }
+          const inference = db
+            .prepare(
+              `SELECT 1 AS present FROM candidate_inferences WHERE id = ?`,
+            )
+            .get(candidate.inference_id) as { present: number } | undefined;
+          if (!inference) {
+            throw new Error(
+              `Schema 19 AI recommendation ${row.id} references missing Inference ${candidate.inference_id}`,
+            );
+          }
+          return { ...row, inferenceId: candidate.inference_id };
+        }
+        if (
+          !["human", "policy"].includes(row.actor_kind) ||
+          row.effect !== "effective"
+        ) {
+          throw new Error(
+            `Schema 19 candidate review ${row.id} has unsupported historical actor/effect semantics`,
+          );
+        }
+        return { ...row, inferenceId: null as string | null };
+      });
+
+      db.exec(`
+        CREATE TABLE candidate_reviews_g6b (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT NOT NULL REFERENCES claim_candidates(id),
+          promoted_claim_identity_id TEXT REFERENCES claim_identities(id),
+          actor_kind TEXT NOT NULL,
+          actor_id TEXT NOT NULL,
+          decision TEXT NOT NULL,
+          effect TEXT NOT NULL,
+          rationale TEXT NOT NULL,
+          provenance_json TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          inference_id TEXT REFERENCES candidate_inferences(id),
+          based_on_recommendation_id TEXT REFERENCES candidate_reviews_g6b(id),
+          CHECK (actor_kind IN ('human', 'ai', 'policy')),
+          CHECK (decision IN ('promote', 'reject', 'suppress', 'defer')),
+          CHECK (effect IN ('recommendation', 'effective')),
+          CHECK (
+            (actor_kind = 'ai' AND effect = 'recommendation'
+              AND inference_id IS NOT NULL
+              AND promoted_claim_identity_id IS NULL
+              AND based_on_recommendation_id IS NULL)
+            OR
+            (actor_kind IN ('human', 'policy') AND effect = 'effective'
+              AND inference_id IS NULL)
+          ),
+          CHECK (
+            based_on_recommendation_id IS NULL
+            OR (actor_kind IN ('human', 'policy') AND effect = 'effective')
+          )
+        );
+      `);
+      const insert = db.prepare(
+        `INSERT INTO candidate_reviews_g6b (
+           id, candidate_id, promoted_claim_identity_id, actor_kind, actor_id,
+           decision, effect, rationale, provenance_json, created_at,
+           inference_id, based_on_recommendation_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      );
+      for (const row of migrated) {
+        insert.run(
+          row.id,
+          row.candidate_id,
+          row.promoted_claim_identity_id,
+          row.actor_kind,
+          row.actor_id,
+          row.decision,
+          row.effect,
+          row.rationale,
+          row.provenance_json,
+          row.created_at,
+          row.inferenceId,
+        );
+      }
+      db.exec(`
+        DROP TABLE candidate_reviews;
+        ALTER TABLE candidate_reviews_g6b RENAME TO candidate_reviews;
+        CREATE INDEX idx_candidate_reviews_candidate
+          ON candidate_reviews(candidate_id, created_at);
+        CREATE INDEX idx_candidate_reviews_inference
+          ON candidate_reviews(inference_id, created_at);
+        CREATE INDEX idx_candidate_reviews_basis
+          ON candidate_reviews(based_on_recommendation_id);
+      `);
+      db.prepare(
+        `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '20')`,
+      ).run();
+      const violations = db
+        .prepare(`PRAGMA foreign_key_check`)
+        .all() as unknown[];
+      if (violations.length > 0) {
+        throw new Error("Schema 20 migration left foreign key violations");
+      }
+    });
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
+/**
+ * Bring any supported legacy schema to CURRENT_SCHEMA_VERSION.
+ * Supported transitions end at 23 from every supported earlier version, including
+ * 20 -> 21, 21 -> 22, and 22 -> 23.
+ * Unknown newer/older versions are rejected to avoid silent downgrade/corruption.
+ */
+export function migrateSchemaToCurrent(db: Database.Database): void {
+  const schemaVersion = readSchemaVersion(db);
+  if (!schemaVersion || schemaVersion === "14") {
+    migrateSchema14To15(db);
+    migrateSchema15To16(db);
+    migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    migrateSchema18To19(db);
+    migrateSchema19To20(db);
+    migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "15") {
+    migrateSchema15To16(db);
+    migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    migrateSchema18To19(db);
+    migrateSchema19To20(db);
+    migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "16") {
+    migrateSchema16To17(db);
+    migrateSchema17To18(db);
+    migrateSchema18To19(db);
+    migrateSchema19To20(db);
+    migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "17") {
+    migrateSchema17To18(db);
+    migrateSchema18To19(db);
+    migrateSchema19To20(db);
+    migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "18") {
+    migrateSchema18To19(db);
+    migrateSchema19To20(db);
+    migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "19") {
+    migrateSchema19To20(db);
+    migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "20") {
+    migrateSchema20To21(db);
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "21") {
+    migrateSchema21To22(db);
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "22") {
+    migrateSchema22To23(db);
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === "23") {
+    migrateSchema23To24(db);
+    migrateSchema24To25(db);
+    migrateSchema25To26(db);
+    migrateSchema26To27(db);
+    migrateSchema27To28(db);
+    return;
+  }
+  if (schemaVersion === CURRENT_SCHEMA_VERSION) {
+    return;
+  }
+  throw new Error(
+    `Index schema version ${schemaVersion} is incompatible with this version of ` +
+      `@intentweave/index (expected ${CURRENT_SCHEMA_VERSION}). Run \`iw index build\` ` +
+      `with a compatible CLI/runtime.`,
+  );
+}
+
+function assertSupportedSchemaVersion(db: Database.Database): void {
+  const schemaVersion = readSchemaVersion(db);
+  if (
+    schemaVersion &&
+    schemaVersion !== "14" &&
+    schemaVersion !== "15" &&
+    schemaVersion !== "16" &&
+    schemaVersion !== "17" &&
+    schemaVersion !== "18" &&
+    schemaVersion !== "19" &&
+    schemaVersion !== "20" &&
+    schemaVersion !== "21" &&
+    schemaVersion !== "22" &&
+    schemaVersion !== "23" &&
+    schemaVersion !== "24" &&
+    schemaVersion !== CURRENT_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      `Index schema version ${schemaVersion} is incompatible with this version of ` +
+        `@intentweave/index (expected ${CURRENT_SCHEMA_VERSION}). Run \`iw index build\` ` +
+        `with a compatible CLI/runtime.`,
+    );
+  }
+}
+
 /**
  * Initialize the CARI schema on a fresh database.
  * Safe to call on an existing database (IF NOT EXISTS guards).
  */
 export function initSchema(db: Database.Database): void {
+  assertSupportedSchemaVersion(db);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
@@ -409,8 +2138,5 @@ export function initSchema(db: Database.Database): void {
     `);
   }
 
-  // Store schema version
-  db.prepare(
-    `INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', '14')`,
-  ).run();
+  migrateSchemaToCurrent(db);
 }

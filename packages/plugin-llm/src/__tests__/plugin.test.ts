@@ -117,6 +117,8 @@ describe("plugin-llm", () => {
       expect(llm.provider.capabilities).toBeDefined();
       expect(llm.provider.capabilities.supportsJsonSchema).toBe(true);
       expect(llm.provider.capabilities.maxInputTokens).toBeGreaterThan(0);
+      expect(llm.provider.capabilities.supportsStreaming).toBe(false);
+      expect(llm.provider.capabilities.supportsToolCalls).toBe(false);
     });
   });
 
@@ -153,6 +155,20 @@ describe("plugin-llm", () => {
       const provider = new OpenAILLMProvider({ model: "gpt-4o" });
       expect(provider.capabilities.maxInputTokens).toBe(128000);
       expect(provider.capabilities.supportsJsonSchema).toBe(true);
+    });
+
+    it("does not assume strict structured output for unknown model names", () => {
+      const provider = new OpenAILLMProvider({ model: "custom-deployment" });
+      expect(provider.capabilitiesFor("custom-deployment")).toMatchObject({
+        supportsJsonSchema: false,
+        structuredOutputModes: ["text"],
+      });
+    });
+
+    it("does not advertise strict schemas for legacy JSON-mode models", () => {
+      const provider = new OpenAILLMProvider({ model: "gpt-4-turbo" });
+      expect(provider.capabilities.supportsJsonSchema).toBe(false);
+      expect(provider.capabilities.structuredOutputModes).toEqual(["text"]);
     });
 
     it("returns error response when no API key", async () => {

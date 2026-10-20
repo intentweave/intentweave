@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "1",
+  "contract": "fastify-route-registration-reference@1",
+  "repository": "Tony133/fastify-api-boilerplate-jwt",
+  "revision": "b659da7",
+  "description": "Hand-checked route registrations: each entry is the source line of a fastify.<verb>(...) call whose first argument is the relative path. Verified against the source on the stated revision and against the repository's own route tests, which call the full paths.",
+  "registrations": [
+    {
+      "file": "src/modules/index.routes.ts",
+      "line": 8,
+      "method": "GET",
+      "path": "/"
+    },
+    {
+      "file": "src/modules/index.routes.ts",
+      "line": 20,
+      "method": "GET",
+      "path": "/secure"
+    },
+    {
+      "file": "src/modules/register/register.routes.ts",
+      "line": 11,
+      "method": "POST",
+      "path": "/"
+    },
+    {
+      "file": "src/modules/forgot-password/forgot-password.routes.ts",
+      "line": 8,
+      "method": "POST",
+      "path": "/"
+    },
+    {
+      "file": "src/modules/users/users.routes.ts",
+      "line": 16,
+      "method": "POST",
+      "path": "/"
+    },
+    {
+      "file": "src/modules/users/users.routes.ts",
+      "line": 33,
+      "method": "GET",
+      "path": "/"
+    },
+    {
+      "file": "src/modules/users/users.routes.ts",
+      "line": 45,
+      "method": "GET",
+      "path": "/:id"
+    },
+    {
+      "file": "src/modules/users/users.routes.ts",
+      "line": 60,
+      "method": "PUT",
+      "path": "/:id"
+    },
+    {
+      "file": "src/modules/users/users.routes.ts",
+      "line": 80,
+      "method": "DELETE",
+      "path": "/:id"
+    },
+    {
+      "file": "src/modules/change-password/change-password.routes.ts",
+      "line": 11,
+      "method": "POST",
+      "path": "/"
+    },
+    {
+      "file": "src/modules/authentication/authentication.routes.ts",
+      "line": 19,
+      "method": "POST",
+      "path": "/login"
+    },
+    {
+      "file": "src/modules/authentication/authentication.routes.ts",
+      "line": 64,
+      "method": "POST",
+      "path": "/refresh-token"
+    },
+    {
+      "file": "src/modules/authentication/authentication.routes.ts",
+      "line": 96,
+      "method": "GET",
+      "path": "/is-authenticated"
+    },
+    {
+      "file": "src/modules/authentication/authentication.routes.ts",
+      "line": 116,
+      "method": "GET",
+      "path": "/user-authenticated"
+    }
+  ]
+}

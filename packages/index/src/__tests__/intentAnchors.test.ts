@@ -1,0 +1,356 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import Database from "@intentweave/sqlite-compat";
+import { fingerprint } from "../claims/canonical.js";
+import { IntentAnchorStore } from "../claims/intentAnchors.js";
+import { initSchema, migrateSchema25To26 } from "../schema.js";
+
+describe("IntentAnchorStore", () => {
+  let db: Database.Database;
+  let store: IntentAnchorStore;
+
+  /** Insert a Claim identity with one version whose statement is `value`. */
+  function insertClaim(
+    identityId: string,
+    value: unknown,
+    ordinal = 1,
+  ): string {
+    const versionId = `${identityId}:v${ordinal}`;
+    db.prepare(
+      `INSERT OR IGNORE INTO claim_identities
+         (id, parameter_identity_id, claim_type, scope, identity_key, created_at)
+       VALUES (?, 'param', 'parameter', 'repo', ?, 0)`,
+    ).run(identityId, identityId);
+    db.prepare(
+      `INSERT INTO claim_versions
+         (id, claim_identity_id, version_ordinal, normalized_statement_json,
+          assessment_policy_id, assessment_policy_version, repository_revision, created_at)
+       VALUES (?, ?, ?, ?, 'policy', '1', 'rev', ?)`,
+    ).run(versionId, identityId, ordinal, JSON.stringify(value), ordinal);
+    return versionId;
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    initSchema(db);
+    db.exec(
+      `INSERT INTO parameter_identities (id, canonical_key, created_at)
+       VALUES ('param', 'param', 0)`,
+    );
+    store = new IntentAnchorStore(db);
+  });
+
+  afterEach(() => db.close());
+
+  it("protects the current statement and records its fingerprint", () => {
+    const versionId = insertClaim("claim:timeout", { value: 1800 });
+    const anchor = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "reviewer",
+      createdAt: 10,
+    });
+    expect(anchor.claimVersionId).toBe(versionId);
+    expect(anchor.statementFingerprint).toBe(fingerprint({ value: 1800 }));
+    expect(anchor.authority).toBe("human");
+    expect(anchor.status).toBe("active");
+  });
+
+  it("is satisfied while the statement is unchanged", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["satisfied"]);
+  });
+
+  it("reports a conflict when a newer version changes the statement", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["intent_conflict"]);
+  });
+
+  it("reports a conflict when the anchored Claim is retired", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(),
+      retiredClaimIds: new Set(["claim:timeout"]),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["intent_conflict"]);
+  });
+
+  it("reports unresolved, never a silent pass, when the Claim was not evaluated", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(),
+      retiredClaimIds: new Set(),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["intent_unresolved"]);
+  });
+
+  it("supersedes the previous active anchor for the same Claim and scope", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const first = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    const second = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 20,
+      amendment: true,
+    });
+    expect(store.get(first.id)?.status).toBe("superseded");
+    expect(store.active("claim:timeout").map((a) => a.id)).toEqual([second.id]);
+  });
+
+  it("refuses to replace an active anchor without an amendment decision", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const first = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    expect(() =>
+      store.protect({
+        claimIdentityId: "claim:timeout",
+        actor: "automation",
+        createdAt: 20,
+      }),
+    ).toThrow(/already protected/);
+    // The refused call changes nothing: the original anchor stays active and unlinked.
+    expect(store.get(first.id)?.status).toBe("active");
+    expect(store.active("claim:timeout").map((a) => a.id)).toEqual([first.id]);
+  });
+
+  it("rejects a schema write that uses an unknown status", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const anchor = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    expect(() =>
+      db
+        .prepare(`UPDATE intent_anchors SET status = 'bogus' WHERE id = ?`)
+        .run(anchor.id),
+    ).toThrow();
+  });
+
+  /** Record the current assessment of the newest version of a Claim identity. */
+  function setAssessment(
+    claimIdentityId: string,
+    status: "supported" | "refuted" | "contested" | "inconclusive",
+  ): void {
+    const version = store.latestVersion(claimIdentityId)!;
+    db.prepare(
+      `INSERT INTO claim_assessments
+         (id, claim_version_id, assessment_key, epistemic_status, repository_revision,
+          reference_key, is_current, created_at)
+       VALUES (?, ?, ?, ?, 'rev', NULL, 1, 0)`,
+    ).run(
+      `assessment:${claimIdentityId}:${status}`,
+      version.id,
+      `key:${claimIdentityId}:${status}`,
+      status,
+    );
+  }
+
+  it("reports the current assessment status for conflict decisions", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    setAssessment("claim:timeout", "refuted");
+    expect(store.currentAssessmentStatus("claim:timeout")).toBe("refuted");
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["intent_conflict"]);
+  });
+
+  it("accepts an amendment: a new anchor supersedes the old one and is satisfied", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const first = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    setAssessment("claim:timeout", "supported");
+    const amended = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      rationale: "longer sessions are intended",
+      scope: first.scope,
+      createdAt: 20,
+      amendment: true,
+    });
+    expect(store.get(first.id)?.status).toBe("superseded");
+    expect(amended.statementFingerprint).toBe(fingerprint({ value: 3600 }));
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(results.map((r) => r.outcome)).toEqual(["satisfied"]);
+  });
+
+  it("accepts a declared follow-up only with a supported assessment", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    setAssessment("claim:timeout", "supported");
+    const followUps = [
+      {
+        claimIdentityId: "claim:timeout",
+        statementFingerprint: fingerprint({ value: 3600 }),
+      },
+    ];
+    const accepted = store.evaluate({
+      followUps,
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    expect(accepted.map((r) => r.outcome)).toEqual(["satisfied"]);
+    expect(accepted[0]!.reason).toContain("declared follow-up");
+  });
+
+  it("keeps a conflict when the declared follow-up is refuted or not declared", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    setAssessment("claim:timeout", "refuted");
+    const declared = [
+      {
+        claimIdentityId: "claim:timeout",
+        statementFingerprint: fingerprint({ value: 3600 }),
+      },
+    ];
+    expect(
+      store
+        .evaluate({
+          followUps: declared,
+          evaluatedClaimIds: new Set(["claim:timeout"]),
+          retiredClaimIds: new Set(),
+        })
+        .map((r) => r.outcome),
+    ).toEqual(["intent_conflict"]);
+    expect(
+      store
+        .evaluate({
+          evaluatedClaimIds: new Set(["claim:timeout"]),
+          retiredClaimIds: new Set(),
+        })
+        .map((r) => r.outcome),
+    ).toEqual(["intent_conflict"]);
+  });
+
+  it("records an AI-proposed anchor, and its conflict is not resolved by the store", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const proposed = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "model-proposal",
+      authority: "ai-proposed",
+      createdAt: 10,
+    });
+    expect(proposed.authority).toBe("ai-proposed");
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    const results = store.evaluate({
+      evaluatedClaimIds: new Set(["claim:timeout"]),
+      retiredClaimIds: new Set(),
+    });
+    // Without a recorded person's decision the conflict stays open.
+    expect(results.map((r) => r.outcome)).toEqual(["intent_conflict"]);
+  });
+
+  it("keeps anchors, their supersession, and the single active anchor through the schema 26 rebuild", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const first = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    const second = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      amendment: true,
+      createdAt: 20,
+    });
+    migrateSchema25To26(db);
+    expect(store.get(first.id)?.status).toBe("superseded");
+    expect(
+      db
+        .prepare(
+          `SELECT superseded_by_anchor_id AS link FROM intent_anchors WHERE id = ?`,
+        )
+        .get(first.id),
+    ).toEqual({ link: second.id });
+    expect(store.active("claim:timeout").map((a) => a.id)).toEqual([second.id]);
+    // The rebuilt table still holds one active anchor per Claim and scope.
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO intent_anchors (id, claim_identity_id, claim_version_id, statement_fingerprint, scope, mode, authority, source, status, actor, created_at)
+           VALUES ('anchor:dup', 'claim:timeout', 'claim:timeout:v2', 'x', 'claim', 'protect', 'human', 'review', 'active', 'r', 0)`,
+        )
+        .run(),
+    ).toThrow();
+    // The rebuilt table accepts the new authority and still rejects unknown values.
+    expect(() =>
+      db
+        .prepare(
+          `UPDATE intent_anchors SET authority = 'ai-proposed' WHERE id = ?`,
+        )
+        .run(second.id),
+    ).not.toThrow();
+    expect(() =>
+      db
+        .prepare(`UPDATE intent_anchors SET authority = 'bogus' WHERE id = ?`)
+        .run(second.id),
+    ).toThrow();
+    expect(
+      db.prepare(`SELECT value FROM _meta WHERE key = 'schema_version'`).get(),
+    ).toEqual({ value: "26" });
+  });
+});

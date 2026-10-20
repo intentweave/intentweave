@@ -4,7 +4,7 @@
 /**
  * Extended RAG Context Builder
  *
- * Shared module for building structured knowledge-graph context from Neo4j.
+ * Shared module for building structured knowledge-graph context from a graph runner.
  * Used by both the CLI `iw context` command and the MCP `kg_context` tool.
  *
  * Improvements over the original inlined implementation:
@@ -20,9 +20,9 @@
 // =============================================================================
 
 /**
- * Abstraction over a Neo4j connection — callers provide their own session.
+ * Abstraction over a graph query connection — callers provide their own runner.
  */
-export interface Neo4jRunner {
+export interface GraphRunner {
   /** Execute a Cypher query and return plain-object rows */
   run(
     cypher: string,
@@ -109,8 +109,8 @@ export interface ContextBundle {
  * Options for context retrieval.
  */
 export interface ContextOptions {
-  /** Neo4j query runner */
-  runner: Neo4jRunner;
+  /** Graph query runner */
+  runner: GraphRunner;
   /** Session ID to scope queries */
   sessionId: string;
   /** Max entities to return */
@@ -382,7 +382,7 @@ async function expandAndEnrich(
  * into it and attach the rationale text.
  */
 async function enrichWithRationales(
-  runner: Neo4jRunner,
+  runner: GraphRunner,
   sessionId: string,
   relationships: ContextRelationship[],
   entityNames: string[],
@@ -435,7 +435,7 @@ async function enrichWithRationales(
  * Enrich entities with provenance (source document) information.
  */
 async function enrichWithProvenance(
-  runner: Neo4jRunner,
+  runner: GraphRunner,
   sessionId: string,
   entities: ContextEntity[],
 ): Promise<void> {
@@ -472,7 +472,7 @@ async function enrichWithProvenance(
  * Enrich entities with short descriptions from raw triple rationales.
  */
 export async function enrichWithDescriptions(
-  runner: Neo4jRunner,
+  runner: GraphRunner,
   sessionId: string,
   entities: ContextEntity[],
 ): Promise<void> {
@@ -513,7 +513,7 @@ export async function enrichWithDescriptions(
  * to each entity in the bundle.
  */
 export async function enrichWithCodeRefs(
-  runner: Neo4jRunner,
+  runner: GraphRunner,
   sessionId: string,
   entities: ContextEntity[],
 ): Promise<void> {
@@ -564,7 +564,7 @@ export async function enrichWithCodeRefs(
 // =============================================================================
 
 async function fetchEntities(
-  runner: Neo4jRunner,
+  runner: GraphRunner,
   cypher: string,
   params: Record<string, unknown>,
 ): Promise<ContextEntity[]> {
@@ -582,7 +582,7 @@ async function fetchEntities(
 }
 
 async function fetchRelationships(
-  runner: Neo4jRunner,
+  runner: GraphRunner,
   cypher: string,
   params: Record<string, unknown>,
 ): Promise<ContextRelationship[]> {

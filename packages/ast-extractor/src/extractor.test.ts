@@ -16,6 +16,34 @@ import {
 describe("AstExtractor", () => {
   const extractor = createExtractor(process.cwd());
 
+  describe("member call structure", () => {
+    it("records receiver identifier and raw argument texts", () => {
+      const code = `
+        fastify.get("/users", { preHandler: [fastify.checkToken] }, handler);
+        helper.run(1, "two");
+        plain();
+      `;
+      const result = extractor.extractFromString(
+        code,
+        "routes.ts",
+        "typescript",
+      );
+      const get = result.calls?.find((call) => call.calleeName === "get");
+      expect(get?.receiverName).toBe("fastify");
+      expect(get?.argumentTexts).toEqual([
+        '"/users"',
+        "{ preHandler: [fastify.checkToken] }",
+        "handler",
+      ]);
+      const run = result.calls?.find((call) => call.calleeName === "run");
+      expect(run?.argumentTexts).toEqual(["1", '"two"']);
+      const plainCall = result.calls?.find(
+        (call) => call.calleeName === "plain",
+      );
+      expect(plainCall?.receiverName).toBeUndefined();
+    });
+  });
+
   describe("extractFromString", () => {
     it("should extract function declarations", () => {
       const code = `
@@ -86,6 +114,48 @@ describe("AstExtractor", () => {
       const getInstance = result.symbols.find((s) => s.name === "getInstance");
       expect(getInstance).toBeDefined();
       expect(getInstance?.isStatic).toBe(true);
+    });
+
+    it("extracts structured decorators only from their attached class and method", () => {
+      const code = `
+        @Controller("admin")
+        export class AdminController {
+          @Post("users")
+          @UseGuards(AuthGuard, RolesGuard)
+          createUser(): void {}
+
+          @Get("health")
+          health(): void {}
+        }
+      `;
+
+      const result = extractor.extractFromString(
+        code,
+        "admin.controller.ts",
+        "typescript",
+      );
+      const controller = result.symbols.find(
+        (symbol) => symbol.name === "AdminController",
+      );
+      const createUser = result.symbols.find(
+        (symbol) => symbol.name === "createUser",
+      );
+      const health = result.symbols.find((symbol) => symbol.name === "health");
+
+      expect(controller?.decoratorDetails).toEqual([
+        {
+          name: "Controller",
+          expression: 'Controller("admin")',
+          arguments: ['"admin"'],
+        },
+      ]);
+      expect(createUser?.decorators).toEqual(["Post", "UseGuards"]);
+      expect(createUser?.decoratorDetails?.[1]).toEqual({
+        name: "UseGuards",
+        expression: "UseGuards(AuthGuard, RolesGuard)",
+        arguments: ["AuthGuard", "RolesGuard"],
+      });
+      expect(health?.decorators).toEqual(["Get"]);
     });
 
     it("should extract interface declarations", () => {

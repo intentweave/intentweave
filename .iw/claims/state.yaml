@@ -1,0 +1,16 @@
+# IntentWeave portable Claims governance state.
+# This file is the Git-tracked source of effective decisions; .iw/index.db is the runtime projection.
+schemaVersion: "1"
+policies: {}
+candidateDecisions:
+  dependency-conformance:74d9519d613311d9e52e1b169aea63468bd0baf4d9cf19c98823ac0e0e7f3f26:
+    decision: promote
+    candidateFingerprint: 1849d6c1c4e7ad47228f084fb4876538d07e1fa3e2af3292bb4105b0bfb92ef6
+    actor:
+      kind: human
+      id: benjamin
+    decidedAt: "2026-08-24T20:42:06.538Z"
+    rationale: This is an intentional architecture boundary
+subjectBindings: {}
+assessmentReviews: {}
+baselineAcceptances: {}

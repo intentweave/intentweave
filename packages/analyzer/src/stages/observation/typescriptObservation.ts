@@ -1,0 +1,318 @@
+// Copyright 2025-2026 Benjamin Becker
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * TypeScript and JavaScript observation (Phase O1).
+ *
+ * Produces the generic observation kinds from source: file, module, symbol,
+ * dependency (from package.json), and call-site (any call with at least one literal
+ * string argument). It does not interpret any of them. Claim families decide what
+ * an observation means.
+ *
+ * Identity keys follow Amendment A: they are built from kind and defining locator,
+ * never from a CARI id. Same-name declarations in one file get an ordinal suffix in
+ * source order, so keys stay unique.
+ */
+
+import { createHash } from "node:crypto";
+import * as fs from "fs";
+import * as path from "path";
+import {
+  createExtractor,
+  type ExtractedSymbol,
+} from "@intentweave/ast-extractor";
+
+type Extractor = ReturnType<typeof createExtractor>;
+import type {
+  LanguageObservation,
+  ObservationCapability,
+  ObservationKind,
+  ObservedRecord,
+} from "../languageRegistry.js";
+
+export const TYPESCRIPT_OBSERVATION_CONTRACT_VERSION = "1";
+
+/** Thrown when a file cannot be read or parsed, so the kind is partial. */
+export class ObservationParseError extends Error {
+  constructor(
+    readonly filePath: string,
+    message: string,
+  ) {
+    super(`${filePath}: ${message}`);
+    this.name = "ObservationParseError";
+  }
+}
+
+function languageFor(
+  filePath: string,
+): "typescript" | "javascript" | "tsx" | "jsx" {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".tsx":
+      return "tsx";
+    case ".jsx":
+      return "jsx";
+    case ".js":
+    case ".mjs":
+    case ".cjs":
+      return "javascript";
+    default:
+      return "typescript";
+  }
+}
+
+/**
+ * Source rewrites for two type constructs that the tree-sitter TypeScript grammar
+ * in use rejects: labelled tuple members (`[subject: string]`) and an inline import
+ * type used as an array element (`import("./a.js").T[]`). Each rewrite replaces the
+ * text with spaces of the same length, so offsets and line numbers do not change.
+ * They are applied only to a file that already fails to parse.
+ */
+export function normalizeGrammarGaps(content: string): string {
+  return content
+    .replace(/import\((["'])[^"'\n]*\1\)\.(?=[\w$]+\s*\[\])/g, (match) =>
+      " ".repeat(match.length),
+    )
+    .split("\n")
+    .map((line) =>
+      /:\s*\[|<\s*\[/.test(line)
+        ? line.replace(
+            /([[,]\s*)([A-Za-z_$][\w$]*\??)(\s*):(?!:)/g,
+            (_match, lead: string, name: string, space: string) =>
+              lead + " ".repeat(name.length + space.length + 1),
+          )
+        : line,
+    )
+    .join("\n");
+}
+
+/**
+ * Extract a file, retrying with the grammar-gap rewrites only when the original
+ * source reports parse errors. A clean file is never rewritten.
+ */
+function extractForObservation(
+  extractor: Extractor,
+  content: string,
+  relativePath: string,
+) {
+  const language = languageFor(relativePath);
+  const first = extractor.extractFromString(content, relativePath, language);
+  if (!first.errors?.length) return first;
+  const normalized = normalizeGrammarGaps(content);
+  if (normalized === content) return first;
+  return extractor.extractFromString(normalized, relativePath, language);
+}
+
+/** Short, stable digest of a call's literal arguments, in argument order. */
+function literalDigest(literals: readonly string[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(literals))
+    .digest("hex")
+    .slice(0, 12);
+}
+
+/** Literal string argument: unquoted text, or null when not a plain literal. */
+function literalArgument(text: string): string | null {
+  const quote = text[0];
+  if (!quote || !["'", '"', "`"].includes(quote)) return null;
+  if (text.length < 2 || text.at(-1) !== quote) return null;
+  const value = text.slice(1, -1);
+  if (quote === "`" && value.includes("${")) return null;
+  return value;
+}
+
+/** Disambiguate keys that would otherwise repeat, in source order. */
+function withOrdinals(
+  records: Array<{ base: string; record: ObservedRecord }>,
+): ObservedRecord[] {
+  const totals = new Map<string, number>();
+  for (const { base } of records) totals.set(base, (totals.get(base) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return records.map(({ base, record }) => {
+    const ordinal = (seen.get(base) ?? 0) + 1;
+    seen.set(base, ordinal);
+    const duplicate = (totals.get(base) ?? 1) > 1;
+    return { ...record, identityKey: duplicate ? `${base}~${ordinal}` : base };
+  });
+}
+
+export function createTypeScriptObservation(
+  workspaceRoot: string,
+): LanguageObservation {
+  let extractor: ReturnType<typeof createExtractor> | null = null;
+  const getExtractor = () => {
+    extractor ??= createExtractor(workspaceRoot);
+    return extractor;
+  };
+
+  const capabilities: Record<ObservationKind, ObservationCapability> = {
+    file: { status: "observed" },
+    module: { status: "observed" },
+    symbol: { status: "observed" },
+    dependency: { status: "observed" },
+    "call-site": { status: "observed" },
+  };
+
+  return {
+    contractVersion: TYPESCRIPT_OBSERVATION_CONTRACT_VERSION,
+    capabilities,
+
+    observeFile(root, relativePath) {
+      const absolute = path.join(root, relativePath);
+      let content: string;
+      try {
+        content = fs.readFileSync(absolute, "utf-8");
+      } catch (error) {
+        throw new ObservationParseError(
+          relativePath,
+          `unreadable: ${String(error)}`,
+        );
+      }
+      const extraction = extractForObservation(
+        getExtractor(),
+        content,
+        relativePath,
+      );
+      if (extraction.errors?.length) {
+        throw new ObservationParseError(relativePath, "parse errors");
+      }
+
+      const records: ObservedRecord[] = [];
+      records.push({
+        kind: "file",
+        identityKey: `file:${relativePath}`,
+        locator: { filePath: relativePath },
+        payload: { extension: path.extname(relativePath) },
+      });
+
+      const topLevel = extraction.symbols.filter((symbol) => !symbol.parent);
+      const exported = topLevel.filter((symbol) => symbol.isExported);
+      if (exported.length > 0) {
+        records.push({
+          kind: "module",
+          identityKey: `module:${relativePath}`,
+          locator: { filePath: relativePath },
+          payload: {
+            exportNames: exported.map((symbol) => symbol.name).sort(),
+          },
+        });
+      }
+
+      const symbolRecords = extraction.symbols.map(
+        (symbol: ExtractedSymbol) => {
+          const container = symbol.parent ?? null;
+          const qualified = container
+            ? `${container}.${symbol.name}`
+            : symbol.name;
+          return {
+            base: `symbol:${symbol.kind}:${relativePath}#${qualified}`,
+            record: {
+              kind: "symbol" as const,
+              identityKey: "",
+              locator: {
+                filePath: relativePath,
+                ...(container ? { container } : {}),
+                line: symbol.range.startLine,
+                endLine: symbol.range.endLine,
+              },
+              payload: {
+                name: symbol.name,
+                symbolKind: symbol.kind,
+                container,
+                signature: symbol.signature ?? null,
+                exported: symbol.isExported,
+                documented: Boolean(symbol.docSummary),
+                deprecated: symbol.deprecated === true,
+              },
+            },
+          };
+        },
+      );
+      records.push(...withOrdinals(symbolRecords));
+
+      // The innermost symbol whose range contains a call. The extractor reports no
+      // enclosing name for calls inside class methods, so the range is used instead.
+      const enclosingOf = (line: number): string => {
+        let best: ExtractedSymbol | null = null;
+        for (const symbol of extraction.symbols) {
+          if (symbol.range.startLine > line || symbol.range.endLine < line)
+            continue;
+          if (
+            !best ||
+            symbol.range.endLine - symbol.range.startLine <
+              best.range.endLine - best.range.startLine
+          ) {
+            best = symbol;
+          }
+        }
+        if (!best) return "<module>";
+        return best.parent ? `${best.parent}.${best.name}` : best.name;
+      };
+      // Source order, so the ordinal suffix of repeated call sites is stable.
+      const callRecords = [...(extraction.calls ?? [])].sort(
+        (left, right) => left.callerLine - right.callerLine,
+      );
+      const callSites = callRecords
+        .map((call) => {
+          const literals = (call.argumentTexts ?? [])
+            .map(literalArgument)
+            .filter((value): value is string => value !== null);
+          if (literals.length === 0) return null;
+          const callee = call.calleeId ?? call.calleeName;
+          return {
+            // The identity is the enclosing symbol, the callee, and a digest of the literal
+            // arguments. The line is kept in the locator, so an edit above a call does not
+            // churn it, and a call whose literals change is removed and added, not changed.
+            base: `call-site:${relativePath}#${enclosingOf(call.callerLine)}:${callee}:${literalDigest(literals)}`,
+            record: {
+              kind: "call-site" as const,
+              identityKey: "",
+              locator: { filePath: relativePath, line: call.callerLine },
+              payload: {
+                callee,
+                isMethod: call.isMethod,
+                receiver: call.receiverName ?? null,
+                caller: call.callerName,
+                literalArguments: literals,
+                argumentCount: call.argumentTexts?.length ?? 0,
+              },
+            },
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+      records.push(...withOrdinals(callSites));
+      return records;
+    },
+
+    observeManifest(root) {
+      const manifestPath = path.join(root, "package.json");
+      if (!fs.existsSync(manifestPath)) return [];
+      let manifest: {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+      } catch (error) {
+        throw new ObservationParseError(
+          "package.json",
+          `invalid JSON: ${String(error)}`,
+        );
+      }
+      const dependencies: ObservedRecord[] = [];
+      for (const [section, entries] of [
+        ["dependencies", manifest.dependencies ?? {}],
+        ["devDependencies", manifest.devDependencies ?? {}],
+      ] as const) {
+        for (const [name, range] of Object.entries(entries)) {
+          dependencies.push({
+            kind: "dependency",
+            identityKey: `dependency:${name}@package.json`,
+            locator: { filePath: "package.json" },
+            payload: { name, range, section },
+          });
+        }
+      }
+      return dependencies;
+    },
+  };
+}

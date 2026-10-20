@@ -5,7 +5,7 @@
  * @intentweave/cypher-lite — Lightweight Cypher subset parser and SQLite transpiler.
  *
  * Provides a Cypher-compatible query interface backed by SQLite, eliminating
- * the need for Neo4j in lightweight deployments. The engine supports the exact
+ * the need for a graph server in lightweight deployments. The engine supports the exact
  * Cypher subset used by IntentWeave's KG operations.
  *
  * @example

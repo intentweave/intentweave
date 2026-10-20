@@ -255,6 +255,12 @@ export interface CariConfig {
   /** Output path for the SQLite database (default: .iw/index.db) */
   outputPath?: string;
 
+  /** Experimental KWX chunk worker count (1 keeps the serial implementation). */
+  kwxWorkers?: number;
+
+  /** Collect measurement-only synchronous SQLite writer metrics. */
+  measureSinkMetrics?: boolean;
+
   /**
    * Maximum file size in bytes for AX extraction.
    * Files larger than this will be skipped and recorded with indexed=false.
@@ -573,6 +579,31 @@ async function discoverFilesRecursive(
   return [...new Set(files)].sort();
 }
 
+/**
+ * Document files a build reads for annotations, discovered the way the facade does in
+ * single-root mode (exclude defaults plus `.iwignore`). Shared with the hybrid path.
+ */
+export async function discoverBuildDocumentFiles(opts: {
+  paths: string[];
+  workspaceRoot: string;
+  include?: string[];
+  exclude?: string[];
+  includeAllFiles?: boolean;
+  maxFileSize?: number;
+}): Promise<string[]> {
+  const iwIgnorePatterns = await loadIwIgnore(opts.workspaceRoot);
+  const excludePatterns = buildExcludeList(
+    opts.exclude ?? [],
+    iwIgnorePatterns,
+  );
+  return discoverFiles(opts.paths, opts.workspaceRoot, {
+    include: opts.include,
+    exclude: excludePatterns,
+    includeAllFiles: opts.includeAllFiles ?? false,
+    maxFileSize: opts.maxFileSize ?? 262144,
+  });
+}
+
 function toArtifactId(filePath: string, cwd: string): string {
   const rel = path.relative(cwd, filePath);
   return rel.replace(/[/\\]/g, ".").replace(/\.[^.]+$/, "");
@@ -585,7 +616,7 @@ function toArtifactId(filePath: string, cwd: string): string {
  * Handles single-line slash comments, block slash-star comments,
  * and Python/shell hash comments.
  */
-function extractSourceCommentContent(content: string): string {
+export function extractSourceCommentContent(content: string): string {
   const lines = content.split("\n");
   const result: string[] = [];
   let inBlock = false;
@@ -652,9 +683,15 @@ export async function buildFromPaths(
     session = path.basename(workspaceRoot),
     outputPath,
     maxFileSize = 262144,
+    kwxWorkers = 1,
+    measureSinkMetrics = false,
     log = () => {},
     onProgress,
   } = config;
+
+  if (!Number.isInteger(kwxWorkers) || kwxWorkers < 1 || kwxWorkers > 8) {
+    throw new Error("kwxWorkers must be an integer from 1 through 8.");
+  }
 
   // ── Resolve roots ────────────────────────────────────────────
   // When `roots` is provided it drives both AX (code roots) and file
@@ -816,6 +853,11 @@ export async function buildFromPaths(
     now: () => new Date(),
     timestamp: () => new Date().toISOString(),
   } as unknown;
+  const kwxWorkerPool =
+    kwxWorkers > 1 ? analyzer.createKwxChunkWorkerPool(kwxWorkers) : undefined;
+  if (kwxWorkers > 1) {
+    log(`KWX worker experiment: ${kwxWorkers} workers across chunk tasks`);
+  }
 
   for (const filePath of docFiles) {
     const relPath = path.relative(primaryCodeRoot, filePath);
@@ -837,11 +879,16 @@ export async function buildFromPaths(
       );
       const kwxOutput = await analyzer.runKwxStage(
         { inOutput },
-        { depth, dictionary: symbolDictionary },
+        {
+          depth,
+          dictionary: symbolDictionary,
+          ...(kwxWorkerPool ? { workerPool: kwxWorkerPool } : {}),
+        },
       );
       kwxOutputs.push(kwxOutput);
     } catch (error) {
       const base = error instanceof Error ? error.message : String(error);
+      await kwxWorkerPool?.close();
       throw new Error(`KWX failed for ${relPath}: ${base}`);
     }
   }
@@ -894,14 +941,20 @@ export async function buildFromPaths(
       const kwxOutput = await analyzer.runKwxStage(
         { inOutput },
         // Always use full depth for comments — they're structured text
-        { depth: "full", dictionary: symbolDictionary },
+        {
+          depth: "full",
+          dictionary: symbolDictionary,
+          ...(kwxWorkerPool ? { workerPool: kwxWorkerPool } : {}),
+        },
       );
       kwxOutputs.push(kwxOutput);
       srcCommentCount++;
     } catch {
+      kwxWorkerPool?.assertHealthy();
       // Skip files that can't be read or parsed
     }
   }
+  await kwxWorkerPool?.close();
   if (srcCommentCount > 0) {
     log(
       `KWX-comments: processed comments from ${srcCommentCount} source files`,
@@ -996,6 +1049,7 @@ export async function buildFromPaths(
     depth,
     outputPath,
     log,
+    measureSinkMetrics,
     docGroupOverride:
       fileGroupOverride.size > 0 ? fileGroupOverride : undefined,
   };

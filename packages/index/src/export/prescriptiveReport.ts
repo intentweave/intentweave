@@ -255,8 +255,6 @@ export interface InsightsDocumentation {
 export interface InsightsLivingScore {
   score: number;
   grade: "A" | "B" | "C" | "D" | "F";
-  specCoverage: { score: number; available: boolean; detail: string };
-  constraintConsistency: { score: number; available: boolean; detail: string };
   docFreshness: { score: number; available: boolean; detail: string };
   archConformance: { score: number; available: boolean; detail: string };
 }

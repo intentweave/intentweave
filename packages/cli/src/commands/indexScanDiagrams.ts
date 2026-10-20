@@ -184,7 +184,7 @@ const SYSTEM_PROMPT = `You are an architecture extraction engine. Given a diagra
 
 Rules:
 - Only include named architectural elements, not CLI flags, file paths, durations, or prose text
-- Normalize component names to CamelCase or short uppercase acronyms (e.g. "KWG", "AuthService", "Neo4j")
+- Normalize component names to CamelCase or short uppercase acronyms (e.g. "KWG", "AuthService", "PostgreSQL")
 - A flow is a directed dependency, data flow, or call relationship
 - If the diagram is bidirectional, emit both directions as separate flows
 - If you cannot determine direction, omit the flow

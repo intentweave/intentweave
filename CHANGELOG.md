@@ -6,6 +6,177 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
+- **Native build failures are errors** — `index build` fails when the native binary fails,
+  and names the opt-in. `CARI_ALLOW_TS_FALLBACK=1` runs the TypeScript pipeline instead.
+- **Native symbols and annotations match TypeScript exactly** — all 7,700 symbols on this
+  repository have the same identity, kind, container, export status and fields, and all 26,305
+  annotation rows match. Covered: declarations nested in blocks, exported variables, nested
+  type aliases, namespace bodies, and class members inheriting export from their class.
+- **Native build with `indexAllFiles`** — the native engine builds repositories that set
+  `indexAllFiles`. Their document list is discovered as the TypeScript build does, and the
+  annotations match it exactly (96,002 rows on this repository with the setting on).
+- **Files table matches TypeScript** — the native build writes every file that git history
+  knows about, the same git-derived columns (churn and last-modified only for hotspots,
+  owners for files with history), the same line counts, and the same content hashes.
+- **Brace renames** — the TypeScript history parser resolved `dir/{old => new}` renames to
+  `new}`, so a renamed file appeared under a wrong path. It now keeps the directory.
+- **Hybrid native index** — `index build` uses the native engine for symbols, imports, calls and
+  file rows, and the TypeScript keyword stages write the annotations on top. On this
+  repository the documentary, structural and behavioural intent rules give identical results on
+  both engines, and a full native build takes about 5 s instead of about 12 s.
+- **Claim evidence cache** — parsed claim evidence is cached under `.iw/cache/claim-evidence`,
+  keyed by file content and the extractor's build. A second `claims check` is faster with the
+  same output.
+- **Native symbol parity** — the native symbol set matches the TypeScript index for 7,688 of
+  7,700 symbols on this repository. Variables are symbols only when they hold a function,
+  nested function declarations and promoted variables are extracted under the same rules,
+  private class fields are kept, and constructors, getters and setters are methods.
+- **Faster claim discovery** — the mention test for public-symbol documentation uses a name
+  index instead of a regular expression per symbol. `claims check` on this repository went
+  from about 12 s to about 7 s with identical output.
+- **Native call graph parity** — `symbol_calls` matches the TypeScript index exactly on this
+  repository, so behavioural rules give identical results on both engines.
+- **Untracked native binary** — `packages/cari-native-darwin-arm64/bin/` is no longer
+  committed. Release CI builds `cari-build` and places it in the package before publishing.
+  A stale committed binary had taken precedence over fresh development builds.
+- **Removed Claim subjects are conflicts** — a protected Claim that is absent from the
+  index after a rebuild reports `intent_conflict`, because its promoted subject is gone.
+- **Native CARI parity for Claims** — the Rust `cari-build` now writes the same symbol
+  identities, signatures, doc summaries, body and structure hashes, export status,
+  deprecation flags, `implements` lists, import targets, and the file-size and
+  file-discovery rules of the TypeScript AX stage. A replay of 49 commits and a base check of 100
+  protected Claims give identical outcomes on both engines. Symbol sets still differ
+  for some function and variable declarations (365 TypeScript-only and 245 native-only
+  symbols in this repository). The shipped `cari-build` binary predates these changes
+  and must be rebuilt before the default native path matches.
+- **Anchors whose Claim is missing are reported** — `claims check` reports an active
+  anchor whose Claim is not in the index as `intent_unresolved`, instead of dropping it.
+- **Observed changes against anchors** — `iw claims observations anchors --since <ref>` judges
+  observed changes against Intent Anchors through the Subject bridge. A Claim re-assessed at
+  HEAD is judged by the usual rules. An impact that has not been re-assessed is unresolved
+  until `claims check` runs. `claims check` is unchanged.
+- **Abstract Intent Anchors (schema 28, portable state 7)** — `iw claims intents
+realize|unrealize|protect|list` protects an intent with no statement of its own. The
+  intent holds while its realizer set is unchanged and every realizer is supported. A changed
+  set is a conflict and needs `--amendment`. A person records the realizers, and no model is
+  called.
+- **Claim Relations (schema 27, portable state 6)** — `iw claims relations add|list|retire`
+  records `realizes`, `refines`, `constrains`, or `warrants` edges between Claims. A protected
+  Claim holds only while its realizers are supported. Self-edges, duplicate active edges, and
+  realization cycles are refused. Abstract anchors are not included yet.
+- **Intent Anchor authority (schema 26)** — the anchor authority can be `ai-proposed` in
+  the database and in portable state. Nothing creates such an anchor yet, and a conflict on
+  one is still decided by a person.
+- **Declared follow-ups are scoped to their change set** — a declaration in
+  `.iw/claims/intent.yaml` accepts a statement change only when it is new relative to the
+  merge base given by `--since`. Without `--since`, declarations authorize nothing, and the
+  check reports why (`intentFollowUpNote`). Previously any standing declaration accepted
+  the change on every check.
+- **Protected anchors are never replaced silently** — protecting a Claim that already has an
+  active Intent Anchor now fails with a clear message and records nothing. Replacing an anchor
+  requires an `accept_amendment` decision, so an overwrite is always a recorded decision.
+- **Intent Anchors (first slice)** — `iw claims review --purpose protect` records a
+  human decision that protects an accepted Claim's current statement. Schema 24 adds
+  `intent_anchors`, and portable state schema 3 keeps anchors across index rebuilds.
+  `iw claims check` evaluates anchors in `.iw/claims/intent.yaml`
+  (`mode: off | report | gate`, default `report`): a changed statement, a refuted or
+  contested assessment, or a retired Claim is `intent_conflict`, and an inconclusive
+  assessment is `intent_unresolved`. Only `gate` changes exit codes. Claims without a
+  protecting anchor keep today's behaviour.
+  `iw claims conflicts resolve --decision accept_amendment` protects the current
+  statement of a supported Claim and supersedes the old anchor. `reject_change` and
+  `grant_exception` are not implemented yet.
+  A statement change is accepted automatically when `.iw/claims/intent.yaml` declares
+  it as a `followUps` entry (Claim identity and exact new statement fingerprint) and
+  the current assessment is supported. A declaration never lifts a refuted assessment.
+  An accepted follow-up records an accepted review of the new statement (origin
+  `follow-up`, actor `intent-follow-up`), so the protected Claim needs no separate
+  Unprotected Claims that change still need review in report mode. In gate mode they
+  do not block.
+- **Conflict decisions (G5.4)** — `iw claims conflicts resolve --decision reject_change`
+  records a rejected change: the conflict stays active until the statement is
+  corrected. `--decision grant_exception --rationale --expires` records a time-limited
+  exception to the exact statement change: it is reported as `intent_excepted` until
+  the expiry, after which the conflict is active again. Expiry is judged at the head
+  commit date, or at `claims check --as-of`. Decisions are stored in portable state
+  schema 4 and survive an index rebuild. Portable state moves to schema 5 for the
+  `ai-proposed` anchor authority; schemas 1 to 4 still read.
+- **Generalized repository Claims lifecycle** — schema versions 17-20 add
+  durable Subjects, Subject continuity, append-only Claim Candidates,
+  Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference
+  artifacts, and Claim Origin provenance (reconstructed or declared) while
+  preserving the Parameter Claims V1 identities and history.
+- **Candidate curation CLI** — `iw claims discover`, `claims candidates list`,
+  `claims candidates triage`, and `claims candidates review` separate possible
+  repository statements from active governed Claims. Effective human and Policy
+  decisions remain explainable and repository-portable.
+- **Non-Parameter Claim families** — deterministic end-to-end slices now cover
+  public Symbol documentation, bounded NestJS Endpoint authentication, and
+  Architecture import-pattern conformance, including Git continuity,
+  materiality, `--since`, selective Review reopen, and Explain.
+- **Unified Intent gate** — `iw intent check` evaluates promoted Claims through
+  the same Runtime as `iw claims check` and avoids reporting governed
+  Architecture violations twice.
+- **Structured Inference v2** — the provider contract now preserves refusal,
+  content filtering, truncation, typed transport failures, effective-model and
+  request provenance, and detailed usage metadata. Local JSON Schema validation
+  remains mandatory for model-backed Claims adapters.
+- **Grounded semantic correlation** — `iw claims discover --semantic` runs
+  Symbol, Endpoint, and cross-artifact correlation adapters through one
+  registry. Adapters resolve ambiguous references to existing Evidence and
+  Subject identities, are limited to `probable` confidence, cache results
+  append-only, and never promote a Candidate or run in `claims check` or CI.
+  Public Symbol continuity proposals are grounded the same way.
+- **Candidate recommendations (opt-in)** — `iw claims candidates recommend
+--semantic` produces grounded triage recommendations for individual
+  Candidates (`--candidate`) or bounded batches (`--batch`). Recommendations are
+  persisted as non-effective Reviews, and a human or Policy decision can cite
+  one with `--based-on-recommendation`. Batches enforce token and cost budgets,
+  record usage explicitly, and return separate cached, failed, cancelled, and
+  budget-deferred counts.
+- **Context preview and provider allowlist** — `--preview` shows the exact
+  Candidate context that would leave the local process, with no model or network
+  call. Providers are opt-in through `.iw/claims/inference.yaml`, and configured
+  sensitive paths and secret patterns are redacted before request construction.
+- **Portable Claims state v2** — `.iw/claims/state.yaml` carries effective
+  Candidate decisions, Subject bindings, Assessment Reviews, Claim Origins, and
+  stable recommendation bases, so a fresh checkout reproduces Explain output
+  without a provider.
+
+### Changed
+
+- **Unbound Claims Discovery is Candidate-first** — newly discovered unbound
+  findings no longer become active Claims merely because they were observed.
+  Only explicit bindings, compatibility Policies, human promotion, or another
+  enabled versioned Candidate Policy activate governance and CI behavior.
+- **Knowledge-graph tables removed (schema 22)** — the `kg_entities`,
+  `kg_relationships`, `kg_raw_triples`, and `enrichment_meta` tables are dropped
+  by migration 22. Nothing in IntentWeave wrote them. The migration keeps a durable
+  `.schema-21.backup` before it runs. The `kg_*` MCP tools read through the
+  `plugin-kg-lite` persistence plugin.
+- **Breaking: `iw verify` is the living documentation score only.** Spec-to-code
+  grounding (`iw verify [files...]`) and `--consistency` are removed, since they read
+  the knowledge-graph tables. `--score` remains, and the score JSON no longer contains
+  `specCoverage` or `constraintConsistency`. The score is unchanged, because those
+  dimensions were already unavailable without the tables.
+- **Breaking: removed MCP tools and parameters** — `cari_verify` and
+  `cari_consistency` are removed. `cari_enrich` loses `incremental`.
+  `cari_living_score` loses `minConfidence` and its two dimensions.
+  `cari_arch_check` loses `fromDiagrams`.
+- **Breaking: removed `iw index build --from-diagrams`.** The architecture config
+  from enriched diagram triples depended on the removed tables. Use `--config`,
+  `.iw/architecture.yaml`, or `--from-scan`.
+- **`docs/API.md` rewritten** to describe the surfaces that ship today (CLI, MCP,
+  programmatic API) and the `kg_*` plugin requirement.
+- **Neo4j support removed.** The Neo4j persistence writers (`persistKwg`, `persistTcg`,
+  `persistDrift`, `scgPersist`), the cross-layer linker, the triage analyzer, and the
+  knowledge-graph drift detectors are deleted. Nothing called them. `iw drift --neo4j`
+  and `iw doc-health --neo4j` / `--neo4j-uri` are removed, along with their graph-mode options (`--session`, `--only`, `--doc-code`,
+  `--deps`, `--temporal`, `--min-mentions`, `--include-internal`, `--ax-cache`),
+  `iw mcp --neo4j-uri`, and the `kg_impact` tool. The `persist-neo4j` export is removed. The
+  `@intentweave/core` Neo4j error classes are removed. `plugin-kg-lite` (SQLite) is
+  unchanged.
+
 ### Fixed
 
 ## [0.17.2] — 2026-07-31

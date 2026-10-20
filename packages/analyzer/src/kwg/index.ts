@@ -7,7 +7,7 @@
  * Pipeline: KWX (keyword extraction) → COX (co-occurrence) → CLX (clustering)
  *
  * Exports the three pipeline stages, the heuristic extractor, qualifier
- * detector, and Neo4j persistence function.
+ * and detector.
  */
 
 // Heuristic keyword extractor
@@ -20,6 +20,10 @@ export { RegexQualifierDetector } from "./regexQualifier.js";
 // KWX stage (keyword extraction, per-file)
 export { runKwxStage } from "./kwxStage.js";
 export type { KwxStageOptions } from "./kwxStage.js";
+export {
+  createKwxChunkWorkerPool,
+  KwxChunkWorkerPool,
+} from "./kwxChunkWorkerPool.js";
 
 // COX stage (co-occurrence, session-level)
 export { runCoxStage } from "./coxStage.js";

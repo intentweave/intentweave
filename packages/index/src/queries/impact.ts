@@ -4,13 +4,13 @@
 /**
  * CARI Query: impact
  *
- * Local (no Neo4j) impact analysis. Given changed files, finds:
+ * Local impact analysis. Given changed files, finds:
  *   1. Downstream dependents (files that import the changed files, N-hop BFS)
  *   2. Upstream dependencies (files imported by the changed files)
  *   3. Co-change partners (files historically changed together)
  *   4. Affected documentation (docs referencing symbols in changed files)
  *
- * $0 / no LLM / no Neo4j — pure SQLite queries on CARI index.
+ * $0 / no LLM — pure SQLite queries on CARI index.
  */
 
 import type Database from "@intentweave/sqlite-compat";

@@ -13,16 +13,14 @@ catch syntax errors but miss semantic ones: a renamed function that three docs s
 
 IntentWeave solves this with two complementary systems:
 
-### 1. Knowledge Graph (KG) — Deep Semantic Extraction
+### 1. Knowledge graph (optional) — graph storage for MCP queries
 
-Uses LLMs to extract entities, decisions, relationships, and constraints from natural-language
-documents. Persists to Neo4j for rich graph queries. Best for architecture exploration,
-decision archaeology, and impact analysis.
+`plugin-kg-lite` stores a graph in SQLite (`.iw/kg.db`) so the `kg_*` MCP tools can query
+it. IntentWeave does not fill that graph: the LLM extraction that populated it was removed.
 
-- **Input:** Markdown docs, source files (any language)
-- **Output:** Neo4j graph with canonical entities, relationships, provenance
-- **Cost:** LLM API calls (OpenAI)
-- **Use case:** "What decisions were made about authentication?" → structured answer with sources
+- **Input:** whatever the graph store holds
+- **Output:** queries through `kg_query`, `kg_context`, `kg_entities`, `kg_schema`
+- **Cost:** none (local SQLite)
 
 ### 2. Code-Aware Retrieval Index (CARI) — Lightweight, Zero-Cost
 
@@ -93,7 +91,7 @@ Exit code 0 = clean, 1 = warnings (stale docs, missing coverage).
 IntentWeave exposes tools via the Model Context Protocol, usable by GitHub Copilot
 and other LLM agents:
 
-**CARI tools** (local SQLite — no LLM or Neo4j needed):
+**CARI tools** (local SQLite — no LLM needed):
 
 | Tool                     | Purpose                                                    |
 | ------------------------ | ---------------------------------------------------------- |
@@ -111,13 +109,12 @@ and other LLM agents:
 | `cari_doc_completeness`  | Per-doc completeness scoring                               |
 | `cari_cross_group_drift` | Cross-group entity coverage conflicts                      |
 
-**Knowledge Graph tools** (require Neo4j):
+**Knowledge graph tools** (require a graph plugin, `plugin-kg-lite`):
 
-| Tool         | Purpose                                   |
-| ------------ | ----------------------------------------- |
-| `kg_query`   | Natural-language graph query              |
-| `kg_context` | Build RAG context from knowledge graph    |
-| `kg_impact`  | Semantic impact analysis for file changes |
+| Tool         | Purpose                                |
+| ------------ | -------------------------------------- |
+| `kg_query`   | Natural-language graph query           |
+| `kg_context` | Build RAG context from knowledge graph |
 
 ---
 
@@ -152,7 +149,6 @@ all predefined SQL — < 100ms latency. The entire pipeline is local and determi
 | Vector embeddings    | $$$    | Embedding API + vector DB | Medium (semantic but lossy)                 | None                |
 | Language servers     | $0     | Per-language setup        | High (structural only)                      | None                |
 | **IntentWeave CARI** | **$0** | **`iw index build`**      | **High (structural + semantic + temporal)** | **Built-in**        |
-| IntentWeave KG       | $$$    | Neo4j + LLM API           | Highest (full semantic graph)               | Built-in            |
 
 CARI's advantage: it combines **three independent signals** (code structure, document semantics,
 git history) into a single ranked score. When these signals disagree, that disagreement itself
