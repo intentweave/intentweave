@@ -8,6 +8,13 @@ All notable changes to IntentWeave are documented in this file.
 
 - **Native build failures are errors** — `index build` fails when the native binary fails,
   and names the opt-in. `CARI_ALLOW_TS_FALLBACK=1` runs the TypeScript pipeline instead.
+- **Native symbol parity** — the native symbol set matches the TypeScript index for 7,688 of
+  7,700 symbols on this repository. Variables are symbols only when they hold a function,
+  nested function declarations and promoted variables are extracted under the same rules,
+  private class fields are kept, and constructors, getters and setters are methods.
+- **Faster claim discovery** — the mention test for public-symbol documentation uses a name
+  index instead of a regular expression per symbol. `claims check` on this repository went
+  from about 12 s to about 7 s with identical output.
 - **Native call graph parity** — `symbol_calls` matches the TypeScript index exactly on this
   repository, so behavioural rules give identical results on both engines.
 - **Untracked native binary** — `packages/cari-native-darwin-arm64/bin/` is no longer

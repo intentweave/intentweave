@@ -119,7 +119,8 @@ pub fn write(
             .filter(|s| s.container.is_none())
             .map(|s| ((s.file_path.as_str(), s.name.as_str()), s.export))
             .collect();
-        for s in &ax.symbols {
+        // Namespaces are not symbols in the TypeScript index.
+        for s in ax.symbols.iter().filter(|s| s.kind != "namespace") {
             let id = util::symbol_identity(s);
             let exported = match s.container.as_deref() {
                 Some(c) => top_export.get(&(s.file_path.as_str(), c)).copied().unwrap_or(false),

@@ -10,6 +10,7 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
+    Expression,
     BindingPattern, ClassElement, Declaration, ExportDefaultDeclarationKind,
     ImportDeclarationSpecifier, MethodDefinitionKind, PropertyKey, Statement,
     TSAccessibility, TSModuleDeclarationName, TSSignature,
@@ -600,12 +601,8 @@ impl<'s> FileExtractor<'s> {
     fn visit_class_body(&mut self, body: &oxc_ast::ast::ClassBody<'_>, class_name: &str) {
         for elem in body.body.iter() {
             if let ClassElement::MethodDefinition(method) = elem {
-                let kind = match method.kind {
-                    MethodDefinitionKind::Constructor => "constructor",
-                    MethodDefinitionKind::Get => "getter",
-                    MethodDefinitionKind::Set => "setter",
-                    MethodDefinitionKind::Method => "method",
-                };
+                // The TypeScript index has one kind for every method form.
+                let kind = "method";
                 if let Some(method_name) = property_key_name(&method.key) {
                     let func = &method.value;
                     let param_str = params_string(&func.params);
@@ -642,7 +639,7 @@ impl<'s> FileExtractor<'s> {
                             prop.accessibility,
                             Some(TSAccessibility::Private) | Some(TSAccessibility::Protected)
                         );
-                        if is_public {
+                        {
                             let start = prop.span.start;
                             let end = prop.span.end;
                             self.symbols.push(Symbol {
@@ -680,7 +677,16 @@ impl<'s> FileExtractor<'s> {
             match sig {
                 TSSignature::TSPropertySignature(prop) => {
                     if !prop.computed {
-                        if let Some(name) = property_key_name(&prop.key) {
+                        // String-literal keys keep their quotes, as the TypeScript index does.
+                        let key_name: Option<String> = property_key_name(&prop.key)
+                            .map(String::from)
+                            .or_else(|| match &prop.key {
+                                PropertyKey::StringLiteral(lit) => {
+                                    Some(self.span_text(lit.span.start, lit.span.end).to_string())
+                                }
+                                _ => None,
+                            });
+                        if let Some(name) = key_name {
                             self.symbols.push(Symbol {
                                 name: name.to_string(),
                                 kind: "property".to_string(),
@@ -779,15 +785,29 @@ impl<'s> FileExtractor<'s> {
         exported: bool,
         parent: Option<&str>,
     ) {
-        if !exported {
-            return;
-        }
         for decl in var_decl.declarations.iter() {
+            // TypeScript keeps a variable only when it holds a function, directly or as the
+            // function argument of a call (React.memo(() => …)). Other variables are skipped.
+            let Some(init) = &decl.init else { continue };
+            let promoted = match init {
+                Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => true,
+                Expression::CallExpression(call) => call.arguments.iter().any(|arg| {
+                    matches!(
+                        arg,
+                        oxc_ast::ast::Argument::ArrowFunctionExpression(_)
+                            | oxc_ast::ast::Argument::FunctionExpression(_)
+                    )
+                }),
+                _ => false,
+            };
+            if !promoted {
+                continue;
+            }
             if let BindingPattern::BindingIdentifier(id) = &decl.id {
                 let name = id.name.as_str();
                 self.symbols.push(Symbol {
                     name: name.to_string(),
-                    kind: "variable".to_string(),
+                    kind: "function".to_string(),
                     container: parent.map(String::from),
                     signature: None,
                     file_path: self.rel_path.clone(),
@@ -1125,6 +1145,122 @@ fn implements_from_header(header: Option<&str>) -> Option<String> {
     Some(serde_json::to_string(&names).ok()?)
 }
 
+/// Variables inside function bodies that hold functions. TypeScript extracts those too
+/// (the same promotion rule as module-level declarations), with no container.
+struct NestedVariableCollector<'s> {
+    line_index: &'s [usize],
+    file: &'s str,
+    depth: usize,
+    /// True inside an exported top-level declaration: the TypeScript index does not extract
+    /// variables from there.
+    in_export: bool,
+    symbols: Vec<Symbol>,
+}
+
+impl<'a, 's> Visit<'a> for NestedVariableCollector<'s> {
+    fn visit_function(&mut self, func: &oxc_ast::ast::Function<'a>, flags: oxc_syntax::scope::ScopeFlags) {
+        // Function declarations nested in a function body are symbols too.
+        if self.depth > 0 && !self.in_export && func.r#type == oxc_ast::ast::FunctionType::FunctionDeclaration {
+            if let Some(id) = &func.id {
+                let name = id.name.as_str().to_string();
+                let line = byte_to_line(self.line_index, func.span.start as usize);
+                let end = byte_to_line(self.line_index, func.span.end as usize);
+                self.symbols.push(Symbol {
+                    name: name.clone(),
+                    kind: "function".to_string(),
+                    container: None,
+                    signature: Some(format!("{}({})", name, params_string(&func.params))),
+                    file_path: self.file.to_string(),
+                    line: Some(line),
+                    end_line: Some(end),
+                    export: false,
+                    doc_summary: None,
+                    body_hash: None,
+                    body_lines: None,
+                    structure_hash: None,
+                    implements: None,
+                    deprecated: false,
+                    deprecated_note: None,
+                    is_internal: name.starts_with('_'),
+                    decorators: None,
+                });
+            }
+        }
+        self.depth += 1;
+        oxc_ast_visit::walk::walk_function(self, func, flags);
+        self.depth -= 1;
+    }
+
+    fn visit_statement(&mut self, stmt: &oxc_ast::ast::Statement<'a>) {
+        let exported = matches!(
+            stmt,
+            oxc_ast::ast::Statement::ExportNamedDeclaration(_)
+                | oxc_ast::ast::Statement::ExportDefaultDeclaration(_)
+        );
+        let outer = self.in_export;
+        self.in_export = exported || outer;
+        oxc_ast_visit::walk::walk_statement(self, stmt);
+        self.in_export = outer;
+    }
+
+    fn visit_arrow_function_expression(&mut self, arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>) {
+        self.depth += 1;
+        oxc_ast_visit::walk::walk_arrow_function_expression(self, arrow);
+        self.depth -= 1;
+    }
+
+    fn visit_variable_declaration(&mut self, decl: &oxc_ast::ast::VariableDeclaration<'a>) {
+        if self.depth > 0 && !self.in_export {
+            for declarator in decl.declarations.iter() {
+                let Some(init) = &declarator.init else { continue };
+                if !variable_holds_function(init) {
+                    continue;
+                }
+                if let BindingPattern::BindingIdentifier(id) = &declarator.id {
+                    let line = byte_to_line(self.line_index, declarator.span.start as usize);
+                    let end = byte_to_line(self.line_index, declarator.span.end as usize);
+                    self.symbols.push(Symbol {
+                        name: id.name.as_str().to_string(),
+                        kind: "function".to_string(),
+                        container: None,
+                        signature: None,
+                        file_path: self.file.to_string(),
+                        line: Some(line),
+                        end_line: Some(end),
+                        export: false,
+                        doc_summary: None,
+                        body_hash: None,
+                        body_lines: None,
+                        structure_hash: None,
+                        implements: None,
+                        deprecated: false,
+                        deprecated_note: None,
+                        is_internal: id.name.starts_with('_'),
+                        decorators: None,
+                    });
+                }
+            }
+        }
+        oxc_ast_visit::walk::walk_variable_declaration(self, decl);
+    }
+}
+
+/// TypeScript promotes a variable to a function when its value is a function, or a call with
+/// a function argument, directly.
+fn variable_holds_function(init: &Expression<'_>) -> bool {
+    match init {
+        Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => true,
+        Expression::CallExpression(call) => call.arguments.iter().any(|arg| {
+            matches!(
+                arg,
+                oxc_ast::ast::Argument::ArrowFunctionExpression(_)
+                    | oxc_ast::ast::Argument::FunctionExpression(_)
+            )
+        }),
+        _ => false,
+    }
+}
+
 /// Signature of a declaration, as the TypeScript AX stage records it: the header text
 /// from the declaration's first line, up to `{`. Only interfaces, classes, functions and
 /// methods carry one; properties and type aliases do not.
@@ -1132,6 +1268,10 @@ fn apply_declaration_headers(symbols: &mut [Symbol], content: &str) {
     let lines: Vec<&str> = content.lines().collect();
     for sym in symbols.iter_mut() {
         if !matches!(sym.kind.as_str(), "interface" | "class" | "function" | "method") {
+            continue;
+        }
+        // A function promoted from a variable carries no signature in the index.
+        if sym.kind == "function" && sym.signature.is_none() {
             continue;
         }
         // Interfaces carry the constructed form `interface <Name>`, not the source header.
@@ -1164,6 +1304,15 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
     let line_index = build_line_index(&content);
     let mut collector = calls::CallCollector::new(&content, &rel_path, &line_index);
     collector.visit_program(&ret.program);
+    let mut nested = NestedVariableCollector {
+        line_index: &line_index,
+        file: &rel_path,
+        depth: 0,
+        in_export: false,
+        symbols: Vec::new(),
+    };
+    nested.visit_program(&ret.program);
+    extractor.symbols.extend(nested.symbols);
     for stmt in ret.program.body.iter() {
         extractor.visit_statement(stmt, None, false);
     }
@@ -1380,13 +1529,16 @@ mod declaration_header_tests {
         let content = "export interface Extractor {\n  name: string;\n}\nexport function f(a: number): number {\n}\n";
         let mut symbols = vec![
             test_symbol("Extractor", "interface", None, None, Some(1)),
-            test_symbol("f", "function", None, None, Some(4)),
+            test_symbol("f", "function", None, Some("f(a: number)"), Some(4)),
+            test_symbol("g", "function", None, None, Some(4)),
             test_symbol("name", "property", Some("Extractor"), None, Some(2)),
         ];
         apply_declaration_headers(&mut symbols, content);
         assert_eq!(symbols[0].signature.as_deref(), Some("interface Extractor"));
         assert_eq!(symbols[1].signature.as_deref(), Some("export function f(a: number): number"));
+        // A function promoted from a variable has no signature in the index.
         assert_eq!(symbols[2].signature, None);
+        assert_eq!(symbols[3].signature, None);
     }
 }
 

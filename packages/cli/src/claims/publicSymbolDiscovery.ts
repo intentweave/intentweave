@@ -69,6 +69,52 @@ function exactSymbolMention(text: string, symbolName: string): boolean {
   );
 }
 
+/**
+ * Symbols by name, for the mention test. Identifier names are looked up by token; the
+ * rest (quoted keys, names with punctuation) keep the boundary test of `exactSymbolMention`.
+ */
+function indexSymbolsByMention(symbols: PublicSymbolRow[]): {
+  byToken: Map<string, Array<{ index: number; symbol: PublicSymbolRow }>>;
+  other: Array<{ index: number; symbol: PublicSymbolRow }>;
+} {
+  const byToken = new Map<
+    string,
+    Array<{ index: number; symbol: PublicSymbolRow }>
+  >();
+  const other: Array<{ index: number; symbol: PublicSymbolRow }> = [];
+  symbols.forEach((symbol, index) => {
+    const entry = { index, symbol };
+    if (/^[A-Za-z0-9_$]+$/.test(symbol.name)) {
+      const bucket = byToken.get(symbol.name) ?? [];
+      bucket.push(entry);
+      byToken.set(symbol.name, bucket);
+    } else {
+      other.push(entry);
+    }
+  });
+  return { byToken, other };
+}
+
+function symbolsMentionedIn(
+  text: string,
+  index: ReturnType<typeof indexSymbolsByMention>,
+): PublicSymbolRow[] {
+  const found = new Map<number, PublicSymbolRow>();
+  for (const token of text.split(/[^A-Za-z0-9_$]+/)) {
+    for (const entry of index.byToken.get(token) ?? []) {
+      found.set(entry.index, entry.symbol);
+    }
+  }
+  for (const entry of index.other) {
+    if (exactSymbolMention(text, entry.symbol.name)) {
+      found.set(entry.index, entry.symbol);
+    }
+  }
+  return [...found.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, symbol]) => symbol);
+}
+
 function persistAmbiguousDocumentationCandidates(
   database: Database.Database,
   claims: ClaimsStore,
@@ -84,11 +130,10 @@ function persistAmbiguousDocumentationCandidates(
        ORDER BY doc_path, line, id`,
     )
     .all() as UnlinkedAnnotationRow[];
+  const mentionIndex = indexSymbolsByMention(symbols);
   return annotations.flatMap((annotation) => {
     if (isFixtureOrTest(annotation.doc_path)) return [];
-    const matches = symbols.filter((symbol) =>
-      exactSymbolMention(annotation.text, symbol.name),
-    );
+    const matches = symbolsMentionedIn(annotation.text, mentionIndex);
     if (matches.length < 2) return [];
     const annotationKey = fingerprint({
       docPath: annotation.doc_path,
