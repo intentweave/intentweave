@@ -2741,7 +2741,17 @@ Open decisions:
   Decided (owner, 2026-10-20): Claim Relations and abstract anchors are G5.4 slice 2,
   and they come before G5.5.
 - Whether `reviewed-policy` authority may create anchors, and under which Policy.
+  Decided (owner, 2026-10-20): no. Only `human` (a person) and `ai-proposed` (a model
+  proposal that a person activates) may create anchors. `reviewed-policy` stays readable
+  for compatibility and creates nothing.
 - The format of an explicit follow-up declaration.
+  Decided (owner, 2026-10-20): keep the current `intent.yaml` format for now (Claim
+  identity and statement fingerprint). Move to declarations in the ADR or spec table
+  after the G5.5 extractor exists.
+- When the default mode moves from `report` to `gate`.
+  Decided (owner, 2026-10-20): the default stays `report`. `gate` is considered only
+  after the replay measure exists, because the seeded matrix alone shows consistency,
+  not accuracy.
 
 ### Phase G5.5: Deterministic Document Discovery (Proposed)
 
