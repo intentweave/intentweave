@@ -6,11 +6,17 @@ import { canonicalJson, fingerprint } from "./canonical.js";
 export const CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION = "1" as const;
 export const CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION = "2" as const;
 export const CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION = "3" as const;
-export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "4" as const;
+export const CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION = "4" as const;
+/**
+ * Version 5 allows an `ai-proposed` Intent Anchor authority (G5.4). Versions 1 to 4 are
+ * still read, and they reject that authority, because an older reader cannot judge it.
+ */
+export const CLAIMS_PORTABLE_STATE_SCHEMA_VERSION = "5" as const;
 export type ClaimsPortableStateSchemaVersion =
   | typeof CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION
+  | typeof CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION
   | typeof CLAIMS_PORTABLE_STATE_SCHEMA_VERSION;
 
 /** A recorded conflict decision (G5.4), keyed by its decision id. */
@@ -792,6 +798,7 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION,
+      CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION,
       CLAIMS_PORTABLE_STATE_SCHEMA_VERSION,
     ],
   );
@@ -799,18 +806,30 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
     schemaVersion !== CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION &&
+    schemaVersion !== CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION
   ) {
     throw new ClaimsPortableStateError(
-      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION}, or ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+      `Claims portable state schemaVersion must be ${CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION}, ${CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION}, or ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+    );
+  }
+  // Each G5.4 section needs the version that introduced it.
+  if (
+    (schemaVersion === CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION ||
+      schemaVersion === CLAIMS_PORTABLE_STATE_V2_SCHEMA_VERSION) &&
+    state.intentAnchors !== undefined
+  ) {
+    throw new ClaimsPortableStateError(
+      `intentAnchors require schemaVersion ${CLAIMS_PORTABLE_STATE_V3_SCHEMA_VERSION} or later`,
     );
   }
   if (
+    schemaVersion !== CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION &&
     schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION &&
-    (state.intentAnchors !== undefined || state.conflictDecisions !== undefined)
+    state.conflictDecisions !== undefined
   ) {
     throw new ClaimsPortableStateError(
-      `intentAnchors and conflictDecisions require schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+      `conflictDecisions require schemaVersion ${CLAIMS_PORTABLE_STATE_V4_SCHEMA_VERSION} or later`,
     );
   }
   if (schemaVersion === CLAIMS_PORTABLE_STATE_V1_SCHEMA_VERSION) {
@@ -863,6 +882,15 @@ export function parsePortableClaimsState(value: unknown): PortableClaimsState {
       parseConflictDecision,
     ),
   };
+  if (schemaVersion !== CLAIMS_PORTABLE_STATE_SCHEMA_VERSION) {
+    for (const [id, anchor] of Object.entries(parsed.intentAnchors)) {
+      if (anchor.authority === "ai-proposed") {
+        throw new ClaimsPortableStateError(
+          `intentAnchors.${id}.authority ai-proposed requires schemaVersion ${CLAIMS_PORTABLE_STATE_SCHEMA_VERSION}`,
+        );
+      }
+    }
+  }
   assertNoSubjectBindingConflicts(parsed.subjectBindings);
   assertNoBaselineConflicts(parsed.baselineAcceptances);
   return parsed;

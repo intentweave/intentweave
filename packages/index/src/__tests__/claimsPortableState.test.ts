@@ -93,7 +93,7 @@ describe("Claims portable state", () => {
       "zebra",
     ]);
     expect(emptyPortableClaimsState()).toEqual({
-      schemaVersion: "4",
+      schemaVersion: "5",
       policies: {},
       candidateDecisions: {},
       subjectBindings: {},
@@ -107,7 +107,7 @@ describe("Claims portable state", () => {
 
   it("fails closed for unsupported versions and unknown fields", () => {
     expect(() =>
-      parsePortableClaimsState({ ...validState(), schemaVersion: "5" }),
+      parsePortableClaimsState({ ...validState(), schemaVersion: "6" }),
     ).toThrow("must be one of: 1, 2, 3, 4");
     expect(() =>
       parsePortableClaimsState({ ...validState(), providerPayloads: {} }),
@@ -161,7 +161,7 @@ describe("Claims portable state", () => {
     };
 
     const parsed = parsePortableClaimsState(state);
-    expect(parsed.schemaVersion).toBe("4");
+    expect(parsed.schemaVersion).toBe("5");
     expect(
       parsed.candidateDecisions["candidate:endpoint-admin-users"]
         .recommendationBasis,
@@ -239,5 +239,68 @@ describe("Claims portable state", () => {
     expect(() => parsePortableClaimsState(state)).toThrow(
       "must be an RFC 3339 UTC timestamp",
     );
+  });
+
+  describe("G5.4 sections are gated by the version that introduced them", () => {
+    const anchor = {
+      claimIdentityId: "claim:timeout",
+      scope: "claim",
+      statementFingerprint: "a".repeat(64),
+      mode: "protect",
+      authority: "human",
+      source: "review",
+      status: "active",
+      actor: { kind: "human", id: "reviewer" },
+      decidedAt: "2026-10-20T00:00:00.000Z",
+    };
+
+    it("reads a version 4 state with intent anchors and conflict decisions", () => {
+      const parsed = parsePortableClaimsState({
+        ...validState(),
+        schemaVersion: "4",
+        intentAnchors: { "anchor:one": anchor },
+        conflictDecisions: {},
+      });
+      expect(parsed.schemaVersion).toBe("5");
+      expect(Object.keys(parsed.intentAnchors)).toEqual(["anchor:one"]);
+    });
+
+    it("rejects intent anchors in a version 2 state", () => {
+      expect(() =>
+        parsePortableClaimsState({
+          ...validState(),
+          schemaVersion: "2",
+          intentAnchors: { "anchor:one": anchor },
+        }),
+      ).toThrow(/intentAnchors require schemaVersion 3/);
+    });
+
+    it("rejects conflict decisions in a version 3 state", () => {
+      expect(() =>
+        parsePortableClaimsState({
+          ...validState(),
+          schemaVersion: "3",
+          conflictDecisions: {},
+        }),
+      ).toThrow(/conflictDecisions require schemaVersion 4/);
+    });
+
+    it("rejects an ai-proposed anchor in a version 4 state, and accepts it in version 5", () => {
+      const proposed = { ...anchor, authority: "ai-proposed" };
+      expect(() =>
+        parsePortableClaimsState({
+          ...validState(),
+          schemaVersion: "4",
+          intentAnchors: { "anchor:one": proposed },
+        }),
+      ).toThrow(/ai-proposed requires schemaVersion 5/);
+      expect(
+        parsePortableClaimsState({
+          ...validState(),
+          schemaVersion: "5",
+          intentAnchors: { "anchor:one": proposed },
+        }).intentAnchors["anchor:one"]?.authority,
+      ).toBe("ai-proposed");
+    });
   });
 });

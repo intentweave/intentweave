@@ -86,7 +86,8 @@ All notable changes to IntentWeave are documented in this file.
   exception to the exact statement change: it is reported as `intent_excepted` until
   the expiry, after which the conflict is active again. Expiry is judged at the head
   commit date, or at `claims check --as-of`. Decisions are stored in portable state
-  schema 4 and survive an index rebuild.
+  schema 4 and survive an index rebuild. Portable state moves to schema 5 for the
+  `ai-proposed` anchor authority; schemas 1 to 4 still read.
 - **Generalized repository Claims lifecycle** — schema versions 17-20 add
   durable Subjects, Subject continuity, append-only Claim Candidates,
   Candidate Evidence, Reviews, versioned Policy decisions, semantic Inference

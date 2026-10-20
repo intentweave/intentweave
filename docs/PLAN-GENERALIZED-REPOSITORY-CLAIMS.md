@@ -2594,10 +2594,11 @@ Prioritized open items:
    import and projection carry the value through instead of hardcoding `human`, and
    portable state accepts it. A test shows that the store never resolves an
    AI-proposed conflict on its own. No CLI path creates an AI-proposed anchor yet,
-   because the replay measure is still missing. Compatibility: portable state stays at
-   schema 4, so a CLI built before this change rejects a state file that contains an
-   `ai-proposed` anchor. That needs a version bump before any real anchor is written
-   with this value.
+   because the replay measure is still missing. Portable state is now schema 5, which
+   is the only version that accepts `ai-proposed`. Schemas 1 to 4 still read, and they
+   reject `ai-proposed`, so an older CLI never silently mis-reads such a file. Each G5.4
+   section is gated by the version that introduced it: intent anchors from 3, conflict
+   decisions from 4.
 6. **Later, not blockers:** Claim Relations, abstract anchors, observation-path bridge.
 
 Purpose. Separate two things that a Review currently treats as one. An epistemic
