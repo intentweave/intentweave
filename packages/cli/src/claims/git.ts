@@ -49,6 +49,18 @@ export class ClaimsGit {
     return git(this.workspaceRoot, ["merge-base", "HEAD", reference]);
   }
 
+  /**
+   * A file's text at a revision, or undefined when the file does not exist there. The
+   * revision is already resolved to a commit, so a missing file is the only expected failure.
+   */
+  fileAt(revision: string, relativePath: string): string | undefined {
+    try {
+      return git(this.workspaceRoot, ["show", `${revision}:${relativePath}`]);
+    } catch {
+      return undefined;
+    }
+  }
+
   changedPaths(fromRevision: string, toRevision: string): string[] {
     const output = git(this.workspaceRoot, [
       "diff",

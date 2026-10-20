@@ -230,6 +230,37 @@ describe("Intent Anchors through claims check", () => {
     expect(String(errors.mock.calls[0]?.[0])).toContain("reject_change");
   });
 
+  it("does not authorize a declared follow-up without a change set", async () => {
+    const { workspace, claimIdentityId, log } = await protectedWorkspace();
+    changeStatement(workspace);
+    setIntentMode(workspace, "gate");
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+    const judged = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+      intentAnchors?: Array<{ currentStatementFingerprint?: string }>;
+    };
+    const fingerprintNow =
+      judged.intentAnchors?.[0]?.currentStatementFingerprint;
+    mkdirSync(path.join(workspace, ".iw/claims"), { recursive: true });
+    writeFileSync(
+      path.join(workspace, ".iw/claims/intent.yaml"),
+      `schemaVersion: "1"\nmode: gate\nfollowUps:\n  - claimIdentityId: ${claimIdentityId}\n    statementFingerprint: ${fingerprintNow}\n`,
+    );
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+    const output = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+      intentFollowUpBasis?: string;
+      intentFollowUpNote?: string;
+      intentAnchors?: Array<{ outcome: string }>;
+    };
+    expect(output.intentFollowUpBasis).toBe("unavailable");
+    expect(output.intentFollowUpNote).toContain("--since");
+    expect(output.intentAnchors?.map((anchor) => anchor.outcome)).toEqual([
+      "intent_conflict",
+    ]);
+    expect(process.exitCode).toBe(1);
+  });
+
   it("refuses a second protect without recording a review or replacing the anchor", async () => {
     const { workspace, claimIdentityId, log } = await protectedWorkspace();
     const errors = vi

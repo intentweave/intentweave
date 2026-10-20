@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { IntentConfigError, parseIntentConfig } from "./intentConfig.js";
+import {
+  followUpsInChangeSet,
+  IntentConfigError,
+  parseIntentConfig,
+  parseIntentConfigAt,
+} from "./intentConfig.js";
 
 const DIGEST = "a".repeat(64);
 
@@ -30,5 +35,35 @@ describe("intent.yaml", () => {
       ),
     ).toThrow("64-character lowercase hex digest");
     expect(() => parseIntentConfig("mode: strict\n")).toThrow("mode must be");
+  });
+});
+
+describe("followUpsInChangeSet", () => {
+  const a = {
+    claimIdentityId: "claim:a",
+    statementFingerprint: "a".repeat(64),
+  };
+  const b = {
+    claimIdentityId: "claim:b",
+    statementFingerprint: "b".repeat(64),
+  };
+
+  it("keeps only declarations the base configuration does not already contain", () => {
+    expect(followUpsInChangeSet([a, b], [a])).toEqual([b]);
+  });
+
+  it("treats every head declaration as new when the base has none", () => {
+    expect(followUpsInChangeSet([a], [])).toEqual([a]);
+  });
+
+  it("authorizes nothing when the head declares nothing", () => {
+    expect(followUpsInChangeSet([], [a])).toEqual([]);
+  });
+
+  it("reads a missing base file as no declarations", () => {
+    expect(parseIntentConfigAt(undefined)).toEqual({
+      mode: "report",
+      followUps: [],
+    });
   });
 });

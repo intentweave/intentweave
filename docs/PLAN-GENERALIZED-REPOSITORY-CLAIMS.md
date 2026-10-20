@@ -2580,8 +2580,14 @@ Prioritized open items:
    has almost no recorded intent history, so the replay measure needs history from
    another repository or a seeded replay. The matrix measures consistency, not how
    often real repositories are right. Gate for any automatic anchor.
-4. **Deterministic follow-up re-evaluation** (step 4). Automatic anchors will
-   produce more intended-change conflicts, so the follow-up rule must be sound first.
+4. **Deterministic follow-up re-evaluation** (step 4). Status: a declared follow-up
+   now authorizes a change only when the change set introduces it (declared at head,
+   absent at the merge base of `--since`). Without `--since` nothing is authorized, and
+   the check says so. Covered by `claimsSessionAcceptance.test.ts` case 3 (both the
+   negative and the git-backed positive) and by unit tests of `followUpsInChangeSet`.
+   Still open: re-evaluating the origin Claim at head as a second authorization source.
+   It depends on the deterministic document extractor in G5.5 step 1, because an ADR's
+   value cannot be re-read deterministically without it.
 5. **Authority and portability for AI anchors**: the `authority` field, portable
    state, and a round-trip test.
 6. **Later, not blockers:** Claim Relations, abstract anchors, observation-path bridge.

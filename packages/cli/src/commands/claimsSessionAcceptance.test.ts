@@ -15,6 +15,7 @@
  *  5. accept_amendment supersedes the anchor; grant_exception is time-limited.
  */
 
+import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -114,8 +115,12 @@ describe("session acceptance: intent anchors on a parameter Claim", () => {
   }
 
   /** Run a check and return its parsed output and exit code. */
-  async function check(options: { asOf?: string } = {}): Promise<{
+  async function check(
+    options: { asOf?: string; since?: string } = {},
+  ): Promise<{
     output: {
+      intentFollowUpBasis?: string;
+      intentFollowUpNote?: string;
       intentAnchors?: Array<{
         outcome: string;
         reason: string;
@@ -207,7 +212,7 @@ describe("session acceptance: intent anchors on a parameter Claim", () => {
     ).toContain("gate");
   });
 
-  it("case 3: a declared follow-up accepts the change and records its review", async () => {
+  it("case 3: a declared follow-up is authorized only within its change set", async () => {
     const workspace = newWorkspace("structured", "structured");
     setGateMode(workspace, "gate");
     await protectDefault();
@@ -221,24 +226,59 @@ describe("session acceptance: intent anchors on a parameter Claim", () => {
     expect(conflict?.currentStatementFingerprint).toBeDefined();
     expect(undeclared.exitCode).toBe(1);
 
-    setGateMode(workspace, "gate");
     writeFileSync(
       path.join(workspace, ".iw", "claims", "intent.yaml"),
       `schemaVersion: "1"\nmode: gate\nfollowUps:\n  - claimIdentityId: ${identity}\n    statementFingerprint: ${conflict!.currentStatementFingerprint}\n`,
     );
+    // Without --since the change set is unknown, so the declaration must not accept the change.
     const declared = await check();
+    expect(declared.output.intentAnchors?.map((a) => a.outcome)).toEqual([
+      "intent_conflict",
+    ]);
+    expect(declared.exitCode).toBe(1);
+    expect(declared.output.intentFollowUpNote).toContain("--since");
+  });
+
+  it("case 3, git-backed: a declaration that the change set introduces accepts the change", async () => {
+    const workspace = newWorkspace("structured", "structured");
+    writeFileSync(path.join(workspace, ".gitignore"), ".iw/\n");
+    execFileSync("git", ["init", "-q"], { cwd: workspace });
+    execFileSync("git", ["config", "user.email", "acceptance@example.test"], {
+      cwd: workspace,
+    });
+    execFileSync("git", ["config", "user.name", "Acceptance"], {
+      cwd: workspace,
+    });
+    execFileSync("git", ["add", "-A"], { cwd: workspace });
+    execFileSync("git", ["commit", "-q", "-m", "base"], { cwd: workspace });
+    const base = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    setGateMode(workspace, "gate");
+    await protectDefault();
+    const identity = claimIdentityId();
+    writeDefault(workspace, "full", "full");
+    execFileSync("git", ["add", "-A"], { cwd: workspace });
+    execFileSync("git", ["commit", "-q", "-m", "change depth"], {
+      cwd: workspace,
+    });
+    const undeclared = await check({ since: base });
+    const conflict = undeclared.output.intentAnchors?.find(
+      (a) => a.outcome === "intent_conflict",
+    );
+    expect(conflict?.currentStatementFingerprint).toBeDefined();
+
+    writeFileSync(
+      path.join(workspace, ".iw", "claims", "intent.yaml"),
+      `schemaVersion: "1"\nmode: gate\nfollowUps:\n  - claimIdentityId: ${identity}\n    statementFingerprint: ${conflict!.currentStatementFingerprint}\n`,
+    );
+    const declared = await check({ since: base });
+    expect(declared.output.intentFollowUpBasis).toBe("change-set");
     expect(declared.output.intentAnchors?.map((a) => a.outcome)).toEqual([
       "satisfied",
     ]);
     expect(declared.exitCode).not.toBe(1);
-    const database = new Database(path.join(workspace, ".iw", "index.db"));
-    const review = database
-      .prepare(
-        `SELECT decision_origin FROM review_decisions WHERE decision_origin = 'follow-up'`,
-      )
-      .all();
-    database.close();
-    expect(review.length).toBeGreaterThan(0);
   });
 
   it("case 4: reject_change keeps the conflict until the statement is corrected", async () => {

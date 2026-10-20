@@ -601,6 +601,13 @@ followUps:
 - `gate` makes `intent_conflict` fail the check and makes `intent_unresolved`
   inconclusive.
 
+A declared follow-up accepts a statement change only when the change set introduces
+it: the declaration is in `intent.yaml` at head and absent at the merge base of
+`--since`. A declaration already in place before the change, or any run without
+`--since`, does not authorize it. The check then reports `intentFollowUpNote`
+explaining why. Accepting a change permanently is an `accept_amendment` decision,
+because a check never changes anchors.
+
 Expiry is compared with the head commit date, so CI results do not depend on
 the clock. `--as-of` overrides that instant for tests and replays.
 

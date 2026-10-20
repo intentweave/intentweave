@@ -107,7 +107,13 @@ import {
 } from "../claims/discovery.js";
 import { load as yamlLoad } from "js-yaml";
 import { ClaimsGit, ClaimsGitError } from "../claims/git.js";
-import { readIntentConfig, type IntentMode } from "../claims/intentConfig.js";
+import {
+  followUpsInChangeSet,
+  INTENT_CONFIG_RELATIVE_PATH,
+  parseIntentConfigAt,
+  readIntentConfig,
+  type IntentMode,
+} from "../claims/intentConfig.js";
 import {
   captureObservationRun,
   checkObservations,
@@ -409,6 +415,9 @@ export interface ClaimsCheckOutput {
   /** Intent Anchor mode in effect (G5.4). Absent when mode is off. */
   intentMode?: IntentMode;
   intentAnchors?: IntentAnchorEvaluation[];
+  /** How declared follow-ups were judged: against the change set, or not at all. */
+  intentFollowUpBasis?: "change-set" | "unavailable";
+  intentFollowUpNote?: string;
 }
 
 export interface ClaimsCheckExecution {
@@ -3560,9 +3569,29 @@ export async function runClaimsCheck(options: {
             }
           }
           output.intentMode = intentConfig.mode;
+          // A declared follow-up authorizes a change only when the change set introduces it
+          // (G5.4 step 4). Without --since the change set is unknown, so nothing is authorized.
+          const authorizedFollowUps = baseRevision
+            ? followUpsInChangeSet(
+                intentConfig.followUps,
+                parseIntentConfigAt(
+                  new ClaimsGit(workspaceRoot).fileAt(
+                    baseRevision,
+                    INTENT_CONFIG_RELATIVE_PATH,
+                  ),
+                ).followUps,
+              )
+            : [];
+          output.intentFollowUpBasis = baseRevision
+            ? "change-set"
+            : "unavailable";
+          if (!baseRevision && intentConfig.followUps.length > 0) {
+            output.intentFollowUpNote =
+              "Declared follow-ups were not applied: pass --since <ref> to establish the change set";
+          }
           const evaluated = new IntentAnchorStore(database).evaluate({
             asOf: expiryInstant(workspaceRoot, options.asOf),
-            followUps: intentConfig.followUps,
+            followUps: authorizedFollowUps,
             evaluatedClaimIds,
             retiredClaimIds: new Set(
               output.retiredClaims.map((claim) => claim.claimIdentityId),

@@ -85,6 +85,33 @@ function parseFollowUps(value: unknown): IntentConfig["followUps"] {
   });
 }
 
+/**
+ * The declared follow-ups that the change set introduces: those in the head configuration
+ * and absent from the base configuration. A declaration that was already in place before the
+ * change does not authorize it (G5.4 step 4).
+ */
+export function followUpsInChangeSet(
+  head: IntentConfig["followUps"],
+  base: IntentConfig["followUps"],
+): IntentConfig["followUps"] {
+  const inBase = new Set(
+    base.map(
+      (item) => `${item.claimIdentityId}\u0000${item.statementFingerprint}`,
+    ),
+  );
+  return head.filter(
+    (item) =>
+      !inBase.has(`${item.claimIdentityId}\u0000${item.statementFingerprint}`),
+  );
+}
+
+/** Parse `.iw/claims/intent.yaml` text; undefined text means no file, so no declarations. */
+export function parseIntentConfigAt(text: string | undefined): IntentConfig {
+  return text === undefined
+    ? { mode: "report", followUps: [] }
+    : parseIntentConfig(text);
+}
+
 /** Read `.iw/claims/intent.yaml`. A missing file means the default mode, `report`. */
 export function readIntentConfig(workspaceRoot: string): IntentConfig {
   const file = path.join(workspaceRoot, INTENT_CONFIG_RELATIVE_PATH);

@@ -51,6 +51,11 @@ All notable changes to IntentWeave are documented in this file.
   and must be rebuilt before the default native path matches.
 - **Anchors whose Claim is missing are reported** — `claims check` reports an active
   anchor whose Claim is not in the index as `intent_unresolved`, instead of dropping it.
+- **Declared follow-ups are scoped to their change set** — a declaration in
+  `.iw/claims/intent.yaml` accepts a statement change only when it is new relative to the
+  merge base given by `--since`. Without `--since`, declarations authorize nothing, and the
+  check reports why (`intentFollowUpNote`). Previously any standing declaration accepted
+  the change on every check.
 - **Protected anchors are never replaced silently** — protecting a Claim that already has an
   active Intent Anchor now fails with a clear message and records nothing. Replacing an anchor
   requires an `accept_amendment` decision, so an overwrite is always a recorded decision.
