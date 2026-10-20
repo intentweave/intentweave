@@ -1475,7 +1475,7 @@ re-run in this review.
 | G6d Policy-governed automation                           | Not started                    | No automation policy, report-only observations, or schema 23                                                                                                      | Gated on G6b quality evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Communication track                                      | Not verified                   | —                                                                                                                                                                 | Publication checkpoints depend on the evidence above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | G5.3 Generalized observation and change layer            | Accepted for O0–O4             | Migration 21; `ObservationStore`; `iw claims observations capture` / `check`; O2 gaps listed in Phase G5.3                                                        | O0 persistence contract acceptance; then O1–O4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| G5.4 Intent Anchors, Claim Relations, conflict semantics | Proposed (after G5.3)          | Section G5.4; no implementation                                                                                                                                   |
+| G5.4 Intent Anchors, Claim Relations, conflict semantics | Partly implemented             | Section G5.4; no implementation                                                                                                                                   |
 
 Verification on 2026-10-16: the full CI sequence passed build (exit 0), typecheck
 (exit 0), tests (1,227 passed, 4 skipped, 97 files), and lint (exit 0).
@@ -2542,7 +2542,17 @@ for public symbols. O0 can proceed on the accepted D1–D4, Amendment A, and Dec
 Outcome gates the rest of the phase. If the spike shows a mismatch that the
 design cannot explain, O0–O2 are revised before implementation.
 
-### Phase G5.4: Intent Anchors, Claim Relations, and Conflict Semantics (Proposed)
+### Phase G5.4: Intent Anchors, Claim Relations, and Conflict Semantics (Partly implemented)
+
+Implementation status. Implemented: concrete Intent Anchors (schema 24) with
+`review --purpose protect`; the outcomes `satisfied`, `intent_conflict`,
+`intent_unresolved`, and `intent_excepted`; `intent.yaml` with `off|report|gate`
+(default `report`); conflict decisions `accept_amendment`, `reject_change`, and
+`grant_exception` (schema 25) with expiry judged against the head commit date or
+`--as-of`; portable state `intentAnchors` and `conflictDecisions`; declared
+follow-ups in `intent.yaml`. Not yet implemented: deterministic re-evaluation of
+the origin Claim as a follow-up source, the scenario and replay measures in
+Evaluation, Claim Relations, abstract anchors, and the observation-path bridge.
 
 Purpose. Separate two things that a Review currently treats as one. An epistemic
 confirmation says that a statement describes the current state correctly. A

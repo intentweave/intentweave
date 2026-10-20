@@ -558,6 +558,52 @@ iw claims check --scope production --since origin/main
 iw claims check --refresh
 ```
 
+### Intent Anchors
+
+An Intent Anchor protects a promoted Claim's current statement. When that
+statement later changes, `iw claims check` reports `intent_conflict` instead of
+treating the change as ordinary re-review. Anchors are created by a person and
+never by a model.
+
+```bash
+iw claims review --claim session.timeout --type CLM-DEFAULT \
+  --actor alice --decision supported --purpose protect --rationale "timeouts are policy"
+iw claims check                                   # report or gate, per intent.yaml
+iw claims conflicts resolve --claim session.timeout --type CLM-DEFAULT \
+  --actor alice --decision accept_amendment --rationale "longer sessions are intended"
+iw claims conflicts resolve --claim session.timeout --type CLM-DEFAULT \
+  --actor alice --decision grant_exception --rationale "temporary" --expires 2027-01-01
+iw claims check --as-of 2026-10-20                # judge exceptions at a fixed instant
+```
+
+Outcomes for each anchored Claim:
+
+| Outcome             | Meaning                                                              |
+| ------------------- | -------------------------------------------------------------------- |
+| `satisfied`         | The protected statement still holds, or a declared follow-up matches |
+| `intent_conflict`   | The statement changed, the Claim was retired, or its subject is gone |
+| `intent_unresolved` | The Claim was not evaluated, so the anchor cannot be judged          |
+| `intent_excepted`   | A `grant_exception` covers the conflict until its expiry             |
+
+`.iw/claims/intent.yaml` controls the behaviour. It is reviewed repository
+state, and it holds the mode and any declared follow-ups:
+
+```yaml
+schemaVersion: "1"
+mode: report # off | report | gate
+followUps:
+  - claimIdentityId: claim:<sha256>
+    statementFingerprint: <64 hex characters>
+```
+
+- `off` skips anchors.
+- `report` (default) shows anchor outcomes and leaves exit codes unchanged.
+- `gate` makes `intent_conflict` fail the check and makes `intent_unresolved`
+  inconclusive.
+
+Expiry is compared with the head commit date, so CI results do not depend on
+the clock. `--as-of` overrides that instant for tests and replays.
+
 `--claim` accepts a stable `claim:<sha256>` identity, a promoted or unpromoted
 `candidate:<sha256>@<version>` reference, or a canonical Parameter key. An
 unpromoted Candidate explanation shows its current Evidence, Subjects, and any

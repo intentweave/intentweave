@@ -374,7 +374,11 @@ iw claims candidates triage                       # move correlated Candidates i
 iw claims candidates review --decision ...        # record a human Candidate decision
 iw claims check                                   # assess promoted Claims (no model call)
 iw claims check --since <ref>                     # assess against a merge-base anchor
+iw claims check --as-of <isoDate>                 # judge intent exceptions at a fixed instant
 iw claims review                                  # record a human decision on an Assessment
+iw claims review --purpose protect ...              # also protect the Claim with an Intent Anchor
+iw claims conflicts resolve --decision accept_amendment|reject_change|grant_exception
+                                                  # decide an intent_conflict (exceptions need --expires)
 iw claims explain                                 # current Claims, dependencies, and reopens
 iw claims candidates recommend --semantic --preview   # show exact outbound context; no call
 iw claims candidates recommend --semantic --candidate <ref>
