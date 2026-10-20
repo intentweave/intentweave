@@ -709,9 +709,18 @@ const indexBuildSubcommand = new Command("build")
         } catch (nativeErr: unknown) {
           const nativeMsg =
             nativeErr instanceof Error ? nativeErr.message : String(nativeErr);
+          // A native failure is an error by default. The TypeScript fallback changes the
+          // results (claims and rules), so it runs only when explicitly allowed.
+          if (process.env.CARI_ALLOW_TS_FALLBACK !== "1") {
+            throw new Error(
+              `native index build failed: ${nativeMsg}\n` +
+                "  The TypeScript pipeline produces different claim and rule results.\n" +
+                "  Fix the native build, or re-run with --no-native or CARI_ALLOW_TS_FALLBACK=1.",
+            );
+          }
           console.log(
             chalk.yellow(
-              `  ⚠ native build failed, falling back to TypeScript pipeline: ${nativeMsg}`,
+              `  ⚠ native build failed; CARI_ALLOW_TS_FALLBACK=1 set, using the TypeScript pipeline: ${nativeMsg}`,
             ),
           );
           // Fall through to the TypeScript pipeline below

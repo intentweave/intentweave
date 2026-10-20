@@ -209,6 +209,28 @@ describe("index build native vs ts parity", () => {
     );
   });
 
+  it("fails a native build by default, with a message that names the opt-in", () => {
+    const workspace = mkdtempSync(
+      path.join(tmpdir(), "intentweave-native-no-fallback-"),
+    );
+    workspaces.push(workspace);
+    writeFixture(workspace);
+    const failingNative = path.join(workspace, "failing-native.sh");
+    writeFileSync(failingNative, "#!/bin/sh\nexit 17\n");
+    execFileSync("chmod", ["+x", failingNative]);
+
+    let failure: { stdout?: string; stderr?: string } | undefined;
+    try {
+      runIndexBuild(workspace, true, { CARI_BUILD_PATH: failingNative });
+    } catch (error) {
+      failure = error as { stdout?: string; stderr?: string };
+    }
+    expect(failure).toBeDefined();
+    const output = `${failure?.stdout ?? ""}${failure?.stderr ?? ""}`;
+    expect(output).toContain("native index build failed");
+    expect(output).toContain("CARI_ALLOW_TS_FALLBACK=1");
+  });
+
   it("preserves Claims history when the native build fails and TypeScript fallback succeeds", () => {
     const workspace = mkdtempSync(
       path.join(tmpdir(), "intentweave-native-fallback-"),
@@ -232,6 +254,7 @@ describe("index build native vs ts parity", () => {
 
     const result = runIndexBuild(workspace, true, {
       CARI_BUILD_PATH: failingNative,
+      CARI_ALLOW_TS_FALLBACK: "1",
     });
 
     expect(result.stdout).toContain("native build failed");

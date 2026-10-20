@@ -153,7 +153,7 @@ pub struct Import {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolCall {
     pub caller_file: String,
-    pub caller_name: String,
+    pub caller_name: Option<String>,
     pub caller_line: i64,
     pub callee_name: String,
     pub callee_id: Option<String>,

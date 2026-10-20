@@ -49,6 +49,8 @@ chrono = { version = "0.4", features = ["serde"] }
 oxc_allocator = "0.131.0"
 oxc_parser = "0.131.0"
 oxc_ast = "0.131.0"
+oxc_ast_visit = "0.131.0"
+oxc_syntax = "0.131.0"
 oxc_span = "0.131.0"
 
 # Git analysis — pure-Rust, no libgit2 C dependency (TCG stage, R1-d)

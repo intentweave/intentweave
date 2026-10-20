@@ -196,8 +196,12 @@ pub fn write(
              (id, caller_file, caller_name, caller_line, callee_name, callee_id, is_method)
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
         )?;
-        for c in &ax.calls {
-            let id = util::make_id(&format!("call:{}:{}:{}:{}", c.caller_file, c.caller_name, c.caller_line, c.callee_name));
+        for (seq, c) in ax.calls.iter().enumerate() {
+            // Sequence within the build keeps two identical calls on one line apart.
+            let id = util::make_id(&format!(
+                "call:{}:{}:{}:{}:{}",
+                c.caller_file, c.caller_name.as_deref().unwrap_or(""), c.caller_line, c.callee_name, seq
+            ));
             stmt.execute(rusqlite::params![
                 id, c.caller_file, c.caller_name, c.caller_line,
                 c.callee_name, c.callee_id, c.is_method as i64,

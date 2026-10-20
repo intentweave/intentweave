@@ -21,6 +21,9 @@ use std::path::{Path, PathBuf};
 
 use crate::types::{AxResult, BuildOpts, FileEntry, Import, Rationale, Symbol, SymbolCall, Todo};
 
+mod calls;
+use oxc_ast_visit::Visit;
+
 fn is_source_file(path: &Path) -> bool {
     let ext = path
         .extension()
@@ -62,7 +65,7 @@ fn build_line_index(text: &str) -> Vec<usize> {
     idx
 }
 
-fn byte_to_line(line_idx: &[usize], byte_pos: usize) -> i64 {
+pub(crate) fn byte_to_line(line_idx: &[usize], byte_pos: usize) -> i64 {
     match line_idx.binary_search(&byte_pos) {
         Ok(i) => (i + 1) as i64,
         Err(i) => i as i64,
@@ -275,7 +278,6 @@ impl<'s> FileExtractor<'s> {
                         func.span.start,
                         func.span.end,
                     );
-                    self.walk_body_for_calls(func.body.as_deref(), Some(name));
                 }
             }
             Declaration::ClassDeclaration(class) => {
@@ -401,7 +403,6 @@ impl<'s> FileExtractor<'s> {
                         func.span.start,
                         func.span.end,
                     );
-                    self.walk_body_for_calls(func.body.as_deref(), Some(name));
                 }
             }
             Statement::ClassDeclaration(class) => {
@@ -440,7 +441,6 @@ impl<'s> FileExtractor<'s> {
                             func.span.start,
                             func.span.end,
                         );
-                        self.walk_body_for_calls(func.body.as_deref(), Some(name));
                     }
                     ExportDefaultDeclarationKind::ClassDeclaration(class) => {
                         let name = class
@@ -634,7 +634,6 @@ impl<'s> FileExtractor<'s> {
                         is_internal: method_name.starts_with('_'),
                         decorators: None,
                     });
-                    self.walk_body_for_calls(func.body.as_deref(), Some(method_name));
                 }
             } else if let ClassElement::PropertyDefinition(prop) = elem {
                 if !prop.computed {
@@ -846,122 +845,6 @@ impl<'s> FileExtractor<'s> {
         });
     }
 
-    fn walk_body_for_calls(
-        &mut self,
-        body: Option<&oxc_ast::ast::FunctionBody<'_>>,
-        context: Option<&str>,
-    ) {
-        let Some(body) = body else { return };
-        for stmt in body.statements.iter() {
-            self.collect_calls_from_stmt(stmt, context);
-        }
-    }
-
-    fn collect_calls_from_stmt(&mut self, stmt: &Statement<'_>, context: Option<&str>) {
-        match stmt {
-            Statement::ExpressionStatement(es) => {
-                self.collect_calls_from_expr(&es.expression, context);
-            }
-            Statement::ReturnStatement(ret) => {
-                if let Some(arg) = &ret.argument {
-                    self.collect_calls_from_expr(arg, context);
-                }
-            }
-            Statement::VariableDeclaration(var) => {
-                for decl in var.declarations.iter() {
-                    if let Some(init) = &decl.init {
-                        self.collect_calls_from_expr(init, context);
-                    }
-                }
-            }
-            Statement::IfStatement(if_s) => {
-                self.collect_calls_from_expr(&if_s.test, context);
-                self.collect_calls_from_stmt(&if_s.consequent, context);
-                if let Some(alt) = &if_s.alternate {
-                    self.collect_calls_from_stmt(alt, context);
-                }
-            }
-            Statement::BlockStatement(block) => {
-                for s in block.body.iter() {
-                    self.collect_calls_from_stmt(s, context);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn collect_calls_from_expr(
-        &mut self,
-        expr: &oxc_ast::ast::Expression<'_>,
-        context: Option<&str>,
-    ) {
-        use oxc_ast::ast::Expression;
-        match expr {
-            Expression::CallExpression(call) => {
-                let (callee_name, callee_id, is_method) = match &call.callee {
-                    Expression::Identifier(id) => {
-                        (id.name.as_str().to_string(), None, false)
-                    }
-                    Expression::StaticMemberExpression(member) => {
-                        let prop = member.property.name.as_str();
-                        let obj = match &member.object {
-                            Expression::Identifier(id) => id.name.as_str().to_string(),
-                            _ => "(expr)".to_string(),
-                        };
-                        (
-                            prop.to_string(),
-                            Some(format!("{}.{}", obj, prop)),
-                            true,
-                        )
-                    }
-                    _ => return,
-                };
-                self.calls.push(SymbolCall {
-                    caller_file: self.rel_path.clone(),
-                    caller_name: context.unwrap_or("(module)").to_string(),
-                    caller_line: self.line(call.span.start),
-                    callee_name,
-                    callee_id,
-                    is_method,
-                });
-                // Recurse into arguments to find nested calls
-                use oxc_ast::ast::Argument;
-                for arg in call.arguments.iter() {
-                    match arg {
-                        Argument::SpreadElement(se) => {
-                            self.collect_calls_from_expr(&se.argument, context);
-                        }
-                        Argument::CallExpression(nested) => {
-                            // nested call as argument — record it too
-                            let inner_name = match &nested.callee {
-                                Expression::Identifier(id) => id.name.as_str().to_string(),
-                                Expression::StaticMemberExpression(m) => {
-                                    m.property.name.as_str().to_string()
-                                }
-                                _ => continue,
-                            };
-                            self.calls.push(SymbolCall {
-                                caller_file: self.rel_path.clone(),
-                                caller_name: context.unwrap_or("(module)").to_string(),
-                                caller_line: self.line(nested.span.start),
-                                callee_name: inner_name,
-                                callee_id: None,
-                                is_method: false,
-                            });
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            Expression::AwaitExpression(aw) => {
-                self.collect_calls_from_expr(&aw.argument, context);
-            }
-            Expression::AssignmentExpression(assign) => {
-                self.collect_calls_from_expr(&assign.right, context);
-            }
-            _ => {}
-        }
-    }
 }
 
 struct ProcessedFile {
@@ -1278,11 +1161,15 @@ fn process_file(path: &Path, workspace_root: &Path) -> Option<ProcessedFile> {
     let source_type = SourceType::from_path(path).unwrap_or_default();
     let ret = Parser::new(&allocator, &content, source_type).parse();
     let mut extractor = FileExtractor::new(&content, &rel_path, workspace_root);
+    let line_index = build_line_index(&content);
+    let mut collector = calls::CallCollector::new(&content, &rel_path, &line_index);
+    collector.visit_program(&ret.program);
     for stmt in ret.program.body.iter() {
         extractor.visit_statement(stmt, None, false);
     }
     apply_declaration_headers(&mut extractor.symbols, &content);
     apply_source_fingerprints(&mut extractor.symbols, &content);
+    extractor.calls = collector.calls;
     // SHA-256 truncated to 16 hex digits, as the TypeScript index stores it.
     let content_hash = {
         use sha2::{Digest, Sha256};

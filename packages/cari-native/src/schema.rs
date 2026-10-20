@@ -146,7 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_rationale_kind ON rationale(kind);
 CREATE TABLE IF NOT EXISTS symbol_calls (
   id          TEXT PRIMARY KEY,
   caller_file TEXT NOT NULL,
-  caller_name TEXT NOT NULL,
+  caller_name TEXT,
   caller_line INTEGER NOT NULL,
   callee_name TEXT NOT NULL,
   callee_id   TEXT,

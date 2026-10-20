@@ -6,6 +6,10 @@ All notable changes to IntentWeave are documented in this file.
 
 ### Added
 
+- **Native build failures are errors** — `index build` fails when the native binary fails,
+  and names the opt-in. `CARI_ALLOW_TS_FALLBACK=1` runs the TypeScript pipeline instead.
+- **Native call graph parity** — `symbol_calls` matches the TypeScript index exactly on this
+  repository, so behavioural rules give identical results on both engines.
 - **Untracked native binary** — `packages/cari-native-darwin-arm64/bin/` is no longer
   committed. Release CI builds `cari-build` and places it in the package before publishing.
   A stale committed binary had taken precedence over fresh development builds.
