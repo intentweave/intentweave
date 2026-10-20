@@ -19,6 +19,8 @@ import {
   runClaimsCandidatesTriage,
   runClaimsCheck,
   runClaimsDiscover,
+  runClaimsIntentProtect,
+  runClaimsIntentRealize,
   runClaimsReview,
 } from "./claims.js";
 
@@ -258,6 +260,50 @@ describe("Intent Anchors through claims check", () => {
     expect(output.intentAnchors?.map((anchor) => anchor.outcome)).toEqual([
       "intent_conflict",
     ]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("judges an abstract intent through claims check, and conflicts when its realizer is refuted", async () => {
+    const { workspace, claimIdentityId, log } = await protectedWorkspace();
+    setIntentMode(workspace, "gate");
+    process.exitCode = undefined;
+    await runClaimsIntentRealize({
+      intent: "docs-are-authoritative",
+      claim: claimIdentityId,
+      actor: "intent-anchors",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(0);
+    await runClaimsIntentProtect({
+      intent: "docs-are-authoritative",
+      actor: "intent-anchors",
+      rationale: "the documented symbol contract is authoritative",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(0);
+
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+    const satisfied = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+      abstractIntentAnchors?: Array<{ outcome: string; reason: string }>;
+    };
+    expect(satisfied.abstractIntentAnchors?.map((a) => a.outcome)).toEqual([
+      "satisfied",
+    ]);
+    expect(process.exitCode).not.toBe(1);
+
+    // The documentation is removed, so the realizer is refuted. changeStatement rebuilds the
+    // index, so the check must restore the abstract intent from portable state.
+    changeStatement(workspace);
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+    const refuted = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+      abstractIntentAnchors?: Array<{ outcome: string; reason: string }>;
+    };
+    expect(refuted.abstractIntentAnchors?.map((a) => a.outcome)).toEqual([
+      "intent_conflict",
+    ]);
+    expect(refuted.abstractIntentAnchors?.[0]?.reason).toContain("is refuted");
     expect(process.exitCode).toBe(1);
   });
 
