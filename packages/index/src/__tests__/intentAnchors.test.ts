@@ -126,9 +126,30 @@ describe("IntentAnchorStore", () => {
       claimIdentityId: "claim:timeout",
       actor: "r",
       createdAt: 20,
+      amendment: true,
     });
     expect(store.get(first.id)?.status).toBe("superseded");
     expect(store.active("claim:timeout").map((a) => a.id)).toEqual([second.id]);
+  });
+
+  it("refuses to replace an active anchor without an amendment decision", () => {
+    insertClaim("claim:timeout", { value: 1800 });
+    const first = store.protect({
+      claimIdentityId: "claim:timeout",
+      actor: "r",
+      createdAt: 10,
+    });
+    insertClaim("claim:timeout", { value: 3600 }, 2);
+    expect(() =>
+      store.protect({
+        claimIdentityId: "claim:timeout",
+        actor: "automation",
+        createdAt: 20,
+      }),
+    ).toThrow(/already protected/);
+    // The refused call changes nothing: the original anchor stays active and unlinked.
+    expect(store.get(first.id)?.status).toBe("active");
+    expect(store.active("claim:timeout").map((a) => a.id)).toEqual([first.id]);
   });
 
   it("rejects a schema write that uses an unknown status", () => {
@@ -195,6 +216,7 @@ describe("IntentAnchorStore", () => {
       rationale: "longer sessions are intended",
       scope: first.scope,
       createdAt: 20,
+      amendment: true,
     });
     expect(store.get(first.id)?.status).toBe("superseded");
     expect(amended.statementFingerprint).toBe(fingerprint({ value: 3600 }));

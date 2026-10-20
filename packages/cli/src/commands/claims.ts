@@ -18,6 +18,7 @@ import {
   ClaimsStore,
   claimsExitCode,
   fingerprint,
+  DEFAULT_ANCHOR_SCOPE,
   IntentAnchorStore,
   type IntentAnchorEvaluation,
   materialFingerprint,
@@ -3769,6 +3770,7 @@ export async function runClaimsConflictResolve(options: {
           rationale: options.rationale,
           scope: superseded.scope,
           createdAt: decidedAt,
+          amendment: true,
         });
         persistPortableIntentAnchor(workspaceRoot, {
           id: anchor.id,
@@ -4387,6 +4389,18 @@ export async function runClaimsReview(options: {
         throw new ClaimsBindingError(
           `No reviewable assessment for claim ${claim.id}`,
         );
+      }
+      if (purpose === "protect") {
+        // Refuse before anything is recorded: a review must not persist without its anchor.
+        const existing = new IntentAnchorStore(database)
+          .active(claim.id)
+          .find((anchor) => anchor.scope === DEFAULT_ANCHOR_SCOPE);
+        if (existing) {
+          throw new ClaimsBindingError(
+            `Claim ${claim.id} is already protected by ${existing.id}; nothing was recorded. ` +
+              `Decide a change with claims conflicts resolve --decision accept_amendment, or reject it`,
+          );
+        }
       }
       const decidedAt = new Date();
       const portableStatePath = persistPortableAssessmentReview(

@@ -2555,6 +2555,30 @@ follow-ups in `intent.yaml`. Not yet implemented: deterministic re-evaluation of
 the origin Claim as a follow-up source, the scenario and replay measures in
 Evaluation, Claim Relations, abstract anchors, and the observation-path bridge.
 
+Authority decision (G5.4 gap 9, revised). The first slice allowed only `human`
+anchors. The owner now proposes that an AI-proposed anchor becomes active on
+creation, marked `authority: ai-proposed`. Any overwrite or conflict on such an
+anchor must be decided by a person and never resolves automatically. The
+anchor's check stays deterministic. This applies only after the measures in
+priority 3 exist, because an automatic anchor is only as good as the evidence
+that it is right. Until then, `ai-proposed` anchors are not created.
+
+Prioritized open items:
+
+1. **Authority policy** (owner decision). Recorded above; implementation waits for it.
+2. **No silent replacement of a protected anchor.** Done: `protect` refuses to
+   replace an active anchor unless the caller passes `amendment: true`, which only
+   a decided `accept_amendment` does. `review --purpose protect` refuses before it
+   records anything, so a refused protection leaves no review without an anchor.
+3. **Scenario and replay measures** (Evaluation, above). Include the counter of
+   undeclared changes wrongly accepted, which must be zero. Gate for any automatic
+   anchor.
+4. **Deterministic follow-up re-evaluation** (step 4). Automatic anchors will
+   produce more intended-change conflicts, so the follow-up rule must be sound first.
+5. **Authority and portability for AI anchors**: the `authority` field, portable
+   state, and a round-trip test.
+6. **Later, not blockers:** Claim Relations, abstract anchors, observation-path bridge.
+
 Purpose. Separate two things that a Review currently treats as one. An epistemic
 confirmation says that a statement describes the current state correctly. A
 normative decision says that the state is intended and must be protected. Today every

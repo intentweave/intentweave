@@ -230,6 +230,34 @@ describe("Intent Anchors through claims check", () => {
     expect(String(errors.mock.calls[0]?.[0])).toContain("reject_change");
   });
 
+  it("refuses a second protect without recording a review or replacing the anchor", async () => {
+    const { workspace, claimIdentityId, log } = await protectedWorkspace();
+    const errors = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    process.exitCode = undefined;
+    await runClaimsReview({
+      claim: claimIdentityId,
+      actor: "automation",
+      decision: "accepted",
+      purpose: "protect",
+      rationale: "second protection attempt",
+      format: "json",
+    });
+    expect(process.exitCode).toBe(64);
+    expect(String(errors.mock.calls[0]?.[0])).toContain("already protected");
+    // The original anchor still protects the Claim: an unchanged statement is satisfied.
+    setIntentMode(workspace, "report");
+    process.exitCode = undefined;
+    await runClaimsCheck({ format: "json" });
+    const output = JSON.parse(String(log.mock.calls.at(-1)?.[0])) as {
+      intentAnchors?: Array<{ outcome: string }>;
+    };
+    expect(output.intentAnchors?.map((anchor) => anchor.outcome)).toEqual([
+      "satisfied",
+    ]);
+  });
+
   it("refuses to amend a Claim whose current assessment is not supported", async () => {
     const { workspace, claimIdentityId } = await protectedWorkspace();
     changeStatement(workspace);

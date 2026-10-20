@@ -51,6 +51,9 @@ All notable changes to IntentWeave are documented in this file.
   and must be rebuilt before the default native path matches.
 - **Anchors whose Claim is missing are reported** — `claims check` reports an active
   anchor whose Claim is not in the index as `intent_unresolved`, instead of dropping it.
+- **Protected anchors are never replaced silently** — protecting a Claim that already has an
+  active Intent Anchor now fails with a clear message and records nothing. Replacing an anchor
+  requires an `accept_amendment` decision, so an overwrite is always a recorded decision.
 - **Intent Anchors (first slice)** — `iw claims review --purpose protect` records a
   human decision that protects an accepted Claim's current statement. Schema 24 adds
   `intent_anchors`, and portable state schema 3 keeps anchors across index rebuilds.

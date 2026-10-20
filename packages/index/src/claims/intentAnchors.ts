@@ -53,6 +53,12 @@ export interface ProtectInput {
   rationale?: string;
   scope?: string;
   createdAt?: number;
+  /**
+   * True only for a decided amendment (`accept_amendment`): the new anchor replaces the
+   * active one on the same Claim and scope. Without it, an existing active anchor is never
+   * replaced silently; protect refuses and the caller must decide the change explicitly.
+   */
+  amendment?: boolean;
 }
 
 export interface IntentAnchorEvaluation {
@@ -165,8 +171,9 @@ export class IntentAnchorStore {
 
   /**
    * Protect the current statement of a Claim. A human decision: authority is `human`
-   * and the source is a review. An existing active anchor on the same Claim and scope
-   * is superseded, so one scope has one active anchor.
+   * and the source is a review. One scope has one active anchor. Replacing an active
+   * anchor requires `amendment: true`, so an overwrite is always a decided change and
+   * never a side effect of a new protection.
    */
   protect(input: ProtectInput): IntentAnchor {
     const latest = this.latestVersion(input.claimIdentityId);
@@ -176,6 +183,15 @@ export class IntentAnchorStore {
       );
     }
     const scope = input.scope ?? DEFAULT_ANCHOR_SCOPE;
+    const active = this.active(input.claimIdentityId).find(
+      (anchor) => anchor.scope === scope,
+    );
+    if (active && !input.amendment) {
+      throw new Error(
+        `Claim ${input.claimIdentityId} is already protected in scope ${scope} by ${active.id}; ` +
+          `replace it with an amendment decision (claims conflicts resolve --decision accept_amendment)`,
+      );
+    }
     const createdAt = input.createdAt ?? Date.now();
     const id = `anchor:${fingerprint({
       claim: input.claimIdentityId,
