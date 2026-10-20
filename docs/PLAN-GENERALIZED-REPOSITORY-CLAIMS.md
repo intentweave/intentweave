@@ -2570,9 +2570,16 @@ Prioritized open items:
    replace an active anchor unless the caller passes `amendment: true`, which only
    a decided `accept_amendment` does. `review --purpose protect` refuses before it
    records anything, so a refused protection leaves no review without an anchor.
-3. **Scenario and replay measures** (Evaluation, above). Include the counter of
-   undeclared changes wrongly accepted, which must be zero. Gate for any automatic
-   anchor.
+3. **Scenario and replay measures** (Evaluation, above). Status: the seeded matrix
+   is implemented in `packages/index/src/__tests__/intentAnchorEvaluation.test.ts`.
+   It covers twelve histories, including undeclared changes, refuted and
+   inconclusive follow-ups, retirement, return to the protected value, and
+   non-evaluation. It asserts that no undeclared change is accepted and reports
+   conflict precision and recall. Mutation check: removing the supported-assessment
+   requirement fails all three tests. Replay is not yet possible: this repository
+   has almost no recorded intent history, so the replay measure needs history from
+   another repository or a seeded replay. The matrix measures consistency, not how
+   often real repositories are right. Gate for any automatic anchor.
 4. **Deterministic follow-up re-evaluation** (step 4). Automatic anchors will
    produce more intended-change conflicts, so the follow-up rule must be sound first.
 5. **Authority and portability for AI anchors**: the `authority` field, portable
